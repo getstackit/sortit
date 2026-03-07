@@ -3,6 +3,7 @@ experimental = true
 
 [env]
 PROJECT_ROOT = "{{ config_root }}"
+_.file = ".env"
 
 [tools]
 go = "1.26"

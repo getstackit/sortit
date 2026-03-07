@@ -23,7 +23,7 @@ func corsMiddleware(origins []string, apiRoutes map[string]struct{}, next http.H
 		if originAllowed {
 			w.Header().Set("Access-Control-Allow-Origin", origin)
 			w.Header().Set("Vary", "Origin")
-			w.Header().Set("Access-Control-Allow-Methods", "GET, OPTIONS")
+			w.Header().Set("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
 			w.Header().Set("Access-Control-Allow-Headers", "Content-Type")
 		}
 
@@ -51,7 +51,24 @@ func isRegisteredAPIRoute(requestPath string, apiRoutes map[string]struct{}) boo
 func loggingMiddleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		start := time.Now()
-		next.ServeHTTP(w, r)
-		log.Printf("%s %s %s", r.Method, r.URL.Path, time.Since(start).Round(time.Millisecond))
+		recorder := &statusRecorder{ResponseWriter: w, status: http.StatusOK}
+		next.ServeHTTP(recorder, r)
+		log.Printf(
+			"%s %s %d %s",
+			r.Method,
+			r.URL.Path,
+			recorder.status,
+			time.Since(start).Round(time.Millisecond),
+		)
 	})
+}
+
+type statusRecorder struct {
+	http.ResponseWriter
+	status int
+}
+
+func (r *statusRecorder) WriteHeader(status int) {
+	r.status = status
+	r.ResponseWriter.WriteHeader(status)
 }

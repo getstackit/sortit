@@ -41,13 +41,14 @@ export function AppShell({
   children: ReactNode;
 }) {
   const isMobile = useIsMobile();
-  const [collapsed, setCollapsed] = useState(false);
-  const [mobileOpen, setMobileOpen] = useState(false);
+  const [collapsed, setCollapsed] = useState(() => {
+    if (typeof window === "undefined") {
+      return false;
+    }
 
-  useEffect(() => {
-    const stored = window.localStorage.getItem(DESKTOP_SIDEBAR_STORAGE_KEY);
-    setCollapsed(stored === "true");
-  }, []);
+    return window.localStorage.getItem(DESKTOP_SIDEBAR_STORAGE_KEY) === "true";
+  });
+  const [mobileOpen, setMobileOpen] = useState(false);
 
   useEffect(() => {
     window.localStorage.setItem(
@@ -56,11 +57,7 @@ export function AppShell({
     );
   }, [collapsed]);
 
-  useEffect(() => {
-    if (!isMobile && mobileOpen) {
-      setMobileOpen(false);
-    }
-  }, [isMobile, mobileOpen]);
+  const mobileSidebarOpen = isMobile && mobileOpen;
 
   useEffect(() => {
     function handleKeyDown(event: KeyboardEvent) {
@@ -110,14 +107,14 @@ export function AppShell({
             aria-label="Close sidebar"
             className={cn(
               "fixed inset-0 z-30 bg-black/35 transition-opacity md:hidden",
-              mobileOpen ? "opacity-100" : "pointer-events-none opacity-0"
+              mobileSidebarOpen ? "opacity-100" : "pointer-events-none opacity-0"
             )}
             onClick={() => setMobileOpen(false)}
           />
           <aside
             className={cn(
               "fixed inset-y-0 left-0 z-40 flex w-72 flex-col border-r bg-sidebar text-sidebar-foreground transition-transform duration-200 md:static md:z-auto md:m-2 md:mr-0 md:h-[calc(100svh-1rem)] md:translate-x-0 md:rounded-l-xl md:border md:shadow-sm",
-              mobileOpen ? "translate-x-0" : "-translate-x-full",
+              mobileSidebarOpen ? "translate-x-0" : "-translate-x-full",
               collapsed && "md:w-14"
             )}
           >

@@ -26,6 +26,33 @@ func TestHandlerReturnsNotFoundForUnknownPaths(t *testing.T) {
 	}
 }
 
+func TestHandlerReturnsJSONForUnknownAPIPaths(t *testing.T) {
+	server := NewServer(ServerConfig{
+		CORSOrigins: []string{"http://localhost:3000"},
+		APIPrefixes: []string{"/api", "/api/v1"},
+	})
+
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/missing", nil)
+	rec := httptest.NewRecorder()
+
+	server.Handler().ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusNotFound {
+		t.Fatalf("expected 404 for unknown API path, got %d", rec.Code)
+	}
+	if got := rec.Header().Get("Content-Type"); got != "application/json; charset=utf-8" {
+		t.Fatalf("expected JSON content type, got %q", got)
+	}
+
+	var payload errorResponse
+	if err := json.NewDecoder(rec.Body).Decode(&payload); err != nil {
+		t.Fatalf("failed to decode error response: %v", err)
+	}
+	if payload.Error != "route not found" {
+		t.Fatalf("expected route not found error, got %q", payload.Error)
+	}
+}
+
 func TestHandlerServesRootAndAPI(t *testing.T) {
 	server := NewServer(ServerConfig{
 		CORSOrigins: []string{"http://localhost:3000"},

@@ -17,7 +17,8 @@ const (
 )
 
 type tagSpec struct {
-	Name string
+	Name        string
+	Description string
 }
 
 type archetype struct {
@@ -42,19 +43,19 @@ var (
 )
 
 var tagCatalog = []tagSpec{
-	{Name: "bug"},
-	{Name: "crash"},
-	{Name: "feature"},
-	{Name: "idea"},
-	{Name: "improvement"},
-	{Name: "ui"},
-	{Name: "ux"},
-	{Name: "frontend"},
-	{Name: "performance"},
-	{Name: "safari"},
-	{Name: "onboarding"},
-	{Name: "search"},
-	{Name: "export"},
+	{Name: "bug", Description: "software defect or incorrect behavior"},
+	{Name: "crash", Description: "hard failure, freeze, or abrupt termination"},
+	{Name: "feature", Description: "request for a new capability"},
+	{Name: "idea", Description: "early concept, exploration, or brainstorming"},
+	{Name: "improvement", Description: "refinement to an existing workflow or capability"},
+	{Name: "ui", Description: "visual interface, layout, or component presentation"},
+	{Name: "ux", Description: "usability, clarity, friction, or flow quality"},
+	{Name: "frontend", Description: "client-side app behavior in the browser"},
+	{Name: "performance", Description: "speed, latency, efficiency, or scaling concerns"},
+	{Name: "safari", Description: "Safari or WebKit-specific behavior"},
+	{Name: "onboarding", Description: "first-run setup, signup, invite, or initial activation flow"},
+	{Name: "search", Description: "querying, filtering, ranking, or finding content"},
+	{Name: "export", Description: "download, file generation, sharing, or data extraction"},
 }
 
 var archetypes = []archetype{

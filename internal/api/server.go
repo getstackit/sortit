@@ -9,18 +9,22 @@ import (
 	"path"
 	"strings"
 	"time"
+
+	"bored/internal/ai"
 )
 
 type ServerConfig struct {
 	Port        int
 	CORSOrigins []string
 	APIPrefixes []string
+	Analyzer    *ai.Analyzer
 }
 
 type Server struct {
 	config     ServerConfig
 	httpServer *http.Server
 	startedAt  time.Time
+	analyzer   *ai.Analyzer
 }
 
 type healthResponse struct {
@@ -38,6 +42,7 @@ func NewServer(cfg ServerConfig) *Server {
 	return &Server{
 		config:    cfg,
 		startedAt: time.Now().UTC(),
+		analyzer:  cfg.Analyzer,
 	}
 }
 
@@ -49,14 +54,17 @@ func (s *Server) Handler() http.Handler {
 		healthRoute := path.Join(prefix, "health")
 		mapRoute := path.Join(prefix, "map")
 		mapEdgesRoute := path.Join(prefix, "map", "edges")
+		debugAnalyzeRoute := path.Join(prefix, "debug", "issues", "analyze")
 
 		apiRoutes[healthRoute] = struct{}{}
 		apiRoutes[mapRoute] = struct{}{}
 		apiRoutes[mapEdgesRoute] = struct{}{}
+		apiRoutes[debugAnalyzeRoute] = struct{}{}
 
 		apiMux.HandleFunc(healthRoute, s.handleHealth)
 		apiMux.HandleFunc(mapRoute, s.handleMap)
 		apiMux.HandleFunc(mapEdgesRoute, s.handleMapEdges)
+		apiMux.HandleFunc(debugAnalyzeRoute, s.handleDebugIssueAnalyze)
 	}
 
 	root := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -70,6 +78,11 @@ func (s *Server) Handler() http.Handler {
 				"name":   "bored-server",
 				"status": "ok",
 			})
+			return
+		}
+
+		if strings.HasPrefix(r.URL.Path, "/api/") || r.URL.Path == "/api" {
+			writeError(w, http.StatusNotFound, "route not found")
 			return
 		}
 

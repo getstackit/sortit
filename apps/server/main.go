@@ -11,6 +11,7 @@ import (
 	"syscall"
 	"time"
 
+	"bored/internal/ai"
 	"bored/internal/api"
 )
 
@@ -28,10 +29,16 @@ func run() error {
 	)
 	flag.Parse()
 
+	analyzer, err := ai.NewAnalyzerFromEnv()
+	if err != nil {
+		return err
+	}
+
 	server := api.NewServer(api.ServerConfig{
 		Port:        *port,
 		CORSOrigins: api.ParseCSV(*corsOrigins),
 		APIPrefixes: []string{"/api/v1", "/api"},
+		Analyzer:    analyzer,
 	})
 
 	errCh := make(chan error, 1)

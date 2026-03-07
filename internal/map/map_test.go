@@ -73,6 +73,33 @@ func TestBuildMapReturnsPositionForEveryIssue(t *testing.T) {
 	}
 }
 
+func TestBaseMapUsesRenderedCoordinatesForViewportFiltering(t *testing.T) {
+	base, err := loadBaseMapData()
+	if err != nil {
+		t.Fatalf("loadBaseMapData returned error: %v", err)
+	}
+
+	if len(base.mapIssues) == 0 {
+		t.Fatal("expected map issues")
+	}
+
+	for _, issue := range base.mapIssues {
+		position, ok := base.positions[issue.ID]
+		if !ok {
+			t.Fatalf("missing stored position for issue %s", issue.ID)
+		}
+		if position.X != issue.X || position.Y != issue.Y {
+			t.Fatalf(
+				"expected backend viewport filtering to use rendered coordinates for issue %s: position=%+v issue=(%f,%f)",
+				issue.ID,
+				position,
+				issue.X,
+				issue.Y,
+			)
+		}
+	}
+}
+
 func TestBuildEdgeResponseRespectsViewport(t *testing.T) {
 	base, err := loadBaseMapData()
 	if err != nil {
@@ -115,6 +142,60 @@ func TestBuildEdgeResponseRespectsViewport(t *testing.T) {
 				target,
 			)
 		}
+	}
+}
+
+func TestFilterEdgesForViewportPrioritizesFullyVisibleEdges(t *testing.T) {
+	base := mapBaseData{
+		positions: map[string]Position{
+			"a": {X: 0.2, Y: 0.2},
+			"b": {X: 0.3, Y: 0.3},
+		},
+	}
+
+	base.candidateEdges = append(base.candidateEdges, Edge{
+		Source:     "a",
+		Target:     "b",
+		Similarity: 0.75,
+	})
+
+	for i := 0; i < minVisibleEdgeCount+4; i++ {
+		targetID := string(rune('c' + i))
+		base.positions[targetID] = Position{X: 1.4, Y: 1.4}
+		base.candidateEdges = append(base.candidateEdges, Edge{
+			Source:     "a",
+			Target:     targetID,
+			Similarity: 0.99 - float64(i)*0.01,
+		})
+	}
+
+	sortEdgesBySimilarity(base.candidateEdges)
+
+	result := filterEdgesForViewport(base, Viewport{
+		XMin: 0.1,
+		XMax: 0.4,
+		YMin: 0.1,
+		YMax: 0.4,
+	})
+
+	if len(result) != minVisibleEdgeCount {
+		t.Fatalf("expected %d edges, got %d", minVisibleEdgeCount, len(result))
+	}
+
+	first := result[0]
+	if first.Source != "a" || first.Target != "b" {
+		t.Fatalf("expected fully visible edge to be prioritized first, got %+v", first)
+	}
+
+	foundFullyVisible := false
+	for _, edge := range result {
+		if edge.Source == "a" && edge.Target == "b" {
+			foundFullyVisible = true
+			break
+		}
+	}
+	if !foundFullyVisible {
+		t.Fatal("expected fully visible edge to survive backend truncation")
 	}
 }
 

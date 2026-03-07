@@ -94,6 +94,13 @@ export function AppSidebar({ things = [] }: AppSidebarProps) {
               collapsed={collapsed}
               onClick={closeMobileSidebar}
             />
+            <SidebarLink
+              href="/debug"
+              label="Debug"
+              active={pathname === "/debug"}
+              collapsed={collapsed}
+              onClick={closeMobileSidebar}
+            />
           </div>
         </section>
 

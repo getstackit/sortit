@@ -7,10 +7,7 @@ import {
   useRef,
   useState,
 } from "react";
-import type {
-  MouseEvent as ReactMouseEvent,
-  WheelEvent as ReactWheelEvent,
-} from "react";
+import type { MouseEvent as ReactMouseEvent } from "react";
 import { AppShell, AppShellToggle } from "@/components/app-shell";
 import { AppSidebar } from "@/components/app-sidebar";
 
@@ -140,6 +137,18 @@ function clamp(value: number, min: number, max: number) {
   return Math.min(Math.max(value, min), max);
 }
 
+function normalizeWheelDelta(delta: number, deltaMode: number, pageHeight: number) {
+  if (deltaMode === 1) {
+    return delta * 18;
+  }
+
+  if (deltaMode === 2) {
+    return delta * pageHeight;
+  }
+
+  return delta;
+}
+
 function edgeRenderLimit(visibleNodeCount: number) {
   if (visibleNodeCount <= 0) return 0;
 
@@ -234,6 +243,8 @@ export default function MapPage() {
   const pendingLassoRef = useRef<ScreenPoint[] | null>(null);
   const viewportFrameRef = useRef<number | null>(null);
   const lassoFrameRef = useRef<number | null>(null);
+  const blankClickCandidateRef = useRef(false);
+  const blankClickStartRef = useRef<ScreenPoint | null>(null);
 
   useEffect(() => {
     viewportRef.current = viewport;
@@ -539,26 +550,79 @@ export default function MapPage() {
     };
   }
 
-  function toWorld(sx: number, sy: number, currentViewport: Viewport) {
-    const width = currentViewport.xMax - currentViewport.xMin;
-    const height = currentViewport.yMax - currentViewport.yMin;
-    const innerWidth = dimensions.width - PADDING * 2;
-    const innerHeight = dimensions.height - PADDING * 2;
-    const normalizedX = clamp((sx - PADDING) / innerWidth, 0, 1);
-    const normalizedY = clamp((dimensions.height - PADDING - sy) / innerHeight, 0, 1);
-
-    return {
-      x: currentViewport.xMin + normalizedX * width,
-      y: currentViewport.yMin + normalizedY * height,
-    };
-  }
-
   function getSvgCoords(event: { clientX: number; clientY: number }) {
     const svg = svgRef.current;
     if (!svg) return { x: 0, y: 0 };
     const rect = svg.getBoundingClientRect();
     return { x: event.clientX - rect.left, y: event.clientY - rect.top };
   }
+
+  useEffect(() => {
+    const container = containerRef.current;
+    const svg = svgRef.current;
+    if (!container || !svg) return;
+
+    function onWheel(event: WheelEvent) {
+      event.preventDefault();
+      event.stopPropagation();
+      blankClickCandidateRef.current = false;
+
+      const currentViewport = viewportRef.current;
+      const rect = svg.getBoundingClientRect();
+      const coords = {
+        x: event.clientX - rect.left,
+        y: event.clientY - rect.top,
+      };
+      const viewportWidth = currentViewport.xMax - currentViewport.xMin;
+      const viewportHeight = currentViewport.yMax - currentViewport.yMin;
+      const innerWidth = dimensions.width - PADDING * 2;
+      const innerHeight = dimensions.height - PADDING * 2;
+      const cursor = {
+        x:
+          currentViewport.xMin +
+          clamp((coords.x - PADDING) / innerWidth, 0, 1) * viewportWidth,
+        y:
+          currentViewport.yMin +
+          clamp((dimensions.height - PADDING - coords.y) / innerHeight, 0, 1) *
+            viewportHeight,
+      };
+      const normalizedDelta = normalizeWheelDelta(
+        event.deltaY,
+        event.deltaMode,
+        dimensions.height
+      );
+      const clampedDelta = clamp(normalizedDelta, -72, 72);
+      const zoomFactor = Math.exp(clampedDelta * 0.0011);
+      const nextWidth = clamp(
+        (currentViewport.xMax - currentViewport.xMin) * zoomFactor,
+        MIN_VIEW_SIZE,
+        MAX_VIEW_SIZE
+      );
+      const nextHeight = clamp(
+        (currentViewport.yMax - currentViewport.yMin) * zoomFactor,
+        MIN_VIEW_SIZE,
+        MAX_VIEW_SIZE
+      );
+      const ratioX =
+        (cursor.x - currentViewport.xMin) /
+        (currentViewport.xMax - currentViewport.xMin);
+      const ratioY =
+        (cursor.y - currentViewport.yMin) /
+        (currentViewport.yMax - currentViewport.yMin);
+
+      scheduleViewport(
+        clampViewport({
+          xMin: cursor.x - ratioX * nextWidth,
+          xMax: cursor.x + (1 - ratioX) * nextWidth,
+          yMin: cursor.y - ratioY * nextHeight,
+          yMax: cursor.y + (1 - ratioY) * nextHeight,
+        })
+      );
+    }
+
+    container.addEventListener("wheel", onWheel, { passive: false });
+    return () => container.removeEventListener("wheel", onWheel);
+  }, [dimensions.height, dimensions.width]);
 
   function isHighlighted(id: string): boolean {
     if (selectedBatch.size > 0) return selectedBatch.has(id);
@@ -570,6 +634,9 @@ export default function MapPage() {
     if ((event.target as SVGElement).closest("[data-issue]")) return;
 
     const coords = getSvgCoords(event);
+    blankClickCandidateRef.current = !event.shiftKey;
+    blankClickStartRef.current = coords;
+
     if (event.shiftKey) {
       setIsLassoing(true);
       setSelectedBatch(new Set());
@@ -584,6 +651,14 @@ export default function MapPage() {
 
   function handleMouseMove(event: ReactMouseEvent<SVGSVGElement>) {
     const coords = getSvgCoords(event);
+    const clickStart = blankClickStartRef.current;
+
+    if (
+      clickStart &&
+      Math.hypot(coords.x - clickStart.x, coords.y - clickStart.y) > 3
+    ) {
+      blankClickCandidateRef.current = false;
+    }
 
     if (isLassoing) {
       scheduleLassoPoints([...lassoPointsRef.current, coords]);
@@ -617,6 +692,7 @@ export default function MapPage() {
   function handleMouseUp() {
     panStartRef.current = null;
     dragViewportRef.current = null;
+    blankClickStartRef.current = null;
 
     if (!isLassoing) {
       return;
@@ -644,38 +720,18 @@ export default function MapPage() {
     }
   }
 
-  function handleWheel(event: ReactWheelEvent<SVGSVGElement>) {
-    event.preventDefault();
+  function handleCanvasClick(event: ReactMouseEvent<SVGSVGElement>) {
+    if ((event.target as SVGElement).closest("[data-issue]")) {
+      blankClickCandidateRef.current = false;
+      return;
+    }
 
-    const currentViewport = viewportRef.current;
-    const coords = getSvgCoords(event);
-    const cursor = toWorld(coords.x, coords.y, currentViewport);
-    const zoomFactor = Math.exp(event.deltaY * 0.0015);
-    const nextWidth = clamp(
-      (currentViewport.xMax - currentViewport.xMin) * zoomFactor,
-      MIN_VIEW_SIZE,
-      MAX_VIEW_SIZE
-    );
-    const nextHeight = clamp(
-      (currentViewport.yMax - currentViewport.yMin) * zoomFactor,
-      MIN_VIEW_SIZE,
-      MAX_VIEW_SIZE
-    );
-    const ratioX =
-      (cursor.x - currentViewport.xMin) /
-      (currentViewport.xMax - currentViewport.xMin);
-    const ratioY =
-      (cursor.y - currentViewport.yMin) /
-      (currentViewport.yMax - currentViewport.yMin);
+    if (!blankClickCandidateRef.current) {
+      return;
+    }
 
-    scheduleViewport(
-      clampViewport({
-        xMin: cursor.x - ratioX * nextWidth,
-        xMax: cursor.x + (1 - ratioX) * nextWidth,
-        yMin: cursor.y - ratioY * nextHeight,
-        yMax: cursor.y + (1 - ratioY) * nextHeight,
-      })
-    );
+    blankClickCandidateRef.current = false;
+    clearAllSelections();
   }
 
   const hasSelection = selectedId != null || selectedBatch.size > 0;
@@ -745,18 +801,18 @@ export default function MapPage() {
       <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
         <div
           ref={containerRef}
-          className="relative min-h-0 flex-1 overflow-hidden"
+          className="relative min-h-0 flex-1 overflow-hidden overscroll-none"
         >
           <svg
             ref={svgRef}
             width={dimensions.width}
             height={dimensions.height}
-            className="absolute inset-0"
+            className="absolute inset-0 touch-none overscroll-none"
             style={{ cursor: isLassoing ? "crosshair" : "default" }}
             onMouseDown={handleMouseDown}
             onMouseMove={handleMouseMove}
             onMouseUp={handleMouseUp}
-            onWheel={handleWheel}
+            onClick={handleCanvasClick}
             onMouseLeave={handleMouseUp}
           >
             {[0.25, 0.5, 0.75].map((value) => {

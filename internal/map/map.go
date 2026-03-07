@@ -107,18 +107,22 @@ func buildBaseMapData() (mapBaseData, error) {
 	}
 
 	mapIssues := make([]MapIssue, len(issues))
+	roundedPositions := make(map[string]Position, len(issues))
 	for i, issue := range issues {
 		p, ok := positions[issue.ID]
 		if !ok {
 			return mapBaseData{}, fmt.Errorf("missing position for issue %s", issue.ID)
 		}
 
+		rounded := roundPosition(p)
+		roundedPositions[issue.ID] = rounded
+
 		mapIssues[i] = MapIssue{
 			ID:   issue.ID,
 			Raw:  issue.Raw,
 			Tags: issue.Tags,
-			X:    math.Round(p.X*1000) / 1000,
-			Y:    math.Round(p.Y*1000) / 1000,
+			X:    rounded.X,
+			Y:    rounded.Y,
 		}
 	}
 
@@ -128,7 +132,7 @@ func buildBaseMapData() (mapBaseData, error) {
 
 	return mapBaseData{
 		mapIssues:      mapIssues,
-		positions:      positions,
+		positions:      roundedPositions,
 		candidateEdges: edges,
 		clusters:       clusters,
 	}, nil
@@ -171,20 +175,46 @@ func filterEdgesForViewport(base mapBaseData, viewport Viewport) []Edge {
 	)
 	targetEdgeCount = minInt(targetEdgeCount, maxVisibleEdges)
 
-	candidates := make([]Edge, 0, minInt(targetEdgeCount, len(base.candidateEdges)))
+	bothVisible := make([]Edge, 0, minInt(targetEdgeCount, len(base.candidateEdges)))
+	oneVisible := make([]Edge, 0, minInt(targetEdgeCount, len(base.candidateEdges)))
 	for _, edge := range base.candidateEdges {
 		_, sourceVisible := visibleIDs[edge.Source]
 		_, targetVisible := visibleIDs[edge.Target]
 		if !sourceVisible && !targetVisible {
 			continue
 		}
-		candidates = append(candidates, edge)
-		if len(candidates) == targetEdgeCount {
-			break
+
+		if sourceVisible && targetVisible {
+			bothVisible = append(bothVisible, edge)
+			continue
 		}
+
+		oneVisible = append(oneVisible, edge)
 	}
 
+	candidates := make([]Edge, 0, minInt(targetEdgeCount, len(bothVisible)+len(oneVisible)))
+	candidates = append(candidates, bothVisible...)
+	if len(candidates) >= targetEdgeCount {
+		return candidates[:targetEdgeCount]
+	}
+
+	remaining := targetEdgeCount - len(candidates)
+	if remaining > len(oneVisible) {
+		remaining = len(oneVisible)
+	}
+	candidates = append(candidates, oneVisible[:remaining]...)
 	return candidates
+}
+
+func roundPosition(position Position) Position {
+	return Position{
+		X: roundCoordinate(position.X),
+		Y: roundCoordinate(position.Y),
+	}
+}
+
+func roundCoordinate(value float64) float64 {
+	return math.Round(value*1000) / 1000
 }
 
 func maxInt(a, b int) int {
