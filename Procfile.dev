@@ -1,0 +1,2 @@
+server: sh -c 'go run ./apps/server --port "${API_PORT:-8081}"'
+web: sh -c 'npm run dev -- --hostname 0.0.0.0 --port "${APP_PORT:-3000}"'

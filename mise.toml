@@ -1,0 +1,51 @@
+[settings]
+experimental = true
+
+[env]
+PROJECT_ROOT = "{{ config_root }}"
+
+[tools]
+go = "1.26"
+node = "22"
+"go:github.com/DarthSim/overmind/v2" = "latest"
+"aqua:watchexec/watchexec" = "latest"
+
+[tasks.install]
+description = "Install app dependencies"
+run = "npm install"
+
+[tasks.compile]
+description = "Check Go compilation"
+run = "go build ./apps/... ./internal/..."
+
+[tasks.test]
+description = "Run Go tests"
+run = "go test ./apps/... ./internal/..."
+
+[tasks.lint]
+description = "Run ESLint"
+run = "npm run lint"
+
+[tasks."web:dev"]
+description = "Run the Next.js app in development mode"
+run = "npm run dev -- --hostname 0.0.0.0 --port ${APP_PORT:-3000}"
+
+[tasks."dev:server"]
+description = "Run the Go API server in development mode"
+run = "watchexec -r -e go -w apps/server -w internal -- go run ./apps/server --port ${API_PORT:-8081}"
+
+[tasks."server:build"]
+description = "Build the Go API server"
+run = """
+  mkdir -p bin
+  go build -o bin/bored-server ./apps/server
+"""
+
+[tasks.build]
+description = "Build the frontend and backend"
+depends = ["server:build"]
+run = "npm run build"
+
+[tasks.dev]
+description = "Run the frontend and backend using overmind"
+run = "overmind start --no-port --socket /tmp/bored-overmind.sock -f Procfile.dev"

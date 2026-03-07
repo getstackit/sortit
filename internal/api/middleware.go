@@ -1,0 +1,57 @@
+package api
+
+import (
+	"log"
+	"net/http"
+	"strings"
+	"time"
+)
+
+func corsMiddleware(origins []string, apiRoutes map[string]struct{}, next http.Handler) http.Handler {
+	allowed := make(map[string]struct{}, len(origins))
+	for _, origin := range origins {
+		origin = strings.TrimRight(strings.TrimSpace(origin), "/")
+		if origin == "" {
+			continue
+		}
+		allowed[origin] = struct{}{}
+	}
+
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		origin := strings.TrimRight(r.Header.Get("Origin"), "/")
+		_, originAllowed := allowed[origin]
+		if originAllowed {
+			w.Header().Set("Access-Control-Allow-Origin", origin)
+			w.Header().Set("Vary", "Origin")
+			w.Header().Set("Access-Control-Allow-Methods", "GET, OPTIONS")
+			w.Header().Set("Access-Control-Allow-Headers", "Content-Type")
+		}
+
+		if r.Method == http.MethodOptions {
+			if originAllowed && isCORSPreflight(r) && isRegisteredAPIRoute(r.URL.Path, apiRoutes) {
+				w.Header().Set("Vary", "Origin, Access-Control-Request-Method, Access-Control-Request-Headers")
+				w.WriteHeader(http.StatusNoContent)
+				return
+			}
+		}
+
+		next.ServeHTTP(w, r)
+	})
+}
+
+func isCORSPreflight(r *http.Request) bool {
+	return r.Header.Get("Access-Control-Request-Method") != ""
+}
+
+func isRegisteredAPIRoute(requestPath string, apiRoutes map[string]struct{}) bool {
+	_, ok := apiRoutes[requestPath]
+	return ok
+}
+
+func loggingMiddleware(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		start := time.Now()
+		next.ServeHTTP(w, r)
+		log.Printf("%s %s %s", r.Method, r.URL.Path, time.Since(start).Round(time.Millisecond))
+	})
+}

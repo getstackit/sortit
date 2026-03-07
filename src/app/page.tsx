@@ -1,65 +1,192 @@
-import Image from "next/image";
+"use client";
+
+import { useState } from "react";
+import { AppSidebar } from "@/components/app-sidebar";
+import { SiteHeader } from "@/components/site-header";
+import {
+  SidebarInset,
+  SidebarProvider,
+} from "@/components/ui/sidebar";
+
+const TAG_COLORS: Record<string, string> = {
+  bug: "bg-red-100 text-red-700",
+  crash: "bg-red-100 text-red-700",
+  feature: "bg-purple-100 text-purple-700",
+  idea: "bg-purple-100 text-purple-700",
+  improvement: "bg-green-100 text-green-700",
+  ui: "bg-blue-100 text-blue-700",
+  ux: "bg-blue-100 text-blue-700",
+  frontend: "bg-blue-100 text-blue-700",
+  performance: "bg-amber-100 text-amber-700",
+  safari: "bg-amber-100 text-amber-700",
+};
+
+const FALLBACK_COLOR = "bg-slate-100 text-slate-600";
+
+const INITIAL_ISSUES: Issue[] = [
+  {
+    id: "sample-1",
+    raw: "We should add dark mode support across the whole app",
+    tags: ["feature", "ui"],
+    createdBy: "Alice",
+    createdAt: new Date("2026-03-06T21:15:00Z"),
+  },
+  {
+    id: "sample-2",
+    raw: "The onboarding flow feels clunky — can we just ask for an email and skip the rest until later?",
+    tags: ["ux", "improvement", "onboarding"],
+    createdBy: "Bob",
+    createdAt: new Date("2026-03-06T19:00:00Z"),
+  },
+  {
+    id: "sample-3",
+    raw: `TypeError: Cannot read properties of undefined (reading 'map')
+    at ProjectList (./src/components/ProjectList.tsx:14:22)
+    at renderWithHooks (./node_modules/react-dom/cjs/react-dom.development.js:16305:18)
+    at mountIndeterminateComponent (./node_modules/react-dom/cjs/react-dom.development.js:20074:13)
+    at beginWork (./node_modules/react-dom/cjs/react-dom.development.js:21587:16)`,
+    tags: ["bug", "crash", "frontend"],
+    createdBy: "Charlie",
+    createdAt: new Date("2026-03-06T17:00:00Z"),
+  },
+  {
+    id: "sample-4",
+    raw: "Search is way too slow on large workspaces. Takes 4+ seconds to return results. Probably need to index or debounce the input.",
+    tags: ["bug", "performance", "search"],
+    createdBy: "Alice",
+    createdAt: new Date("2026-03-06T14:00:00Z"),
+  },
+  {
+    id: "sample-5",
+    raw: "idea: what if issues could link to each other automatically when they mention similar things?",
+    tags: ["idea", "feature"],
+    createdBy: "Diana",
+    createdAt: new Date("2026-03-05T20:00:00Z"),
+  },
+  {
+    id: "sample-6",
+    raw: `Customer reported: "I clicked export and nothing happened. Tried 3 times. Using Safari on iPad."`,
+    tags: ["bug", "export", "safari"],
+    createdBy: "Bob",
+    createdAt: new Date("2026-03-05T18:00:00Z"),
+  },
+];
+
+function tagColor(label: string) {
+  return TAG_COLORS[label] ?? FALLBACK_COLOR;
+}
+
+type Issue = {
+  id: string;
+  raw: string;
+  tags: string[];
+  createdBy: string;
+  createdAt: Date;
+};
+
+function timeAgo(date: Date) {
+  const seconds = Math.floor((Date.now() - date.getTime()) / 1000);
+  if (seconds < 60) return "just now";
+  const minutes = Math.floor(seconds / 60);
+  if (minutes < 60) return `${minutes}m ago`;
+  const hours = Math.floor(minutes / 60);
+  if (hours < 24) return `${hours}h ago`;
+  return date.toLocaleDateString();
+}
 
 export default function Home() {
+  const [issues, setIssues] = useState<Issue[]>(INITIAL_ISSUES);
+
+  function handleSubmit(text: string) {
+    setIssues((prev) => [
+      {
+        id: crypto.randomUUID(),
+        raw: text,
+        tags: [],
+        createdBy: "You",
+        createdAt: new Date(),
+      },
+      ...prev,
+    ]);
+  }
+
+  const looksLikeCode = (text: string) =>
+    text.includes("Error") ||
+    text.includes("at ") ||
+    text.includes("=>") ||
+    text.includes("function") ||
+    text.includes("{") ||
+    /^\s*(import|const|let|var|def|class)\b/m.test(text);
+
   return (
-    <div className="flex min-h-screen items-center justify-center bg-zinc-50 font-sans dark:bg-black">
-      <main className="flex min-h-screen w-full max-w-3xl flex-col items-center justify-between py-32 px-16 bg-white dark:bg-black sm:items-start">
-        <Image
-          className="dark:invert"
-          src="/next.svg"
-          alt="Next.js logo"
-          width={100}
-          height={20}
-          priority
-        />
-        <div className="flex flex-col items-center gap-6 text-center sm:items-start sm:text-left">
-          <h1 className="max-w-xs text-3xl font-semibold leading-10 tracking-tight text-black dark:text-zinc-50">
-            To get started, edit the page.tsx file.
-          </h1>
-          <p className="max-w-md text-lg leading-8 text-zinc-600 dark:text-zinc-400">
-            Looking for a starting point or more instructions? Head over to{" "}
-            <a
-              href="https://vercel.com/templates?framework=next.js&utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-              className="font-medium text-zinc-950 dark:text-zinc-50"
-            >
-              Templates
-            </a>{" "}
-            or the{" "}
-            <a
-              href="https://nextjs.org/learn?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-              className="font-medium text-zinc-950 dark:text-zinc-50"
-            >
-              Learning
-            </a>{" "}
-            center.
-          </p>
+    <SidebarProvider
+      style={
+        {
+          "--sidebar-width": "calc(var(--spacing) * 72)",
+          "--header-height": "calc(var(--spacing) * 12)",
+        } as React.CSSProperties
+      }
+    >
+      <AppSidebar
+        variant="inset"
+        things={issues.map((issue) => ({
+          id: issue.id,
+          title: issue.raw.length > 60 ? issue.raw.slice(0, 60) + "…" : issue.raw,
+        }))}
+      />
+      <SidebarInset>
+        <SiteHeader issueCount={issues.length} onSubmit={handleSubmit} />
+        <div className="flex flex-1 flex-col">
+          <div className="@container/main flex flex-1 flex-col gap-2">
+            <div className="flex flex-col gap-4 py-4 md:gap-6 md:py-6">
+              {issues.length === 0 && (
+                <div className="flex flex-col items-center gap-3 py-20 text-center">
+                  <div className="text-4xl opacity-20">~</div>
+                  <p className="text-sm text-muted-foreground/60">
+                    Nothing here yet. Drop something in.
+                  </p>
+                </div>
+              )}
+
+              {issues.length > 0 && (
+                <div className="space-y-2 px-4 lg:px-6">
+                  {issues.map((issue) => (
+                    <div
+                      key={issue.id}
+                      className="group/card rounded-xl border border-border/60 bg-card p-5 transition-colors hover:border-border hover:bg-accent/30"
+                    >
+                      <p
+                        className={`whitespace-pre-wrap leading-relaxed ${
+                          looksLikeCode(issue.raw)
+                            ? "font-mono text-[13px] text-foreground/80"
+                            : "text-[15px]"
+                        }`}
+                      >
+                        {issue.raw}
+                      </p>
+                      <div className="mt-3 flex items-center gap-2">
+                        <div className="flex flex-wrap gap-1.5">
+                          {issue.tags.map((tag) => (
+                            <span
+                              key={tag}
+                              className={`rounded-full px-2 py-0.5 text-[11px] font-medium ${tagColor(tag)}`}
+                            >
+                              {tag}
+                            </span>
+                          ))}
+                        </div>
+                        <span className="ml-auto text-[11px] tracking-wide text-muted-foreground/40 transition-colors group-hover/card:text-muted-foreground/60">
+                          {issue.createdBy} &middot; {timeAgo(issue.createdAt)}
+                        </span>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          </div>
         </div>
-        <div className="flex flex-col gap-4 text-base font-medium sm:flex-row">
-          <a
-            className="flex h-12 w-full items-center justify-center gap-2 rounded-full bg-foreground px-5 text-background transition-colors hover:bg-[#383838] dark:hover:bg-[#ccc] md:w-[158px]"
-            href="https://vercel.com/new?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            <Image
-              className="dark:invert"
-              src="/vercel.svg"
-              alt="Vercel logomark"
-              width={16}
-              height={16}
-            />
-            Deploy Now
-          </a>
-          <a
-            className="flex h-12 w-full items-center justify-center rounded-full border border-solid border-black/[.08] px-5 transition-colors hover:border-transparent hover:bg-black/[.04] dark:border-white/[.145] dark:hover:bg-[#1a1a1a] md:w-[158px]"
-            href="https://nextjs.org/docs?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            Documentation
-          </a>
-        </div>
-      </main>
-    </div>
+      </SidebarInset>
+    </SidebarProvider>
   );
 }
