@@ -9,6 +9,7 @@ import (
 	"testing"
 
 	"bored/internal/ai"
+	"bored/internal/issues"
 	issuemap "bored/internal/map"
 )
 
@@ -216,4 +217,72 @@ func TestDebugIssueAnalyzeEndpointRejectsInvalidInput(t *testing.T) {
 			t.Fatalf("expected 503, got %d", rec.Code)
 		}
 	})
+}
+
+func TestDebugIssueSampleLoadAndResetEndpoints(t *testing.T) {
+	store := newSQLiteIssueStore(t, nil)
+	server := NewServer(ServerConfig{
+		CORSOrigins: []string{"http://localhost:3000"},
+		APIPrefixes: []string{"/api"},
+		IssueStore:  store,
+	})
+	handler := server.Handler()
+
+	sampleReq := httptest.NewRequest(http.MethodPost, "/api/debug/issues/sample", nil)
+	sampleRec := httptest.NewRecorder()
+	handler.ServeHTTP(sampleRec, sampleReq)
+
+	if sampleRec.Code != http.StatusOK {
+		t.Fatalf("expected 200 from sample load, got %d", sampleRec.Code)
+	}
+
+	var samplePayload debugIssueStoreResponse
+	if err := json.NewDecoder(sampleRec.Body).Decode(&samplePayload); err != nil {
+		t.Fatalf("failed to decode sample load response: %v", err)
+	}
+	if samplePayload.IssueCount != len(issues.SeedIssues()) {
+		t.Fatalf("expected %d sample issues, got %d", len(issues.SeedIssues()), samplePayload.IssueCount)
+	}
+
+	listReq := httptest.NewRequest(http.MethodGet, "/api/issues", nil)
+	listRec := httptest.NewRecorder()
+	handler.ServeHTTP(listRec, listReq)
+
+	var listPayload issuesResponse
+	if err := json.NewDecoder(listRec.Body).Decode(&listPayload); err != nil {
+		t.Fatalf("failed to decode issue list response: %v", err)
+	}
+	if len(listPayload.Issues) != len(issues.SeedIssues()) {
+		t.Fatalf("expected %d loaded issues, got %d", len(issues.SeedIssues()), len(listPayload.Issues))
+	}
+
+	stored, err := store.List(context.Background())
+	if err != nil {
+		t.Fatalf("failed to list stored issues: %v", err)
+	}
+	if len(stored) == 0 {
+		t.Fatal("expected sample issues in store")
+	}
+	if len(stored[0].TagScores) == 0 {
+		t.Fatal("expected sampled issue to include analyzed tag scores")
+	}
+	if len(stored[0].Embedding) == 0 {
+		t.Fatal("expected sampled issue to include embedding vector")
+	}
+
+	resetReq := httptest.NewRequest(http.MethodPost, "/api/debug/issues/reset", nil)
+	resetRec := httptest.NewRecorder()
+	handler.ServeHTTP(resetRec, resetReq)
+
+	if resetRec.Code != http.StatusOK {
+		t.Fatalf("expected 200 from reset, got %d", resetRec.Code)
+	}
+
+	var resetPayload debugIssueStoreResponse
+	if err := json.NewDecoder(resetRec.Body).Decode(&resetPayload); err != nil {
+		t.Fatalf("failed to decode reset response: %v", err)
+	}
+	if resetPayload.IssueCount != 0 {
+		t.Fatalf("expected 0 issues after reset, got %d", resetPayload.IssueCount)
+	}
 }

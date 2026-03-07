@@ -1,8 +1,10 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { AppShell, AppShellToggle } from "@/components/app-shell";
 import { AppSidebar } from "@/components/app-sidebar";
+import { fetchIssues } from "@/lib/issues";
+import { apiURL } from "@/lib/api";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 
@@ -31,7 +33,12 @@ type IssueAnalysis = {
   embedder: ModelInfo;
 };
 
+type DebugIssueStoreResponse = {
+  issueCount: number;
+};
+
 const SECTION_LINKS = [
+  { id: "sandbox", title: "Sandbox" },
   { id: "prompt", title: "Prompt" },
   { id: "tags", title: "Tags" },
   { id: "embedding", title: "Embedding" },
@@ -66,9 +73,60 @@ export default function DebugPage() {
   const [result, setResult] = useState<IssueAnalysis | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
+  const [issueCount, setIssueCount] = useState<number | null>(null);
+  const [sandboxLoading, setSandboxLoading] = useState(false);
+  const [sandboxError, setSandboxError] = useState<string | null>(null);
 
   const topTags = result?.tags.slice(0, 8) ?? [];
   const embeddingPreview = result?.embedding.preview ?? [];
+
+  useEffect(() => {
+    fetchIssues()
+      .then((issues) => {
+        setIssueCount(issues.length);
+        setSandboxError(null);
+      })
+      .catch((caughtError) => {
+        setSandboxError(
+          caughtError instanceof Error
+            ? caughtError.message
+            : "Unknown issue store error"
+        );
+      });
+  }, []);
+
+  async function updateIssueSandbox(path: string) {
+    setSandboxLoading(true);
+    setSandboxError(null);
+
+    try {
+      const response = await fetch(apiURL(path), {
+        method: "POST",
+      });
+
+      const payload = (await response.json()) as
+        | DebugIssueStoreResponse
+        | { error?: string };
+
+      if (!response.ok) {
+        throw new Error(
+          "error" in payload && payload.error
+            ? payload.error
+            : `Request failed with ${response.status}`
+        );
+      }
+
+      setIssueCount((payload as DebugIssueStoreResponse).issueCount);
+    } catch (caughtError) {
+      setSandboxError(
+        caughtError instanceof Error
+          ? caughtError.message
+          : "Unknown issue store error"
+      );
+    } finally {
+      setSandboxLoading(false);
+    }
+  }
 
   async function analyze() {
     const trimmed = text.trim();
@@ -81,7 +139,7 @@ export default function DebugPage() {
     setError(null);
 
     try {
-      const response = await fetch("/api/v1/debug/issues/analyze", {
+      const response = await fetch(apiURL("/api/v1/debug/issues/analyze"), {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
@@ -135,6 +193,48 @@ export default function DebugPage() {
 
       <div className="min-h-0 flex-1 overflow-y-auto">
         <div className="mx-auto flex w-full max-w-7xl flex-col gap-6 px-4 py-6 lg:px-6">
+          <section
+            id="sandbox"
+            className="rounded-2xl border border-border/60 bg-card p-5"
+          >
+            <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
+              <div>
+                <p className="text-xs font-medium uppercase tracking-[0.18em] text-muted-foreground">
+                  Issue sandbox
+                </p>
+                <p className="mt-1 text-sm text-muted-foreground">
+                  The app starts empty. Load sample issues into the in-memory
+                  store here, or clear everything back out.
+                </p>
+              </div>
+
+              <div className="flex flex-wrap items-center gap-3">
+                <span className="rounded-full bg-muted px-3 py-1 text-xs text-muted-foreground">
+                  {issueCount == null ? "Checking issues..." : `${issueCount} issues`}
+                </span>
+                <Button
+                  onClick={() => void updateIssueSandbox("/api/v1/debug/issues/sample")}
+                  disabled={sandboxLoading}
+                >
+                  Load sample issues
+                </Button>
+                <Button
+                  variant="outline"
+                  onClick={() => void updateIssueSandbox("/api/v1/debug/issues/reset")}
+                  disabled={sandboxLoading}
+                >
+                  Clear issues
+                </Button>
+              </div>
+            </div>
+
+            {sandboxError && (
+              <div className="mt-4 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-950">
+                {sandboxError}
+              </div>
+            )}
+          </section>
+
           <section
             id="prompt"
             className="grid gap-6 rounded-2xl border border-border/60 bg-card p-5 lg:grid-cols-[minmax(0,1.4fr)_minmax(20rem,0.8fr)]"

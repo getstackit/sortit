@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"bored/internal/ai"
+	"bored/internal/issues"
 	issuemap "bored/internal/map"
 )
 
@@ -18,6 +19,14 @@ const debugAnalyzeTimeout = 45 * time.Second
 type debugIssueAnalyzeRequest struct {
 	Text string   `json:"text"`
 	Tags []string `json:"tags,omitempty"`
+}
+
+type replaceableIssueStore interface {
+	Replace(context.Context, []issues.Issue) error
+}
+
+type debugIssueStoreResponse struct {
+	IssueCount int `json:"issueCount"`
 }
 
 func (s *Server) handleDebugIssueAnalyze(w http.ResponseWriter, r *http.Request) {
@@ -47,6 +56,55 @@ func (s *Server) handleDebugIssueAnalyze(w http.ResponseWriter, r *http.Request)
 	}
 
 	writeJSON(w, http.StatusOK, analysis)
+}
+
+func (s *Server) handleDebugIssueSampleLoad(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		w.Header().Set("Allow", http.MethodPost)
+		http.Error(w, http.StatusText(http.StatusMethodNotAllowed), http.StatusMethodNotAllowed)
+		return
+	}
+
+	store, ok := s.issueStore.(replaceableIssueStore)
+	if !ok {
+		writeError(w, http.StatusNotImplemented, "issue store cannot be reset")
+		return
+	}
+
+	samples := issues.SeedIssues()
+	enriched, err := s.analyzeSeedIssues(r.Context(), samples)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "failed to analyze sample issues")
+		return
+	}
+
+	if err := store.Replace(r.Context(), enriched); err != nil {
+		writeError(w, http.StatusInternalServerError, "failed to load sample issues")
+		return
+	}
+
+	writeJSON(w, http.StatusOK, debugIssueStoreResponse{IssueCount: len(samples)})
+}
+
+func (s *Server) handleDebugIssueReset(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		w.Header().Set("Allow", http.MethodPost)
+		http.Error(w, http.StatusText(http.StatusMethodNotAllowed), http.StatusMethodNotAllowed)
+		return
+	}
+
+	store, ok := s.issueStore.(replaceableIssueStore)
+	if !ok {
+		writeError(w, http.StatusNotImplemented, "issue store cannot be reset")
+		return
+	}
+
+	if err := store.Replace(r.Context(), nil); err != nil {
+		writeError(w, http.StatusInternalServerError, "failed to clear issues")
+		return
+	}
+
+	writeJSON(w, http.StatusOK, debugIssueStoreResponse{IssueCount: 0})
 }
 
 func decodeDebugIssueAnalyzeRequest(r *http.Request) (debugIssueAnalyzeRequest, error) {

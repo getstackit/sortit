@@ -23,24 +23,24 @@ func NewAnalyzer(tagger Tagger, embedder Embedder) *Analyzer {
 	}
 }
 
-func (a *Analyzer) AnalyzeIssue(ctx context.Context, text string, tags []Tag) (IssueAnalysis, error) {
+func (a *Analyzer) AnalyzeIssueData(ctx context.Context, text string, tags []Tag) (AnalyzedIssue, error) {
 	if a == nil || a.tagger == nil || a.embedder == nil {
-		return IssueAnalysis{}, ErrNotConfigured
+		return AnalyzedIssue{}, ErrNotConfigured
 	}
 
 	scores, err := a.tagger.Score(ctx, text, tags)
 	if err != nil {
-		return IssueAnalysis{}, fmt.Errorf("score tags: %w", err)
+		return AnalyzedIssue{}, fmt.Errorf("score tags: %w", err)
 	}
 
 	embedding, err := a.embedder.EmbedText(ctx, text)
 	if err != nil {
-		return IssueAnalysis{}, fmt.Errorf("embed text: %w", err)
+		return AnalyzedIssue{}, fmt.Errorf("embed text: %w", err)
 	}
 
-	return IssueAnalysis{
+	return AnalyzedIssue{
 		Tags:      normalizeScores(scores, tags),
-		Embedding: embedding.Info,
+		Embedding: embedding,
 		Tagger: ModelInfo{
 			Provider: a.tagger.Provider(),
 			Model:    a.tagger.Model(),
@@ -49,6 +49,20 @@ func (a *Analyzer) AnalyzeIssue(ctx context.Context, text string, tags []Tag) (I
 			Provider: a.embedder.Provider(),
 			Model:    a.embedder.Model(),
 		},
+	}, nil
+}
+
+func (a *Analyzer) AnalyzeIssue(ctx context.Context, text string, tags []Tag) (IssueAnalysis, error) {
+	analyzed, err := a.AnalyzeIssueData(ctx, text, tags)
+	if err != nil {
+		return IssueAnalysis{}, err
+	}
+
+	return IssueAnalysis{
+		Tags:      analyzed.Tags,
+		Embedding: analyzed.Embedding.Info,
+		Tagger:    analyzed.Tagger,
+		Embedder:  analyzed.Embedder,
 	}, nil
 }
 

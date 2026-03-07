@@ -8,10 +8,11 @@ export function SiteHeader({
   onSubmit,
 }: {
   issueCount: number;
-  onSubmit: (text: string) => void;
+  onSubmit: (text: string) => Promise<void> | void;
 }) {
   const [input, setInput] = useState("");
   const [focused, setFocused] = useState(false);
+  const [submitting, setSubmitting] = useState(false);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const expanded = focused || input.length > 0;
 
@@ -22,13 +23,22 @@ export function SiteHeader({
     el.style.height = `${el.scrollHeight}px`;
   }
 
-  function submit() {
+  async function submit() {
     const text = input.trim();
-    if (!text) return;
-    onSubmit(text);
-    setInput("");
-    if (textareaRef.current) {
-      textareaRef.current.style.height = "auto";
+    if (!text || submitting) return;
+
+    setSubmitting(true);
+
+    try {
+      await onSubmit(text);
+      setInput("");
+      if (textareaRef.current) {
+        textareaRef.current.style.height = "auto";
+      }
+    } catch {
+      return;
+    } finally {
+      setSubmitting(false);
     }
   }
 
@@ -62,12 +72,13 @@ export function SiteHeader({
               onFocus={() => setFocused(true)}
               onBlur={() => setFocused(false)}
               onKeyDown={(e) => {
-                if (e.key === "Enter" && e.metaKey) {
+                if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) {
                   e.preventDefault();
-                  submit();
+                  void submit();
                 }
               }}
               placeholder="paste anything..."
+              disabled={submitting}
               className={`w-full resize-none bg-transparent text-[13px] leading-5 placeholder:text-muted-foreground/50 focus:outline-none ${
                 expanded ? "max-h-48" : "max-h-5 overflow-hidden"
               }`}
@@ -76,10 +87,11 @@ export function SiteHeader({
             {expanded && input.trim() && (
               <div className="flex justify-end border-t border-border/40 pt-1.5 mt-1.5">
                 <button
-                  onClick={submit}
+                  onClick={() => void submit()}
+                  disabled={submitting}
                   className="shrink-0 rounded-md bg-primary px-2.5 py-0.5 text-[11px] font-medium text-primary-foreground transition-all hover:bg-primary/90 active:scale-[0.97]"
                 >
-                  Submit
+                  {submitting ? "Saving..." : "Submit"}
                 </button>
               </div>
             )}

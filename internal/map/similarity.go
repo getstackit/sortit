@@ -9,7 +9,10 @@ type Edge struct {
 }
 
 func ComputeEdges(issues []Issue, threshold float64) []Edge {
-	embeddings := AllEmbeddings()
+	return ComputeEdgesWithEmbeddings(issues, AllEmbeddings(), threshold)
+}
+
+func ComputeEdgesWithEmbeddings(issues []Issue, embeddings map[string][]float64, threshold float64) []Edge {
 	var edges []Edge
 
 	for i := 0; i < len(issues); i++ {

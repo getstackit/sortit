@@ -1,79 +1,68 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { AppShell } from "@/components/app-shell";
 import { AppSidebar } from "@/components/app-sidebar";
+import { IssueCard } from "@/components/issue-card";
 import { SiteHeader } from "@/components/site-header";
-import type { IssueRecord } from "@/lib/sample-issues";
+import { createIssue, fetchIssues, type IssueRecord } from "@/lib/issues";
 
-const TAG_COLORS: Record<string, string> = {
-  bug: "bg-red-100 text-red-700",
-  crash: "bg-red-100 text-red-700",
-  feature: "bg-purple-100 text-purple-700",
-  idea: "bg-purple-100 text-purple-700",
-  improvement: "bg-green-100 text-green-700",
-  ui: "bg-blue-100 text-blue-700",
-  ux: "bg-blue-100 text-blue-700",
-  frontend: "bg-blue-100 text-blue-700",
-  performance: "bg-amber-100 text-amber-700",
-  safari: "bg-amber-100 text-amber-700",
-};
+export function IssuesBoard() {
+  const [issues, setIssues] = useState<IssueRecord[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
 
-const FALLBACK_COLOR = "bg-slate-100 text-slate-600";
+  useEffect(() => {
+    const controller = new AbortController();
 
-function tagColor(label: string) {
-  return TAG_COLORS[label] ?? FALLBACK_COLOR;
-}
+    fetchIssues(controller.signal)
+      .then((items) => {
+        setIssues(items);
+        setError(null);
+      })
+      .catch((caughtError) => {
+        if (controller.signal.aborted) {
+          return;
+        }
 
-function looksLikeCode(text: string) {
-  return (
-    text.includes("Error") ||
-    text.includes("at ") ||
-    text.includes("=>") ||
-    text.includes("function") ||
-    text.includes("{") ||
-    /^\s*(import|const|let|var|def|class)\b/m.test(text)
-  );
-}
+        const message =
+          caughtError instanceof Error
+            ? caughtError.message
+            : "Unknown backend error";
+        setError(message);
+      })
+      .finally(() => {
+        if (!controller.signal.aborted) {
+          setLoading(false);
+        }
+      });
 
-function timeAgo(timestamp: string) {
-  const date = new Date(timestamp);
-  const seconds = Math.floor((Date.now() - date.getTime()) / 1000);
-  if (seconds < 60) return "just now";
-  const minutes = Math.floor(seconds / 60);
-  if (minutes < 60) return `${minutes}m ago`;
-  const hours = Math.floor(minutes / 60);
-  if (hours < 24) return `${hours}h ago`;
-  return date.toLocaleDateString();
-}
-
-export function IssuesBoard({
-  initialIssues,
-}: {
-  initialIssues: IssueRecord[];
-}) {
-  const [issues, setIssues] = useState<IssueRecord[]>(initialIssues);
+    return () => controller.abort();
+  }, []);
 
   const things = useMemo(
     () =>
       issues.map((issue) => ({
         id: issue.id,
         title: issue.raw.length > 60 ? `${issue.raw.slice(0, 60)}…` : issue.raw,
+        href: `/issues/${issue.id}`,
       })),
     [issues]
   );
 
-  function handleSubmit(text: string) {
-    setIssues((prev) => [
-      {
-        id: crypto.randomUUID(),
-        raw: text,
-        tags: [],
-        createdBy: "You",
-        createdAt: new Date().toISOString(),
-      },
-      ...prev,
-    ]);
+  async function handleSubmit(text: string) {
+    try {
+      const created = await createIssue({ raw: text });
+      setIssues((prev) => [created, ...prev]);
+      setError(null);
+    } catch (caughtError) {
+      const message =
+        caughtError instanceof Error
+          ? caughtError.message
+          : "Unknown backend error";
+      setError(message);
+      throw caughtError;
+    }
   }
 
   return (
@@ -82,7 +71,23 @@ export function IssuesBoard({
       <div className="flex flex-1 flex-col">
         <div className="@container/main flex flex-1 flex-col gap-2">
           <div className="flex flex-col gap-4 py-4 md:gap-6 md:py-6">
-            {issues.length === 0 && (
+            {error && (
+              <div className="px-4 lg:px-6">
+                <div className="rounded-xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-900">
+                  Issue backend unavailable: {error}
+                </div>
+              </div>
+            )}
+
+            {loading && (
+              <div className="px-4 lg:px-6">
+                <div className="rounded-xl border border-border/60 bg-card p-5 text-sm text-muted-foreground">
+                  Loading issues...
+                </div>
+              </div>
+            )}
+
+            {!loading && issues.length === 0 && (
               <div className="flex flex-col items-center gap-3 py-20 text-center">
                 <div className="text-4xl opacity-20">~</div>
                 <p className="text-sm text-muted-foreground/60">
@@ -94,36 +99,11 @@ export function IssuesBoard({
             {issues.length > 0 && (
               <div className="space-y-2 px-4 lg:px-6">
                 {issues.map((issue) => (
-                  <div
+                  <IssueCard
                     key={issue.id}
-                    id={issue.id}
-                    className="group/card rounded-xl border border-border/60 bg-card p-5 transition-colors hover:border-border hover:bg-accent/30"
-                  >
-                    <p
-                      className={`whitespace-pre-wrap leading-relaxed ${
-                        looksLikeCode(issue.raw)
-                          ? "font-mono text-[13px] text-foreground/80"
-                          : "text-[15px]"
-                      }`}
-                    >
-                      {issue.raw}
-                    </p>
-                    <div className="mt-3 flex items-center gap-2">
-                      <div className="flex flex-wrap gap-1.5">
-                        {issue.tags.map((tag) => (
-                          <span
-                            key={tag}
-                            className={`rounded-full px-2 py-0.5 text-[11px] font-medium ${tagColor(tag)}`}
-                          >
-                            {tag}
-                          </span>
-                        ))}
-                      </div>
-                      <span className="ml-auto text-[11px] tracking-wide text-muted-foreground/40 transition-colors group-hover/card:text-muted-foreground/60">
-                        {issue.createdBy} &middot; {timeAgo(issue.createdAt)}
-                      </span>
-                    </div>
-                  </div>
+                    issue={issue}
+                    href={`/issues/${issue.id}`}
+                  />
                 ))}
               </div>
             )}

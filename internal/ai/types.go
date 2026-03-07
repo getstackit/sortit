@@ -32,6 +32,13 @@ type EmbeddingResult struct {
 	Info   EmbeddingInfo
 }
 
+type AnalyzedIssue struct {
+	Tags      []TagScore
+	Embedding EmbeddingResult
+	Tagger    ModelInfo
+	Embedder  ModelInfo
+}
+
 type IssueAnalysis struct {
 	Tags      []TagScore    `json:"tags"`
 	Embedding EmbeddingInfo `json:"embedding"`

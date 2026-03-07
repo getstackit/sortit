@@ -87,3 +87,7 @@ npm run dev
 ```
 
 Open [http://localhost:3000](http://localhost:3000).
+
+In local development, browser API requests default to `http://127.0.0.1:8081` to avoid proxying through Next.js. Set `NEXT_PUBLIC_API_ORIGIN` if you need a different backend origin.
+
+The Go API now persists issues in SQLite at `data/bored.sqlite` by default. Override the location with `BORED_DB_PATH` or `go run ./apps/server --db /path/to/issues.sqlite`.

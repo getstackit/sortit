@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"bored/internal/ai"
+	"bored/internal/issues"
 )
 
 type ServerConfig struct {
@@ -18,13 +19,16 @@ type ServerConfig struct {
 	CORSOrigins []string
 	APIPrefixes []string
 	Analyzer    *ai.Analyzer
+	IssueStore  issues.Store
 }
 
 type Server struct {
-	config     ServerConfig
-	httpServer *http.Server
-	startedAt  time.Time
-	analyzer   *ai.Analyzer
+	config        ServerConfig
+	httpServer    *http.Server
+	startedAt     time.Time
+	analyzer      *ai.Analyzer
+	issueAnalyzer *ai.Analyzer
+	issueStore    issues.Store
 }
 
 type healthResponse struct {
@@ -39,11 +43,25 @@ type errorResponse struct {
 }
 
 func NewServer(cfg ServerConfig) *Server {
-	return &Server{
-		config:    cfg,
-		startedAt: time.Now().UTC(),
-		analyzer:  cfg.Analyzer,
+	store := cfg.IssueStore
+	if store == nil {
+		store = issues.NewInMemoryStore(nil)
 	}
+
+	return &Server{
+		config:        cfg,
+		startedAt:     time.Now().UTC(),
+		analyzer:      cfg.Analyzer,
+		issueAnalyzer: fallbackAnalyzer(cfg.Analyzer),
+		issueStore:    store,
+	}
+}
+
+func fallbackAnalyzer(analyzer *ai.Analyzer) *ai.Analyzer {
+	if analyzer != nil {
+		return analyzer
+	}
+	return defaultIssueAnalyzer()
 }
 
 func (s *Server) Handler() http.Handler {
@@ -52,19 +70,31 @@ func (s *Server) Handler() http.Handler {
 
 	for _, prefix := range normalizeAPIPrefixes(s.config.APIPrefixes) {
 		healthRoute := path.Join(prefix, "health")
+		issuesRoute := path.Join(prefix, "issues")
+		issueItemSubtreeRoute := issueItemRoute(prefix)
 		mapRoute := path.Join(prefix, "map")
 		mapEdgesRoute := path.Join(prefix, "map", "edges")
 		debugAnalyzeRoute := path.Join(prefix, "debug", "issues", "analyze")
+		debugSampleRoute := path.Join(prefix, "debug", "issues", "sample")
+		debugResetRoute := path.Join(prefix, "debug", "issues", "reset")
 
 		apiRoutes[healthRoute] = struct{}{}
+		apiRoutes[issuesRoute] = struct{}{}
+		apiRoutes[issueItemSubtreeRoute] = struct{}{}
 		apiRoutes[mapRoute] = struct{}{}
 		apiRoutes[mapEdgesRoute] = struct{}{}
 		apiRoutes[debugAnalyzeRoute] = struct{}{}
+		apiRoutes[debugSampleRoute] = struct{}{}
+		apiRoutes[debugResetRoute] = struct{}{}
 
 		apiMux.HandleFunc(healthRoute, s.handleHealth)
+		apiMux.HandleFunc(issuesRoute, s.handleIssues)
+		apiMux.HandleFunc(issueItemSubtreeRoute, s.handleIssueByID(issueItemSubtreeRoute))
 		apiMux.HandleFunc(mapRoute, s.handleMap)
 		apiMux.HandleFunc(mapEdgesRoute, s.handleMapEdges)
 		apiMux.HandleFunc(debugAnalyzeRoute, s.handleDebugIssueAnalyze)
+		apiMux.HandleFunc(debugSampleRoute, s.handleDebugIssueSampleLoad)
+		apiMux.HandleFunc(debugResetRoute, s.handleDebugIssueReset)
 	}
 
 	root := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

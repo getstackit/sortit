@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { apiURL } from "@/lib/api";
 
 type BackendHealth = {
   name: string;
@@ -18,7 +19,7 @@ export function BackendStatus() {
 
     async function load() {
       try {
-        const response = await fetch("/api/health", {
+        const response = await fetch(apiURL("/api/health"), {
           cache: "no-store",
         });
 

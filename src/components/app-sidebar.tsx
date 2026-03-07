@@ -9,6 +9,7 @@ import { cn } from "@/lib/utils";
 type Thing = {
   id: string;
   title: string;
+  href?: string;
 };
 
 type AppSidebarProps = {
@@ -120,9 +121,9 @@ export function AppSidebar({ things = [] }: AppSidebarProps) {
               </p>
             )}
             {things.map((thing, index) => (
-              <a
+              <Link
                 key={thing.id}
-                href={`#${thing.id}`}
+                href={thing.href ?? `#${thing.id}`}
                 title={thing.title}
                 onClick={closeMobileSidebar}
                 className={cn(
@@ -141,7 +142,7 @@ export function AppSidebar({ things = [] }: AppSidebarProps) {
                     {(index + 1).toString(36)}
                   </span>
                 )}
-              </a>
+              </Link>
             ))}
           </div>
         </section>

@@ -19,7 +19,13 @@ func (s *Server) handleMap(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	result, err := issuemap.BuildMap(viewport)
+	storeIssues, err := s.issueStore.List(r.Context())
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "failed to list issues")
+		return
+	}
+
+	result, err := issuemap.BuildMapFromIssues(storeIssues, viewport)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "failed to build issue map")
 		return
@@ -41,7 +47,13 @@ func (s *Server) handleMapEdges(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	result, err := issuemap.BuildEdgeResponse(viewport)
+	storeIssues, err := s.issueStore.List(r.Context())
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "failed to list issues")
+		return
+	}
+
+	result, err := issuemap.BuildEdgeResponseFromIssues(storeIssues, viewport)
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "failed to build edge response")
 		return

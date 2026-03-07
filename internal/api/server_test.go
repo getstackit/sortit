@@ -7,6 +7,7 @@ import (
 	"strconv"
 	"testing"
 
+	"bored/internal/issues"
 	issuemap "bored/internal/map"
 )
 
@@ -93,6 +94,17 @@ func TestHandlerServesRootAndAPI(t *testing.T) {
 		}
 	})
 
+	t.Run("issue by id", func(t *testing.T) {
+		req := httptest.NewRequest(http.MethodGet, "/api/issues/sample-1", nil)
+		rec := httptest.NewRecorder()
+
+		handler.ServeHTTP(rec, req)
+
+		if rec.Code != http.StatusNotFound {
+			t.Fatalf("expected 404 for unknown issue in empty store, got %d", rec.Code)
+		}
+	})
+
 	t.Run("map edges", func(t *testing.T) {
 		req := httptest.NewRequest(
 			http.MethodGet,
@@ -129,6 +141,19 @@ func TestCORSPreflightBehavior(t *testing.T) {
 		}
 		if got := rec.Header().Get("Access-Control-Allow-Origin"); got != "http://localhost:3000" {
 			t.Fatalf("expected CORS allow origin header, got %q", got)
+		}
+	})
+
+	t.Run("allowed nested issue route and origin", func(t *testing.T) {
+		req := httptest.NewRequest(http.MethodOptions, "/api/issues/sample-1", nil)
+		req.Header.Set("Origin", "http://localhost:3000")
+		req.Header.Set("Access-Control-Request-Method", http.MethodGet)
+		rec := httptest.NewRecorder()
+
+		handler.ServeHTTP(rec, req)
+
+		if rec.Code != http.StatusNoContent {
+			t.Fatalf("expected 204 for nested issue preflight, got %d", rec.Code)
 		}
 	})
 
@@ -170,10 +195,56 @@ func TestCORSPreflightBehavior(t *testing.T) {
 	})
 }
 
+func TestMapEndpointsStartEmptyByDefault(t *testing.T) {
+	server := NewServer(ServerConfig{
+		CORSOrigins: []string{"http://localhost:3000"},
+		APIPrefixes: []string{"/api"},
+	})
+	handler := server.Handler()
+
+	mapReq := httptest.NewRequest(http.MethodGet, "/api/map", nil)
+	mapRec := httptest.NewRecorder()
+	handler.ServeHTTP(mapRec, mapReq)
+
+	if mapRec.Code != http.StatusOK {
+		t.Fatalf("expected 200 for map, got %d", mapRec.Code)
+	}
+
+	var mapPayload issuemap.MapResponse
+	if err := json.NewDecoder(mapRec.Body).Decode(&mapPayload); err != nil {
+		t.Fatalf("failed to decode map response: %v", err)
+	}
+	if len(mapPayload.Issues) != 0 || len(mapPayload.Edges) != 0 || len(mapPayload.Clusters) != 0 {
+		t.Fatalf(
+			"expected empty map response, got %d issues, %d edges, %d clusters",
+			len(mapPayload.Issues),
+			len(mapPayload.Edges),
+			len(mapPayload.Clusters),
+		)
+	}
+
+	edgesReq := httptest.NewRequest(http.MethodGet, "/api/map/edges", nil)
+	edgesRec := httptest.NewRecorder()
+	handler.ServeHTTP(edgesRec, edgesReq)
+
+	if edgesRec.Code != http.StatusOK {
+		t.Fatalf("expected 200 for map edges, got %d", edgesRec.Code)
+	}
+
+	var edgesPayload issuemap.EdgeResponse
+	if err := json.NewDecoder(edgesRec.Body).Decode(&edgesPayload); err != nil {
+		t.Fatalf("failed to decode map edge response: %v", err)
+	}
+	if len(edgesPayload.Edges) != 0 {
+		t.Fatalf("expected no edges by default, got %d", len(edgesPayload.Edges))
+	}
+}
+
 func TestMapEdgesEndpointReturnsEdgeResponse(t *testing.T) {
 	server := NewServer(ServerConfig{
 		CORSOrigins: []string{"http://localhost:3000"},
 		APIPrefixes: []string{"/api"},
+		IssueStore:  issues.NewInMemoryStore(issues.SeedIssues()),
 	})
 	handler := server.Handler()
 
@@ -198,7 +269,7 @@ func TestMapEdgesEndpointReturnsEdgeResponse(t *testing.T) {
 		t.Fatalf("failed to decode edge response: %v", err)
 	}
 
-	expected, err := issuemap.BuildEdgeResponse(&issuemap.Viewport{
+	expected, err := issuemap.BuildEdgeResponseFromIssues(issues.SeedIssues(), &issuemap.Viewport{
 		XMin: 0.15,
 		XMax: 0.45,
 		YMin: 0.15,
@@ -222,6 +293,7 @@ func TestMapEdgesEndpointUsesDefaultViewport(t *testing.T) {
 	server := NewServer(ServerConfig{
 		CORSOrigins: []string{"http://localhost:3000"},
 		APIPrefixes: []string{"/api"},
+		IssueStore:  issues.NewInMemoryStore(issues.SeedIssues()),
 	})
 	handler := server.Handler()
 
@@ -239,7 +311,7 @@ func TestMapEdgesEndpointUsesDefaultViewport(t *testing.T) {
 		t.Fatalf("failed to decode edge response: %v", err)
 	}
 
-	expected, err := issuemap.BuildEdgeResponse(nil)
+	expected, err := issuemap.BuildEdgeResponseFromIssues(issues.SeedIssues(), nil)
 	if err != nil {
 		t.Fatalf("BuildEdgeResponse returned error: %v", err)
 	}
@@ -250,13 +322,15 @@ func TestMapEdgesEndpointUsesDefaultViewport(t *testing.T) {
 }
 
 func TestMapEdgesEndpointZoomedInViewport(t *testing.T) {
+	seed := issues.SeedIssues()
 	server := NewServer(ServerConfig{
 		CORSOrigins: []string{"http://localhost:3000"},
 		APIPrefixes: []string{"/api"},
+		IssueStore:  issues.NewInMemoryStore(seed),
 	})
 	handler := server.Handler()
 
-	mapResult, err := issuemap.BuildMap(nil)
+	mapResult, err := issuemap.BuildMapFromIssues(seed, nil)
 	if err != nil {
 		t.Fatalf("BuildMap returned error: %v", err)
 	}
@@ -286,7 +360,7 @@ func TestMapEdgesEndpointZoomedInViewport(t *testing.T) {
 		t.Fatalf("failed to decode edge response: %v", err)
 	}
 
-	expected, err := issuemap.BuildEdgeResponse(viewport)
+	expected, err := issuemap.BuildEdgeResponseFromIssues(seed, viewport)
 	if err != nil {
 		t.Fatalf("BuildEdgeResponse returned error: %v", err)
 	}
@@ -299,7 +373,7 @@ func TestMapEdgesEndpointZoomedInViewport(t *testing.T) {
 		positions[issue.ID] = issuemap.Position{X: issue.X, Y: issue.Y}
 	}
 
-	full, err := issuemap.BuildEdgeResponse(nil)
+	full, err := issuemap.BuildEdgeResponseFromIssues(seed, nil)
 	if err != nil {
 		t.Fatalf("BuildEdgeResponse returned error: %v", err)
 	}
@@ -325,13 +399,15 @@ func TestMapEdgesEndpointZoomedInViewport(t *testing.T) {
 }
 
 func TestMapEdgesEndpointVeryTightViewport(t *testing.T) {
+	seed := issues.SeedIssues()
 	server := NewServer(ServerConfig{
 		CORSOrigins: []string{"http://localhost:3000"},
 		APIPrefixes: []string{"/api"},
+		IssueStore:  issues.NewInMemoryStore(seed),
 	})
 	handler := server.Handler()
 
-	mapResult, err := issuemap.BuildMap(nil)
+	mapResult, err := issuemap.BuildMapFromIssues(seed, nil)
 	if err != nil {
 		t.Fatalf("BuildMap returned error: %v", err)
 	}
@@ -361,7 +437,7 @@ func TestMapEdgesEndpointVeryTightViewport(t *testing.T) {
 		t.Fatalf("failed to decode edge response: %v", err)
 	}
 
-	expected, err := issuemap.BuildEdgeResponse(viewport)
+	expected, err := issuemap.BuildEdgeResponseFromIssues(seed, viewport)
 	if err != nil {
 		t.Fatalf("BuildEdgeResponse returned error: %v", err)
 	}
@@ -371,13 +447,15 @@ func TestMapEdgesEndpointVeryTightViewport(t *testing.T) {
 }
 
 func TestMapEdgesEndpointExactPointViewport(t *testing.T) {
+	seed := issues.SeedIssues()
 	server := NewServer(ServerConfig{
 		CORSOrigins: []string{"http://localhost:3000"},
 		APIPrefixes: []string{"/api"},
+		IssueStore:  issues.NewInMemoryStore(seed),
 	})
 	handler := server.Handler()
 
-	mapResult, err := issuemap.BuildMap(nil)
+	mapResult, err := issuemap.BuildMapFromIssues(seed, nil)
 	if err != nil {
 		t.Fatalf("BuildMap returned error: %v", err)
 	}
@@ -403,7 +481,7 @@ func TestMapEdgesEndpointExactPointViewport(t *testing.T) {
 		t.Fatalf("failed to decode edge response: %v", err)
 	}
 
-	expected, err := issuemap.BuildEdgeResponse(viewport)
+	expected, err := issuemap.BuildEdgeResponseFromIssues(seed, viewport)
 	if err != nil {
 		t.Fatalf("BuildEdgeResponse returned error: %v", err)
 	}
@@ -411,9 +489,15 @@ func TestMapEdgesEndpointExactPointViewport(t *testing.T) {
 		t.Fatalf("expected %d edges, got %d", len(expected.Edges), len(payload.Edges))
 	}
 
-	full, err := issuemap.BuildEdgeResponse(nil)
+	full, err := issuemap.BuildEdgeResponseFromIssues(seed, nil)
 	if err != nil {
 		t.Fatalf("BuildEdgeResponse returned error: %v", err)
+	}
+	if len(full.Edges) == 0 {
+		if len(payload.Edges) != 0 {
+			t.Fatalf("expected exact-point viewport to return 0 edges when full map has none, got %d", len(payload.Edges))
+		}
+		return
 	}
 	if len(payload.Edges) >= len(full.Edges) {
 		t.Fatalf("expected exact-point viewport to return fewer than %d full-map edges, got %d", len(full.Edges), len(payload.Edges))

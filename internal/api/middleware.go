@@ -44,8 +44,17 @@ func isCORSPreflight(r *http.Request) bool {
 }
 
 func isRegisteredAPIRoute(requestPath string, apiRoutes map[string]struct{}) bool {
-	_, ok := apiRoutes[requestPath]
-	return ok
+	if _, ok := apiRoutes[requestPath]; ok {
+		return true
+	}
+
+	for route := range apiRoutes {
+		if strings.HasSuffix(route, "/") && strings.HasPrefix(requestPath, route) {
+			return true
+		}
+	}
+
+	return false
 }
 
 func loggingMiddleware(next http.Handler) http.Handler {

@@ -10,6 +10,7 @@ import {
 import type { MouseEvent as ReactMouseEvent } from "react";
 import { AppShell, AppShellToggle } from "@/components/app-shell";
 import { AppSidebar } from "@/components/app-sidebar";
+import { apiURL } from "@/lib/api";
 
 type TagRelevance = { tag: string; relevance: number };
 
@@ -60,6 +61,28 @@ type ScreenPoint = {
 type Neighbor = {
   id: string;
   similarity: number;
+};
+
+type TagComparison = {
+  tag: string;
+  average: number;
+  minimum: number;
+  maximum: number;
+  spread: number;
+};
+
+type PairwiseTagSimilarity = {
+  sourceId: string;
+  targetId: string;
+  similarity: number;
+  sharedTags: TagComparison[];
+};
+
+type BatchAnalysis = {
+  averageSimilarity: number;
+  sharedTags: TagComparison[];
+  supportingTags: TagComparison[];
+  pairwise: PairwiseTagSimilarity[];
 };
 
 const TAG_COLORS: Record<string, string> = {
@@ -195,7 +218,7 @@ function clusterIntersectsViewport(cluster: MapCluster, viewport: Viewport) {
 }
 
 async function fetchJSON<T>(input: string, signal?: AbortSignal): Promise<T> {
-  const res = await fetch(input, { signal });
+  const res = await fetch(apiURL(input), { signal });
 
   if (!res.ok) {
     throw new Error(`HTTP ${res.status}`);
@@ -220,6 +243,128 @@ async function fetchViewportEdges(
   }
 }
 
+function issueLabel(raw: string, maxLength: number) {
+  return raw.length > maxLength ? `${raw.slice(0, maxLength)}...` : raw;
+}
+
+function tagRelevanceMap(tags: TagRelevance[]): Record<string, number> {
+  return Object.fromEntries(tags.map(({ tag, relevance }) => [tag, relevance]));
+}
+
+function cosineSimilarity(
+  left: Record<string, number>,
+  right: Record<string, number>,
+  tags: string[]
+) {
+  let dot = 0;
+  let leftMagnitude = 0;
+  let rightMagnitude = 0;
+
+  for (const tag of tags) {
+    const a = left[tag] ?? 0;
+    const b = right[tag] ?? 0;
+    dot += a * b;
+    leftMagnitude += a * a;
+    rightMagnitude += b * b;
+  }
+
+  if (leftMagnitude === 0 || rightMagnitude === 0) {
+    return 0;
+  }
+
+  return dot / (Math.sqrt(leftMagnitude) * Math.sqrt(rightMagnitude));
+}
+
+function analyzeBatch(batchIssues: MapIssue[]): BatchAnalysis | null {
+  if (batchIssues.length < 2) {
+    return null;
+  }
+
+  const loadingByIssue = batchIssues.map((issue) => ({
+    issue,
+    loadings: tagRelevanceMap(issue.tags),
+  }));
+  const tagUniverse = Array.from(
+    new Set(batchIssues.flatMap((issue) => issue.tags.map(({ tag }) => tag)))
+  );
+
+  const tagComparisons = tagUniverse
+    .map((tag) => {
+      const values = loadingByIssue.map(({ loadings }) => loadings[tag] ?? 0);
+      const average =
+        values.reduce((sum, value) => sum + value, 0) / loadingByIssue.length;
+      const minimum = Math.min(...values);
+      const maximum = Math.max(...values);
+
+      return {
+        tag,
+        average,
+        minimum,
+        maximum,
+        spread: maximum - minimum,
+      };
+    })
+    .sort((left, right) => {
+      if (right.minimum !== left.minimum) {
+        return right.minimum - left.minimum;
+      }
+
+      if (right.average !== left.average) {
+        return right.average - left.average;
+      }
+
+      return left.tag.localeCompare(right.tag);
+    });
+
+  const pairwise: PairwiseTagSimilarity[] = [];
+  for (let index = 0; index < loadingByIssue.length; index += 1) {
+    for (let inner = index + 1; inner < loadingByIssue.length; inner += 1) {
+      const source = loadingByIssue[index];
+      const target = loadingByIssue[inner];
+
+      pairwise.push({
+        sourceId: source.issue.id,
+        targetId: target.issue.id,
+        similarity: cosineSimilarity(source.loadings, target.loadings, tagUniverse),
+        sharedTags: tagComparisons
+          .map((comparison) => {
+            const sourceValue = source.loadings[comparison.tag] ?? 0;
+            const targetValue = target.loadings[comparison.tag] ?? 0;
+
+            return {
+              tag: comparison.tag,
+              average: (sourceValue + targetValue) / 2,
+              minimum: Math.min(sourceValue, targetValue),
+              maximum: Math.max(sourceValue, targetValue),
+              spread: Math.abs(sourceValue - targetValue),
+            };
+          })
+          .filter((comparison) => comparison.minimum >= 0.12)
+          .sort((left, right) => {
+            if (right.minimum !== left.minimum) {
+              return right.minimum - left.minimum;
+            }
+
+            return right.average - left.average;
+          })
+          .slice(0, 3),
+      });
+    }
+  }
+
+  pairwise.sort((left, right) => right.similarity - left.similarity);
+
+  return {
+    averageSimilarity:
+      pairwise.reduce((sum, pair) => sum + pair.similarity, 0) / pairwise.length,
+    sharedTags: tagComparisons.filter((comparison) => comparison.minimum >= 0.12),
+    supportingTags: tagComparisons.filter(
+      (comparison) => comparison.average >= 0.2 && comparison.minimum < 0.12
+    ),
+    pairwise,
+  };
+}
+
 export default function MapPage() {
   const [mapData, setMapData] = useState<MapData | null>(null);
   const [loading, setLoading] = useState(true);
@@ -231,6 +376,7 @@ export default function MapPage() {
   const [lassoPoints, setLassoPoints] = useState<ScreenPoint[]>([]);
   const [isLassoing, setIsLassoing] = useState(false);
   const [selectedBatch, setSelectedBatch] = useState<Set<string>>(new Set());
+  const [showBatchAnalysis, setShowBatchAnalysis] = useState(false);
   const [dimensions, setDimensions] = useState({ width: 800, height: 600 });
 
   const containerRef = useRef<HTMLDivElement>(null);
@@ -477,6 +623,7 @@ export default function MapPage() {
     () => issues.filter((issue) => selectedBatch.has(issue.id)),
     [issues, selectedBatch]
   );
+  const batchAnalysis = useMemo(() => analyzeBatch(batchIssues), [batchIssues]);
 
   function scheduleViewport(nextViewport: Viewport) {
     viewportRef.current = nextViewport;
@@ -526,6 +673,7 @@ export default function MapPage() {
 
     lassoPointsRef.current = [];
     pendingLassoRef.current = null;
+    setShowBatchAnalysis(false);
     setSelectedBatch(new Set());
     setLassoPoints([]);
   }
@@ -557,12 +705,35 @@ export default function MapPage() {
     return { x: event.clientX - rect.left, y: event.clientY - rect.top };
   }
 
+  function toggleBatchIssue(issueId: string) {
+    setShowBatchAnalysis(false);
+    setSelectedId(null);
+    setSelectedBatch((current) => {
+      const next = new Set(current);
+
+      if (current.size === 0 && selectedId != null) {
+        next.add(selectedId);
+      }
+
+      if (next.has(issueId)) {
+        next.delete(issueId);
+      } else {
+        next.add(issueId);
+      }
+
+      return next;
+    });
+  }
+
   useEffect(() => {
     const container = containerRef.current;
     const svg = svgRef.current;
     if (!container || !svg) return;
 
     function onWheel(event: WheelEvent) {
+      const svg = svgRef.current;
+      if (!svg) return;
+
       event.preventDefault();
       event.stopPropagation();
       blankClickCandidateRef.current = false;
@@ -639,6 +810,7 @@ export default function MapPage() {
 
     if (event.shiftKey) {
       setIsLassoing(true);
+      setShowBatchAnalysis(false);
       setSelectedBatch(new Set());
       setSelectedId(null);
       scheduleLassoPoints([coords]);
@@ -794,7 +966,7 @@ export default function MapPage() {
             </>
           )}
           <span className="ml-auto text-[11px] text-muted-foreground/50">
-            Scroll to zoom. Drag to pan. Shift-drag to lasso. Edges stay visible and are capped by how many nodes are in view.
+            Scroll to zoom. Drag to pan. Shift-click to build a batch. Shift-drag to lasso. Use Analyze in the sidebar to compare tag loadings.
           </span>
         </div>
       </header>
@@ -931,6 +1103,12 @@ export default function MapPage() {
                   onMouseLeave={() => setHoveredId(null)}
                   onClick={(event) => {
                     event.stopPropagation();
+
+                    if (event.shiftKey) {
+                      toggleBatchIssue(issue.id);
+                      return;
+                    }
+
                     clearSelection();
                     setSelectedId(selectedId === issue.id ? null : issue.id);
                   }}
@@ -1087,9 +1265,7 @@ export default function MapPage() {
                               }}
                             />
                             <span className="flex-1 truncate text-[11px] text-muted-foreground">
-                              {issue.raw.length > 50
-                                ? `${issue.raw.slice(0, 50)}...`
-                                : issue.raw}
+                              {issueLabel(issue.raw, 50)}
                             </span>
                             <span className="shrink-0 text-[10px] tabular-nums text-muted-foreground/50">
                               {(similarity * 100).toFixed(0)}%
@@ -1111,49 +1287,170 @@ export default function MapPage() {
           >
             {selectedBatch.size > 0 && (
               <div className="flex h-full flex-col overflow-y-auto p-5">
-                <div className="flex items-center justify-between">
-                  <p className="text-[13px] font-medium">Work Batch</p>
+                <div className="flex items-center justify-between gap-3">
+                  <div>
+                    <p className="text-[13px] font-medium">
+                      {showBatchAnalysis ? "Tag Loading Analysis" : "Work Batch"}
+                    </p>
+                    <p className="mt-1 text-[11px] text-muted-foreground">
+                      {showBatchAnalysis
+                        ? "Comparing the selected issues by their tag loadings."
+                        : "Shift-click or shift-drag issues to build a comparison batch."}
+                    </p>
+                  </div>
                   <span className="rounded-full bg-primary px-2 py-0.5 text-[11px] font-medium text-primary-foreground">
                     {selectedBatch.size} issues
                   </span>
                 </div>
-                <div className="mt-4 space-y-2">
-                  {batchIssues.map((issue) => (
-                    <div
-                      key={issue.id}
-                      className="rounded-lg border border-border/40 p-2"
-                    >
-                      <p className="text-[12px] leading-snug">
-                        {issue.raw.length > 80
-                          ? `${issue.raw.slice(0, 80)}...`
-                          : issue.raw}
+                {showBatchAnalysis && batchAnalysis ? (
+                  <div className="mt-4 space-y-5">
+                    <div className="rounded-xl border border-border/50 bg-muted/20 p-3">
+                      <p className="text-[11px] font-medium uppercase tracking-[0.14em] text-muted-foreground">
+                        Average Pairwise Similarity
                       </p>
-                      <div className="mt-1 flex gap-1">
-                        {issue.tags
-                          .filter((tag) => tag.relevance >= 0.6)
-                          .map(({ tag }) => (
-                            <span
-                              key={tag}
-                              className="rounded-full px-1.5 py-0.5 text-[9px] font-medium"
-                              style={{
-                                backgroundColor: `${TAG_COLORS[tag] ?? "#94a3b8"}20`,
-                                color: TAG_COLORS[tag] ?? "#94a3b8",
-                              }}
-                            >
-                              {tag}
-                            </span>
-                          ))}
-                      </div>
+                      <p className="mt-2 text-2xl font-semibold tabular-nums">
+                        {(batchAnalysis.averageSimilarity * 100).toFixed(0)}%
+                      </p>
                     </div>
-                  ))}
+
+                    <div className="space-y-2">
+                      <p className="text-[11px] font-medium uppercase tracking-[0.14em] text-muted-foreground">
+                        Shared Tags
+                      </p>
+                      {(batchAnalysis.sharedTags.length > 0
+                        ? batchAnalysis.sharedTags
+                        : batchAnalysis.supportingTags
+                      )
+                        .slice(0, 6)
+                        .map((comparison) => (
+                          <div
+                            key={comparison.tag}
+                            className="rounded-lg border border-border/40 p-3"
+                          >
+                            <div className="flex items-center justify-between gap-3">
+                              <span className="text-[12px] font-medium">
+                                {comparison.tag}
+                              </span>
+                              <span className="text-[11px] tabular-nums text-muted-foreground">
+                                {(comparison.minimum * 100).toFixed(0)}% shared
+                              </span>
+                            </div>
+                            <div className="mt-2 h-1.5 rounded-full bg-muted">
+                              <div
+                                className="h-full rounded-full"
+                                style={{
+                                  width: `${comparison.average * 100}%`,
+                                  backgroundColor:
+                                    TAG_COLORS[comparison.tag] ?? "#94a3b8",
+                                }}
+                              />
+                            </div>
+                            <p className="mt-2 text-[11px] text-muted-foreground">
+                              Avg {(comparison.average * 100).toFixed(0)}%, range{" "}
+                              {(comparison.minimum * 100).toFixed(0)}-
+                              {(comparison.maximum * 100).toFixed(0)}%
+                            </p>
+                          </div>
+                        ))}
+                    </div>
+
+                    <div className="space-y-2">
+                      <p className="text-[11px] font-medium uppercase tracking-[0.14em] text-muted-foreground">
+                        Pairwise Breakdown
+                      </p>
+                      {batchAnalysis.pairwise.map((pair) => {
+                        const source = issueIndex.get(pair.sourceId);
+                        const target = issueIndex.get(pair.targetId);
+                        if (!source || !target) return null;
+
+                        return (
+                          <div
+                            key={`${pair.sourceId}-${pair.targetId}`}
+                            className="rounded-lg border border-border/40 p-3"
+                          >
+                            <div className="flex items-center justify-between gap-3">
+                              <p className="text-[12px] leading-snug">
+                                {issueLabel(source.raw, 28)} /{" "}
+                                {issueLabel(target.raw, 28)}
+                              </p>
+                              <span className="shrink-0 text-[11px] font-medium tabular-nums text-muted-foreground">
+                                {(pair.similarity * 100).toFixed(0)}%
+                              </span>
+                            </div>
+                            <div className="mt-2 flex flex-wrap gap-1">
+                              {pair.sharedTags.length > 0 ? (
+                                pair.sharedTags.map((comparison) => (
+                                  <span
+                                    key={comparison.tag}
+                                    className="rounded-full px-1.5 py-0.5 text-[9px] font-medium"
+                                    style={{
+                                      backgroundColor: `${TAG_COLORS[comparison.tag] ?? "#94a3b8"}20`,
+                                      color: TAG_COLORS[comparison.tag] ?? "#94a3b8",
+                                    }}
+                                  >
+                                    {comparison.tag}{" "}
+                                    {(comparison.minimum * 100).toFixed(0)}%
+                                  </span>
+                                ))
+                              ) : (
+                                <span className="text-[11px] text-muted-foreground">
+                                  Low direct overlap in the strongest tags.
+                                </span>
+                              )}
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
+                ) : (
+                  <div className="mt-4 space-y-2">
+                    {batchIssues.map((issue) => (
+                      <div
+                        key={issue.id}
+                        className="rounded-lg border border-border/40 p-2"
+                      >
+                        <p className="text-[12px] leading-snug">
+                          {issueLabel(issue.raw, 80)}
+                        </p>
+                        <div className="mt-1 flex flex-wrap gap-1">
+                          {issue.tags
+                            .filter((tag) => tag.relevance >= 0.6)
+                            .map(({ tag }) => (
+                              <span
+                                key={tag}
+                                className="rounded-full px-1.5 py-0.5 text-[9px] font-medium"
+                                style={{
+                                  backgroundColor: `${TAG_COLORS[tag] ?? "#94a3b8"}20`,
+                                  color: TAG_COLORS[tag] ?? "#94a3b8",
+                                }}
+                              >
+                                {tag}
+                              </span>
+                            ))}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+                <div className="mt-4 flex gap-2">
+                  {selectedBatch.size > 1 && (
+                    <button
+                      type="button"
+                      onClick={() => setShowBatchAnalysis((current) => !current)}
+                      className="rounded-md bg-foreground px-3 py-2 text-sm text-background transition-opacity hover:opacity-90"
+                    >
+                      {showBatchAnalysis ? "Back to Selection" : "Analyze"}
+                    </button>
+                  )}
+                  <button
+                    type="button"
+                    onClick={clearAllSelections}
+                    className="rounded-md border border-border/60 px-3 py-2 text-sm text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+                  >
+                    Clear Selection
+                  </button>
                 </div>
-                <button
-                  type="button"
-                  onClick={clearAllSelections}
-                  className="mt-4 rounded-md border border-border/60 px-3 py-2 text-sm text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
-                >
-                  Clear Selection
-                </button>
               </div>
             )}
           </div>
