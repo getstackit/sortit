@@ -153,14 +153,15 @@ func buildTagCovariance(tags []string, tagEmbeddings map[string][]float64) *mat.
 
 	hasEmbeddings := len(tagEmbeddings) > 0
 	for i := 0; i < t; i++ {
-		for j := 0; j < t; j++ {
-			if !hasEmbeddings {
-				if i == j {
-					data[i*t+j] = 1
-				}
-				continue
+		for j := i; j < t; j++ {
+			value := 0.0
+			if hasEmbeddings {
+				value = unitCosineSimilarity(tagEmbeddings[tags[i]], tagEmbeddings[tags[j]])
+			} else if i == j {
+				value = 1
 			}
-			data[i*t+j] = cosineSimilarity(tagEmbeddings[tags[i]], tagEmbeddings[tags[j]])
+			data[i*t+j] = value
+			data[j*t+i] = value
 		}
 	}
 

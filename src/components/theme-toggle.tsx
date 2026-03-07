@@ -1,8 +1,6 @@
 "use client";
 
 import { useSyncExternalStore } from "react";
-import { Moon, Sun } from "lucide-react";
-import { Switch } from "@/components/ui/switch";
 import { THEME_STORAGE_KEY } from "@/lib/theme";
 
 function subscribe(callback: () => void) {
@@ -33,10 +31,16 @@ export function ThemeToggle() {
   }
 
   return (
-    <div className="flex items-center gap-2">
-      <Sun className="h-3.5 w-3.5 text-muted-foreground" />
-      <Switch checked={dark} onCheckedChange={toggle} />
-      <Moon className="h-3.5 w-3.5 text-muted-foreground" />
-    </div>
+    <button
+      type="button"
+      onClick={() => toggle(!dark)}
+      aria-pressed={dark}
+      className="flex w-full items-center justify-between rounded-lg border border-border/60 bg-background px-3 py-2 text-left text-xs transition-colors hover:bg-accent/50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/50"
+    >
+      <span className="font-medium text-foreground">Theme</span>
+      <span className="rounded-full bg-muted px-2 py-0.5 text-[10px] uppercase tracking-[0.16em] text-muted-foreground">
+        {dark ? "dark" : "light"}
+      </span>
+    </button>
   );
 }

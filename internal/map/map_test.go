@@ -63,6 +63,14 @@ func TestBuildMapReturnsPositionForEveryIssue(t *testing.T) {
 	if len(result.Edges) > maxEdges {
 		t.Fatalf("expected at most %d edges, got %d", maxEdges, len(result.Edges))
 	}
+
+	for i := 1; i < len(result.Edges); i++ {
+		prev := result.Edges[i-1]
+		curr := result.Edges[i]
+		if prev.Similarity < curr.Similarity {
+			t.Fatalf("expected edges sorted by similarity: %+v before %+v", prev, curr)
+		}
+	}
 }
 
 func TestBuildEdgeResponseRespectsViewport(t *testing.T) {
@@ -110,8 +118,60 @@ func TestBuildEdgeResponseRespectsViewport(t *testing.T) {
 	}
 }
 
+func TestBuildEdgeResponseSingleVisibleIssueReturnsConnectedEdges(t *testing.T) {
+	base, err := loadBaseMapData()
+	if err != nil {
+		t.Fatalf("loadBaseMapData returned error: %v", err)
+	}
+	if len(base.candidateEdges) == 0 {
+		t.Fatal("expected candidate edges in base map data")
+	}
+
+	anchorID := base.candidateEdges[0].Source
+	anchor := base.positions[anchorID]
+	viewport := &Viewport{
+		XMin: anchor.X,
+		XMax: anchor.X,
+		YMin: anchor.Y,
+		YMax: anchor.Y,
+	}
+
+	result, err := BuildEdgeResponse(viewport)
+	if err != nil {
+		t.Fatalf("BuildEdgeResponse returned error: %v", err)
+	}
+	if len(result.Edges) == 0 {
+		t.Fatal("expected exact-point viewport to retain edges connected to the visible issue")
+	}
+
+	full, err := BuildEdgeResponse(nil)
+	if err != nil {
+		t.Fatalf("BuildEdgeResponse returned error: %v", err)
+	}
+	if len(result.Edges) >= len(full.Edges) {
+		t.Fatalf("expected exact-point viewport to return fewer than %d full-map edges, got %d", len(full.Edges), len(result.Edges))
+	}
+
+	for _, edge := range result.Edges {
+		if edge.Source != anchorID && edge.Target != anchorID {
+			t.Fatalf("edge %+v should be connected to the only visible issue %s", edge, anchorID)
+		}
+	}
+}
+
 func TestCosineSimilarityHandlesMismatchedEmbeddings(t *testing.T) {
 	if got := cosineSimilarity([]float64{1, 0}, []float64{1}); got != 0 {
 		t.Fatalf("expected mismatched embeddings to return 0, got %f", got)
+	}
+}
+
+func TestUnitCosineSimilarityMatchesNormalizedCosine(t *testing.T) {
+	a := []float64{0.6, 0.8}
+	b := []float64{0.8, 0.6}
+
+	got := unitCosineSimilarity(a, b)
+	want := cosineSimilarity(a, b)
+	if got != want {
+		t.Fatalf("expected unit cosine similarity %f to match cosine similarity %f", got, want)
 	}
 }

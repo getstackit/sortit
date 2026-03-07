@@ -22,7 +22,7 @@ func ComputeEdges(issues []Issue, threshold float64) []Edge {
 			if b == nil {
 				continue
 			}
-			sim := cosineSimilarity(a, b)
+			sim := unitCosineSimilarity(a, b)
 			if sim >= threshold {
 				edges = append(edges, Edge{
 					Source:     issues[i].ID,
@@ -34,6 +34,19 @@ func ComputeEdges(issues []Issue, threshold float64) []Edge {
 	}
 
 	return edges
+}
+
+// unitCosineSimilarity assumes both vectors were normalized up front.
+func unitCosineSimilarity(a, b []float64) float64 {
+	if len(a) == 0 || len(a) != len(b) {
+		return 0
+	}
+
+	var dot float64
+	for i := range a {
+		dot += a[i] * b[i]
+	}
+	return dot
 }
 
 func cosineSimilarity(a, b []float64) float64 {

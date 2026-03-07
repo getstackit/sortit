@@ -1,5 +1,5 @@
 import type { Metadata } from "next";
-import { TooltipProvider } from "@/components/ui/tooltip";
+import type { ReactNode } from "react";
 import { themeInitScript } from "@/lib/theme";
 import "./globals.css";
 
@@ -11,13 +11,13 @@ export const metadata: Metadata = {
 export default function RootLayout({
   children,
 }: Readonly<{
-  children: React.ReactNode;
+  children: ReactNode;
 }>) {
   return (
     <html lang="en" suppressHydrationWarning>
       <body className="antialiased">
         <script dangerouslySetInnerHTML={{ __html: themeInitScript }} />
-        <TooltipProvider>{children}</TooltipProvider>
+        {children}
       </body>
     </html>
   );

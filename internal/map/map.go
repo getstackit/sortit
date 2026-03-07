@@ -123,6 +123,7 @@ func buildBaseMapData() (mapBaseData, error) {
 	}
 
 	edges := ComputeEdges(issues, minEdgeSimilarity)
+	sortEdgesBySimilarity(edges)
 	clusters := ComputeClusters(issues, positions, 0.18)
 
 	return mapBaseData{
@@ -146,10 +147,6 @@ func normalizeViewport(viewport *Viewport) Viewport {
 		v.YMin, v.YMax = v.YMax, v.YMin
 	}
 
-	if v.XMin == v.XMax || v.YMin == v.YMax {
-		return Viewport{XMin: 0, XMax: 1, YMin: 0, YMax: 1}
-	}
-
 	return v
 }
 
@@ -164,18 +161,8 @@ func filterEdgesForViewport(base mapBaseData, viewport Viewport) []Edge {
 		}
 	}
 
-	if len(visibleIDs) < 2 {
+	if len(visibleIDs) == 0 {
 		return []Edge{}
-	}
-
-	candidates := make([]Edge, 0, len(base.candidateEdges))
-	for _, edge := range base.candidateEdges {
-		_, sourceVisible := visibleIDs[edge.Source]
-		_, targetVisible := visibleIDs[edge.Target]
-		if !sourceVisible && !targetVisible {
-			continue
-		}
-		candidates = append(candidates, edge)
 	}
 
 	targetEdgeCount := maxInt(
@@ -183,21 +170,21 @@ func filterEdgesForViewport(base mapBaseData, viewport Viewport) []Edge {
 		int(math.Ceil(float64(len(visibleIDs))*maxVisibleEdgeRatio)),
 	)
 	targetEdgeCount = minInt(targetEdgeCount, maxVisibleEdges)
-	if len(candidates) <= targetEdgeCount {
-		return candidates
+
+	candidates := make([]Edge, 0, minInt(targetEdgeCount, len(base.candidateEdges)))
+	for _, edge := range base.candidateEdges {
+		_, sourceVisible := visibleIDs[edge.Source]
+		_, targetVisible := visibleIDs[edge.Target]
+		if !sourceVisible && !targetVisible {
+			continue
+		}
+		candidates = append(candidates, edge)
+		if len(candidates) == targetEdgeCount {
+			break
+		}
 	}
 
-	sort.Slice(candidates, func(i, j int) bool {
-		if candidates[i].Similarity == candidates[j].Similarity {
-			if candidates[i].Source == candidates[j].Source {
-				return candidates[i].Target < candidates[j].Target
-			}
-			return candidates[i].Source < candidates[j].Source
-		}
-		return candidates[i].Similarity > candidates[j].Similarity
-	})
-
-	return candidates[:targetEdgeCount]
+	return candidates
 }
 
 func maxInt(a, b int) int {
@@ -205,6 +192,18 @@ func maxInt(a, b int) int {
 		return a
 	}
 	return b
+}
+
+func sortEdgesBySimilarity(edges []Edge) {
+	sort.Slice(edges, func(i, j int) bool {
+		if edges[i].Similarity == edges[j].Similarity {
+			if edges[i].Source == edges[j].Source {
+				return edges[i].Target < edges[j].Target
+			}
+			return edges[i].Source < edges[j].Source
+		}
+		return edges[i].Similarity > edges[j].Similarity
+	})
 }
 
 func minInt(a, b int) int {

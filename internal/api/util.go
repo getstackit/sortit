@@ -1,6 +1,7 @@
 package api
 
 import (
+	"math"
 	"net/url"
 	"strconv"
 	"strings"
@@ -64,5 +65,12 @@ func parseFloatQuery(values url.Values, key string) (float64, error) {
 	if value == "" {
 		return 0, strconv.ErrSyntax
 	}
-	return strconv.ParseFloat(value, 64)
+	parsed, err := strconv.ParseFloat(value, 64)
+	if err != nil {
+		return 0, err
+	}
+	if math.IsNaN(parsed) || math.IsInf(parsed, 0) {
+		return 0, strconv.ErrSyntax
+	}
+	return parsed, nil
 }

@@ -1,8 +1,7 @@
 "use client";
 
 import { useRef, useState } from "react";
-import { Separator } from "@/components/ui/separator";
-import { SidebarTrigger } from "@/components/ui/sidebar";
+import { AppShellToggle } from "@/components/app-shell";
 
 export function SiteHeader({
   issueCount,
@@ -35,12 +34,9 @@ export function SiteHeader({
 
   return (
     <header className="sticky top-0 z-10 shrink-0 border-b bg-background">
-      <div className="flex items-center gap-2 px-4 h-(--header-height)">
-        <SidebarTrigger className="-ml-1" />
-        <Separator
-          orientation="vertical"
-          className="mr-2 data-vertical:h-4"
-        />
+      <div className="flex h-12 items-center gap-2 px-4">
+        <AppShellToggle className="-ml-1" />
+        <div className="mr-2 h-4 w-px shrink-0 bg-border" />
         <h1 className="text-sm font-medium">All issues</h1>
         {issueCount > 0 && (
           <span className="rounded-full bg-muted px-2 py-0.5 text-[11px] font-medium text-muted-foreground tabular-nums">
