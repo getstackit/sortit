@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useAppShell } from "@/components/app-shell";
+import { useAuth } from "@/components/auth-provider";
 import { PasteModal } from "@/components/paste-modal";
 import { ThemeToggle } from "@/components/theme-toggle";
 import type { IssueRecord } from "@/lib/issues";
@@ -63,6 +64,7 @@ export function AppSidebar({
   showThingsSection = true,
 }: AppSidebarProps) {
   const pathname = usePathname();
+  const { user, logout } = useAuth();
   const { collapsed, closeMobileSidebar, composerOpen, openComposer, setComposerOpen } =
     useAppShell();
 
@@ -157,6 +159,20 @@ export function AppSidebar({
               onClick={closeMobileSidebar}
             />
             <SidebarLink
+              href="/people"
+              label="People"
+              active={pathname === "/people"}
+              collapsed={collapsed}
+              onClick={closeMobileSidebar}
+            />
+            <SidebarLink
+              href="/settings"
+              label="Settings"
+              active={pathname === "/settings"}
+              collapsed={collapsed}
+              onClick={closeMobileSidebar}
+            />
+            <SidebarLink
               href="/debug"
               label="Debug"
               active={pathname === "/debug"}
@@ -217,6 +233,21 @@ export function AppSidebar({
       </div>
 
       <div className="border-t border-sidebar-border px-3 py-3">
+        {!collapsed && user && (
+          <div className="mb-3 rounded-2xl border border-sidebar-border/70 bg-sidebar-accent/55 px-3 py-3">
+            <p className="text-sm font-medium text-sidebar-accent-foreground">
+              {user.displayName}
+            </p>
+            <p className="mt-1 text-xs text-sidebar-foreground/60">@{user.login}</p>
+            <button
+              type="button"
+              onClick={() => void logout()}
+              className="mt-3 rounded-xl border border-sidebar-border/70 px-3 py-2 text-xs font-medium text-sidebar-accent-foreground transition-colors hover:bg-sidebar-accent/80"
+            >
+              Sign out
+            </button>
+          </div>
+        )}
         <div className={cn(collapsed && "px-0")}>
           <ThemeToggle />
         </div>

@@ -137,6 +137,35 @@ func TestHandleGetIssue(t *testing.T) {
 	}
 }
 
+func TestDoJSONRequestForwardsAuthorizationHeaderFromContext(t *testing.T) {
+	t.Parallel()
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if got := r.Header.Get("Authorization"); got != "Bearer secret-token" {
+			t.Fatalf("expected forwarded authorization header, got %q", got)
+		}
+		w.Header().Set("Content-Type", "application/json")
+		if err := json.NewEncoder(w).Encode(map[string]string{"status": "ok"}); err != nil {
+			t.Fatalf("encode response: %v", err)
+		}
+	}))
+	defer server.Close()
+
+	handler := &handlers{
+		baseURL: server.URL,
+		client:  server.Client(),
+	}
+
+	ctx := context.WithValue(context.Background(), authorizationContextKey{}, "Bearer secret-token")
+	var payload map[string]string
+	if err := handler.doJSONRequest(ctx, http.MethodGet, "/status", nil, &payload); err != nil {
+		t.Fatalf("doJSONRequest returned error: %v", err)
+	}
+	if payload["status"] != "ok" {
+		t.Fatalf("expected ok status payload, got %#v", payload)
+	}
+}
+
 func TestHandleGetIssueNotFound(t *testing.T) {
 	t.Parallel()
 

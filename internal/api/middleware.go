@@ -5,6 +5,8 @@ import (
 	"net/http"
 	"strings"
 	"time"
+
+	"splat/internal/auth"
 )
 
 func corsMiddleware(origins []string, apiRoutes map[string]struct{}, next http.Handler) http.Handler {
@@ -23,8 +25,9 @@ func corsMiddleware(origins []string, apiRoutes map[string]struct{}, next http.H
 		if originAllowed {
 			w.Header().Set("Access-Control-Allow-Origin", origin)
 			w.Header().Set("Vary", "Origin")
+			w.Header().Set("Access-Control-Allow-Credentials", "true")
 			w.Header().Set("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
-			w.Header().Set("Access-Control-Allow-Headers", "Content-Type")
+			w.Header().Set("Access-Control-Allow-Headers", "Authorization, Content-Type")
 		}
 
 		if r.Method == http.MethodOptions {
@@ -37,6 +40,41 @@ func corsMiddleware(origins []string, apiRoutes map[string]struct{}, next http.H
 
 		next.ServeHTTP(w, r)
 	})
+}
+
+func authMiddleware(service *auth.Service, publicAPIRoutes map[string]struct{}, next http.Handler) http.Handler {
+	if service == nil {
+		return next
+	}
+
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		path := r.URL.Path
+		if path == "/" || isPublicRoute(path, publicAPIRoutes) {
+			next.ServeHTTP(w, r)
+			return
+		}
+
+		bearerOnly := path == "/mcp"
+		if !bearerOnly && !strings.HasPrefix(path, "/api/") && path != "/api" {
+			next.ServeHTTP(w, r)
+			return
+		}
+
+		principal, err := service.AuthenticateRequest(r, bearerOnly)
+		if err != nil {
+			writeError(w, http.StatusUnauthorized, "authentication required")
+			return
+		}
+
+		next.ServeHTTP(w, r.WithContext(auth.WithPrincipal(r.Context(), principal)))
+	})
+}
+
+func isPublicRoute(requestPath string, publicAPIRoutes map[string]struct{}) bool {
+	if _, ok := publicAPIRoutes[requestPath]; ok {
+		return true
+	}
+	return false
 }
 
 func isCORSPreflight(r *http.Request) bool {

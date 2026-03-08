@@ -1,10 +1,10 @@
 -- name: ListIssues :many
-SELECT id, raw, tags_json, created_by, created_at_unix_nano, status, closed_at_unix_nano, closed_by, tag_scores_json, embedding_json
+SELECT id, raw, tags_json, created_by, created_at_unix_nano, status, closed_at_unix_nano, closed_by, tag_scores_json, embedding_json, assigned_to
 FROM issues
 ORDER BY created_at_unix_nano DESC, id ASC;
 
 -- name: GetIssue :one
-SELECT id, raw, tags_json, created_by, created_at_unix_nano, status, closed_at_unix_nano, closed_by, tag_scores_json, embedding_json
+SELECT id, raw, tags_json, created_by, created_at_unix_nano, status, closed_at_unix_nano, closed_by, tag_scores_json, embedding_json, assigned_to
 FROM issues
 WHERE id = ?;
 
@@ -25,8 +25,12 @@ INSERT INTO issues (
     closed_at_unix_nano,
     closed_by,
     tag_scores_json,
-    embedding_json
-) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
+    embedding_json,
+    assigned_to
+) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
+
+-- name: AssignIssue :exec
+UPDATE issues SET assigned_to = ? WHERE id = ?;
 
 -- name: InsertIssuePost :exec
 INSERT INTO issue_posts (

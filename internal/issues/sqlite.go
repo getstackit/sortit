@@ -26,7 +26,7 @@ import (
 const (
 	sqliteDriverName          = "sqlite"
 	issueSeqKey               = "next_issue_seq"
-	currentMigrationVersion   = 5
+	currentMigrationVersion   = 7
 	schemaMigrationsTableName = "schema_migrations"
 )
 
@@ -79,6 +79,10 @@ func OpenSQLiteStore(ctx context.Context, path string) (*SQLiteStore, error) {
 
 func (s *SQLiteStore) Close() error {
 	return s.db.Close()
+}
+
+func (s *SQLiteStore) DB() *sql.DB {
+	return s.db
 }
 
 func (s *SQLiteStore) List(ctx context.Context) ([]Issue, error) {
@@ -158,6 +162,7 @@ func (s *SQLiteStore) Create(ctx context.Context, input CreateInput) (Issue, err
 		ClosedBy:          record.ClosedBy,
 		TagScoresJson:     record.TagScoresJSON,
 		EmbeddingJson:     record.EmbeddingJSON,
+		AssignedTo:        record.AssignedTo,
 	}); err != nil {
 		return Issue{}, fmt.Errorf("insert issue: %w", err)
 	}
@@ -393,6 +398,41 @@ func (s *SQLiteStore) ReopenIssue(ctx context.Context, id string) (Issue, error)
 	return s.hydrateIssueWithDiscussion(ctx, updated, issue.Discussion)
 }
 
+func (s *SQLiteStore) AssignIssue(ctx context.Context, id, assignee string) (Issue, error) {
+	id = strings.TrimSpace(id)
+	if id == "" {
+		return Issue{}, ErrNotFound
+	}
+
+	assignee = strings.TrimSpace(assignee)
+
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return Issue{}, fmt.Errorf("begin assign issue tx: %w", err)
+	}
+	defer tx.Rollback()
+
+	qtx := s.queries.WithTx(tx)
+
+	if err := qtx.AssignIssue(ctx, issuesdb.AssignIssueParams{
+		AssignedTo: assignee,
+		ID:         id,
+	}); err != nil {
+		return Issue{}, fmt.Errorf("assign issue: %w", err)
+	}
+
+	issue, err := s.getIssueWithDiscussion(ctx, qtx, id)
+	if err != nil {
+		return Issue{}, err
+	}
+
+	if err := tx.Commit(); err != nil {
+		return Issue{}, fmt.Errorf("commit assign issue tx: %w", err)
+	}
+
+	return issue, nil
+}
+
 func (s *SQLiteStore) Replace(ctx context.Context, next []Issue) error {
 	items := cloneIssues(next)
 	slices.SortStableFunc(items, compareIssueOrder)
@@ -573,6 +613,16 @@ func (s *SQLiteStore) bootstrapMigrationVersion(ctx context.Context, dbDriver mi
 			return fmt.Errorf("baseline sqlite migration version: %w", err)
 		}
 	}
+	if state == sqliteSchemaV5 {
+		if err := dbDriver.SetVersion(5, false); err != nil {
+			return fmt.Errorf("baseline sqlite migration version: %w", err)
+		}
+	}
+	if state == sqliteSchemaV6 {
+		if err := dbDriver.SetVersion(6, false); err != nil {
+			return fmt.Errorf("baseline sqlite migration version: %w", err)
+		}
+	}
 	if state == sqliteSchemaLegacy {
 		if err := dbDriver.SetVersion(1, false); err != nil {
 			return fmt.Errorf("baseline sqlite migration version: %w", err)
@@ -591,6 +641,8 @@ const (
 	sqliteSchemaLegacy
 	sqliteSchemaV2
 	sqliteSchemaV3
+	sqliteSchemaV5
+	sqliteSchemaV6
 	sqliteSchemaCurrent
 	sqliteSchemaUnknown
 )
@@ -617,7 +669,29 @@ func (s *SQLiteStore) detectSchemaState(ctx context.Context) (sqliteSchemaState,
 			return sqliteSchemaUnknown, err
 		}
 		if hasColumns(postColumns, "id", "issue_id", "raw", "created_by", "created_at_unix_nano", "sequence") {
-			return sqliteSchemaCurrent, nil
+			if hasColumns(issueColumns, "assigned_to") {
+				hasUsers, err := tableExists(ctx, s.db, "users")
+				if err != nil {
+					return sqliteSchemaUnknown, err
+				}
+				hasAuthAccounts, err := tableExists(ctx, s.db, "auth_accounts")
+				if err != nil {
+					return sqliteSchemaUnknown, err
+				}
+				hasSessions, err := tableExists(ctx, s.db, "sessions")
+				if err != nil {
+					return sqliteSchemaUnknown, err
+				}
+				hasAPITokens, err := tableExists(ctx, s.db, "api_tokens")
+				if err != nil {
+					return sqliteSchemaUnknown, err
+				}
+				if hasUsers && hasAuthAccounts && hasSessions && hasAPITokens {
+					return sqliteSchemaCurrent, nil
+				}
+				return sqliteSchemaV6, nil
+			}
+			return sqliteSchemaV5, nil
 		}
 		return sqliteSchemaV3, nil
 	}
@@ -661,6 +735,18 @@ func tableColumns(ctx context.Context, db *sql.DB, table string) (map[string]str
 	return columns, nil
 }
 
+func tableExists(ctx context.Context, db *sql.DB, table string) (bool, error) {
+	var count int
+	if err := db.QueryRowContext(
+		ctx,
+		`SELECT COUNT(*) FROM sqlite_master WHERE type = 'table' AND name = ?`,
+		table,
+	).Scan(&count); err != nil {
+		return false, fmt.Errorf("check table %s: %w", table, err)
+	}
+	return count > 0, nil
+}
+
 type issueRecord struct {
 	ID                string
 	Raw               string
@@ -672,6 +758,7 @@ type issueRecord struct {
 	ClosedBy          string
 	TagScoresJSON     string
 	EmbeddingJSON     string
+	AssignedTo        string
 }
 
 type tagRecord struct {
@@ -711,6 +798,7 @@ func recordFromIssue(issue Issue) (issueRecord, error) {
 		ClosedBy:          closedBy(issue),
 		TagScoresJSON:     tagScoresJSON,
 		EmbeddingJSON:     embeddingJSON,
+		AssignedTo:        strings.TrimSpace(issue.AssignedTo),
 	}, nil
 }
 
@@ -737,16 +825,17 @@ func issueFromQuery(row issuesdb.Issue) (Issue, error) {
 	}
 
 	return Issue{
-		ID:        row.ID,
-		Raw:       row.Raw,
-		Tags:      tags,
-		CreatedBy: row.CreatedBy,
-		CreatedAt: time.Unix(0, row.CreatedAtUnixNano).UTC(),
-		Status:    status,
-		ClosedAt:  closedAt,
-		ClosedBy:  closedBy,
-		TagScores: tagScores,
-		Embedding: embedding,
+		ID:         row.ID,
+		Raw:        row.Raw,
+		Tags:       tags,
+		CreatedBy:  row.CreatedBy,
+		CreatedAt:  time.Unix(0, row.CreatedAtUnixNano).UTC(),
+		Status:     status,
+		ClosedAt:   closedAt,
+		ClosedBy:   closedBy,
+		AssignedTo: strings.TrimSpace(row.AssignedTo),
+		TagScores:  tagScores,
+		Embedding:  embedding,
 	}, nil
 }
 

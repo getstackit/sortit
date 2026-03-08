@@ -8,6 +8,7 @@ import (
 	"path"
 	"strings"
 
+	"splat/internal/auth"
 	"splat/internal/commands"
 	"splat/internal/issues"
 	issuemap "splat/internal/map"
@@ -36,6 +37,10 @@ type refineIssueRequest struct {
 type progressIssueRequest struct {
 	Raw       string `json:"raw"`
 	CreatedBy string `json:"createdBy,omitempty"`
+}
+
+type assignIssueRequest struct {
+	AssignedTo string `json:"assignedTo"`
 }
 
 type compareIssuesRequest struct {
@@ -202,7 +207,7 @@ func (s *Server) handleIssueByID(route string) http.HandlerFunc {
 
 			closed, err := s.closeIssue.Handle(r.Context(), commands.CloseIssue{
 				ID:       id,
-				ClosedBy: request.ClosedBy,
+				ClosedBy: actorForRequest(r, request.ClosedBy),
 			})
 			if err != nil {
 				if errors.Is(err, issues.ErrNotFound) {
@@ -231,7 +236,7 @@ func (s *Server) handleIssueByID(route string) http.HandlerFunc {
 			refined, err := s.refineIssue.Handle(r.Context(), commands.RefineIssue{
 				ID:        id,
 				Raw:       request.Raw,
-				CreatedBy: request.CreatedBy,
+				CreatedBy: actorForRequest(r, request.CreatedBy),
 			})
 			if err != nil {
 				if errors.Is(err, issues.ErrNotFound) {
@@ -306,7 +311,7 @@ func (s *Server) handleIssueByID(route string) http.HandlerFunc {
 			progressed, err := s.progressIssue.Handle(r.Context(), commands.ProgressIssue{
 				ID:        id,
 				Raw:       request.Raw,
-				CreatedBy: request.CreatedBy,
+				CreatedBy: actorForRequest(r, request.CreatedBy),
 			})
 			if err != nil {
 				if errors.Is(err, issues.ErrNotFound) {
@@ -342,6 +347,34 @@ func (s *Server) handleIssueByID(route string) http.HandlerFunc {
 			}
 
 			writeJSON(w, http.StatusOK, reopened)
+		case "assign":
+			if r.Method != http.MethodPost {
+				w.Header().Set("Allow", http.MethodPost)
+				http.Error(w, http.StatusText(http.StatusMethodNotAllowed), http.StatusMethodNotAllowed)
+				return
+			}
+
+			request, err := decodeAssignIssueRequest(r)
+			if err != nil {
+				writeError(w, http.StatusBadRequest, err.Error())
+				return
+			}
+
+			assigned, err := s.assignIssue.Handle(r.Context(), commands.AssignIssue{
+				ID:         id,
+				AssignedTo: request.AssignedTo,
+			})
+			if err != nil {
+				if errors.Is(err, issues.ErrNotFound) {
+					writeError(w, http.StatusNotFound, "issue not found")
+					return
+				}
+
+				writeInternalError(w, r, "failed to assign issue", err)
+				return
+			}
+
+			writeJSON(w, http.StatusOK, assigned)
 		default:
 			writeError(w, http.StatusNotFound, "route not found")
 		}
@@ -374,7 +407,7 @@ func (s *Server) handleIssueCreate(w http.ResponseWriter, r *http.Request) {
 	created, err := s.createIssue.Handle(r.Context(), commands.CreateIssue{
 		Raw:       request.Raw,
 		Tags:      request.Tags,
-		CreatedBy: request.CreatedBy,
+		CreatedBy: actorForRequest(r, request.CreatedBy),
 	})
 	if err != nil {
 		writeInternalError(w, r, "failed to create issue", err)
@@ -495,8 +528,31 @@ func decodeProgressIssueRequest(r *http.Request) (progressIssueRequest, error) {
 	return request, nil
 }
 
+func decodeAssignIssueRequest(r *http.Request) (assignIssueRequest, error) {
+	defer r.Body.Close()
+
+	decoder := json.NewDecoder(io.LimitReader(r.Body, 1<<20))
+	decoder.DisallowUnknownFields()
+
+	var request assignIssueRequest
+	if err := decoder.Decode(&request); err != nil {
+		return assignIssueRequest{}, errors.New("invalid request body")
+	}
+
+	request.AssignedTo = strings.TrimSpace(request.AssignedTo)
+	return request, nil
+}
+
 func issueItemRoute(prefix string) string {
 	return path.Join(prefix, "issues") + "/"
+}
+
+func actorForRequest(r *http.Request, fallback string) string {
+	principal, ok := auth.PrincipalFromContext(r.Context())
+	if ok {
+		return principal.ActorName()
+	}
+	return fallback
 }
 
 func toPairwiseIssueSimilarityResponse(items []queries.PairwiseIssueSimilarity) []pairwiseIssueSimilarity {

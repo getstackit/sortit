@@ -141,6 +141,7 @@ export default function DebugPage() {
     try {
       const response = await fetch(apiURL("/api/v1/debug/issues/analyze"), {
         method: "POST",
+        credentials: "include",
         headers: {
           "Content-Type": "application/json",
         },

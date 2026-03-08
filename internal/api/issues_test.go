@@ -49,6 +49,10 @@ func (s failingIssueStore) ReopenIssue(context.Context, string) (issues.Issue, e
 	return issues.Issue{}, nil
 }
 
+func (s failingIssueStore) AssignIssue(context.Context, string, string) (issues.Issue, error) {
+	return issues.Issue{}, nil
+}
+
 func TestIssuesEndpointListsSeededIssues(t *testing.T) {
 	server := NewServer(ServerConfig{
 		CORSOrigins: []string{"http://localhost:3000"},

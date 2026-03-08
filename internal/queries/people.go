@@ -1,0 +1,286 @@
+package queries
+
+import (
+	"context"
+	"math"
+	"sort"
+	"strings"
+
+	"splat/internal/issues"
+)
+
+type TagRelevance struct {
+	Tag       string  `json:"tag"`
+	Relevance float64 `json:"relevance"`
+}
+
+type PersonTagProfile struct {
+	Person     string         `json:"person"`
+	IssueCount int            `json:"issueCount"`
+	TagProfile []TagRelevance `json:"tagProfile"`
+}
+
+type GetPersonProfileHandler struct {
+	Store issues.Store
+}
+
+func (h GetPersonProfileHandler) Handle(ctx context.Context, person string, filter IssueStatusFilter) (PersonTagProfile, error) {
+	person = strings.TrimSpace(person)
+	if person == "" {
+		return PersonTagProfile{}, nil
+	}
+
+	allIssues, err := h.Store.List(ctx)
+	if err != nil {
+		return PersonTagProfile{}, err
+	}
+
+	allIssues = FilterIssuesByStatus(allIssues, filter)
+
+	var matched []issues.Issue
+	for _, issue := range allIssues {
+		if strings.EqualFold(issue.AssignedTo, person) {
+			matched = append(matched, issue)
+		}
+	}
+
+	return PersonTagProfile{
+		Person:     person,
+		IssueCount: len(matched),
+		TagProfile: meanTagProfile(matched),
+	}, nil
+}
+
+type PersonCorrelation struct {
+	PersonA           string         `json:"personA"`
+	PersonB           string         `json:"personB"`
+	CombinedScore     float64        `json:"combinedScore"`
+	SemanticScore     float64        `json:"semanticScore"`
+	FactorScore       float64        `json:"factorScore"`
+	SharedTags        []string       `json:"sharedTags"`
+	PersonAIssueCount int            `json:"personAIssueCount"`
+	PersonBIssueCount int            `json:"personBIssueCount"`
+	PersonAProfile    []TagRelevance `json:"personAProfile"`
+	PersonBProfile    []TagRelevance `json:"personBProfile"`
+}
+
+type WorkCorrelationsResult struct {
+	Correlations []PersonCorrelation `json:"correlations"`
+}
+
+type WorkCorrelationsHandler struct {
+	Store issues.Store
+}
+
+func (h WorkCorrelationsHandler) Handle(ctx context.Context, filter IssueStatusFilter) (WorkCorrelationsResult, error) {
+	allIssues, err := h.Store.List(ctx)
+	if err != nil {
+		return WorkCorrelationsResult{}, err
+	}
+
+	allIssues = FilterIssuesByStatus(allIssues, filter)
+
+	// Group issues by assignee
+	byPerson := make(map[string][]issues.Issue)
+	for _, issue := range allIssues {
+		if issue.AssignedTo == "" {
+			continue
+		}
+		key := strings.ToLower(issue.AssignedTo)
+		byPerson[key] = append(byPerson[key], issue)
+	}
+
+	if len(byPerson) < 2 {
+		return WorkCorrelationsResult{Correlations: []PersonCorrelation{}}, nil
+	}
+
+	type personData struct {
+		name       string
+		issues     []issues.Issue
+		tagProfile []TagRelevance
+		embedding  []float64
+	}
+
+	people := make([]personData, 0, len(byPerson))
+	for _, personIssues := range byPerson {
+		pd := personData{
+			name:       personIssues[0].AssignedTo,
+			issues:     personIssues,
+			tagProfile: meanTagProfile(personIssues),
+			embedding:  meanEmbedding(personIssues),
+		}
+		people = append(people, pd)
+	}
+
+	sort.Slice(people, func(i, j int) bool {
+		return strings.ToLower(people[i].name) < strings.ToLower(people[j].name)
+	})
+
+	var correlations []PersonCorrelation
+	for i := 0; i < len(people); i++ {
+		for j := i + 1; j < len(people); j++ {
+			a, b := people[i], people[j]
+
+			semanticScore := CosineSimilarity(a.embedding, b.embedding)
+			factorScore := tagProfileSimilarity(a.tagProfile, b.tagProfile)
+			combined := 0.6*semanticScore + 0.4*factorScore
+
+			correlations = append(correlations, PersonCorrelation{
+				PersonA:           a.name,
+				PersonB:           b.name,
+				CombinedScore:     roundTo2(combined),
+				SemanticScore:     roundTo2(semanticScore),
+				FactorScore:       roundTo2(factorScore),
+				SharedTags:        sharedTags(a.tagProfile, b.tagProfile),
+				PersonAIssueCount: len(a.issues),
+				PersonBIssueCount: len(b.issues),
+				PersonAProfile:    a.tagProfile,
+				PersonBProfile:    b.tagProfile,
+			})
+		}
+	}
+
+	sort.Slice(correlations, func(i, j int) bool {
+		return correlations[i].CombinedScore > correlations[j].CombinedScore
+	})
+
+	return WorkCorrelationsResult{Correlations: correlations}, nil
+}
+
+func meanTagProfile(matched []issues.Issue) []TagRelevance {
+	if len(matched) == 0 {
+		return []TagRelevance{}
+	}
+
+	sums := make(map[string]float64)
+	counts := make(map[string]int)
+	for _, issue := range matched {
+		for _, ts := range issue.TagScores {
+			sums[ts.Tag] += ts.Relevance
+			counts[ts.Tag]++
+		}
+	}
+
+	profile := make([]TagRelevance, 0, len(sums))
+	for tag, sum := range sums {
+		profile = append(profile, TagRelevance{
+			Tag:       tag,
+			Relevance: roundTo2(sum / float64(len(matched))),
+		})
+	}
+
+	sort.Slice(profile, func(i, j int) bool {
+		if profile[i].Relevance != profile[j].Relevance {
+			return profile[i].Relevance > profile[j].Relevance
+		}
+		return profile[i].Tag < profile[j].Tag
+	})
+
+	return profile
+}
+
+func meanEmbedding(matched []issues.Issue) []float64 {
+	if len(matched) == 0 {
+		return nil
+	}
+
+	var dim int
+	for _, issue := range matched {
+		if len(issue.Embedding) > 0 {
+			dim = len(issue.Embedding)
+			break
+		}
+	}
+	if dim == 0 {
+		return nil
+	}
+
+	mean := make([]float64, dim)
+	count := 0
+	for _, issue := range matched {
+		if len(issue.Embedding) != dim {
+			continue
+		}
+		for k, v := range issue.Embedding {
+			mean[k] += v
+		}
+		count++
+	}
+
+	if count == 0 {
+		return nil
+	}
+
+	var mag float64
+	for k := range mean {
+		mean[k] /= float64(count)
+		mag += mean[k] * mean[k]
+	}
+
+	if mag > 0 {
+		mag = math.Sqrt(mag)
+		for k := range mean {
+			mean[k] /= mag
+		}
+	}
+
+	return mean
+}
+
+func tagProfileSimilarity(a, b []TagRelevance) float64 {
+	if len(a) == 0 || len(b) == 0 {
+		return 0
+	}
+
+	tags := make(map[string]struct{})
+	aMap := make(map[string]float64, len(a))
+	bMap := make(map[string]float64, len(b))
+	for _, tr := range a {
+		aMap[tr.Tag] = tr.Relevance
+		tags[tr.Tag] = struct{}{}
+	}
+	for _, tr := range b {
+		bMap[tr.Tag] = tr.Relevance
+		tags[tr.Tag] = struct{}{}
+	}
+
+	var dot, magA, magB float64
+	for tag := range tags {
+		av, bv := aMap[tag], bMap[tag]
+		dot += av * bv
+		magA += av * av
+		magB += bv * bv
+	}
+
+	if magA == 0 || magB == 0 {
+		return 0
+	}
+	return dot / (math.Sqrt(magA) * math.Sqrt(magB))
+}
+
+func sharedTags(a, b []TagRelevance) []string {
+	bSet := make(map[string]struct{}, len(b))
+	for _, tr := range b {
+		bSet[tr.Tag] = struct{}{}
+	}
+
+	var shared []string
+	seen := make(map[string]struct{})
+	for _, tr := range a {
+		if _, ok := bSet[tr.Tag]; ok {
+			if _, dup := seen[tr.Tag]; !dup {
+				shared = append(shared, tr.Tag)
+				seen[tr.Tag] = struct{}{}
+			}
+		}
+	}
+
+	if shared == nil {
+		return []string{}
+	}
+	return shared
+}
+
+func roundTo2(v float64) float64 {
+	return math.Round(v*100) / 100
+}

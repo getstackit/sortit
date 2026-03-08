@@ -51,6 +51,7 @@ export type IssueRecord = {
   status: IssueStatus;
   closedAt?: string | null;
   closedBy?: string;
+  assignedTo?: string;
   discussion?: IssuePostRecord[];
 };
 
@@ -76,6 +77,10 @@ type RefineIssueInput = {
 type ProgressIssueInput = {
   raw: string;
   createdBy?: string;
+};
+
+type AssignIssueInput = {
+  assignedTo: string;
 };
 
 type SearchIssuesOptions = {
@@ -158,6 +163,16 @@ export async function refineIssue(
 ): Promise<IssueRecord> {
   return postJSON<IssueRecord, RefineIssueInput>(
     apiURL(`/api/v1/issues/${encodeURIComponent(id)}/refine`),
+    input
+  );
+}
+
+export async function assignIssue(
+  id: string,
+  input: AssignIssueInput
+): Promise<IssueRecord> {
+  return postJSON<IssueRecord, AssignIssueInput>(
+    apiURL(`/api/v1/issues/${encodeURIComponent(id)}/assign`),
     input
   );
 }

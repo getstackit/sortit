@@ -96,3 +96,16 @@ type ReopenIssueHandler struct {
 func (h ReopenIssueHandler) Handle(ctx context.Context, input ReopenIssue) (issues.Issue, error) {
 	return h.Store.ReopenIssue(ctx, input.ID)
 }
+
+type AssignIssue struct {
+	ID         string
+	AssignedTo string
+}
+
+type AssignIssueHandler struct {
+	Store issues.Store
+}
+
+func (h AssignIssueHandler) Handle(ctx context.Context, input AssignIssue) (issues.Issue, error) {
+	return h.Store.AssignIssue(ctx, input.ID, input.AssignedTo)
+}

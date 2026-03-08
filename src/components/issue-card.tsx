@@ -88,6 +88,14 @@ export function IssueCard({ issue, href, className, compact }: IssueCardProps) {
             return null;
           })()}
         </div>
+        {issue.assignedTo && (
+          <span className={cn(
+            "rounded-full bg-violet-100 font-medium text-violet-700",
+            compact ? "px-1.5 py-px text-[10px]" : "px-2 py-0.5 text-[11px]"
+          )}>
+            {issue.assignedTo}
+          </span>
+        )}
         <span className={cn(
           "ml-auto tracking-wide text-muted-foreground/40 transition-colors group-hover/card:text-muted-foreground/60",
           compact ? "text-[10px]" : "text-[11px]"

@@ -19,6 +19,8 @@ import (
 	issuemap "splat/internal/map"
 )
 
+type authorizationContextKey struct{}
+
 type ServerConfig struct {
 	// BaseURL is the Splat API base URL, e.g. "http://localhost:8081/api/v1"
 	BaseURL string
@@ -131,6 +133,21 @@ func NewHandler(cfg ServerConfig) http.Handler {
 	)
 
 	s.AddTool(
+		mcp.NewTool("assign_issue",
+			mcp.WithDescription("Assign a Splat issue to a person, or unassign by passing an empty string."),
+			mcp.WithString("id",
+				mcp.Required(),
+				mcp.Description("The issue ID to assign, for example issue-000003."),
+			),
+			mcp.WithString("assigned_to",
+				mcp.Required(),
+				mcp.Description("The person to assign the issue to. Pass an empty string to unassign."),
+			),
+		),
+		h.handleAssignIssue,
+	)
+
+	s.AddTool(
 		mcp.NewTool("explore_issue",
 			mcp.WithDescription("Explore a stored Splat issue by ID. Returns related open issues using semantic similarity and factor relevance, plus structured opportunities to solve multiple issues together."),
 			mcp.WithString("id",
@@ -144,8 +161,35 @@ func NewHandler(cfg ServerConfig) http.Handler {
 		h.handleExploreIssue,
 	)
 
+	s.AddTool(
+		mcp.NewTool("get_person_profile",
+			mcp.WithDescription("Get a person's tag profile based on their assigned issues. Shows where they spend their time across issue factors/tags."),
+			mcp.WithString("person",
+				mcp.Required(),
+				mcp.Description("The person's name (must match the assignedTo field on issues)."),
+			),
+			mcp.WithString("status",
+				mcp.Description("Optional issue status filter: open, closed, or all. Defaults to all."),
+			),
+		),
+		h.handleGetPersonProfile,
+	)
+
+	s.AddTool(
+		mcp.NewTool("work_correlations",
+			mcp.WithDescription("Find people working on semantically similar or tag-overlapping work. Returns pairs of people with similarity scores."),
+			mcp.WithString("status",
+				mcp.Description("Optional issue status filter: open, closed, or all. Defaults to all."),
+			),
+		),
+		h.handleWorkCorrelations,
+	)
+
 	httpServer := server.NewStreamableHTTPServer(s)
-	return httpServer
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		ctx := context.WithValue(r.Context(), authorizationContextKey{}, strings.TrimSpace(r.Header.Get("Authorization")))
+		httpServer.ServeHTTP(w, r.WithContext(ctx))
+	})
 }
 
 type handlers struct {
@@ -386,6 +430,105 @@ func (h *handlers) handleExploreIssue(ctx context.Context, req mcp.CallToolReque
 	return result, nil
 }
 
+func (h *handlers) handleAssignIssue(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+	id, err := req.RequireString("id")
+	if err != nil {
+		return mcp.NewToolResultError("id is required"), nil
+	}
+
+	assignedTo, err := req.RequireString("assigned_to")
+	if err != nil {
+		return mcp.NewToolResultError("assigned_to is required"), nil
+	}
+
+	id = strings.TrimSpace(id)
+	if id == "" {
+		return mcp.NewToolResultError("id is required"), nil
+	}
+
+	var issue issues.Issue
+	err = h.doJSONRequest(ctx, http.MethodPost, "/issues/"+url.PathEscape(id)+"/assign", map[string]string{
+		"assignedTo": assignedTo,
+	}, &issue)
+	if err != nil {
+		return mcp.NewToolResultError(err.Error()), nil
+	}
+
+	result, err := mcp.NewToolResultJSON(issue)
+	if err != nil {
+		return mcp.NewToolResultError(fmt.Sprintf("failed to encode response: %v", err)), nil
+	}
+	return result, nil
+}
+
+func (h *handlers) handleGetPersonProfile(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+	person, err := req.RequireString("person")
+	if err != nil {
+		return mcp.NewToolResultError("person is required"), nil
+	}
+
+	person = strings.TrimSpace(person)
+	if person == "" {
+		return mcp.NewToolResultError("person is required"), nil
+	}
+
+	status := strings.ToLower(strings.TrimSpace(req.GetString("status", "all")))
+	switch status {
+	case "", "all":
+		status = "all"
+	case "open", "closed":
+	default:
+		return mcp.NewToolResultError("status must be one of: open, closed, all"), nil
+	}
+
+	queryString := url.Values{}
+	if status != "all" {
+		queryString.Set("status", status)
+	}
+
+	query := ""
+	if len(queryString) > 0 {
+		query = "?" + queryString.Encode()
+	}
+
+	var response json.RawMessage
+	err = h.doJSONRequest(ctx, http.MethodGet, "/people/"+url.PathEscape(person)+"/profile"+query, nil, &response)
+	if err != nil {
+		return mcp.NewToolResultError(err.Error()), nil
+	}
+
+	return mcp.NewToolResultText(string(response)), nil
+}
+
+func (h *handlers) handleWorkCorrelations(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+	status := strings.ToLower(strings.TrimSpace(req.GetString("status", "all")))
+	switch status {
+	case "", "all":
+		status = "all"
+	case "open", "closed":
+	default:
+		return mcp.NewToolResultError("status must be one of: open, closed, all"), nil
+	}
+
+	queryString := url.Values{}
+	if status != "all" {
+		queryString.Set("status", status)
+	}
+
+	query := ""
+	if len(queryString) > 0 {
+		query = "?" + queryString.Encode()
+	}
+
+	var response json.RawMessage
+	err := h.doJSONRequest(ctx, http.MethodGet, "/people/correlations"+query, nil, &response)
+	if err != nil {
+		return mcp.NewToolResultError(err.Error()), nil
+	}
+
+	return mcp.NewToolResultText(string(response)), nil
+}
+
 func (h *handlers) doJSONRequest(ctx context.Context, method, route string, payload any, out any) error {
 	var body io.Reader
 	if payload != nil {
@@ -402,6 +545,9 @@ func (h *handlers) doJSONRequest(ctx context.Context, method, route string, payl
 	}
 	if payload != nil {
 		httpReq.Header.Set("Content-Type", "application/json")
+	}
+	if authHeader, ok := ctx.Value(authorizationContextKey{}).(string); ok && authHeader != "" {
+		httpReq.Header.Set("Authorization", authHeader)
 	}
 
 	resp, err := h.client.Do(httpReq)

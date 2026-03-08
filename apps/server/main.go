@@ -13,6 +13,7 @@ import (
 
 	"splat/internal/ai"
 	"splat/internal/api"
+	"splat/internal/auth"
 	"splat/internal/issues"
 )
 
@@ -42,12 +43,32 @@ func run() error {
 	}
 	defer issueStore.Close()
 
+	githubProvider, err := auth.NewGitHubProvider(auth.GitHubProviderConfig{
+		ClientID:     os.Getenv("GITHUB_CLIENT_ID"),
+		ClientSecret: os.Getenv("GITHUB_CLIENT_SECRET"),
+	})
+	if err != nil {
+		return err
+	}
+
+	webOrigin := envOrDefault("SPLAT_WEB_ORIGIN", firstNonEmpty(api.ParseCSV(*corsOrigins)))
+	authService, err := auth.NewService(auth.ServiceConfig{
+		Store:      auth.NewSQLiteStore(issueStore.DB()),
+		Provider:   githubProvider,
+		WebOrigin:  webOrigin,
+		SessionTTL: 30 * 24 * time.Hour,
+	})
+	if err != nil {
+		return err
+	}
+
 	server := api.NewServer(api.ServerConfig{
 		Port:        *port,
 		CORSOrigins: api.ParseCSV(*corsOrigins),
 		APIPrefixes: []string{"/api/v1", "/api"},
 		Analyzer:    analyzer,
 		IssueStore:  issueStore,
+		Auth:        authService,
 	})
 	if err := server.Initialize(context.Background()); err != nil {
 		return err
@@ -80,4 +101,13 @@ func envOrDefault(key, fallback string) string {
 		return value
 	}
 	return fallback
+}
+
+func firstNonEmpty(values []string) string {
+	for _, value := range values {
+		if value != "" {
+			return value
+		}
+	}
+	return ""
 }

@@ -11,6 +11,7 @@ import {
   Link2Icon,
   MessageSquareMoreIcon,
   SparklesIcon,
+  UserIcon,
 } from "lucide-react";
 import { AppShell } from "@/components/app-shell";
 import {
@@ -30,6 +31,7 @@ import type {
 } from "@/features/map/types";
 import { useIssue, useIssueMapData } from "@/hooks/use-issues";
 import {
+  assignIssue,
   closeIssue,
   reopenIssue,
   refineIssue,
@@ -227,6 +229,9 @@ export function IssueDetailPage({ issueID }: { issueID: string }) {
   const [refinePending, setRefinePending] = useState(false);
   const [postMode, setPostMode] = useState<"refinement" | "progress">("refinement");
   const [progressPending, setProgressPending] = useState(false);
+  const [assignEditing, setAssignEditing] = useState(false);
+  const [assignInput, setAssignInput] = useState("");
+  const [assignPending, setAssignPending] = useState(false);
 
   useEffect(() => {
     if (copyState === "idle") {
@@ -362,6 +367,25 @@ export function IssueDetailPage({ issueID }: { issueID: string }) {
     }
     return handleRefine();
   }, [postMode, handleProgress, handleRefine]);
+
+  const handleAssign = useCallback(async (value: string) => {
+    if (!issue || assignPending) {
+      return;
+    }
+
+    setAssignPending(true);
+    try {
+      const updated = await assignIssue(issue.id, { assignedTo: value.trim() });
+      mutateIssue(updated, { revalidate: false });
+      setAssignEditing(false);
+      setActionError(null);
+    } catch (caughtError) {
+      const message = caughtError instanceof Error ? caughtError.message : "Unknown backend error";
+      setActionError(message);
+    } finally {
+      setAssignPending(false);
+    }
+  }, [issue, assignPending, mutateIssue]);
 
   const shortcuts = useMemo(
     () =>
@@ -979,6 +1003,69 @@ export function IssueDetailPage({ issueID }: { issueID: string }) {
                         >
                           {issue.status === "closed" ? "Closed" : "Open"}
                         </span>
+                      </dd>
+                    </div>
+
+                    <div className="space-y-1">
+                      <dt className="text-[11px] font-medium uppercase tracking-[0.14em] text-muted-foreground">
+                        Assigned to
+                      </dt>
+                      <dd>
+                        {assignEditing ? (
+                          <div className="flex items-center gap-1.5">
+                            <input
+                              type="text"
+                              value={assignInput}
+                              onChange={(e) => setAssignInput(e.target.value)}
+                              onKeyDown={(e) => {
+                                if (e.key === "Enter") {
+                                  e.preventDefault();
+                                  void handleAssign(assignInput);
+                                }
+                                if (e.key === "Escape") {
+                                  setAssignEditing(false);
+                                }
+                              }}
+                              autoFocus
+                              placeholder="Name..."
+                              disabled={assignPending}
+                              className="min-w-0 flex-1 rounded-lg border border-input/80 bg-background/70 px-2 py-1 text-sm placeholder:text-muted-foreground/50 focus:outline-none focus:ring-2 focus:ring-ring/40"
+                            />
+                            <Button
+                              type="button"
+                              size="xs"
+                              onClick={() => void handleAssign(assignInput)}
+                              disabled={assignPending}
+                            >
+                              {assignPending ? "..." : "Save"}
+                            </Button>
+                            <Button
+                              type="button"
+                              size="xs"
+                              variant="ghost"
+                              onClick={() => setAssignEditing(false)}
+                              disabled={assignPending}
+                            >
+                              Cancel
+                            </Button>
+                          </div>
+                        ) : (
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setAssignInput(issue.assignedTo ?? "");
+                              setAssignEditing(true);
+                            }}
+                            className="group flex items-center gap-1.5 rounded-lg px-1 py-0.5 text-sm transition-colors hover:bg-accent/70"
+                          >
+                            <UserIcon className="size-3.5 text-muted-foreground" />
+                            {issue.assignedTo ? (
+                              <span className="font-medium text-violet-700">{issue.assignedTo}</span>
+                            ) : (
+                              <span className="text-muted-foreground">Unassigned</span>
+                            )}
+                          </button>
+                        )}
                       </dd>
                     </div>
 

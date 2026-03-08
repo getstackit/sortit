@@ -1,6 +1,10 @@
+export const AUTH_UNAUTHORIZED_EVENT = "splat:unauthorized";
+
 type ErrorPayload = {
   error?: string;
 };
+
+export class UnauthorizedError extends Error {}
 
 async function readErrorMessage(response: Response) {
   const fallback = `Request failed with ${response.status}`;
@@ -23,10 +27,20 @@ export async function requestJSON<T>(
   input: RequestInfo | URL,
   init?: RequestInit
 ): Promise<T> {
-  const response = await fetch(input, init);
+  const response = await fetch(input, {
+    credentials: init?.credentials ?? "include",
+    ...init,
+  });
 
   if (!response.ok) {
-    throw new Error(await readErrorMessage(response));
+    const message = await readErrorMessage(response);
+    if (response.status === 401) {
+      if (typeof window !== "undefined") {
+        window.dispatchEvent(new CustomEvent(AUTH_UNAUTHORIZED_EVENT));
+      }
+      throw new UnauthorizedError(message);
+    }
+    throw new Error(message);
   }
 
   return (await response.json()) as T;

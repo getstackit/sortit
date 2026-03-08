@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"splat/internal/ai"
+	"splat/internal/auth"
 	"splat/internal/commands"
 	"splat/internal/issues"
 	mcpserver "splat/internal/mcp"
@@ -24,6 +25,7 @@ type ServerConfig struct {
 	APIPrefixes []string
 	Analyzer    *ai.Analyzer
 	IssueStore  issues.Store
+	Auth        *auth.Service
 }
 
 type Server struct {
@@ -35,6 +37,7 @@ type Server struct {
 	progressIssue     commands.ProgressIssueHandler
 	closeIssue        commands.CloseIssueHandler
 	reopenIssue       commands.ReopenIssueHandler
+	assignIssue       commands.AssignIssueHandler
 	loadSampleIssues  commands.LoadSampleIssuesHandler
 	resetIssues       commands.ResetIssuesHandler
 	listIssues        queries.ListIssuesHandler
@@ -46,6 +49,9 @@ type Server struct {
 	getMap            queries.MapHandler
 	getMapEdges       queries.EdgeHandler
 	debugAnalyzeIssue queries.DebugAnalyzeIssueHandler
+	getPersonProfile  queries.GetPersonProfileHandler
+	workCorrelations  queries.WorkCorrelationsHandler
+	authService       *auth.Service
 	catalog           *services.CatalogService
 }
 
@@ -80,9 +86,16 @@ func (s *Server) Initialize(ctx context.Context) error {
 func (s *Server) Handler() http.Handler {
 	apiMux := http.NewServeMux()
 	apiRoutes := make(map[string]struct{})
+	publicAPIRoutes := make(map[string]struct{})
 
 	for _, prefix := range normalizeAPIPrefixes(s.config.APIPrefixes) {
 		healthRoute := path.Join(prefix, "health")
+		authGitHubStartRoute := path.Join(prefix, "auth", "github", "start")
+		authGitHubCallbackRoute := path.Join(prefix, "auth", "github", "callback")
+		authSessionRoute := path.Join(prefix, "auth", "session")
+		authLogoutRoute := path.Join(prefix, "auth", "logout")
+		authTokensRoute := path.Join(prefix, "auth", "tokens")
+		authTokenItemSubtreeRoute := authTokenItemRoute(prefix)
 		issuesRoute := path.Join(prefix, "issues")
 		issuesCompareRoute := path.Join(prefix, "issues", "compare")
 		issuesSearchRoute := path.Join(prefix, "issues", "search")
@@ -92,6 +105,8 @@ func (s *Server) Handler() http.Handler {
 		mapRoute := path.Join(prefix, "map")
 		mapEdgesRoute := path.Join(prefix, "map", "edges")
 		debugAnalyzeRoute := path.Join(prefix, "debug", "issues", "analyze")
+		peopleSubtreeRoute := path.Join(prefix, "people") + "/"
+		peopleCorrelationsRoute := path.Join(prefix, "people", "correlations")
 		debugSampleRoute := path.Join(prefix, "debug", "issues", "sample")
 		debugResetRoute := path.Join(prefix, "debug", "issues", "reset")
 
@@ -104,11 +119,30 @@ func (s *Server) Handler() http.Handler {
 		apiRoutes[tagsRoute] = struct{}{}
 		apiRoutes[mapRoute] = struct{}{}
 		apiRoutes[mapEdgesRoute] = struct{}{}
+		apiRoutes[peopleSubtreeRoute] = struct{}{}
+		apiRoutes[peopleCorrelationsRoute] = struct{}{}
 		apiRoutes[debugAnalyzeRoute] = struct{}{}
 		apiRoutes[debugSampleRoute] = struct{}{}
 		apiRoutes[debugResetRoute] = struct{}{}
+		apiRoutes[authGitHubStartRoute] = struct{}{}
+		apiRoutes[authGitHubCallbackRoute] = struct{}{}
+		apiRoutes[authSessionRoute] = struct{}{}
+		apiRoutes[authLogoutRoute] = struct{}{}
+		apiRoutes[authTokensRoute] = struct{}{}
+		apiRoutes[authTokenItemSubtreeRoute] = struct{}{}
+		publicAPIRoutes[healthRoute] = struct{}{}
+		publicAPIRoutes[authGitHubStartRoute] = struct{}{}
+		publicAPIRoutes[authGitHubCallbackRoute] = struct{}{}
+		publicAPIRoutes[authSessionRoute] = struct{}{}
+		publicAPIRoutes[authLogoutRoute] = struct{}{}
 
 		apiMux.HandleFunc(healthRoute, s.handleHealth)
+		apiMux.HandleFunc(authGitHubStartRoute, s.handleAuthGitHubStart)
+		apiMux.HandleFunc(authGitHubCallbackRoute, s.handleAuthGitHubCallback)
+		apiMux.HandleFunc(authSessionRoute, s.handleAuthSession)
+		apiMux.HandleFunc(authLogoutRoute, s.handleAuthLogout)
+		apiMux.HandleFunc(authTokensRoute, s.handleAuthTokens)
+		apiMux.HandleFunc(authTokenItemSubtreeRoute, s.handleAuthTokenByID(authTokenItemSubtreeRoute))
 		apiMux.HandleFunc(issuesRoute, s.handleIssues)
 		apiMux.HandleFunc(issuesCompareRoute, s.handleIssueCompare)
 		apiMux.HandleFunc(issuesSearchRoute, s.handleIssueSearch)
@@ -117,6 +151,8 @@ func (s *Server) Handler() http.Handler {
 		apiMux.HandleFunc(tagsRoute, s.handleTags)
 		apiMux.HandleFunc(mapRoute, s.handleMap)
 		apiMux.HandleFunc(mapEdgesRoute, s.handleMapEdges)
+		apiMux.HandleFunc(peopleCorrelationsRoute, s.handleWorkCorrelations)
+		apiMux.HandleFunc(peopleSubtreeRoute, s.handlePersonProfile(peopleSubtreeRoute))
 		apiMux.HandleFunc(debugAnalyzeRoute, s.handleDebugIssueAnalyze)
 		apiMux.HandleFunc(debugSampleRoute, s.handleDebugIssueSampleLoad)
 		apiMux.HandleFunc(debugResetRoute, s.handleDebugIssueReset)
@@ -154,6 +190,7 @@ func (s *Server) Handler() http.Handler {
 	})
 
 	handler := corsMiddleware(s.config.CORSOrigins, apiRoutes, root)
+	handler = authMiddleware(s.authService, publicAPIRoutes, handler)
 	return loggingMiddleware(handler)
 }
 
@@ -242,6 +279,9 @@ func NewServer(cfg ServerConfig) *Server {
 		reopenIssue: commands.ReopenIssueHandler{
 			Store: store,
 		},
+		assignIssue: commands.AssignIssueHandler{
+			Store: store,
+		},
 		loadSampleIssues: commands.LoadSampleIssuesHandler{
 			Store:    replaceable,
 			Enricher: enricher,
@@ -266,6 +306,9 @@ func NewServer(cfg ServerConfig) *Server {
 		getMap:            queries.MapHandler{IssueStore: store, Catalog: catalog},
 		getMapEdges:       queries.EdgeHandler{IssueStore: store, Catalog: catalog},
 		debugAnalyzeIssue: queries.DebugAnalyzeIssueHandler{Analyzer: cfg.Analyzer, Catalog: catalog, Store: store},
+		getPersonProfile:  queries.GetPersonProfileHandler{Store: store},
+		workCorrelations:  queries.WorkCorrelationsHandler{Store: store},
+		authService:       cfg.Auth,
 		catalog:           catalog,
 	}
 }

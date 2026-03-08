@@ -15,6 +15,7 @@ type Issue struct {
 	ClosedBy          string
 	TagScoresJson     string
 	EmbeddingJson     string
+	AssignedTo        string
 }
 
 type IssuePost struct {

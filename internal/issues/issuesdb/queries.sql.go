@@ -9,6 +9,20 @@ import (
 	"context"
 )
 
+const assignIssue = `-- name: AssignIssue :exec
+UPDATE issues SET assigned_to = ? WHERE id = ?
+`
+
+type AssignIssueParams struct {
+	AssignedTo string
+	ID         string
+}
+
+func (q *Queries) AssignIssue(ctx context.Context, arg AssignIssueParams) error {
+	_, err := q.db.ExecContext(ctx, assignIssue, arg.AssignedTo, arg.ID)
+	return err
+}
+
 const closeIssue = `-- name: CloseIssue :exec
 UPDATE issues
 SET status = 'closed',
@@ -47,7 +61,7 @@ func (q *Queries) DeleteAllIssues(ctx context.Context) error {
 }
 
 const getIssue = `-- name: GetIssue :one
-SELECT id, raw, tags_json, created_by, created_at_unix_nano, status, closed_at_unix_nano, closed_by, tag_scores_json, embedding_json
+SELECT id, raw, tags_json, created_by, created_at_unix_nano, status, closed_at_unix_nano, closed_by, tag_scores_json, embedding_json, assigned_to
 FROM issues
 WHERE id = ?
 `
@@ -66,6 +80,7 @@ func (q *Queries) GetIssue(ctx context.Context, id string) (Issue, error) {
 		&i.ClosedBy,
 		&i.TagScoresJson,
 		&i.EmbeddingJson,
+		&i.AssignedTo,
 	)
 	return i, err
 }
@@ -94,8 +109,9 @@ INSERT INTO issues (
     closed_at_unix_nano,
     closed_by,
     tag_scores_json,
-    embedding_json
-) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    embedding_json,
+    assigned_to
+) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 `
 
 type InsertIssueParams struct {
@@ -109,6 +125,7 @@ type InsertIssueParams struct {
 	ClosedBy          string
 	TagScoresJson     string
 	EmbeddingJson     string
+	AssignedTo        string
 }
 
 func (q *Queries) InsertIssue(ctx context.Context, arg InsertIssueParams) error {
@@ -123,6 +140,7 @@ func (q *Queries) InsertIssue(ctx context.Context, arg InsertIssueParams) error 
 		arg.ClosedBy,
 		arg.TagScoresJson,
 		arg.EmbeddingJson,
+		arg.AssignedTo,
 	)
 	return err
 }
@@ -201,7 +219,7 @@ func (q *Queries) ListIssuePosts(ctx context.Context, issueID string) ([]IssuePo
 }
 
 const listIssues = `-- name: ListIssues :many
-SELECT id, raw, tags_json, created_by, created_at_unix_nano, status, closed_at_unix_nano, closed_by, tag_scores_json, embedding_json
+SELECT id, raw, tags_json, created_by, created_at_unix_nano, status, closed_at_unix_nano, closed_by, tag_scores_json, embedding_json, assigned_to
 FROM issues
 ORDER BY created_at_unix_nano DESC, id ASC
 `
@@ -226,6 +244,7 @@ func (q *Queries) ListIssues(ctx context.Context) ([]Issue, error) {
 			&i.ClosedBy,
 			&i.TagScoresJson,
 			&i.EmbeddingJson,
+			&i.AssignedTo,
 		); err != nil {
 			return nil, err
 		}

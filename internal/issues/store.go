@@ -30,6 +30,7 @@ type Issue struct {
 	Status     IssueStatus    `json:"status"`
 	ClosedAt   *time.Time     `json:"closedAt"`
 	ClosedBy   string         `json:"closedBy,omitempty"`
+	AssignedTo string         `json:"assignedTo,omitempty"`
 	Discussion []IssuePost    `json:"discussion,omitempty"`
 	TagScores  []TagRelevance `json:"tagScores"`
 	Embedding  []float64      `json:"-"`
@@ -87,6 +88,7 @@ type Store interface {
 	ProgressPost(context.Context, string, ProgressInput) (Issue, error)
 	CloseIssue(context.Context, string, string) (Issue, error)
 	ReopenIssue(context.Context, string) (Issue, error)
+	AssignIssue(ctx context.Context, id, assignee string) (Issue, error)
 }
 
 func DefaultTags() []Tag {
@@ -344,6 +346,28 @@ func (s *InMemoryStore) ReopenIssue(_ context.Context, id string) (Issue, error)
 	return Issue{}, ErrNotFound
 }
 
+func (s *InMemoryStore) AssignIssue(_ context.Context, id, assignee string) (Issue, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	id = strings.TrimSpace(id)
+	assignee = strings.TrimSpace(assignee)
+
+	for index, issue := range s.issues {
+		if issue.ID != id {
+			continue
+		}
+
+		issue.AssignedTo = assignee
+		s.issues[index] = issue
+		cloned := cloneIssues([]Issue{issue})[0]
+		cloned.Discussion = cloneIssuePosts(s.discussion[id])
+		return cloned, nil
+	}
+
+	return Issue{}, ErrNotFound
+}
+
 func (s *InMemoryStore) Replace(_ context.Context, next []Issue) error {
 	items := cloneIssues(next)
 	slices.SortStableFunc(items, compareIssueOrder)
@@ -441,6 +465,7 @@ func cloneIssues(input []Issue) []Issue {
 			Status:     normalizeIssueStatus(issue.Status),
 			ClosedAt:   cloneTimePtr(issue.ClosedAt),
 			ClosedBy:   issue.ClosedBy,
+			AssignedTo: issue.AssignedTo,
 			Discussion: cloneIssuePosts(issue.Discussion),
 			TagScores:  copyTagScores(issue.TagScores),
 			Embedding:  copyEmbedding(issue.Embedding),

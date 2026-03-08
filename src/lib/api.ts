@@ -1,5 +1,3 @@
-const LOCAL_API_ORIGIN = "http://127.0.0.1:8081";
-
 function trimTrailingSlash(value: string) {
   return value.endsWith("/") ? value.slice(0, -1) : value;
 }
@@ -22,6 +20,14 @@ function shouldUseLocalAPIOrigin() {
   return hostname === "localhost" || hostname === "127.0.0.1";
 }
 
+function localAPIOrigin() {
+  if (typeof window === "undefined") {
+    return "";
+  }
+
+  return `${window.location.protocol}//${window.location.hostname}:8081`;
+}
+
 export function apiURL(path: string) {
   const explicitOrigin = explicitAPIOrigin();
   if (explicitOrigin) {
@@ -29,7 +35,7 @@ export function apiURL(path: string) {
   }
 
   if (shouldUseLocalAPIOrigin()) {
-    return `${LOCAL_API_ORIGIN}${path}`;
+    return `${localAPIOrigin()}${path}`;
   }
 
   return path;

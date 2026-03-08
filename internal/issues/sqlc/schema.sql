@@ -8,7 +8,8 @@ CREATE TABLE issues (
     closed_at_unix_nano INTEGER NOT NULL,
     closed_by TEXT NOT NULL,
     tag_scores_json TEXT NOT NULL,
-    embedding_json TEXT NOT NULL
+    embedding_json TEXT NOT NULL,
+    assigned_to TEXT NOT NULL DEFAULT ''
 );
 
 CREATE TABLE issue_posts (

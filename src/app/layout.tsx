@@ -2,6 +2,8 @@ import type { Metadata } from "next";
 import Script from "next/script";
 import type { ReactNode } from "react";
 import { Geist, Geist_Mono } from "next/font/google";
+import { AuthGate } from "@/components/auth-gate";
+import { AuthProvider } from "@/components/auth-provider";
 import { SWRProvider } from "@/components/swr-provider";
 import { themeInitScript } from "@/lib/theme";
 import "./globals.css";
@@ -38,7 +40,11 @@ export default function RootLayout({
       </head>
       <body className="antialiased">
         <script dangerouslySetInnerHTML={{ __html: themeInitScript }} />
-        <SWRProvider>{children}</SWRProvider>
+        <SWRProvider>
+          <AuthProvider>
+            <AuthGate>{children}</AuthGate>
+          </AuthProvider>
+        </SWRProvider>
       </body>
     </html>
   );
