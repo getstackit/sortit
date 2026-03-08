@@ -12,13 +12,16 @@ export const GLOBAL_SHORTCUTS = [
   { key: "G M", description: "Go to Map" },
   { key: "G T", description: "Go to Tag Map" },
   { key: "G D", description: "Go to Debug" },
+  { key: "/", description: "Open command palette" },
   { key: "?", description: "Show keyboard shortcuts" },
 ] as const;
 
 type UseAppShellShortcutsOptions = {
+  commandPaletteOpen: boolean;
   composerOpen: boolean;
   isMobile: boolean;
   navigateTo: (href: string) => void;
+  openCommandPalette: () => void;
   openComposer: () => void;
   openShortcutHelp: () => void;
   shortcutHelpOpen: boolean;
@@ -42,9 +45,11 @@ function isEditableElement(target: EventTarget | null) {
 }
 
 export function useAppShellShortcuts({
+  commandPaletteOpen,
   composerOpen,
   isMobile,
   navigateTo,
+  openCommandPalette,
   openComposer,
   openShortcutHelp,
   shortcutHelpOpen,
@@ -79,7 +84,7 @@ export function useAppShellShortcuts({
 
     const key = event.key.toLowerCase();
     const hasCommandModifier = event.metaKey || event.ctrlKey;
-    const overlayOpen = composerOpen || shortcutHelpOpen;
+    const overlayOpen = composerOpen || shortcutHelpOpen || commandPaletteOpen;
     const typing = isEditableElement(event.target);
 
     if (
@@ -130,6 +135,12 @@ export function useAppShellShortcuts({
       return;
     }
 
+    if (event.key === "/") {
+      event.preventDefault();
+      openCommandPalette();
+      return;
+    }
+
     if (event.key === "?") {
       event.preventDefault();
       openShortcutHelp();
@@ -170,12 +181,12 @@ export function useAppShellShortcuts({
   }, []);
 
   useEffect(() => {
-    if (!composerOpen && !shortcutHelpOpen) {
+    if (!composerOpen && !shortcutHelpOpen && !commandPaletteOpen) {
       return;
     }
 
     resetShortcutPrefix();
-  }, [composerOpen, shortcutHelpOpen]);
+  }, [commandPaletteOpen, composerOpen, shortcutHelpOpen]);
 
   useEffect(() => {
     return () => {

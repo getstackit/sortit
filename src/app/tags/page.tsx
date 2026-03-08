@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { Fragment, useEffect, useMemo, useState } from "react";
 import { UMAP } from "umap-js";
 import { AppShell } from "@/components/app-shell";
 import { AppSidebar } from "@/components/app-sidebar";
@@ -72,9 +72,9 @@ export default function TagsPage() {
   );
 
   const resolvedSelectedTagName =
-    selectedTagName && tags.some((tag) => tag.name === selectedTagName)
+    selectedTagName && embeddedTags.some((tag) => tag.name === selectedTagName)
       ? selectedTagName
-      : tags[0]?.name ?? null;
+      : embeddedTags[0]?.name ?? null;
 
   const points = useMemo(
     () => projectTags(embeddedTags, method),
@@ -367,9 +367,8 @@ export default function TagsPage() {
                   ))}
 
                   {similarityMatrix.names.map((rowName, rowIndex) => (
-                    <>
+                    <Fragment key={`matrix-row-${rowName}`}>
                       <div
-                        key={`row-${rowName}`}
                         className="truncate px-2 py-2 text-sm font-medium"
                       >
                         {rowName}
@@ -389,7 +388,7 @@ export default function TagsPage() {
                           {Math.round(value * 100)}
                         </button>
                       ))}
-                    </>
+                    </Fragment>
                   ))}
                 </div>
               </div>

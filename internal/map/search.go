@@ -99,6 +99,44 @@ func SearchFromQueryWithTags(
 	}
 }
 
+type RelatedTag struct {
+	Name        string  `json:"name"`
+	Description string  `json:"description,omitempty"`
+	Similarity  float64 `json:"similarity"`
+}
+
+func SearchTags(storeTags []issues.Tag, queryEmbedding []float64, limit int) []RelatedTag {
+	if limit <= 0 {
+		limit = defaultSearchLimit
+	}
+
+	related := make([]RelatedTag, 0, len(storeTags))
+	for _, tag := range storeTags {
+		if len(tag.Embedding) == 0 || len(queryEmbedding) == 0 {
+			continue
+		}
+		sim := cosineSimilarity(queryEmbedding, tag.Embedding)
+		related = append(related, RelatedTag{
+			Name:        tag.Name,
+			Description: tag.Description,
+			Similarity:  round(sim, 2),
+		})
+	}
+
+	slices.SortFunc(related, func(a, b RelatedTag) int {
+		if diff := cmp.Compare(b.Similarity, a.Similarity); diff != 0 {
+			return diff
+		}
+		return cmp.Compare(a.Name, b.Name)
+	})
+
+	if len(related) > limit {
+		related = related[:limit]
+	}
+
+	return related
+}
+
 func searchQueryTags(tags []issues.TagRelevance) []TagRelevance {
 	if len(tags) == 0 {
 		return nil

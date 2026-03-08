@@ -238,6 +238,10 @@ func (s *Server) handleIssueByID(route string) http.HandlerFunc {
 					writeError(w, http.StatusNotFound, "issue not found")
 					return
 				}
+				if errors.Is(err, issues.ErrIssueClosed) {
+					writeError(w, http.StatusConflict, "issue is closed")
+					return
+				}
 
 				writeInternalError(w, r, "failed to refine issue", err)
 				return
@@ -307,6 +311,10 @@ func (s *Server) handleIssueByID(route string) http.HandlerFunc {
 			if err != nil {
 				if errors.Is(err, issues.ErrNotFound) {
 					writeError(w, http.StatusNotFound, "issue not found")
+					return
+				}
+				if errors.Is(err, issues.ErrIssueClosed) {
+					writeError(w, http.StatusConflict, "issue is closed")
 					return
 				}
 

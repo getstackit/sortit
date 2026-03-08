@@ -11,7 +11,7 @@ type TagRelevanceBarsProps = {
 };
 
 function defaultColor(tag: string): string {
-  return entityStyle(tag).color;
+  return entityStyle(tag).color ?? "#888";
 }
 
 export function TagRelevanceBars({ tags, colorFor = defaultColor }: TagRelevanceBarsProps) {

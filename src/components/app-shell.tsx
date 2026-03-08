@@ -12,6 +12,7 @@ import type { ReactNode } from "react";
 import { useRouter } from "next/navigation";
 import { Dialog } from "@base-ui/react/dialog";
 import { BackgroundMesh } from "@/components/background-mesh";
+import { CommandPalette } from "@/components/command-palette";
 import {
   GLOBAL_SHORTCUTS,
   useAppShellShortcuts,
@@ -33,11 +34,13 @@ type AppShellContextValue = {
   mobileOpen: boolean;
   composerOpen: boolean;
   shortcutHelpOpen: boolean;
+  commandPaletteOpen: boolean;
   toggleSidebar: () => void;
   closeMobileSidebar: () => void;
   openComposer: () => void;
   setComposerOpen: (open: boolean) => void;
   openShortcutHelp: () => void;
+  openCommandPalette: () => void;
 };
 
 const AppShellContext = createContext<AppShellContextValue | null>(null);
@@ -73,6 +76,7 @@ export function AppShell({
   const [mobileOpen, setMobileOpen] = useState(false);
   const [composerOpen, setComposerOpen] = useState(false);
   const [shortcutHelpOpen, setShortcutHelpOpen] = useState(false);
+  const [commandPaletteOpen, setCommandPaletteOpen] = useState(false);
 
   useEffect(() => {
     window.localStorage.setItem(
@@ -87,6 +91,7 @@ export function AppShell({
     (href: string) => {
       setComposerOpen(false);
       setShortcutHelpOpen(false);
+      setCommandPaletteOpen(false);
       setMobileOpen(false);
       router.push(href);
     },
@@ -95,12 +100,20 @@ export function AppShell({
 
   const openComposer = useCallback(() => {
     setShortcutHelpOpen(false);
+    setCommandPaletteOpen(false);
     setComposerOpen(true);
   }, []);
 
   const openShortcutHelp = useCallback(() => {
     setComposerOpen(false);
+    setCommandPaletteOpen(false);
     setShortcutHelpOpen(true);
+  }, []);
+
+  const openCommandPalette = useCallback(() => {
+    setComposerOpen(false);
+    setShortcutHelpOpen(false);
+    setCommandPaletteOpen(true);
   }, []);
 
   const toggleSidebar = useCallback(() => {
@@ -113,9 +126,11 @@ export function AppShell({
   }, [isMobile]);
 
   useAppShellShortcuts({
+    commandPaletteOpen,
     composerOpen,
     isMobile,
     navigateTo,
+    openCommandPalette,
     openComposer,
     openShortcutHelp,
     shortcutHelpOpen,
@@ -130,6 +145,7 @@ export function AppShell({
       mobileOpen,
       composerOpen,
       shortcutHelpOpen,
+      commandPaletteOpen,
       toggleSidebar,
       closeMobileSidebar() {
         setMobileOpen(false);
@@ -137,12 +153,15 @@ export function AppShell({
       openComposer,
       setComposerOpen,
       openShortcutHelp,
+      openCommandPalette,
     }),
     [
       collapsed,
+      commandPaletteOpen,
       composerOpen,
       isMobile,
       mobileOpen,
+      openCommandPalette,
       openComposer,
       openShortcutHelp,
       shortcutHelpOpen,
@@ -178,6 +197,7 @@ export function AppShell({
           </main>
         </div>
       </div>
+      <CommandPalette open={commandPaletteOpen} onOpenChange={setCommandPaletteOpen} />
       <Dialog.Root open={shortcutHelpOpen} onOpenChange={setShortcutHelpOpen}>
         <Dialog.Portal>
           <Dialog.Backdrop className="fixed inset-0 z-50 bg-black/40 transition-opacity data-[ending-style]:opacity-0 data-[starting-style]:opacity-0" />

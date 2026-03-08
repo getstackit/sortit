@@ -12,6 +12,7 @@ import (
 )
 
 var ErrNotFound = errors.New("issue not found")
+var ErrIssueClosed = errors.New("issue is closed")
 
 type IssueStatus string
 
@@ -210,6 +211,10 @@ func (s *InMemoryStore) Refine(_ context.Context, id string, input RefineInput) 
 			continue
 		}
 
+		if issue.Status == StatusClosed {
+			return Issue{}, ErrIssueClosed
+		}
+
 		discussion := cloneIssuePosts(s.discussion[id])
 		post := IssuePost{
 			ID:        issuePostID(id, len(discussion)+1),
@@ -218,6 +223,7 @@ func (s *InMemoryStore) Refine(_ context.Context, id string, input RefineInput) 
 			CreatedBy: defaultActor(input.CreatedBy),
 			CreatedAt: time.Now().UTC(),
 			Sequence:  len(discussion) + 1,
+			Kind:      "refinement",
 		}
 		discussion = append(discussion, post)
 
@@ -253,6 +259,10 @@ func (s *InMemoryStore) ProgressPost(_ context.Context, id string, input Progres
 	for index, issue := range s.issues {
 		if issue.ID != id {
 			continue
+		}
+
+		if issue.Status == StatusClosed {
+			return Issue{}, ErrIssueClosed
 		}
 
 		discussion := cloneIssuePosts(s.discussion[id])

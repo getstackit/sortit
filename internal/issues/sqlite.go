@@ -200,6 +200,10 @@ func (s *SQLiteStore) Refine(ctx context.Context, id string, input RefineInput) 
 		return Issue{}, err
 	}
 
+	if current.Status == StatusClosed {
+		return Issue{}, ErrIssueClosed
+	}
+
 	post := IssuePost{
 		ID:        issuePostID(id, len(current.Discussion)+1),
 		IssueID:   id,
@@ -207,6 +211,7 @@ func (s *SQLiteStore) Refine(ctx context.Context, id string, input RefineInput) 
 		CreatedBy: defaultActor(input.CreatedBy),
 		CreatedAt: time.Now().UTC(),
 		Sequence:  len(current.Discussion) + 1,
+		Kind:      "refinement",
 	}
 
 	updated := current
@@ -228,6 +233,7 @@ func (s *SQLiteStore) Refine(ctx context.Context, id string, input RefineInput) 
 		CreatedBy:         post.CreatedBy,
 		CreatedAtUnixNano: post.CreatedAt.UnixNano(),
 		Sequence:          int64(post.Sequence),
+		Kind:              post.Kind,
 	}); err != nil {
 		return Issue{}, fmt.Errorf("insert issue post: %w", err)
 	}
@@ -269,6 +275,10 @@ func (s *SQLiteStore) ProgressPost(ctx context.Context, id string, input Progres
 	current, err := s.getIssueWithDiscussion(ctx, qtx, id)
 	if err != nil {
 		return Issue{}, err
+	}
+
+	if current.Status == StatusClosed {
+		return Issue{}, ErrIssueClosed
 	}
 
 	post := IssuePost{

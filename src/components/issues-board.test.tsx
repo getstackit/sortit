@@ -212,6 +212,19 @@ describe("IssuesBoard", () => {
     expect(window.location.search).toContain("q=front+end+changes");
   });
 
+  it("keeps multi-character search text while syncing the URL", async () => {
+    render(<IssuesBoard />);
+
+    const input = screen.getByLabelText("Search issues");
+    await userEvent.type(input, "ab");
+
+    expect(input).toHaveValue("ab");
+
+    await waitFor(() => {
+      expect(window.location.search).toContain("q=ab");
+    });
+  });
+
   it("can include closed issues in semantic search", async () => {
     render(<IssuesBoard />);
 
@@ -245,10 +258,10 @@ describe("IssuesBoard", () => {
     expect(vi.mocked(useIssueSearch)).toHaveBeenCalledWith("front end changes", "all", 8);
   });
 
-  it("registers a slash shortcut to focus semantic search", async () => {
+  it("registers an S shortcut to focus semantic search", async () => {
     render(<IssuesBoard />);
 
-    const shortcut = appShellShortcuts.find((item) => item.key === "/");
+    const shortcut = appShellShortcuts.find((item) => item.key === "s");
     expect(shortcut?.description).toBe("Focus semantic search");
 
     const input = screen.getByLabelText("Search issues");
@@ -257,5 +270,12 @@ describe("IssuesBoard", () => {
     await shortcut?.action();
 
     expect(input).toHaveFocus();
+  });
+
+  it("renders the issues content inside its own scroll container", () => {
+    const { container } = render(<IssuesBoard />);
+
+    const scrollRegion = container.querySelector(".app-scrollarea.overflow-y-auto");
+    expect(scrollRegion).not.toBeNull();
   });
 });

@@ -711,101 +711,109 @@ export function IssueDetailPage({ issueID }: { issueID: string }) {
                     })}
                   </div>
 
-                  <div className="app-subtle-surface mt-5 rounded-[1.5rem] p-4">
-                    <div className="mb-3 flex gap-1">
-                      <button
-                        type="button"
-                        onClick={() => setPostMode("refinement")}
-                        className={cn(
-                          "rounded-full px-3 py-1 text-xs font-medium transition-colors",
-                          postMode === "refinement"
-                            ? "bg-amber-100 text-amber-700"
-                            : "bg-muted text-muted-foreground hover:bg-muted/80"
-                        )}
-                      >
-                        Refinement
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => setPostMode("progress")}
-                        className={cn(
-                          "rounded-full px-3 py-1 text-xs font-medium transition-colors",
-                          postMode === "progress"
-                            ? "bg-blue-100 text-blue-700"
-                            : "bg-muted text-muted-foreground hover:bg-muted/80"
-                        )}
-                      >
-                        Progress
-                      </button>
+                  {issue.status === "closed" ? (
+                    <div className="app-subtle-surface mt-5 rounded-[1.5rem] p-4">
+                      <p className="text-sm text-muted-foreground">
+                        This issue is closed. Reopen it to add refinements or progress updates.
+                      </p>
                     </div>
-                    <div className="flex items-start gap-3">
-                      <div
-                        className={cn(
-                          "mt-0.5 rounded-full p-2",
-                          postMode === "progress"
-                            ? "bg-blue-100 text-blue-700"
-                            : "bg-amber-100 text-amber-700"
-                        )}
-                      >
-                        {postMode === "progress" ? (
-                          <ArrowUpCircleIcon className="size-4" />
-                        ) : (
-                          <SparklesIcon className="size-4" />
-                        )}
-                      </div>
-                      <div className="min-w-0 flex-1">
-                        <p className="text-sm font-medium">
-                          {postMode === "progress"
-                            ? "Post a progress update"
-                            : "Refine this issue"}
-                        </p>
-                        <p className="mt-1 text-sm text-muted-foreground">
-                          {postMode === "progress"
-                            ? "Report work done toward resolving this issue."
-                            : "Add context, corrections, or feedback."}
-                        </p>
-                        <textarea
-                          value={refineInput}
-                          onChange={(event) => {
-                            setRefineInput(event.target.value);
-                            if (actionError) {
-                              setActionError(null);
-                            }
-                          }}
-                          onKeyDown={(event) => {
-                            if ((event.metaKey || event.ctrlKey) && event.key === "Enter") {
-                              event.preventDefault();
-                              void handleSubmit();
-                            }
-                          }}
-                          placeholder={
+                  ) : (
+                    <div className="app-subtle-surface mt-5 rounded-[1.5rem] p-4">
+                      <div className="mb-3 flex gap-1">
+                        <button
+                          type="button"
+                          onClick={() => setPostMode("refinement")}
+                          className={cn(
+                            "rounded-full px-3 py-1 text-xs font-medium transition-colors",
+                            postMode === "refinement"
+                              ? "bg-amber-100 text-amber-700"
+                              : "bg-muted text-muted-foreground hover:bg-muted/80"
+                          )}
+                        >
+                          Refinement
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setPostMode("progress")}
+                          className={cn(
+                            "rounded-full px-3 py-1 text-xs font-medium transition-colors",
                             postMode === "progress"
-                              ? "Report work done toward resolving this issue..."
-                              : "Add more context, corrections, or feedback..."
-                          }
-                          disabled={refinePending || progressPending}
-                          className="mt-4 min-h-[120px] w-full resize-y rounded-xl border border-input/80 bg-background/70 px-3 py-2 text-sm leading-relaxed placeholder:text-muted-foreground/50 focus:outline-none focus:ring-2 focus:ring-ring/40"
-                        />
-                        <div className="mt-3 flex flex-wrap items-center justify-between gap-3">
-                          <p className="text-[11px] text-muted-foreground">
-                            Press <span className="font-medium text-foreground">Cmd/Ctrl + Enter</span>{" "}
-                            to post.
+                              ? "bg-blue-100 text-blue-700"
+                              : "bg-muted text-muted-foreground hover:bg-muted/80"
+                          )}
+                        >
+                          Progress
+                        </button>
+                      </div>
+                      <div className="flex items-start gap-3">
+                        <div
+                          className={cn(
+                            "mt-0.5 rounded-full p-2",
+                            postMode === "progress"
+                              ? "bg-blue-100 text-blue-700"
+                              : "bg-amber-100 text-amber-700"
+                          )}
+                        >
+                          {postMode === "progress" ? (
+                            <ArrowUpCircleIcon className="size-4" />
+                          ) : (
+                            <SparklesIcon className="size-4" />
+                          )}
+                        </div>
+                        <div className="min-w-0 flex-1">
+                          <p className="text-sm font-medium">
+                            {postMode === "progress"
+                              ? "Post a progress update"
+                              : "Refine this issue"}
                           </p>
-                          <Button
-                            type="button"
-                            onClick={() => void handleSubmit()}
-                            disabled={refinePending || progressPending || refineInput.trim().length === 0}
-                          >
-                            {refinePending || progressPending
-                              ? "Posting..."
-                              : postMode === "progress"
-                                ? "Post progress"
-                                : "Post refinement"}
-                          </Button>
+                          <p className="mt-1 text-sm text-muted-foreground">
+                            {postMode === "progress"
+                              ? "Report work done toward resolving this issue."
+                              : "Add context, corrections, or feedback."}
+                          </p>
+                          <textarea
+                            value={refineInput}
+                            onChange={(event) => {
+                              setRefineInput(event.target.value);
+                              if (actionError) {
+                                setActionError(null);
+                              }
+                            }}
+                            onKeyDown={(event) => {
+                              if ((event.metaKey || event.ctrlKey) && event.key === "Enter") {
+                                event.preventDefault();
+                                void handleSubmit();
+                              }
+                            }}
+                            placeholder={
+                              postMode === "progress"
+                                ? "Report work done toward resolving this issue..."
+                                : "Add more context, corrections, or feedback..."
+                            }
+                            disabled={refinePending || progressPending}
+                            className="mt-4 min-h-[120px] w-full resize-y rounded-xl border border-input/80 bg-background/70 px-3 py-2 text-sm leading-relaxed placeholder:text-muted-foreground/50 focus:outline-none focus:ring-2 focus:ring-ring/40"
+                          />
+                          <div className="mt-3 flex flex-wrap items-center justify-between gap-3">
+                            <p className="text-[11px] text-muted-foreground">
+                              Press <span className="font-medium text-foreground">Cmd/Ctrl + Enter</span>{" "}
+                              to post.
+                            </p>
+                            <Button
+                              type="button"
+                              onClick={() => void handleSubmit()}
+                              disabled={refinePending || progressPending || refineInput.trim().length === 0}
+                            >
+                              {refinePending || progressPending
+                                ? "Posting..."
+                                : postMode === "progress"
+                                  ? "Post progress"
+                                  : "Post refinement"}
+                            </Button>
+                          </div>
                         </div>
                       </div>
                     </div>
-                  </div>
+                  )}
                 </section>
               </div>
 

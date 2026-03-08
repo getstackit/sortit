@@ -41,6 +41,7 @@ type Server struct {
 	getIssue          queries.GetIssueHandler
 	compareIssues     queries.CompareIssuesHandler
 	searchIssues      queries.SearchIssuesHandler
+	searchUnified     queries.SearchUnifiedHandler
 	listTags          queries.ListTagsHandler
 	getMap            queries.MapHandler
 	getMapEdges       queries.EdgeHandler
@@ -85,6 +86,7 @@ func (s *Server) Handler() http.Handler {
 		issuesRoute := path.Join(prefix, "issues")
 		issuesCompareRoute := path.Join(prefix, "issues", "compare")
 		issuesSearchRoute := path.Join(prefix, "issues", "search")
+		searchRoute := path.Join(prefix, "search")
 		issueItemSubtreeRoute := issueItemRoute(prefix)
 		tagsRoute := path.Join(prefix, "tags")
 		mapRoute := path.Join(prefix, "map")
@@ -97,6 +99,7 @@ func (s *Server) Handler() http.Handler {
 		apiRoutes[issuesRoute] = struct{}{}
 		apiRoutes[issuesCompareRoute] = struct{}{}
 		apiRoutes[issuesSearchRoute] = struct{}{}
+		apiRoutes[searchRoute] = struct{}{}
 		apiRoutes[issueItemSubtreeRoute] = struct{}{}
 		apiRoutes[tagsRoute] = struct{}{}
 		apiRoutes[mapRoute] = struct{}{}
@@ -109,6 +112,7 @@ func (s *Server) Handler() http.Handler {
 		apiMux.HandleFunc(issuesRoute, s.handleIssues)
 		apiMux.HandleFunc(issuesCompareRoute, s.handleIssueCompare)
 		apiMux.HandleFunc(issuesSearchRoute, s.handleIssueSearch)
+		apiMux.HandleFunc(searchRoute, s.handleUnifiedSearch)
 		apiMux.HandleFunc(issueItemSubtreeRoute, s.handleIssueByID(issueItemSubtreeRoute))
 		apiMux.HandleFunc(tagsRoute, s.handleTags)
 		apiMux.HandleFunc(mapRoute, s.handleMap)
@@ -249,6 +253,11 @@ func NewServer(cfg ServerConfig) *Server {
 		getIssue:      queries.GetIssueHandler{Store: store},
 		compareIssues: queries.CompareIssuesHandler{Store: store},
 		searchIssues: queries.SearchIssuesHandler{
+			Analyzer: commandAnalyzer,
+			Catalog:  catalog,
+			Store:    store,
+		},
+		searchUnified: queries.SearchUnifiedHandler{
 			Analyzer: commandAnalyzer,
 			Catalog:  catalog,
 			Store:    store,

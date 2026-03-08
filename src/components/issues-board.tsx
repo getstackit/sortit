@@ -198,7 +198,8 @@ export function IssuesBoard() {
     mutate: mutateSearch,
   } = useIssueSearch(activeQuery, searchStatus, 8);
 
-  const visibleIssues = hasQuery ? searchResponse?.relatedIssues ?? [] : issues;
+  const searchResults = searchResponse?.relatedIssues ?? [];
+  const visibleIssues = hasQuery ? searchResults : issues;
   const error = hasQuery ? searchError : issuesError;
   const loading = hasQuery ? searchLoading : issuesLoading;
   const resultCount = visibleIssues.length;
@@ -210,13 +211,15 @@ export function IssuesBoard() {
 
     lastWrittenSearchRef.current = searchParamsString;
 
-    if (searchText !== initialSearchState.query) {
-      setSearchText(initialSearchState.query);
-    }
-    if (includeClosed !== initialSearchState.includeClosed) {
-      setIncludeClosed(initialSearchState.includeClosed);
-    }
-  }, [includeClosed, initialSearchState.includeClosed, initialSearchState.query, searchText]);
+    setSearchText((current) =>
+      current === initialSearchState.query ? current : initialSearchState.query
+    );
+    setIncludeClosed((current) =>
+      current === initialSearchState.includeClosed
+        ? current
+        : initialSearchState.includeClosed
+    );
+  }, [initialSearchState.includeClosed, initialSearchState.query, searchParamsString]);
 
   useEffect(() => {
     if (!hasQuery && includeClosed) {
@@ -254,6 +257,17 @@ export function IssuesBoard() {
     input.select();
   }, []);
 
+  const shortcuts = useMemo(
+    () => [
+      {
+        key: "s",
+        description: "Focus semantic search",
+        action: focusSearchInput,
+      },
+    ],
+    [focusSearchInput]
+  );
+
   const things = useMemo(
     () =>
       visibleIssues.map((issue) => ({
@@ -262,17 +276,6 @@ export function IssuesBoard() {
         href: `/issues/${issue.id}`,
       })),
     [visibleIssues]
-  );
-
-  const shortcuts = useMemo(
-    () => [
-      {
-        key: "/",
-        description: "Focus semantic search",
-        action: focusSearchInput,
-      },
-    ],
-    [focusSearchInput]
   );
 
   return (
@@ -355,8 +358,8 @@ export function IssuesBoard() {
             </div>
           }
         />
-        <div className="flex flex-1 flex-col">
-          <div className="@container/main flex flex-1 flex-col gap-2">
+        <div className="app-scrollarea min-h-0 flex-1 overflow-y-auto">
+          <div className="@container/main flex min-h-0 flex-1 flex-col gap-2">
             <div className="flex flex-col gap-4 py-4 md:gap-6 md:py-6">
               {error && (
                 <div className="px-4 lg:px-6">
@@ -444,8 +447,8 @@ export function IssuesBoard() {
               )}
 
               {!hasQuery && issues.length > 0 && <IssueList issues={issues} />}
-              {hasQuery && visibleIssues.length > 0 && (
-                <SearchResultList issues={visibleIssues} />
+              {hasQuery && searchResults.length > 0 && (
+                <SearchResultList issues={searchResults} />
               )}
             </div>
           </div>

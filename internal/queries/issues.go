@@ -141,6 +141,72 @@ func (h SearchIssuesHandler) Handle(ctx context.Context, input SearchIssues) (is
 	), nil
 }
 
+type SearchUnified struct {
+	Query string
+	Limit int
+}
+
+type SearchUnifiedResponse struct {
+	Query       issuemap.SearchQuery    `json:"query"`
+	Issues      []issuemap.RelatedIssue `json:"issues"`
+	RelatedTags []issuemap.RelatedTag   `json:"relatedTags"`
+}
+
+type SearchUnifiedHandler struct {
+	Analyzer *ai.Analyzer
+	Catalog  *services.CatalogService
+	Store    issues.Store
+}
+
+func (h SearchUnifiedHandler) Handle(ctx context.Context, input SearchUnified) (SearchUnifiedResponse, error) {
+	query := strings.TrimSpace(input.Query)
+	if query == "" {
+		return SearchUnifiedResponse{}, errors.New("query is required")
+	}
+
+	limit := input.Limit
+
+	taxonomy, err := h.Catalog.IssueTaxonomy(ctx, nil)
+	if err != nil {
+		return SearchUnifiedResponse{}, err
+	}
+
+	analyzed, err := h.Analyzer.AnalyzeIssueData(ctx, query, taxonomy)
+	if err != nil {
+		return SearchUnifiedResponse{}, err
+	}
+
+	storeIssues, err := h.Store.List(ctx)
+	if err != nil {
+		return SearchUnifiedResponse{}, err
+	}
+	storeIssues = FilterIssuesByStatus(storeIssues, IssueStatusFilterOpen)
+
+	storeTags, err := h.Catalog.StoredTags(ctx)
+	if err != nil {
+		return SearchUnifiedResponse{}, err
+	}
+
+	queryEmbedding := services.Float32VectorToFloat64(analyzed.Embedding.Vector)
+
+	issueResult := issuemap.SearchFromQueryWithTags(
+		storeIssues,
+		storeTags,
+		query,
+		services.IssueTagScoresFromAnalysis(analyzed.Tags),
+		queryEmbedding,
+		limit,
+	)
+
+	relatedTags := issuemap.SearchTags(storeTags, queryEmbedding, limit)
+
+	return SearchUnifiedResponse{
+		Query:       issueResult.Query,
+		Issues:      issueResult.RelatedIssues,
+		RelatedTags: relatedTags,
+	}, nil
+}
+
 func FilterIssuesByStatus(items []issues.Issue, filter IssueStatusFilter) []issues.Issue {
 	if filter == IssueStatusFilterAll {
 		return items

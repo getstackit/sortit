@@ -52,7 +52,7 @@ describe("AppShell shortcuts", () => {
     });
   });
 
-  it("runs page shortcuts like slash when not typing", async () => {
+  it("runs page shortcuts when not typing", async () => {
     const focusSearch = vi.fn();
 
     render(
@@ -60,7 +60,7 @@ describe("AppShell shortcuts", () => {
         sidebar={<div>Sidebar</div>}
         shortcuts={[
           {
-            key: "/",
+            key: "s",
             description: "Focus semantic search",
             action: focusSearch,
           },
@@ -70,7 +70,7 @@ describe("AppShell shortcuts", () => {
       </AppShell>
     );
 
-    fireEvent.keyDown(window, { key: "/" });
+    fireEvent.keyDown(window, { key: "s" });
 
     await waitFor(() => {
       expect(focusSearch).toHaveBeenCalled();
