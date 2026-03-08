@@ -5,6 +5,8 @@ import (
 	"math"
 	"sort"
 	"sync"
+
+	"splat/internal/issues"
 )
 
 const (
@@ -15,11 +17,12 @@ const (
 )
 
 type MapIssue struct {
-	ID   string         `json:"id"`
-	Raw  string         `json:"raw"`
-	Tags []TagRelevance `json:"tags"`
-	X    float64        `json:"x"`
-	Y    float64        `json:"y"`
+	ID     string             `json:"id"`
+	Raw    string             `json:"raw"`
+	Status issues.IssueStatus `json:"status"`
+	Tags   []TagRelevance     `json:"tags"`
+	X      float64            `json:"x"`
+	Y      float64            `json:"y"`
 }
 
 type MapResponse struct {
@@ -97,18 +100,18 @@ func loadBaseMapData() (mapBaseData, error) {
 }
 
 func buildBaseMapData() (mapBaseData, error) {
-	issues := AllIssues()
+	allIssues := AllIssues()
 	tags := AllTags()
 	tagEmbeddings := AllTagEmbeddings()
 
-	positions, err := ComputePositions(issues, tags, tagEmbeddings)
+	positions, err := ComputePositions(allIssues, tags, tagEmbeddings)
 	if err != nil {
 		return mapBaseData{}, err
 	}
 
-	mapIssues := make([]MapIssue, len(issues))
-	roundedPositions := make(map[string]Position, len(issues))
-	for i, issue := range issues {
+	mapIssues := make([]MapIssue, len(allIssues))
+	roundedPositions := make(map[string]Position, len(allIssues))
+	for i, issue := range allIssues {
 		p, ok := positions[issue.ID]
 		if !ok {
 			return mapBaseData{}, fmt.Errorf("missing position for issue %s", issue.ID)
@@ -118,17 +121,18 @@ func buildBaseMapData() (mapBaseData, error) {
 		roundedPositions[issue.ID] = rounded
 
 		mapIssues[i] = MapIssue{
-			ID:   issue.ID,
-			Raw:  issue.Raw,
-			Tags: issue.Tags,
-			X:    rounded.X,
-			Y:    rounded.Y,
+			ID:     issue.ID,
+			Raw:    issue.Raw,
+			Status: issues.StatusOpen,
+			Tags:   issue.Tags,
+			X:      rounded.X,
+			Y:      rounded.Y,
 		}
 	}
 
-	edges := ComputeEdges(issues, minEdgeSimilarity)
+	edges := ComputeEdges(allIssues, minEdgeSimilarity)
 	sortEdgesBySimilarity(edges)
-	clusters := ComputeClusters(issues, positions, 0.18)
+	clusters := ComputeClusters(allIssues, positions, 0.18)
 
 	return mapBaseData{
 		mapIssues:      mapIssues,

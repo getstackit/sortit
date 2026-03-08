@@ -10,6 +10,7 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"time"
 
 	"splat/internal/issues"
 )
@@ -27,6 +28,14 @@ func (s failingIssueStore) Get(context.Context, string) (issues.Issue, error) {
 }
 
 func (s failingIssueStore) Create(context.Context, issues.CreateInput) (issues.Issue, error) {
+	return issues.Issue{}, nil
+}
+
+func (s failingIssueStore) CloseIssue(context.Context, string, string) (issues.Issue, error) {
+	return issues.Issue{}, nil
+}
+
+func (s failingIssueStore) ReopenIssue(context.Context, string) (issues.Issue, error) {
 	return issues.Issue{}, nil
 }
 
@@ -171,6 +180,9 @@ func TestIssuesEndpointCreatesIssue(t *testing.T) {
 	if created.CreatedBy != "Casey" {
 		t.Fatalf("expected trimmed createdBy, got %q", created.CreatedBy)
 	}
+	if created.Status != issues.StatusOpen {
+		t.Fatalf("expected created issue to be open, got %q", created.Status)
+	}
 	if len(created.Tags) != 1 || created.Tags[0] != "bug" {
 		t.Fatalf("expected sanitized tags, got %#v", created.Tags)
 	}
@@ -212,6 +224,130 @@ func TestIssuesEndpointCreatesIssue(t *testing.T) {
 	if len(tags[0].Embedding) == 0 {
 		t.Fatal("expected stored tags to include embeddings")
 	}
+}
+
+func TestIssuesEndpointFiltersByStatusAndClosesIssue(t *testing.T) {
+	store := newSQLiteIssueStore(t, nil)
+	server := NewServer(ServerConfig{
+		CORSOrigins: []string{"http://localhost:3000"},
+		APIPrefixes: []string{"/api"},
+		IssueStore:  store,
+	})
+	handler := server.Handler()
+
+	createReq := httptest.NewRequest(
+		http.MethodPost,
+		"/api/issues",
+		bytes.NewBufferString(`{"raw":"close me"}`),
+	)
+	createReq.Header.Set("Content-Type", "application/json")
+	createRec := httptest.NewRecorder()
+	handler.ServeHTTP(createRec, createReq)
+
+	if createRec.Code != http.StatusCreated {
+		t.Fatalf("expected 201 for issue create, got %d", createRec.Code)
+	}
+
+	var created issues.Issue
+	if err := json.NewDecoder(createRec.Body).Decode(&created); err != nil {
+		t.Fatalf("decode created issue: %v", err)
+	}
+
+	closeReq := httptest.NewRequest(
+		http.MethodPost,
+		"/api/issues/"+created.ID+"/close",
+		bytes.NewBufferString(`{"closedBy":"Casey"}`),
+	)
+	closeReq.Header.Set("Content-Type", "application/json")
+	closeRec := httptest.NewRecorder()
+	handler.ServeHTTP(closeRec, closeReq)
+
+	if closeRec.Code != http.StatusOK {
+		t.Fatalf("expected 200 for issue close, got %d", closeRec.Code)
+	}
+
+	var closed issues.Issue
+	if err := json.NewDecoder(closeRec.Body).Decode(&closed); err != nil {
+		t.Fatalf("decode closed issue: %v", err)
+	}
+	if closed.Status != issues.StatusClosed {
+		t.Fatalf("expected closed status, got %q", closed.Status)
+	}
+	if closed.ClosedAt == nil {
+		t.Fatal("expected closedAt to be set")
+	}
+	if closed.ClosedBy != "Casey" {
+		t.Fatalf("expected closedBy Casey, got %q", closed.ClosedBy)
+	}
+
+	openReq := httptest.NewRequest(http.MethodGet, "/api/issues?status=open", nil)
+	openRec := httptest.NewRecorder()
+	handler.ServeHTTP(openRec, openReq)
+
+	var openPayload issuesResponse
+	if err := json.NewDecoder(openRec.Body).Decode(&openPayload); err != nil {
+		t.Fatalf("decode open issues response: %v", err)
+	}
+	if len(openPayload.Issues) != 0 {
+		t.Fatalf("expected no open issues, got %d", len(openPayload.Issues))
+	}
+
+	closedReq := httptest.NewRequest(http.MethodGet, "/api/issues?status=closed", nil)
+	closedListRec := httptest.NewRecorder()
+	handler.ServeHTTP(closedListRec, closedReq)
+
+	var closedPayload issuesResponse
+	if err := json.NewDecoder(closedListRec.Body).Decode(&closedPayload); err != nil {
+		t.Fatalf("decode closed issues response: %v", err)
+	}
+	if len(closedPayload.Issues) != 1 || closedPayload.Issues[0].ID != created.ID {
+		t.Fatalf("expected closed issue in filtered list, got %#v", closedPayload.Issues)
+	}
+}
+
+func TestIssuesEndpointReopensIssue(t *testing.T) {
+	store := newSQLiteIssueStore(t, []issues.Issue{
+		{
+			ID:        "issue-closed",
+			Raw:       "closed",
+			CreatedBy: "Casey",
+			CreatedAt: issues.SeedIssues()[0].CreatedAt,
+			Status:    issues.StatusClosed,
+			ClosedAt:  ptrToTime(issues.SeedIssues()[0].CreatedAt.Add(time.Hour)),
+			ClosedBy:  "Casey",
+		},
+	})
+	server := NewServer(ServerConfig{
+		CORSOrigins: []string{"http://localhost:3000"},
+		APIPrefixes: []string{"/api"},
+		IssueStore:  store,
+	})
+
+	req := httptest.NewRequest(http.MethodPost, "/api/issues/issue-closed/reopen", nil)
+	rec := httptest.NewRecorder()
+	server.Handler().ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200 for issue reopen, got %d", rec.Code)
+	}
+
+	var reopened issues.Issue
+	if err := json.NewDecoder(rec.Body).Decode(&reopened); err != nil {
+		t.Fatalf("decode reopened issue: %v", err)
+	}
+	if reopened.Status != issues.StatusOpen {
+		t.Fatalf("expected open status, got %q", reopened.Status)
+	}
+	if reopened.ClosedAt != nil {
+		t.Fatalf("expected closedAt cleared, got %v", reopened.ClosedAt)
+	}
+	if reopened.ClosedBy != "" {
+		t.Fatalf("expected closedBy cleared, got %q", reopened.ClosedBy)
+	}
+}
+
+func ptrToTime(value time.Time) *time.Time {
+	return &value
 }
 
 func TestIssuesEndpointRejectsInvalidBody(t *testing.T) {

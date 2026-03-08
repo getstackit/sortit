@@ -82,11 +82,12 @@ func buildBaseMapDataFromIssues(storeIssues []issues.Issue, storeTags []issues.T
 		rounded := roundPosition(p)
 		roundedPositions[issue.ID] = rounded
 		mapIssues[i] = MapIssue{
-			ID:   issue.ID,
-			Raw:  issue.Raw,
-			Tags: issue.Tags,
-			X:    rounded.X,
-			Y:    rounded.Y,
+			ID:     issue.ID,
+			Raw:    issue.Raw,
+			Status: storeIssues[i].Status,
+			Tags:   issue.Tags,
+			X:      rounded.X,
+			Y:      rounded.Y,
 		}
 	}
 

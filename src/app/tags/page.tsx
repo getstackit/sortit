@@ -2,8 +2,9 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { UMAP } from "umap-js";
-import { AppShell, AppShellToggle } from "@/components/app-shell";
+import { AppShell } from "@/components/app-shell";
 import { AppSidebar } from "@/components/app-sidebar";
+import { SiteHeader } from "@/components/site-header";
 import { Button } from "@/components/ui/button";
 import { fetchTags, type TagRecord } from "@/lib/tags";
 
@@ -115,18 +116,10 @@ export default function TagsPage() {
 
   return (
     <AppShell sidebar={<AppSidebar things={SECTION_LINKS} />}>
-      <header className="sticky top-0 z-10 shrink-0 border-b bg-background">
-        <div className="flex min-h-12 items-center gap-2 px-4">
-          <AppShellToggle className="-ml-1" />
-          <div className="mr-2 h-4 w-px shrink-0 bg-border" />
-          <div>
-            <h1 className="text-sm font-medium">Tag Map</h1>
-            <p className="text-[11px] text-muted-foreground">
-              Visualize semantic relationships between tags from stored tag embeddings.
-            </p>
-          </div>
-        </div>
-      </header>
+      <SiteHeader
+        title="Tag Map"
+        subtitle="Visualize semantic relationships between tags from stored tag embeddings."
+      />
 
       <div className="min-h-0 flex-1 overflow-y-auto">
         <div className="mx-auto flex w-full max-w-7xl flex-col gap-6 px-4 py-6 lg:px-6">

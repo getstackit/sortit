@@ -12,6 +12,7 @@ import (
 
 	"splat/internal/ai"
 	"splat/internal/issues"
+	mcpserver "splat/internal/mcp"
 )
 
 type ServerConfig struct {
@@ -122,9 +123,18 @@ func (s *Server) Handler() http.Handler {
 		apiMux.HandleFunc(debugResetRoute, s.handleDebugIssueReset)
 	}
 
+	mcpHandler := mcpserver.NewHandler(mcpserver.ServerConfig{
+		BaseURL: fmt.Sprintf("http://127.0.0.1:%d%s", s.config.Port, normalizeAPIPrefixes(s.config.APIPrefixes)[0]),
+	})
+
 	root := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if isRegisteredAPIRoute(r.URL.Path, apiRoutes) {
 			apiMux.ServeHTTP(w, r)
+			return
+		}
+
+		if r.URL.Path == "/mcp" {
+			mcpHandler.ServeHTTP(w, r)
 			return
 		}
 

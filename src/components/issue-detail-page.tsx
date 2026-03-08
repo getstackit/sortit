@@ -2,13 +2,48 @@
 
 import Link from "next/link";
 import { useEffect, useMemo, useState } from "react";
-import { AppShell, AppShellToggle } from "@/components/app-shell";
+import { CheckIcon, CopyIcon } from "lucide-react";
+import { AppShell } from "@/components/app-shell";
 import { AppSidebar } from "@/components/app-sidebar";
 import { IssueCard } from "@/components/issue-card";
-import { fetchIssue, fetchIssues, type IssueRecord } from "@/lib/issues";
+import { SiteHeader } from "@/components/site-header";
+import { Button } from "@/components/ui/button";
+import {
+  closeIssue,
+  fetchIssue,
+  fetchIssues,
+  reopenIssue,
+  type IssueRecord,
+} from "@/lib/issues";
 
 function formatCreatedAt(value: string) {
   return new Date(value).toLocaleString();
+}
+
+async function copyText(value: string) {
+  if (typeof navigator !== "undefined" && navigator.clipboard?.writeText) {
+    await navigator.clipboard.writeText(value);
+    return;
+  }
+
+  if (typeof document === "undefined") {
+    throw new Error("Clipboard unavailable");
+  }
+
+  const input = document.createElement("textarea");
+  input.value = value;
+  input.setAttribute("readonly", "");
+  input.style.position = "absolute";
+  input.style.left = "-9999px";
+  document.body.appendChild(input);
+  input.select();
+
+  const succeeded = document.execCommand("copy");
+  document.body.removeChild(input);
+
+  if (!succeeded) {
+    throw new Error("Clipboard unavailable");
+  }
 }
 
 export function IssueDetailPage({ issueID }: { issueID: string }) {
@@ -16,13 +51,17 @@ export function IssueDetailPage({ issueID }: { issueID: string }) {
   const [issues, setIssues] = useState<IssueRecord[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [copyState, setCopyState] = useState<"idle" | "copied" | "error">(
+    "idle"
+  );
+  const [statusPending, setStatusPending] = useState(false);
 
   useEffect(() => {
     const controller = new AbortController();
 
     Promise.allSettled([
       fetchIssue(issueID, controller.signal),
-      fetchIssues(controller.signal),
+      fetchIssues("all", controller.signal),
     ])
       .then(([issueResult, issuesResult]) => {
         if (issueResult.status === "fulfilled") {
@@ -50,6 +89,18 @@ export function IssueDetailPage({ issueID }: { issueID: string }) {
     return () => controller.abort();
   }, [issueID]);
 
+  useEffect(() => {
+    if (copyState === "idle") {
+      return;
+    }
+
+    const timeout = window.setTimeout(() => {
+      setCopyState("idle");
+    }, 2000);
+
+    return () => window.clearTimeout(timeout);
+  }, [copyState]);
+
   const things = useMemo(
     () =>
       issues.map((entry) => ({
@@ -61,28 +112,62 @@ export function IssueDetailPage({ issueID }: { issueID: string }) {
     [issues]
   );
 
+  async function handleCopyIssue() {
+    if (!issue) {
+      return;
+    }
+
+    try {
+      await copyText(issue.raw);
+      setCopyState("copied");
+    } catch {
+      setCopyState("error");
+    }
+  }
+
+  async function handleStatusChange() {
+    if (!issue || statusPending) {
+      return;
+    }
+
+    setStatusPending(true);
+
+    try {
+      const updated =
+        issue.status === "closed"
+          ? await reopenIssue(issue.id)
+          : await closeIssue(issue.id);
+
+      setIssue(updated);
+      setIssues((current) =>
+        current.map((entry) => (entry.id === updated.id ? updated : entry))
+      );
+      setError(null);
+    } catch (caughtError) {
+      const message =
+        caughtError instanceof Error
+          ? caughtError.message
+          : "Unknown backend error";
+      setError(message);
+    } finally {
+      setStatusPending(false);
+    }
+  }
+
   return (
     <AppShell sidebar={<AppSidebar things={things} />}>
-      <header className="sticky top-0 z-10 shrink-0 border-b bg-background">
-        <div className="flex min-h-12 items-center gap-2 px-4">
-          <AppShellToggle className="-ml-1" />
-          <div className="mr-2 h-4 w-px shrink-0 bg-border" />
-          <div className="min-w-0">
-            <p className="text-[11px] uppercase tracking-[0.18em] text-muted-foreground">
-              Issue
-            </p>
-            <h1 className="truncate text-sm font-medium">
-              {issue?.id ?? issueID}
-            </h1>
-          </div>
+      <SiteHeader
+        title={issue?.id ?? issueID}
+        eyebrow="Issue"
+        actions={
           <Link
             href="/"
-            className="ml-auto rounded-md border border-border px-3 py-1 text-xs font-medium text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+            className="rounded-md border border-border px-3 py-1 text-xs font-medium text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
           >
             All issues
           </Link>
-        </div>
-      </header>
+        }
+      />
 
       <div className="min-h-0 flex-1 overflow-y-auto">
         <div className="mx-auto flex w-full max-w-5xl flex-col gap-4 px-4 py-6 lg:px-6">
@@ -103,12 +188,64 @@ export function IssueDetailPage({ issueID }: { issueID: string }) {
           {!loading && issue && (
             <>
               <div className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
-                <span className="rounded-full bg-muted px-3 py-1 font-medium text-foreground">
-                  {issue.id}
-                </span>
-                <span>{issue.createdBy}</span>
-                <span>&middot;</span>
-                <span>{formatCreatedAt(issue.createdAt)}</span>
+                <div className="flex flex-wrap items-center gap-2">
+                  <span className="rounded-full bg-muted px-3 py-1 font-medium text-foreground">
+                    {issue.id}
+                  </span>
+                  <span
+                    className={
+                      issue.status === "closed"
+                        ? "rounded-full bg-slate-200 px-3 py-1 font-medium text-slate-700"
+                        : "rounded-full bg-emerald-100 px-3 py-1 font-medium text-emerald-700"
+                    }
+                  >
+                    {issue.status === "closed" ? "Closed" : "Open"}
+                  </span>
+                  <span>{issue.createdBy}</span>
+                  <span>&middot;</span>
+                  <span>{formatCreatedAt(issue.createdAt)}</span>
+                  {issue.status === "closed" && issue.closedAt && (
+                    <>
+                      <span>&middot;</span>
+                      <span>
+                        Closed {formatCreatedAt(issue.closedAt)}
+                        {issue.closedBy ? ` by ${issue.closedBy}` : ""}
+                      </span>
+                    </>
+                  )}
+                </div>
+                <Button
+                  type="button"
+                  variant={issue.status === "closed" ? "outline" : "default"}
+                  size="sm"
+                  onClick={() => void handleStatusChange()}
+                  disabled={statusPending}
+                >
+                  {statusPending
+                    ? issue.status === "closed"
+                      ? "Reopening..."
+                      : "Closing..."
+                    : issue.status === "closed"
+                      ? "Reopen"
+                      : "Close issue"}
+                </Button>
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  onClick={() => void handleCopyIssue()}
+                >
+                  {copyState === "copied" ? (
+                    <CheckIcon aria-hidden="true" />
+                  ) : (
+                    <CopyIcon aria-hidden="true" />
+                  )}
+                  {copyState === "copied"
+                    ? "Copied"
+                    : copyState === "error"
+                      ? "Copy failed"
+                      : "Copy issue"}
+                </Button>
               </div>
               <IssueCard issue={issue} className="rounded-3xl p-6 shadow-sm" />
             </>

@@ -199,6 +199,112 @@ func TestAPIIntegrationCreateLookupMapAndTagsWithMockAIBackend(t *testing.T) {
 	}
 }
 
+func TestAPIIntegrationCreateAndCloseIssue(t *testing.T) {
+	store := newSQLiteIssueStore(t, nil)
+	server := NewServer(ServerConfig{
+		CORSOrigins: []string{"http://localhost:3000"},
+		APIPrefixes: []string{"/api"},
+		Analyzer: ai.NewAnalyzer(
+			&integrationMockTagger{},
+			&integrationMockEmbedder{},
+		),
+		IssueStore: store,
+	})
+	if err := server.Initialize(context.Background()); err != nil {
+		t.Fatalf("initialize server: %v", err)
+	}
+
+	handler := server.Handler()
+	created := createIssueViaAPI(t, handler, createIssueRequest{
+		Raw:       "Export flow fails after download starts",
+		CreatedBy: "Casey",
+	})
+	if created.Status != issues.StatusOpen {
+		t.Fatalf("expected created issue to be open, got %q", created.Status)
+	}
+
+	closed := closeIssueViaAPI(t, handler, created.ID, closeIssueRequest{
+		ClosedBy: "Jordan",
+	})
+	if closed.Status != issues.StatusClosed {
+		t.Fatalf("expected closed issue status, got %q", closed.Status)
+	}
+	if closed.ClosedAt == nil {
+		t.Fatal("expected closedAt to be set")
+	}
+	if closed.ClosedBy != "Jordan" {
+		t.Fatalf("expected closedBy Jordan, got %q", closed.ClosedBy)
+	}
+
+	stored := getIssueViaAPI(t, handler, created.ID)
+	if stored.Status != issues.StatusClosed {
+		t.Fatalf("expected stored issue to be closed, got %q", stored.Status)
+	}
+	if stored.ClosedAt == nil {
+		t.Fatal("expected stored issue closedAt to be set")
+	}
+	if stored.ClosedBy != "Jordan" {
+		t.Fatalf("expected stored issue closedBy Jordan, got %q", stored.ClosedBy)
+	}
+
+	req := httptest.NewRequest(http.MethodGet, "/api/issues?status=closed", nil)
+	rec := httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200 for closed issue list, got %d", rec.Code)
+	}
+
+	var payload issuesResponse
+	if err := json.NewDecoder(rec.Body).Decode(&payload); err != nil {
+		t.Fatalf("decode closed issue list: %v", err)
+	}
+	if len(payload.Issues) != 1 {
+		t.Fatalf("expected 1 closed issue, got %d", len(payload.Issues))
+	}
+	if payload.Issues[0].ID != created.ID {
+		t.Fatalf("expected closed issue %q, got %q", created.ID, payload.Issues[0].ID)
+	}
+	if payload.Issues[0].Status != issues.StatusClosed {
+		t.Fatalf("expected closed list item status closed, got %q", payload.Issues[0].Status)
+	}
+
+	openMapReq := httptest.NewRequest(http.MethodGet, "/api/map?status=open", nil)
+	openMapRec := httptest.NewRecorder()
+	handler.ServeHTTP(openMapRec, openMapReq)
+
+	if openMapRec.Code != http.StatusOK {
+		t.Fatalf("expected 200 for open map, got %d", openMapRec.Code)
+	}
+
+	var openMapPayload issuemap.MapResponse
+	if err := json.NewDecoder(openMapRec.Body).Decode(&openMapPayload); err != nil {
+		t.Fatalf("decode open map response: %v", err)
+	}
+	if len(openMapPayload.Issues) != 0 {
+		t.Fatalf("expected closed issue to be hidden from open map, got %d issues", len(openMapPayload.Issues))
+	}
+
+	allMapReq := httptest.NewRequest(http.MethodGet, "/api/map?status=all", nil)
+	allMapRec := httptest.NewRecorder()
+	handler.ServeHTTP(allMapRec, allMapReq)
+
+	if allMapRec.Code != http.StatusOK {
+		t.Fatalf("expected 200 for all-status map, got %d", allMapRec.Code)
+	}
+
+	var allMapPayload issuemap.MapResponse
+	if err := json.NewDecoder(allMapRec.Body).Decode(&allMapPayload); err != nil {
+		t.Fatalf("decode all-status map response: %v", err)
+	}
+	if len(allMapPayload.Issues) != 1 {
+		t.Fatalf("expected closed issue to appear in all-status map, got %d issues", len(allMapPayload.Issues))
+	}
+	if allMapPayload.Issues[0].Status != issues.StatusClosed {
+		t.Fatalf("expected map issue status closed, got %q", allMapPayload.Issues[0].Status)
+	}
+}
+
 func createIssueViaAPI(t *testing.T, handler http.Handler, request createIssueRequest) issues.Issue {
 	t.Helper()
 
@@ -237,6 +343,39 @@ func getIssueViaAPI(t *testing.T, handler http.Handler, id string) issues.Issue 
 	var issue issues.Issue
 	if err := json.NewDecoder(rec.Body).Decode(&issue); err != nil {
 		t.Fatalf("decode issue: %v", err)
+	}
+	return issue
+}
+
+func closeIssueViaAPI(
+	t *testing.T,
+	handler http.Handler,
+	id string,
+	request closeIssueRequest,
+) issues.Issue {
+	t.Helper()
+
+	body, err := json.Marshal(request)
+	if err != nil {
+		t.Fatalf("marshal close issue request: %v", err)
+	}
+
+	req := httptest.NewRequest(
+		http.MethodPost,
+		"/api/issues/"+id+"/close",
+		bytes.NewReader(body),
+	)
+	req.Header.Set("Content-Type", "application/json")
+	rec := httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200 for issue close, got %d", rec.Code)
+	}
+
+	var issue issues.Issue
+	if err := json.NewDecoder(rec.Body).Decode(&issue); err != nil {
+		t.Fatalf("decode closed issue: %v", err)
 	}
 	return issue
 }

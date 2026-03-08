@@ -5,7 +5,7 @@ import { AppShell } from "@/components/app-shell";
 import { AppSidebar } from "@/components/app-sidebar";
 import { IssueCard } from "@/components/issue-card";
 import { SiteHeader } from "@/components/site-header";
-import { createIssue, fetchIssues, type IssueRecord } from "@/lib/issues";
+import { fetchIssues, type IssueRecord } from "@/lib/issues";
 
 export function IssuesBoard() {
   const [issues, setIssues] = useState<IssueRecord[]>([]);
@@ -15,7 +15,7 @@ export function IssuesBoard() {
   useEffect(() => {
     const controller = new AbortController();
 
-    fetchIssues(controller.signal)
+    fetchIssues("open", controller.signal)
       .then((items) => {
         setIssues(items);
         setError(null);
@@ -50,24 +50,23 @@ export function IssuesBoard() {
     [issues]
   );
 
-  async function handleSubmit(text: string) {
-    try {
-      const created = await createIssue({ raw: text });
-      setIssues((prev) => [created, ...prev]);
-      setError(null);
-    } catch (caughtError) {
-      const message =
-        caughtError instanceof Error
-          ? caughtError.message
-          : "Unknown backend error";
-      setError(message);
-      throw caughtError;
-    }
-  }
-
   return (
     <AppShell sidebar={<AppSidebar things={things} />}>
-      <SiteHeader issueCount={issues.length} onSubmit={handleSubmit} />
+      <SiteHeader
+        title="Open issues"
+        meta={
+          issues.length > 0 ? (
+            <span className="rounded-full bg-muted px-2 py-0.5 text-[11px] font-medium text-muted-foreground tabular-nums">
+              {issues.length}
+            </span>
+          ) : null
+        }
+        navigateOnCreate={false}
+        onIssueCreated={(created) => {
+          setIssues((prev) => [created, ...prev]);
+          setError(null);
+        }}
+      />
       <div className="flex flex-1 flex-col">
         <div className="@container/main flex flex-1 flex-col gap-2">
           <div className="flex flex-col gap-4 py-4 md:gap-6 md:py-6">
@@ -91,7 +90,7 @@ export function IssuesBoard() {
               <div className="flex flex-col items-center gap-3 py-20 text-center">
                 <div className="text-4xl opacity-20">~</div>
                 <p className="text-sm text-muted-foreground/60">
-                  Nothing here yet. Drop something in.
+                  Nothing open right now. Drop something in.
                 </p>
               </div>
             )}

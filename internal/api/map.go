@@ -26,12 +26,18 @@ func (s *Server) handleMap(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "invalid edge threshold query")
 		return
 	}
+	statusFilter, err := ParseIssueStatusFilter(r.URL.Query())
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "invalid status query")
+		return
+	}
 
 	storeIssues, err := s.issueStore.List(r.Context())
 	if err != nil {
 		writeInternalError(w, r, "failed to list issues", err)
 		return
 	}
+	storeIssues = filterIssuesByStatus(storeIssues, statusFilter)
 
 	storeTags, err := s.listStoredTags(r.Context())
 	if err != nil {
@@ -77,12 +83,18 @@ func (s *Server) handleMapEdges(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "invalid edge threshold query")
 		return
 	}
+	statusFilter, err := ParseIssueStatusFilter(r.URL.Query())
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "invalid status query")
+		return
+	}
 
 	storeIssues, err := s.issueStore.List(r.Context())
 	if err != nil {
 		writeInternalError(w, r, "failed to list issues", err)
 		return
 	}
+	storeIssues = filterIssuesByStatus(storeIssues, statusFilter)
 
 	storeTags, err := s.listStoredTags(r.Context())
 	if err != nil {

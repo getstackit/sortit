@@ -9,6 +9,25 @@ import (
 	"context"
 )
 
+const closeIssue = `-- name: CloseIssue :exec
+UPDATE issues
+SET status = 'closed',
+    closed_at_unix_nano = ?,
+    closed_by = ?
+WHERE id = ?
+`
+
+type CloseIssueParams struct {
+	ClosedAtUnixNano int64
+	ClosedBy         string
+	ID               string
+}
+
+func (q *Queries) CloseIssue(ctx context.Context, arg CloseIssueParams) error {
+	_, err := q.db.ExecContext(ctx, closeIssue, arg.ClosedAtUnixNano, arg.ClosedBy, arg.ID)
+	return err
+}
+
 const deleteAllIssues = `-- name: DeleteAllIssues :exec
 DELETE FROM issues
 `
@@ -19,7 +38,7 @@ func (q *Queries) DeleteAllIssues(ctx context.Context) error {
 }
 
 const getIssue = `-- name: GetIssue :one
-SELECT id, raw, tags_json, created_by, created_at_unix_nano, tag_scores_json, embedding_json
+SELECT id, raw, tags_json, created_by, created_at_unix_nano, status, closed_at_unix_nano, closed_by, tag_scores_json, embedding_json
 FROM issues
 WHERE id = ?
 `
@@ -33,6 +52,9 @@ func (q *Queries) GetIssue(ctx context.Context, id string) (Issue, error) {
 		&i.TagsJson,
 		&i.CreatedBy,
 		&i.CreatedAtUnixNano,
+		&i.Status,
+		&i.ClosedAtUnixNano,
+		&i.ClosedBy,
 		&i.TagScoresJson,
 		&i.EmbeddingJson,
 	)
@@ -59,9 +81,12 @@ INSERT INTO issues (
     tags_json,
     created_by,
     created_at_unix_nano,
+    status,
+    closed_at_unix_nano,
+    closed_by,
     tag_scores_json,
     embedding_json
-) VALUES (?, ?, ?, ?, ?, ?, ?)
+) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 `
 
 type InsertIssueParams struct {
@@ -70,6 +95,9 @@ type InsertIssueParams struct {
 	TagsJson          string
 	CreatedBy         string
 	CreatedAtUnixNano int64
+	Status            string
+	ClosedAtUnixNano  int64
+	ClosedBy          string
 	TagScoresJson     string
 	EmbeddingJson     string
 }
@@ -81,6 +109,9 @@ func (q *Queries) InsertIssue(ctx context.Context, arg InsertIssueParams) error 
 		arg.TagsJson,
 		arg.CreatedBy,
 		arg.CreatedAtUnixNano,
+		arg.Status,
+		arg.ClosedAtUnixNano,
+		arg.ClosedBy,
 		arg.TagScoresJson,
 		arg.EmbeddingJson,
 	)
@@ -88,7 +119,7 @@ func (q *Queries) InsertIssue(ctx context.Context, arg InsertIssueParams) error 
 }
 
 const listIssues = `-- name: ListIssues :many
-SELECT id, raw, tags_json, created_by, created_at_unix_nano, tag_scores_json, embedding_json
+SELECT id, raw, tags_json, created_by, created_at_unix_nano, status, closed_at_unix_nano, closed_by, tag_scores_json, embedding_json
 FROM issues
 ORDER BY created_at_unix_nano DESC, id ASC
 `
@@ -108,6 +139,9 @@ func (q *Queries) ListIssues(ctx context.Context) ([]Issue, error) {
 			&i.TagsJson,
 			&i.CreatedBy,
 			&i.CreatedAtUnixNano,
+			&i.Status,
+			&i.ClosedAtUnixNano,
+			&i.ClosedBy,
 			&i.TagScoresJson,
 			&i.EmbeddingJson,
 		); err != nil {
@@ -122,6 +156,19 @@ func (q *Queries) ListIssues(ctx context.Context) ([]Issue, error) {
 		return nil, err
 	}
 	return items, nil
+}
+
+const reopenIssue = `-- name: ReopenIssue :exec
+UPDATE issues
+SET status = 'open',
+    closed_at_unix_nano = 0,
+    closed_by = ''
+WHERE id = ?
+`
+
+func (q *Queries) ReopenIssue(ctx context.Context, id string) error {
+	_, err := q.db.ExecContext(ctx, reopenIssue, id)
+	return err
 }
 
 const listTags = `-- name: ListTags :many

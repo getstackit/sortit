@@ -23,6 +23,10 @@ type createIssueRequest struct {
 	CreatedBy string   `json:"createdBy,omitempty"`
 }
 
+type closeIssueRequest struct {
+	ClosedBy string `json:"closedBy,omitempty"`
+}
+
 type compareIssuesRequest struct {
 	IDs []string `json:"ids"`
 }
@@ -95,41 +99,111 @@ func (s *Server) handleIssueCompare(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) handleIssueByID(route string) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		if r.Method != http.MethodGet {
-			w.Header().Set("Allow", http.MethodGet)
-			http.Error(w, http.StatusText(http.StatusMethodNotAllowed), http.StatusMethodNotAllowed)
-			return
-		}
-
-		id := strings.TrimSpace(strings.TrimPrefix(r.URL.Path, route))
-		if id == "" || strings.Contains(id, "/") {
+		tail := strings.TrimSpace(strings.TrimPrefix(r.URL.Path, route))
+		if tail == "" {
 			writeError(w, http.StatusNotFound, "route not found")
 			return
 		}
 
-		issue, err := s.issueStore.Get(r.Context(), id)
-		if err != nil {
-			if errors.Is(err, issues.ErrNotFound) {
-				writeError(w, http.StatusNotFound, "issue not found")
-				return
-			}
-
-			writeInternalError(w, r, "failed to load issue", err)
+		segments := strings.Split(tail, "/")
+		if len(segments) == 0 || len(segments) > 2 {
+			writeError(w, http.StatusNotFound, "route not found")
 			return
 		}
 
-		writeJSON(w, http.StatusOK, issue)
+		id := strings.TrimSpace(segments[0])
+		if id == "" {
+			writeError(w, http.StatusNotFound, "route not found")
+			return
+		}
+
+		if len(segments) == 1 {
+			if r.Method != http.MethodGet {
+				w.Header().Set("Allow", http.MethodGet)
+				http.Error(w, http.StatusText(http.StatusMethodNotAllowed), http.StatusMethodNotAllowed)
+				return
+			}
+
+			issue, err := s.issueStore.Get(r.Context(), id)
+			if err != nil {
+				if errors.Is(err, issues.ErrNotFound) {
+					writeError(w, http.StatusNotFound, "issue not found")
+					return
+				}
+
+				writeInternalError(w, r, "failed to load issue", err)
+				return
+			}
+
+			writeJSON(w, http.StatusOK, issue)
+			return
+		}
+
+		switch segments[1] {
+		case "close":
+			if r.Method != http.MethodPost {
+				w.Header().Set("Allow", http.MethodPost)
+				http.Error(w, http.StatusText(http.StatusMethodNotAllowed), http.StatusMethodNotAllowed)
+				return
+			}
+
+			request, err := decodeCloseIssueRequest(r)
+			if err != nil {
+				writeError(w, http.StatusBadRequest, err.Error())
+				return
+			}
+
+			closed, err := s.issueStore.CloseIssue(r.Context(), id, request.ClosedBy)
+			if err != nil {
+				if errors.Is(err, issues.ErrNotFound) {
+					writeError(w, http.StatusNotFound, "issue not found")
+					return
+				}
+
+				writeInternalError(w, r, "failed to close issue", err)
+				return
+			}
+
+			writeJSON(w, http.StatusOK, closed)
+		case "reopen":
+			if r.Method != http.MethodPost {
+				w.Header().Set("Allow", http.MethodPost)
+				http.Error(w, http.StatusText(http.StatusMethodNotAllowed), http.StatusMethodNotAllowed)
+				return
+			}
+
+			reopened, err := s.issueStore.ReopenIssue(r.Context(), id)
+			if err != nil {
+				if errors.Is(err, issues.ErrNotFound) {
+					writeError(w, http.StatusNotFound, "issue not found")
+					return
+				}
+
+				writeInternalError(w, r, "failed to reopen issue", err)
+				return
+			}
+
+			writeJSON(w, http.StatusOK, reopened)
+		default:
+			writeError(w, http.StatusNotFound, "route not found")
+		}
 	}
 }
 
 func (s *Server) handleIssueList(w http.ResponseWriter, r *http.Request) {
+	filter, err := ParseIssueStatusFilter(r.URL.Query())
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "invalid status query")
+		return
+	}
+
 	items, err := s.issueStore.List(r.Context())
 	if err != nil {
 		writeInternalError(w, r, "failed to list issues", err)
 		return
 	}
 
-	writeJSON(w, http.StatusOK, issuesResponse{Issues: items})
+	writeJSON(w, http.StatusOK, issuesResponse{Issues: filterIssuesByStatus(items, filter)})
 }
 
 func (s *Server) handleIssueCreate(w http.ResponseWriter, r *http.Request) {
@@ -208,6 +282,24 @@ func decodeCompareIssuesRequest(r *http.Request) (compareIssuesRequest, error) {
 	}
 
 	request.IDs = normalized
+	return request, nil
+}
+
+func decodeCloseIssueRequest(r *http.Request) (closeIssueRequest, error) {
+	defer r.Body.Close()
+
+	decoder := json.NewDecoder(io.LimitReader(r.Body, 1<<20))
+	decoder.DisallowUnknownFields()
+
+	var request closeIssueRequest
+	if err := decoder.Decode(&request); err != nil {
+		if errors.Is(err, io.EOF) {
+			return closeIssueRequest{}, nil
+		}
+		return closeIssueRequest{}, errors.New("invalid request body")
+	}
+
+	request.ClosedBy = strings.TrimSpace(request.ClosedBy)
 	return request, nil
 }
 

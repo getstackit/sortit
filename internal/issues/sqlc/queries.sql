@@ -1,10 +1,10 @@
 -- name: ListIssues :many
-SELECT id, raw, tags_json, created_by, created_at_unix_nano, tag_scores_json, embedding_json
+SELECT id, raw, tags_json, created_by, created_at_unix_nano, status, closed_at_unix_nano, closed_by, tag_scores_json, embedding_json
 FROM issues
 ORDER BY created_at_unix_nano DESC, id ASC;
 
 -- name: GetIssue :one
-SELECT id, raw, tags_json, created_by, created_at_unix_nano, tag_scores_json, embedding_json
+SELECT id, raw, tags_json, created_by, created_at_unix_nano, status, closed_at_unix_nano, closed_by, tag_scores_json, embedding_json
 FROM issues
 WHERE id = ?;
 
@@ -15,9 +15,26 @@ INSERT INTO issues (
     tags_json,
     created_by,
     created_at_unix_nano,
+    status,
+    closed_at_unix_nano,
+    closed_by,
     tag_scores_json,
     embedding_json
-) VALUES (?, ?, ?, ?, ?, ?, ?);
+) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
+
+-- name: CloseIssue :exec
+UPDATE issues
+SET status = 'closed',
+    closed_at_unix_nano = ?,
+    closed_by = ?
+WHERE id = ?;
+
+-- name: ReopenIssue :exec
+UPDATE issues
+SET status = 'open',
+    closed_at_unix_nano = 0,
+    closed_by = ''
+WHERE id = ?;
 
 -- name: DeleteAllIssues :exec
 DELETE FROM issues;

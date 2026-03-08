@@ -13,12 +13,22 @@ import (
 
 var ErrNotFound = errors.New("issue not found")
 
+type IssueStatus string
+
+const (
+	StatusOpen   IssueStatus = "open"
+	StatusClosed IssueStatus = "closed"
+)
+
 type Issue struct {
 	ID        string         `json:"id"`
 	Raw       string         `json:"raw"`
 	Tags      []string       `json:"tags"`
 	CreatedBy string         `json:"createdBy"`
 	CreatedAt time.Time      `json:"createdAt"`
+	Status    IssueStatus    `json:"status"`
+	ClosedAt  *time.Time     `json:"closedAt"`
+	ClosedBy  string         `json:"closedBy,omitempty"`
 	TagScores []TagRelevance `json:"-"`
 	Embedding []float64      `json:"-"`
 }
@@ -47,6 +57,8 @@ type Store interface {
 	List(context.Context) ([]Issue, error)
 	Get(context.Context, string) (Issue, error)
 	Create(context.Context, CreateInput) (Issue, error)
+	CloseIssue(context.Context, string, string) (Issue, error)
+	ReopenIssue(context.Context, string) (Issue, error)
 }
 
 func DefaultTags() []Tag {
@@ -121,6 +133,7 @@ func (s *InMemoryStore) Create(_ context.Context, input CreateInput) (Issue, err
 		Tags:      displayTags(input.Tags, input.TagScores),
 		CreatedBy: createdBy,
 		CreatedAt: time.Now().UTC(),
+		Status:    StatusOpen,
 		TagScores: copyTagScores(input.TagScores),
 		Embedding: copyEmbedding(input.Embedding),
 	}
@@ -130,6 +143,55 @@ func (s *InMemoryStore) Create(_ context.Context, input CreateInput) (Issue, err
 
 	s.issues = append([]Issue{issue}, s.issues...)
 	return issue, nil
+}
+
+func (s *InMemoryStore) CloseIssue(_ context.Context, id string, closedBy string) (Issue, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	id = strings.TrimSpace(id)
+	for index, issue := range s.issues {
+		if issue.ID != id {
+			continue
+		}
+
+		if issue.Status == StatusClosed && issue.ClosedAt != nil {
+			return cloneIssues([]Issue{issue})[0], nil
+		}
+
+		closedAt := time.Now().UTC()
+		issue.Status = StatusClosed
+		issue.ClosedAt = &closedAt
+		issue.ClosedBy = defaultActor(closedBy)
+		s.issues[index] = issue
+		return cloneIssues([]Issue{issue})[0], nil
+	}
+
+	return Issue{}, ErrNotFound
+}
+
+func (s *InMemoryStore) ReopenIssue(_ context.Context, id string) (Issue, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	id = strings.TrimSpace(id)
+	for index, issue := range s.issues {
+		if issue.ID != id {
+			continue
+		}
+
+		if issue.Status == StatusOpen {
+			return cloneIssues([]Issue{issue})[0], nil
+		}
+
+		issue.Status = StatusOpen
+		issue.ClosedAt = nil
+		issue.ClosedBy = ""
+		s.issues[index] = issue
+		return cloneIssues([]Issue{issue})[0], nil
+	}
+
+	return Issue{}, ErrNotFound
 }
 
 func (s *InMemoryStore) Replace(_ context.Context, next []Issue) error {
@@ -222,6 +284,9 @@ func cloneIssues(input []Issue) []Issue {
 			Tags:      append([]string(nil), issue.Tags...),
 			CreatedBy: issue.CreatedBy,
 			CreatedAt: issue.CreatedAt,
+			Status:    normalizeIssueStatus(issue.Status),
+			ClosedAt:  cloneTimePtr(issue.ClosedAt),
+			ClosedBy:  issue.ClosedBy,
 			TagScores: copyTagScores(issue.TagScores),
 			Embedding: copyEmbedding(issue.Embedding),
 		}
@@ -262,6 +327,30 @@ func copyEmbedding(input []float64) []float64 {
 	out := make([]float64, len(input))
 	copy(out, input)
 	return out
+}
+
+func cloneTimePtr(value *time.Time) *time.Time {
+	if value == nil {
+		return nil
+	}
+
+	cloned := value.UTC()
+	return &cloned
+}
+
+func normalizeIssueStatus(status IssueStatus) IssueStatus {
+	if strings.EqualFold(strings.TrimSpace(string(status)), string(StatusClosed)) {
+		return StatusClosed
+	}
+	return StatusOpen
+}
+
+func defaultActor(value string) string {
+	value = strings.TrimSpace(value)
+	if value == "" {
+		return "You"
+	}
+	return value
 }
 
 func minInt(a, b int) int {

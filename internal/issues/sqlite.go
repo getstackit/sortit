@@ -26,7 +26,7 @@ import (
 const (
 	sqliteDriverName          = "sqlite"
 	issueSeqKey               = "next_issue_seq"
-	currentMigrationVersion   = 2
+	currentMigrationVersion   = 3
 	schemaMigrationsTableName = "schema_migrations"
 )
 
@@ -148,6 +148,7 @@ func (s *SQLiteStore) Create(ctx context.Context, input CreateInput) (Issue, err
 		Tags:      displayTags(input.Tags, input.TagScores),
 		CreatedBy: createdBy,
 		CreatedAt: time.Now().UTC(),
+		Status:    StatusOpen,
 		TagScores: copyTagScores(input.TagScores),
 		Embedding: copyEmbedding(input.Embedding),
 	}
@@ -163,6 +164,9 @@ func (s *SQLiteStore) Create(ctx context.Context, input CreateInput) (Issue, err
 		TagsJson:          record.TagsJSON,
 		CreatedBy:         record.CreatedBy,
 		CreatedAtUnixNano: record.CreatedAtUnixNano,
+		Status:            record.Status,
+		ClosedAtUnixNano:  record.ClosedAtUnixNano,
+		ClosedBy:          record.ClosedBy,
 		TagScoresJson:     record.TagScoresJSON,
 		EmbeddingJson:     record.EmbeddingJSON,
 	}); err != nil {
@@ -174,6 +178,103 @@ func (s *SQLiteStore) Create(ctx context.Context, input CreateInput) (Issue, err
 	}
 
 	return issue, nil
+}
+
+func (s *SQLiteStore) CloseIssue(ctx context.Context, id string, closedBy string) (Issue, error) {
+	id = strings.TrimSpace(id)
+	if id == "" {
+		return Issue{}, ErrNotFound
+	}
+
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return Issue{}, fmt.Errorf("begin close issue tx: %w", err)
+	}
+	defer tx.Rollback()
+
+	qtx := s.queries.WithTx(tx)
+	current, err := qtx.GetIssue(ctx, id)
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return Issue{}, ErrNotFound
+		}
+		return Issue{}, fmt.Errorf("load issue for close: %w", err)
+	}
+
+	issue, err := issueFromQuery(current)
+	if err != nil {
+		return Issue{}, err
+	}
+	if issue.Status == StatusClosed && issue.ClosedAt != nil {
+		if err := tx.Commit(); err != nil {
+			return Issue{}, fmt.Errorf("commit close issue tx: %w", err)
+		}
+		return issue, nil
+	}
+
+	closedAt := time.Now().UTC()
+	if err := qtx.CloseIssue(ctx, issuesdb.CloseIssueParams{
+		ID:               id,
+		ClosedAtUnixNano: closedAt.UnixNano(),
+		ClosedBy:         defaultActor(closedBy),
+	}); err != nil {
+		return Issue{}, fmt.Errorf("close issue: %w", err)
+	}
+
+	updated, err := qtx.GetIssue(ctx, id)
+	if err != nil {
+		return Issue{}, fmt.Errorf("load closed issue: %w", err)
+	}
+	if err := tx.Commit(); err != nil {
+		return Issue{}, fmt.Errorf("commit close issue tx: %w", err)
+	}
+	return issueFromQuery(updated)
+}
+
+func (s *SQLiteStore) ReopenIssue(ctx context.Context, id string) (Issue, error) {
+	id = strings.TrimSpace(id)
+	if id == "" {
+		return Issue{}, ErrNotFound
+	}
+
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return Issue{}, fmt.Errorf("begin reopen issue tx: %w", err)
+	}
+	defer tx.Rollback()
+
+	qtx := s.queries.WithTx(tx)
+	current, err := qtx.GetIssue(ctx, id)
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return Issue{}, ErrNotFound
+		}
+		return Issue{}, fmt.Errorf("load issue for reopen: %w", err)
+	}
+
+	issue, err := issueFromQuery(current)
+	if err != nil {
+		return Issue{}, err
+	}
+	if issue.Status == StatusOpen {
+		if err := tx.Commit(); err != nil {
+			return Issue{}, fmt.Errorf("commit reopen issue tx: %w", err)
+		}
+		return issue, nil
+	}
+
+	if err := qtx.ReopenIssue(ctx, id); err != nil {
+		return Issue{}, fmt.Errorf("reopen issue: %w", err)
+	}
+
+	updated, err := qtx.GetIssue(ctx, id)
+	if err != nil {
+		return Issue{}, fmt.Errorf("load reopened issue: %w", err)
+	}
+	if err := tx.Commit(); err != nil {
+		return Issue{}, fmt.Errorf("commit reopen issue tx: %w", err)
+	}
+	return issueFromQuery(updated)
 }
 
 func (s *SQLiteStore) Replace(ctx context.Context, next []Issue) error {
@@ -203,6 +304,9 @@ func (s *SQLiteStore) Replace(ctx context.Context, next []Issue) error {
 			TagsJson:          record.TagsJSON,
 			CreatedBy:         record.CreatedBy,
 			CreatedAtUnixNano: record.CreatedAtUnixNano,
+			Status:            record.Status,
+			ClosedAtUnixNano:  record.ClosedAtUnixNano,
+			ClosedBy:          record.ClosedBy,
 			TagScoresJson:     record.TagScoresJSON,
 			EmbeddingJson:     record.EmbeddingJSON,
 		}); err != nil {
@@ -336,6 +440,16 @@ func (s *SQLiteStore) bootstrapMigrationVersion(ctx context.Context, dbDriver mi
 			return fmt.Errorf("baseline sqlite migration version: %w", err)
 		}
 	}
+	if state == sqliteSchemaV2 {
+		if err := dbDriver.SetVersion(2, false); err != nil {
+			return fmt.Errorf("baseline sqlite migration version: %w", err)
+		}
+	}
+	if state == sqliteSchemaLegacy {
+		if err := dbDriver.SetVersion(1, false); err != nil {
+			return fmt.Errorf("baseline sqlite migration version: %w", err)
+		}
+	}
 	if state == sqliteSchemaUnknown {
 		return fmt.Errorf("unsupported sqlite schema state")
 	}
@@ -347,6 +461,7 @@ type sqliteSchemaState int
 const (
 	sqliteSchemaEmpty sqliteSchemaState = iota
 	sqliteSchemaLegacy
+	sqliteSchemaV2
 	sqliteSchemaCurrent
 	sqliteSchemaUnknown
 )
@@ -363,7 +478,11 @@ func (s *SQLiteStore) detectSchemaState(ctx context.Context) (sqliteSchemaState,
 	if hasColumns(issueColumns, "id", "raw", "tags_json", "created_by", "created_at", "tag_scores_json", "embedding_json") {
 		return sqliteSchemaLegacy, nil
 	}
-	if hasColumns(issueColumns, "id", "raw", "tags_json", "created_by", "created_at_unix_nano", "tag_scores_json", "embedding_json") {
+	if hasColumns(issueColumns, "id", "raw", "tags_json", "created_by", "created_at_unix_nano", "tag_scores_json", "embedding_json") &&
+		!hasColumns(issueColumns, "status", "closed_at_unix_nano", "closed_by") {
+		return sqliteSchemaV2, nil
+	}
+	if hasColumns(issueColumns, "id", "raw", "tags_json", "created_by", "created_at_unix_nano", "status", "closed_at_unix_nano", "closed_by", "tag_scores_json", "embedding_json") {
 		return sqliteSchemaCurrent, nil
 	}
 	return sqliteSchemaUnknown, nil
@@ -412,6 +531,9 @@ type issueRecord struct {
 	TagsJSON          string
 	CreatedBy         string
 	CreatedAtUnixNano int64
+	Status            string
+	ClosedAtUnixNano  int64
+	ClosedBy          string
 	TagScoresJSON     string
 	EmbeddingJSON     string
 }
@@ -443,6 +565,9 @@ func recordFromIssue(issue Issue) (issueRecord, error) {
 		TagsJSON:          tagsJSON,
 		CreatedBy:         strings.TrimSpace(issue.CreatedBy),
 		CreatedAtUnixNano: issue.CreatedAt.UTC().UnixNano(),
+		Status:            string(normalizeIssueStatus(issue.Status)),
+		ClosedAtUnixNano:  closedAtUnixNano(issue),
+		ClosedBy:          closedBy(issue),
 		TagScoresJSON:     tagScoresJSON,
 		EmbeddingJSON:     embeddingJSON,
 	}, nil
@@ -462,12 +587,23 @@ func issueFromQuery(row issuesdb.Issue) (Issue, error) {
 		return Issue{}, fmt.Errorf("decode embedding for %q: %w", row.ID, err)
 	}
 
+	status := normalizeIssueStatus(IssueStatus(row.Status))
+	closedAt := closedAtFromUnixNano(row.ClosedAtUnixNano)
+	closedBy := strings.TrimSpace(row.ClosedBy)
+	if status != StatusClosed {
+		closedAt = nil
+		closedBy = ""
+	}
+
 	return Issue{
 		ID:        row.ID,
 		Raw:       row.Raw,
 		Tags:      tags,
 		CreatedBy: row.CreatedBy,
 		CreatedAt: time.Unix(0, row.CreatedAtUnixNano).UTC(),
+		Status:    status,
+		ClosedAt:  closedAt,
+		ClosedBy:  closedBy,
 		TagScores: tagScores,
 		Embedding: embedding,
 	}, nil
@@ -504,6 +640,29 @@ func tagFromQuery(row issuesdb.Tag) (Tag, error) {
 		CreatedAt:   time.Unix(0, row.CreatedAtUnixNano).UTC(),
 		Embedding:   embedding,
 	}, nil
+}
+
+func closedAtUnixNano(issue Issue) int64 {
+	if normalizeIssueStatus(issue.Status) != StatusClosed || issue.ClosedAt == nil {
+		return 0
+	}
+	return issue.ClosedAt.UTC().UnixNano()
+}
+
+func closedBy(issue Issue) string {
+	if normalizeIssueStatus(issue.Status) != StatusClosed {
+		return ""
+	}
+	return strings.TrimSpace(issue.ClosedBy)
+}
+
+func closedAtFromUnixNano(value int64) *time.Time {
+	if value <= 0 {
+		return nil
+	}
+
+	closedAt := time.Unix(0, value).UTC()
+	return &closedAt
 }
 
 func nextSequence(ctx context.Context, q *issuesdb.Queries) (uint64, error) {

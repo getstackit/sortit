@@ -4,6 +4,9 @@ CREATE TABLE issues (
     tags_json TEXT NOT NULL,
     created_by TEXT NOT NULL,
     created_at_unix_nano INTEGER NOT NULL,
+    status TEXT NOT NULL,
+    closed_at_unix_nano INTEGER NOT NULL,
+    closed_by TEXT NOT NULL,
     tag_scores_json TEXT NOT NULL,
     embedding_json TEXT NOT NULL
 );

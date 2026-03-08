@@ -9,8 +9,10 @@ import {
 } from "react";
 import type { MouseEvent as ReactMouseEvent } from "react";
 import { usePathname, useSearchParams } from "next/navigation";
-import { AppShell, AppShellToggle } from "@/components/app-shell";
+import { AppShell } from "@/components/app-shell";
 import { AppSidebar } from "@/components/app-sidebar";
+import { SiteHeader } from "@/components/site-header";
+import { Switch } from "@/components/ui/switch";
 import { apiURL } from "@/lib/api";
 
 type TagRelevance = { tag: string; relevance: number };
@@ -18,6 +20,7 @@ type TagRelevance = { tag: string; relevance: number };
 type MapIssue = {
   id: string;
   raw: string;
+  status: "open" | "closed";
   tags: TagRelevance[];
   x: number;
   y: number;
@@ -104,6 +107,7 @@ type MapURLState = {
   batchIds: string[];
   showBatchAnalysis: boolean;
   edgeThreshold: number;
+  showClosed: boolean;
 };
 
 const TAG_COLORS: Record<string, string> = {
@@ -230,9 +234,14 @@ function viewportQuery(viewport: Viewport) {
   return params.toString();
 }
 
-function mapQuery(viewport: Viewport, edgeThreshold: number) {
+function mapQuery(
+  viewport: Viewport,
+  edgeThreshold: number,
+  showClosed: boolean
+) {
   const params = new URLSearchParams(viewportQuery(viewport));
   params.set("edgeThreshold", edgeThreshold.toFixed(2));
+  params.set("status", showClosed ? "all" : "open");
   return params.toString();
 }
 
@@ -308,6 +317,10 @@ function parseEdgeThresholdParam(params: Pick<URLSearchParams, "get">) {
   return parsed;
 }
 
+function parseShowClosedParam(params: Pick<URLSearchParams, "get">) {
+  return params.get("status") === "all";
+}
+
 function parseMapURLState(params: Pick<URLSearchParams, "get">): MapURLState {
   const batchIds = parseBatchIssueIDs(params);
 
@@ -317,6 +330,7 @@ function parseMapURLState(params: Pick<URLSearchParams, "get">): MapURLState {
     batchIds,
     showBatchAnalysis: batchIds.length > 1 && params.get("analyze") === "1",
     edgeThreshold: parseEdgeThresholdParam(params),
+    showClosed: parseShowClosedParam(params),
   };
 }
 
@@ -507,6 +521,7 @@ export default function MapPage() {
   const [error, setError] = useState<string | null>(null);
   const [viewport, setViewport] = useState<Viewport>(initialURLState.viewport);
   const [edgeThreshold, setEdgeThreshold] = useState(initialURLState.edgeThreshold);
+  const [showClosed, setShowClosed] = useState(initialURLState.showClosed);
   const [loadedEdgeKey, setLoadedEdgeKey] = useState("");
   const [hoveredId, setHoveredId] = useState<string | null>(null);
   const [selectedIdState, setSelectedId] = useState<string | null>(
@@ -538,8 +553,13 @@ export default function MapPage() {
   const lassoFrameRef = useRef<number | null>(null);
   const blankClickCandidateRef = useRef(false);
   const blankClickStartRef = useRef<ScreenPoint | null>(null);
+  const showClosedRef = useRef(initialURLState.showClosed);
   const initialViewportKeyRef = useRef(
-    mapQuery(initialURLState.viewport, initialURLState.edgeThreshold)
+    mapQuery(
+      initialURLState.viewport,
+      initialURLState.edgeThreshold,
+      initialURLState.showClosed
+    )
   );
 
   useEffect(() => {
@@ -579,6 +599,34 @@ export default function MapPage() {
   }, []);
 
   useEffect(() => {
+    if (showClosedRef.current === showClosed) {
+      return;
+    }
+    showClosedRef.current = showClosed;
+
+    const controller = new AbortController();
+    const query = mapQuery(viewport, edgeThreshold, showClosed);
+
+    fetchJSON<MapData>(`/api/v1/map?${query}`, controller.signal)
+      .then((data) => {
+        setMapData(data);
+        setLoadedEdgeKey(query);
+        setError(null);
+      })
+      .catch((caughtError: Error & { name?: string }) => {
+        if (caughtError.name === "AbortError") {
+          return;
+        }
+
+        const message =
+          caughtError instanceof Error ? caughtError.message : "Unknown error";
+        setError(message);
+      });
+
+    return () => controller.abort();
+  }, [edgeThreshold, showClosed, viewport]);
+
+  useEffect(() => {
     const node = containerRef.current;
     if (!node) return;
     const element = node;
@@ -611,8 +659,8 @@ export default function MapPage() {
   }, [loading]);
 
   const viewportKey = useMemo(
-    () => mapQuery(viewport, edgeThreshold),
-    [edgeThreshold, viewport]
+    () => mapQuery(viewport, edgeThreshold, showClosed),
+    [edgeThreshold, showClosed, viewport]
   );
 
   useEffect(() => {
@@ -644,6 +692,10 @@ export default function MapPage() {
   const issues = mapData?.issues ?? EMPTY_ISSUES;
   const edges = mapData?.edges ?? EMPTY_EDGES;
   const clusters = mapData?.clusters ?? EMPTY_CLUSTERS;
+  const closedIssueCount = useMemo(
+    () => issues.filter((issue) => issue.status === "closed").length,
+    [issues]
+  );
   const hasCurrentEdges = loadedEdgeKey === viewportKey;
   const currentEdges = hasCurrentEdges ? edges : EMPTY_EDGES;
   const validIssueIDs = useMemo(
@@ -686,12 +738,16 @@ export default function MapPage() {
     params.delete("batch");
     params.delete("analyze");
     params.delete("edgeThreshold");
+    params.delete("status");
 
     const viewportParams = new URLSearchParams(viewportQuery(viewport));
     for (const [key, value] of viewportParams.entries()) {
       params.set(key, value);
     }
     params.set("edgeThreshold", edgeThreshold.toFixed(2));
+    if (showClosed) {
+      params.set("status", "all");
+    }
 
     if (selectedBatch.size > 0) {
       params.set("batch", selectedBatchKey);
@@ -716,6 +772,7 @@ export default function MapPage() {
     selectedBatchKey,
     selectedId,
     showBatchAnalysis,
+    showClosed,
     viewport,
   ]);
 
@@ -1189,6 +1246,7 @@ export default function MapPage() {
   if (loading) {
     return (
       <AppShell sidebar={<AppSidebar />}>
+        <SiteHeader title="Map" />
         <div className="flex flex-1 items-center justify-center text-sm text-muted-foreground">
           Loading map...
         </div>
@@ -1199,6 +1257,7 @@ export default function MapPage() {
   if (error) {
     return (
       <AppShell sidebar={<AppSidebar />}>
+        <SiteHeader title="Map" />
         <div className="flex flex-1 items-center justify-center text-sm text-destructive">
           Failed to load map: {error}
         </div>
@@ -1208,62 +1267,82 @@ export default function MapPage() {
 
   return (
     <AppShell sidebar={<AppSidebar />}>
-      <header className="sticky top-0 z-10 shrink-0 border-b bg-background">
-        <div className="flex h-12 items-center gap-2 px-4">
-          <AppShellToggle className="-ml-1" />
-          <div className="mr-2 h-4 w-px shrink-0 bg-border" />
-          <h1 className="text-sm font-medium">Map</h1>
-          <span className="rounded-full bg-muted px-2 py-0.5 text-[11px] font-medium text-muted-foreground tabular-nums">
-            {issues.length} issues
-          </span>
-          <span className="rounded-full bg-muted px-2 py-0.5 text-[11px] font-medium text-muted-foreground tabular-nums">
-            {visibleIssues.length} visible
-          </span>
-          <span className="rounded-full bg-muted px-2 py-0.5 text-[11px] font-medium text-muted-foreground tabular-nums">
-            {renderedEdges.length} edges
-          </span>
-          <label className="ml-2 flex items-center gap-2 text-[11px] text-muted-foreground">
-            <span>Threshold {Math.round(edgeThreshold * 100)}%</span>
-            <input
-              type="range"
-              min="0"
-              max="1"
-              step="0.01"
-              value={edgeThreshold}
-              onChange={(event) => {
-                setEdgeThreshold(Number(event.target.value));
-                setLoadedEdgeKey("");
-              }}
-              className="h-1.5 w-28 accent-foreground"
-              aria-label="Similarity edge threshold"
-            />
-          </label>
-          <button
-            type="button"
-            onClick={() => scheduleViewport(DEFAULT_VIEWPORT)}
-            className="text-[11px] text-muted-foreground hover:text-foreground"
-          >
-            Reset View
-          </button>
-          {selectedBatch.size > 0 && (
-            <>
-              <span className="rounded-full bg-primary px-2 py-0.5 text-[11px] font-medium text-primary-foreground">
-                {selectedBatch.size} selected
+      <SiteHeader
+        title="Map"
+        meta={
+          <>
+            <span className="rounded-full bg-muted px-2 py-0.5 text-[11px] font-medium text-muted-foreground tabular-nums">
+              {issues.length} issues
+            </span>
+            {closedIssueCount > 0 && (
+              <span className="rounded-full bg-muted px-2 py-0.5 text-[11px] font-medium text-muted-foreground tabular-nums">
+                {closedIssueCount} closed
               </span>
-              <button
-                type="button"
-                onClick={clearSelection}
-                className="text-[11px] text-muted-foreground hover:text-foreground"
-              >
-                Clear
-              </button>
-            </>
-          )}
-          <span className="ml-auto text-[11px] text-muted-foreground/50">
-            Scroll to zoom. Drag to pan. Shift-click to build a batch. Shift-drag to lasso. Use Analyze in the sidebar to compare tags and embeddings.
-          </span>
-        </div>
-      </header>
+            )}
+            <span className="rounded-full bg-muted px-2 py-0.5 text-[11px] font-medium text-muted-foreground tabular-nums">
+              {visibleIssues.length} visible
+            </span>
+            <span className="rounded-full bg-muted px-2 py-0.5 text-[11px] font-medium text-muted-foreground tabular-nums">
+              {renderedEdges.length} edges
+            </span>
+          </>
+        }
+        actions={
+          <>
+            <label className="flex items-center gap-2 text-[11px] text-muted-foreground">
+              <Switch
+                checked={showClosed}
+                onCheckedChange={(checked) => {
+                  setShowClosed(checked);
+                  setLoadedEdgeKey("");
+                }}
+                aria-label="Show closed issues"
+              />
+              <span>Show closed</span>
+            </label>
+            <label className="flex items-center gap-2 text-[11px] text-muted-foreground">
+              <span>Threshold {Math.round(edgeThreshold * 100)}%</span>
+              <input
+                type="range"
+                min="0"
+                max="1"
+                step="0.01"
+                value={edgeThreshold}
+                onChange={(event) => {
+                  setEdgeThreshold(Number(event.target.value));
+                  setLoadedEdgeKey("");
+                }}
+                className="h-1.5 w-28 accent-foreground"
+                aria-label="Similarity edge threshold"
+              />
+            </label>
+            <button
+              type="button"
+              onClick={() => scheduleViewport(DEFAULT_VIEWPORT)}
+              className="text-[11px] text-muted-foreground hover:text-foreground"
+            >
+              Reset View
+            </button>
+            {selectedBatch.size > 0 && (
+              <>
+                <span className="rounded-full bg-primary px-2 py-0.5 text-[11px] font-medium text-primary-foreground">
+                  {selectedBatch.size} selected
+                </span>
+                <button
+                  type="button"
+                  onClick={clearSelection}
+                  className="text-[11px] text-muted-foreground hover:text-foreground"
+                >
+                  Clear
+                </button>
+              </>
+            )}
+            <span className="text-[11px] text-muted-foreground/50">
+              Scroll to zoom. Drag to pan. Shift-click to build a batch. Shift-drag to lasso. Use Analyze in the sidebar to compare tags and embeddings.
+            </span>
+          </>
+        }
+      />
       <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
         <div
           ref={containerRef}
@@ -1388,6 +1467,7 @@ export default function MapPage() {
               const isNeighbor = neighborIds.has(issue.id);
               const highlighted = isHighlighted(issue.id);
               const dimmed = hasSelection && !highlighted;
+              const isClosed = issue.status === "closed";
 
               return (
                 <g
@@ -1445,10 +1525,13 @@ export default function MapPage() {
                     cy={sy}
                     r={radius}
                     fill={color}
-                    fillOpacity={dimmed ? 0.15 : isActive ? 0.9 : 0.6}
+                    fillOpacity={
+                      dimmed ? 0.15 : isClosed ? (isActive ? 0.42 : 0.22) : isActive ? 0.9 : 0.6
+                    }
                     stroke={color}
-                    strokeWidth={isActive ? 2 : 0}
+                    strokeWidth={isActive || isClosed ? 2 : 0}
                     strokeOpacity={0.8}
+                    strokeDasharray={isClosed ? "4 3" : undefined}
                   />
                   {(isActive || (isNeighbor && selectedId != null)) && (
                     <text
@@ -1489,9 +1572,25 @@ export default function MapPage() {
             {activeIssue && selectedBatch.size === 0 && (
               <div className="flex h-full flex-col overflow-y-auto p-5">
                 <div className="flex items-start justify-between gap-3">
-                  <p className="whitespace-pre-wrap text-[13px] leading-relaxed">
-                    {activeIssue.raw}
-                  </p>
+                  <div className="space-y-2">
+                    <div className="flex flex-wrap items-center gap-2">
+                      <span className="rounded-full bg-muted px-2 py-0.5 text-[10px] font-medium text-muted-foreground">
+                        {activeIssue.id}
+                      </span>
+                      <span
+                        className={
+                          activeIssue.status === "closed"
+                            ? "rounded-full bg-slate-200 px-2 py-0.5 text-[10px] font-medium text-slate-700"
+                            : "rounded-full bg-emerald-100 px-2 py-0.5 text-[10px] font-medium text-emerald-700"
+                        }
+                      >
+                        {activeIssue.status === "closed" ? "Closed" : "Open"}
+                      </span>
+                    </div>
+                    <p className="whitespace-pre-wrap text-[13px] leading-relaxed">
+                      {activeIssue.raw}
+                    </p>
+                  </div>
                   {selectedId && (
                     <button
                       type="button"

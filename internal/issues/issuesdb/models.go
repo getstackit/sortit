@@ -10,6 +10,9 @@ type Issue struct {
 	TagsJson          string
 	CreatedBy         string
 	CreatedAtUnixNano int64
+	Status            string
+	ClosedAtUnixNano  int64
+	ClosedBy          string
 	TagScoresJson     string
 	EmbeddingJson     string
 }

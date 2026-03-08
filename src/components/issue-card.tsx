@@ -57,6 +57,7 @@ export function IssueCard({ issue, href, className }: IssueCardProps) {
       <p
         className={cn(
           "whitespace-pre-wrap leading-relaxed",
+          issue.status === "closed" && "text-muted-foreground",
           looksLikeCode(issue.raw)
             ? "font-mono text-[13px] text-foreground/80"
             : "text-[15px]"
@@ -66,6 +67,11 @@ export function IssueCard({ issue, href, className }: IssueCardProps) {
       </p>
       <div className="mt-3 flex items-center gap-2">
         <div className="flex flex-wrap gap-1.5">
+          {issue.status === "closed" && (
+            <span className="rounded-full bg-slate-200 px-2 py-0.5 text-[11px] font-medium text-slate-700">
+              Closed
+            </span>
+          )}
           {issue.tags.map((tag) => (
             <span
               key={tag}
@@ -87,6 +93,7 @@ export function IssueCard({ issue, href, className }: IssueCardProps) {
       <div
         className={cn(
           "rounded-2xl border border-border/60 bg-card p-5",
+          issue.status === "closed" && "bg-slate-50/80",
           className
         )}
       >
@@ -100,6 +107,7 @@ export function IssueCard({ issue, href, className }: IssueCardProps) {
       href={href}
       className={cn(
         "group/card block rounded-xl border border-border/60 bg-card p-5 transition-colors hover:border-border hover:bg-accent/30",
+        issue.status === "closed" && "bg-slate-50/80",
         className
       )}
     >

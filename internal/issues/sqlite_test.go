@@ -31,6 +31,9 @@ func TestSQLiteStoreCreateListAndGet(t *testing.T) {
 	if created.CreatedBy != "Casey" {
 		t.Fatalf("expected trimmed creator, got %q", created.CreatedBy)
 	}
+	if created.Status != StatusOpen {
+		t.Fatalf("expected created issue to be open, got %q", created.Status)
+	}
 	if len(created.Tags) != 1 || created.Tags[0] != "backend" {
 		t.Fatalf("expected sanitized tags, got %#v", created.Tags)
 	}
@@ -58,6 +61,45 @@ func TestSQLiteStoreCreateListAndGet(t *testing.T) {
 	}
 	if loaded.Raw != created.Raw {
 		t.Fatalf("expected raw %q, got %q", created.Raw, loaded.Raw)
+	}
+}
+
+func TestSQLiteStoreCloseAndReopenIssue(t *testing.T) {
+	store := newSQLiteTestStore(t)
+
+	created, err := store.Create(context.Background(), CreateInput{
+		Raw: "close me",
+	})
+	if err != nil {
+		t.Fatalf("create issue: %v", err)
+	}
+
+	closed, err := store.CloseIssue(context.Background(), created.ID, "Casey")
+	if err != nil {
+		t.Fatalf("close issue: %v", err)
+	}
+	if closed.Status != StatusClosed {
+		t.Fatalf("expected closed status, got %q", closed.Status)
+	}
+	if closed.ClosedAt == nil {
+		t.Fatal("expected closedAt to be set")
+	}
+	if closed.ClosedBy != "Casey" {
+		t.Fatalf("expected closedBy Casey, got %q", closed.ClosedBy)
+	}
+
+	reopened, err := store.ReopenIssue(context.Background(), created.ID)
+	if err != nil {
+		t.Fatalf("reopen issue: %v", err)
+	}
+	if reopened.Status != StatusOpen {
+		t.Fatalf("expected open status after reopen, got %q", reopened.Status)
+	}
+	if reopened.ClosedAt != nil {
+		t.Fatalf("expected closedAt cleared, got %v", reopened.ClosedAt)
+	}
+	if reopened.ClosedBy != "" {
+		t.Fatalf("expected closedBy cleared, got %q", reopened.ClosedBy)
 	}
 }
 
@@ -194,6 +236,9 @@ func TestSQLiteStoreMigratesLegacyCreatedAtColumn(t *testing.T) {
 	if !items[0].CreatedAt.Equal(legacyCreatedAt) {
 		t.Fatalf("expected created_at %s, got %s", legacyCreatedAt, items[0].CreatedAt)
 	}
+	if items[0].Status != StatusOpen {
+		t.Fatalf("expected migrated issue to default to open, got %q", items[0].Status)
+	}
 
 	created, err := store.Create(context.Background(), CreateInput{Raw: "new issue after migration"})
 	if err != nil {
@@ -278,6 +323,9 @@ func TestSQLiteStoreBaselinesCurrentSchemaWithoutReapplyingLegacyMigration(t *te
 	}
 	if !items[0].CreatedAt.Equal(currentCreatedAt) {
 		t.Fatalf("expected created_at %s, got %s", currentCreatedAt, items[0].CreatedAt)
+	}
+	if items[0].Status != StatusOpen {
+		t.Fatalf("expected current issue to default to open after migration, got %q", items[0].Status)
 	}
 
 	created, err := store.Create(context.Background(), CreateInput{Raw: "new issue after baseline"})

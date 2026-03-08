@@ -6,7 +6,16 @@ import (
 	"strconv"
 	"strings"
 
+	"splat/internal/issues"
 	issuemap "splat/internal/map"
+)
+
+type issueStatusFilter string
+
+const (
+	issueStatusFilterOpen   issueStatusFilter = "open"
+	issueStatusFilterClosed issueStatusFilter = "closed"
+	issueStatusFilterAll    issueStatusFilter = "all"
 )
 
 func ParseCSV(raw string) []string {
@@ -74,6 +83,46 @@ func ParseEdgeThreshold(values url.Values) (*float64, error) {
 		return nil, strconv.ErrSyntax
 	}
 	return &threshold, nil
+}
+
+func ParseIssueStatusFilter(values url.Values) (issueStatusFilter, error) {
+	raw := strings.TrimSpace(values.Get("status"))
+	if raw == "" {
+		return issueStatusFilterOpen, nil
+	}
+
+	switch strings.ToLower(raw) {
+	case string(issueStatusFilterOpen):
+		return issueStatusFilterOpen, nil
+	case string(issueStatusFilterClosed):
+		return issueStatusFilterClosed, nil
+	case string(issueStatusFilterAll):
+		return issueStatusFilterAll, nil
+	default:
+		return "", strconv.ErrSyntax
+	}
+}
+
+func filterIssuesByStatus(items []issues.Issue, filter issueStatusFilter) []issues.Issue {
+	if filter == issueStatusFilterAll {
+		return items
+	}
+
+	filtered := make([]issues.Issue, 0, len(items))
+	for _, item := range items {
+		status := item.Status
+		if status == "" {
+			status = issues.StatusOpen
+		}
+
+		if filter == issueStatusFilterOpen && status == issues.StatusOpen {
+			filtered = append(filtered, item)
+		}
+		if filter == issueStatusFilterClosed && status == issues.StatusClosed {
+			filtered = append(filtered, item)
+		}
+	}
+	return filtered
 }
 
 func parseFloatQuery(values url.Values, key string) (float64, error) {
