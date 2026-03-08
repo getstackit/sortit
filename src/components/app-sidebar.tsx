@@ -97,13 +97,9 @@ export function AppSidebar({
           aria-keyshortcuts="N"
           onClick={openComposer}
           className={cn(
-            "flex w-full items-center gap-2 rounded-xl px-2.5 py-2.5 text-sm font-medium text-white shadow-sm transition-transform hover:-translate-y-0.5",
+            "flex w-full items-center gap-2 rounded-xl border border-border/60 bg-sidebar-accent px-2.5 py-2.5 text-sm font-medium text-sidebar-accent-foreground transition-all hover:bg-sidebar-accent/80 hover:shadow-sm",
             collapsed && "justify-center px-0"
           )}
-          style={{
-            background:
-              "linear-gradient(135deg, var(--gradient-start), var(--gradient-mid) 55%, var(--gradient-end))",
-          }}
         >
           <svg
             aria-hidden="true"
@@ -128,7 +124,7 @@ export function AppSidebar({
         navigateOnCreate={navigateOnCreate}
       />
 
-      <div className="flex min-h-0 flex-1 flex-col gap-5 overflow-y-auto px-3 py-4">
+      <div className="app-scrollarea flex min-h-0 flex-1 flex-col gap-5 overflow-y-auto px-3 py-4">
         <section className="space-y-2">
           <p
             className={cn(
@@ -186,14 +182,18 @@ export function AppSidebar({
                   Nothing yet
                 </p>
               )}
-              {things.map((thing, index) => (
+              {things.map((thing, index) => {
+                const isActive = pathname === (thing.href ?? `#${thing.id}`);
+                return (
                 <Link
                   key={thing.id}
                   href={thing.href ?? `#${thing.id}`}
                   title={thing.title}
                   onClick={closeMobileSidebar}
                   className={cn(
-                    "flex items-center rounded-xl border border-transparent px-2.5 py-2 text-sm transition-all hover:border-sidebar-border/70 hover:bg-sidebar-accent/80 hover:text-sidebar-accent-foreground",
+                    "flex items-center rounded-xl border-l-[3px] border-l-transparent border border-transparent px-2.5 py-2 text-sm transition-all hover:border-sidebar-border/70 hover:bg-sidebar-accent/80 hover:text-sidebar-accent-foreground",
+                    isActive &&
+                      "border-l-[var(--glow-color-current)] bg-sidebar-accent/90 font-medium text-sidebar-accent-foreground",
                     collapsed && "justify-center px-0"
                   )}
                 >
@@ -209,7 +209,8 @@ export function AppSidebar({
                     </span>
                   )}
                 </Link>
-              ))}
+                );
+              })}
             </div>
           </section>
         )}

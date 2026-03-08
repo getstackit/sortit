@@ -79,7 +79,8 @@ export function PasteModal({
               Paste anything
             </Dialog.Title>
             <Dialog.Description className="mt-1 text-xs text-muted-foreground">
-              Drop in text, a URL, an error log — we&apos;ll turn it into an issue.
+              Drop in text, a URL, an error log — we&apos;ll turn it into an issue,
+              and this becomes the first discussion post.
             </Dialog.Description>
 
             <textarea

@@ -4,6 +4,15 @@ import { getJSON, postJSON } from "@/lib/http";
 export type IssueStatus = "open" | "closed";
 export type IssueListStatus = IssueStatus | "all";
 
+export type IssuePostRecord = {
+  id: string;
+  issueId?: string;
+  raw: string;
+  createdBy: string;
+  createdAt: string;
+  sequence: number;
+};
+
 export type IssueRecord = {
   id: string;
   raw: string;
@@ -13,6 +22,7 @@ export type IssueRecord = {
   status: IssueStatus;
   closedAt?: string | null;
   closedBy?: string;
+  discussion?: IssuePostRecord[];
 };
 
 type IssuesResponse = {
@@ -27,6 +37,11 @@ type CreateIssueInput = {
 
 type CloseIssueInput = {
   closedBy?: string;
+};
+
+type RefineIssueInput = {
+  raw: string;
+  createdBy?: string;
 };
 
 export async function fetchIssues(
@@ -74,5 +89,15 @@ export async function reopenIssue(id: string): Promise<IssueRecord> {
   return postJSON<IssueRecord, Record<string, never>>(
     apiURL(`/api/v1/issues/${encodeURIComponent(id)}/reopen`),
     {}
+  );
+}
+
+export async function refineIssue(
+  id: string,
+  input: RefineIssueInput
+): Promise<IssueRecord> {
+  return postJSON<IssueRecord, RefineIssueInput>(
+    apiURL(`/api/v1/issues/${encodeURIComponent(id)}/refine`),
+    input
   );
 }

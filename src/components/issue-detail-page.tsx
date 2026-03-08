@@ -2,12 +2,15 @@
 
 import Link from "next/link";
 import { useCallback, useEffect, useMemo, useState } from "react";
+import { motion } from "motion/react";
 import {
   CheckIcon,
   Clock3Icon,
   CopyIcon,
   HashIcon,
   Link2Icon,
+  MessageSquareMoreIcon,
+  SparklesIcon,
 } from "lucide-react";
 import { AppShell } from "@/components/app-shell";
 import {
@@ -27,13 +30,16 @@ import type {
   MapEdge,
   MapIssue,
 } from "@/features/map/types";
-import { cn } from "@/lib/utils";
 import {
   closeIssue,
   fetchIssue,
   reopenIssue,
+  refineIssue,
+  type IssuePostRecord,
   type IssueRecord,
 } from "@/lib/issues";
+import { cn } from "@/lib/utils";
+import { entityStyle } from "@/lib/entity-colors";
 
 type SemanticNeighbor = {
   issue: MapIssue;
@@ -128,6 +134,27 @@ function projectPoint(x: number, y: number, width: number, height: number) {
   };
 }
 
+function fallbackDiscussion(issue: IssueRecord | null): IssuePostRecord[] {
+  if (!issue) {
+    return [];
+  }
+
+  if (issue.discussion && issue.discussion.length > 0) {
+    return issue.discussion;
+  }
+
+  return [
+    {
+      id: `${issue.id}-post-000001`,
+      issueId: issue.id,
+      raw: issue.raw,
+      createdBy: issue.createdBy,
+      createdAt: issue.createdAt,
+      sequence: 1,
+    },
+  ];
+}
+
 async function fetchMapData(signal?: AbortSignal): Promise<MapData> {
   return fetchSharedMapData("status=all&edgeThreshold=0.4", signal);
 }
@@ -158,6 +185,24 @@ async function copyText(value: string) {
   }
 }
 
+function DiscussionBody({ text }: { text: string }) {
+  if (looksLikeStructuredText(text)) {
+    return (
+      <pre className="overflow-x-auto whitespace-pre-wrap break-words font-mono text-[13px] leading-6 text-foreground/85">
+        {text}
+      </pre>
+    );
+  }
+
+  return (
+    <div className="space-y-4 text-[15px] leading-7 text-foreground/90">
+      {splitParagraphs(text).map((paragraph, index) => (
+        <p key={index}>{paragraph}</p>
+      ))}
+    </div>
+  );
+}
+
 export function IssueDetailPage({ issueID }: { issueID: string }) {
   const [issue, setIssue] = useState<IssueRecord | null>(null);
   const [mapData, setMapData] = useState<MapData | null>(null);
@@ -169,6 +214,8 @@ export function IssueDetailPage({ issueID }: { issueID: string }) {
     "idle" | "text-copied" | "link-copied" | "error"
   >("idle");
   const [statusPending, setStatusPending] = useState(false);
+  const [refineInput, setRefineInput] = useState("");
+  const [refinePending, setRefinePending] = useState(false);
 
   useEffect(() => {
     const controller = new AbortController();
@@ -224,6 +271,8 @@ export function IssueDetailPage({ issueID }: { issueID: string }) {
 
     return () => window.clearTimeout(timeout);
   }, [copyState]);
+
+  const discussion = useMemo(() => fallbackDiscussion(issue), [issue]);
 
   const handleCopyIssue = useCallback(async () => {
     if (!issue) {
@@ -281,13 +330,53 @@ export function IssueDetailPage({ issueID }: { issueID: string }) {
     }
   }, [issue, statusPending]);
 
+  const handleRefine = useCallback(async () => {
+    if (!issue || refinePending) {
+      return;
+    }
+
+    const raw = refineInput.trim();
+    if (!raw) {
+      return;
+    }
+
+    setRefinePending(true);
+
+    try {
+      const updated = await refineIssue(issue.id, { raw });
+      setIssue(updated);
+      setRefineInput("");
+      setActionError(null);
+
+      try {
+        const nextMap = await fetchMapData();
+        setMapData(nextMap);
+        setMapError(null);
+      } catch (caughtError) {
+        const message =
+          caughtError instanceof Error
+            ? caughtError.message
+            : "Unknown backend error";
+        setMapError(message);
+      }
+    } catch (caughtError) {
+      const message =
+        caughtError instanceof Error
+          ? caughtError.message
+          : "Unknown backend error";
+      setActionError(message);
+    } finally {
+      setRefinePending(false);
+    }
+  }, [issue, refineInput, refinePending]);
+
   const shortcuts = useMemo(
     () =>
       issue
         ? [
             {
               key: "y",
-              description: "Copy issue text",
+              description: "Copy issue summary",
               action: () => void handleCopyIssue(),
             },
             {
@@ -515,7 +604,7 @@ export function IssueDetailPage({ issueID }: { issueID: string }) {
         }
       />
 
-      <div className="min-h-0 flex-1 overflow-y-auto">
+      <div className="app-scrollarea min-h-0 flex-1 overflow-y-auto">
         <div className="flex w-full flex-col gap-6 px-4 py-6 lg:px-6 xl:px-8">
           {loading && (
             <div className="app-subtle-surface p-5 text-sm text-muted-foreground">
@@ -532,49 +621,144 @@ export function IssueDetailPage({ issueID }: { issueID: string }) {
           )}
 
           {!loading && issue && (
-            <div className="grid gap-6 xl:grid-cols-[minmax(0,1fr)_19rem] 2xl:grid-cols-[minmax(0,1.15fr)_20rem]">
+            <motion.div
+              key={issueID}
+              initial={{ opacity: 0, x: 20 }}
+              animate={{ opacity: 1, x: 0 }}
+              transition={{ duration: 0.25, ease: "easeOut" }}
+              className="grid gap-6 xl:grid-cols-[minmax(0,1fr)_19rem] 2xl:grid-cols-[minmax(0,1.15fr)_20rem]">
               <div className="space-y-6">
-                {actionError && (
-                  <div className="app-status-warning">
-                    {actionError}
-                  </div>
-                )}
+                {actionError && <div className="app-status-warning">{actionError}</div>}
 
                 <section className="app-surface rounded-[1.75rem] p-6">
                   <div className="flex flex-wrap items-start justify-between gap-4">
                     <div className="space-y-2">
                       <p className="text-[11px] font-medium uppercase tracking-[0.18em] text-muted-foreground">
-                        Raw report
+                        Canonical summary
                       </p>
                       <h2 className="max-w-3xl text-2xl leading-tight font-semibold tracking-tight text-balance">
                         {formatIssueTitle(issue.raw, 140)}
                       </h2>
                       <p className="text-sm text-muted-foreground">
-                        Original issue text preserved as entered.
+                        This is the current synthesized understanding of the issue. New
+                        discussion can update it.
                       </p>
                     </div>
-                    <div
-                      className={cn(
-                        "rounded-full px-3 py-1 text-xs font-medium",
-                        statusClasses(issue.status)
-                      )}
-                    >
-                      {issue.status === "closed" ? "Closed" : "Open"}
+                    <div className="flex flex-wrap items-center gap-2">
+                      <span className="app-chip">Derived from discussion</span>
+                      <div
+                        className={cn(
+                          "rounded-full px-3 py-1 text-xs font-medium",
+                          statusClasses(issue.status)
+                        )}
+                      >
+                        {issue.status === "closed" ? "Closed" : "Open"}
+                      </div>
                     </div>
                   </div>
 
                   <div className="app-subtle-surface mt-6 rounded-[1.5rem] p-5">
-                    {looksLikeStructuredText(issue.raw) ? (
-                      <pre className="overflow-x-auto whitespace-pre-wrap break-words font-mono text-[13px] leading-6 text-foreground/85">
-                        {issue.raw}
-                      </pre>
-                    ) : (
-                      <div className="space-y-4 text-[15px] leading-7 text-foreground/90">
-                        {splitParagraphs(issue.raw).map((paragraph, index) => (
-                          <p key={index}>{paragraph}</p>
-                        ))}
+                    <DiscussionBody text={issue.raw} />
+                  </div>
+                </section>
+
+                <section className="app-surface rounded-[1.75rem] p-6">
+                  <div className="flex flex-wrap items-start justify-between gap-4">
+                    <div>
+                      <p className="text-[11px] font-medium uppercase tracking-[0.18em] text-muted-foreground">
+                        Discussion
+                      </p>
+                      <h3 className="mt-2 text-lg font-semibold tracking-tight">
+                        Context, feedback, and refinements
+                      </h3>
+                      <p className="mt-1 text-sm text-muted-foreground">
+                        The first post is the initial issue state. Every new refinement updates
+                        the canonical summary above.
+                      </p>
+                    </div>
+                    <span className="app-chip">
+                      {discussion.length} post{discussion.length === 1 ? "" : "s"}
+                    </span>
+                  </div>
+
+                  <div className="app-subtle-surface mt-5 rounded-[1.5rem] p-4">
+                    <div className="flex items-start gap-3">
+                      <div className="mt-0.5 rounded-full bg-amber-100 p-2 text-amber-700">
+                        <SparklesIcon className="size-4" />
                       </div>
-                    )}
+                      <div className="min-w-0 flex-1">
+                        <p className="text-sm font-medium">Refine this issue</p>
+                        <p className="mt-1 text-sm text-muted-foreground">
+                          Add context, corrections, or feedback. Tags and map similarity refresh
+                          from the updated discussion.
+                        </p>
+                        <textarea
+                          value={refineInput}
+                          onChange={(event) => {
+                            setRefineInput(event.target.value);
+                            if (actionError) {
+                              setActionError(null);
+                            }
+                          }}
+                          onKeyDown={(event) => {
+                            if ((event.metaKey || event.ctrlKey) && event.key === "Enter") {
+                              event.preventDefault();
+                              void handleRefine();
+                            }
+                          }}
+                          placeholder="Add more context, corrections, or feedback..."
+                          disabled={refinePending}
+                          className="mt-4 min-h-[120px] w-full resize-y rounded-xl border border-input/80 bg-background/70 px-3 py-2 text-sm leading-relaxed placeholder:text-muted-foreground/50 focus:outline-none focus:ring-2 focus:ring-ring/40"
+                        />
+                        <div className="mt-3 flex flex-wrap items-center justify-between gap-3">
+                          <p className="text-[11px] text-muted-foreground">
+                            Press <span className="font-medium text-foreground">Cmd/Ctrl + Enter</span>{" "}
+                            to post.
+                          </p>
+                          <Button
+                            type="button"
+                            onClick={() => void handleRefine()}
+                            disabled={refinePending || refineInput.trim().length === 0}
+                          >
+                            {refinePending ? "Posting..." : "Post refinement"}
+                          </Button>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="mt-5 space-y-4">
+                    {discussion.map((post) => {
+                      const isInitial = post.sequence === 1;
+
+                      return (
+                        <article
+                          key={post.id}
+                          className="app-subtle-surface rounded-[1.5rem] p-5"
+                        >
+                          <div className="flex flex-wrap items-start justify-between gap-3">
+                            <div className="space-y-1">
+                              <div className="flex flex-wrap items-center gap-2">
+                                <span className="text-sm font-semibold">
+                                  {isInitial ? "Initial report" : `Refinement ${post.sequence - 1}`}
+                                </span>
+                                {isInitial && <span className="app-chip">Starting state</span>}
+                              </div>
+                              <p className="text-sm text-muted-foreground">
+                                {post.createdBy} · {formatRelativeTime(post.createdAt)}
+                              </p>
+                            </div>
+                            <span className="text-[11px] font-medium uppercase tracking-[0.14em] text-muted-foreground">
+                              {formatDateTime(post.createdAt)}
+                            </span>
+                          </div>
+
+                          <div className="mt-4">
+                            <DiscussionBody text={post.raw} />
+                          </div>
+                        </article>
+                      );
+                    })}
                   </div>
                 </section>
 
@@ -780,16 +964,27 @@ export function IssueDetailPage({ issueID }: { issueID: string }) {
                           issue.tags.map((tag) => (
                             <span
                               key={tag}
-                              className="app-chip text-foreground"
+                              className="rounded-full border px-2.5 py-1 text-[11px] font-medium"
+                              style={entityStyle(tag)}
                             >
                               {tag}
                             </span>
                           ))
                         ) : (
-                          <span className="text-sm text-muted-foreground">
-                            None
-                          </span>
+                          <span className="text-sm text-muted-foreground">None</span>
                         )}
+                      </dd>
+                    </div>
+
+                    <div className="space-y-1">
+                      <dt className="text-[11px] font-medium uppercase tracking-[0.14em] text-muted-foreground">
+                        Discussion
+                      </dt>
+                      <dd className="flex items-center gap-2 text-sm">
+                        <MessageSquareMoreIcon className="size-4 text-muted-foreground" />
+                        <span>
+                          {discussion.length} post{discussion.length === 1 ? "" : "s"}
+                        </span>
                       </dd>
                     </div>
                   </dl>
@@ -803,10 +998,7 @@ export function IssueDetailPage({ issueID }: { issueID: string }) {
 
                   <div className="mt-4 space-y-4">
                     {timeline.map((entry) => (
-                      <div
-                        key={entry.label}
-                        className="app-subtle-surface p-3"
-                      >
+                      <div key={entry.label} className="app-subtle-surface p-3">
                         <p className="text-[11px] font-medium uppercase tracking-[0.14em] text-muted-foreground">
                           {entry.label}
                         </p>
@@ -853,7 +1045,7 @@ export function IssueDetailPage({ issueID }: { issueID: string }) {
                       ) : (
                         <CopyIcon aria-hidden="true" />
                       )}
-                      {copyState === "text-copied" ? "Copied text" : "Copy text"}
+                      {copyState === "text-copied" ? "Copied summary" : "Copy summary"}
                     </Button>
 
                     <Button
@@ -880,11 +1072,11 @@ export function IssueDetailPage({ issueID }: { issueID: string }) {
                   <p className="mt-4 text-[11px] text-muted-foreground">
                     Keyboard shortcuts: <span className="font-medium text-foreground">X</span>{" "}
                     toggles issue status, <span className="font-medium text-foreground">Y</span>{" "}
-                    copies the raw report.
+                    copies the current summary.
                   </p>
                 </section>
               </aside>
-            </div>
+            </motion.div>
           )}
         </div>
       </div>
