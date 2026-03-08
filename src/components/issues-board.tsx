@@ -51,7 +51,18 @@ export function IssuesBoard() {
   );
 
   return (
-    <AppShell sidebar={<AppSidebar things={things} />}>
+    <AppShell
+      sidebar={
+        <AppSidebar
+          things={things}
+          navigateOnCreate={false}
+          onIssueCreated={(created) => {
+            setIssues((prev) => [created, ...prev]);
+            setError(null);
+          }}
+        />
+      }
+    >
       <SiteHeader
         title="Open issues"
         meta={
@@ -61,11 +72,6 @@ export function IssuesBoard() {
             </span>
           ) : null
         }
-        navigateOnCreate={false}
-        onIssueCreated={(created) => {
-          setIssues((prev) => [created, ...prev]);
-          setError(null);
-        }}
       />
       <div className="flex flex-1 flex-col">
         <div className="@container/main flex flex-1 flex-col gap-2">

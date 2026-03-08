@@ -1,9 +1,12 @@
 "use client";
 
+import { useState } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useAppShell } from "@/components/app-shell";
+import { PasteModal } from "@/components/paste-modal";
 import { ThemeToggle } from "@/components/theme-toggle";
+import type { IssueRecord } from "@/lib/issues";
 import { cn } from "@/lib/utils";
 
 type Thing = {
@@ -14,6 +17,8 @@ type Thing = {
 
 type AppSidebarProps = {
   things?: Thing[];
+  onIssueCreated?: (issue: IssueRecord) => Promise<void> | void;
+  navigateOnCreate?: boolean;
 };
 
 function SidebarLink({
@@ -50,9 +55,14 @@ function SidebarLink({
   );
 }
 
-export function AppSidebar({ things = [] }: AppSidebarProps) {
+export function AppSidebar({
+  things = [],
+  onIssueCreated,
+  navigateOnCreate = true,
+}: AppSidebarProps) {
   const pathname = usePathname();
   const { collapsed, closeMobileSidebar } = useAppShell();
+  const [pasteOpen, setPasteOpen] = useState(false);
 
   return (
     <div className="flex h-full flex-col">
@@ -69,6 +79,38 @@ export function AppSidebar({ things = [] }: AppSidebarProps) {
           </span>
         </div>
       </div>
+
+      <div className="px-3 pt-3">
+        <button
+          type="button"
+          onClick={() => setPasteOpen(true)}
+          className={cn(
+            "flex w-full items-center gap-2 rounded-md bg-primary px-2 py-2 text-sm font-medium text-primary-foreground transition-colors hover:bg-primary/90",
+            collapsed && "justify-center px-0"
+          )}
+        >
+          <svg
+            aria-hidden="true"
+            viewBox="0 0 16 16"
+            className="size-4"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="1.5"
+            strokeLinecap="round"
+          >
+            <path d="M8 3v10" />
+            <path d="M3 8h10" />
+          </svg>
+          <span className={cn(collapsed && "sr-only")}>Add</span>
+        </button>
+      </div>
+
+      <PasteModal
+        open={pasteOpen}
+        onOpenChange={setPasteOpen}
+        onIssueCreated={onIssueCreated}
+        navigateOnCreate={navigateOnCreate}
+      />
 
       <div className="flex min-h-0 flex-1 flex-col gap-5 overflow-y-auto px-3 py-4">
         <section className="space-y-2">
