@@ -5,6 +5,7 @@ import { AppShell } from "@/components/app-shell";
 import { AppSidebar } from "@/components/app-sidebar";
 import { IssueCard } from "@/components/issue-card";
 import { SiteHeader } from "@/components/site-header";
+import { Skeleton } from "@/components/ui/skeleton";
 import { fetchIssues, type IssueRecord } from "@/lib/issues";
 
 export function IssuesBoard() {
@@ -65,9 +66,11 @@ export function IssuesBoard() {
     >
       <SiteHeader
         title="Open issues"
+        eyebrow="Issues"
+        subtitle="Incoming reports, bugs, and ideas waiting to be triaged."
         meta={
           issues.length > 0 ? (
-            <span className="rounded-full bg-muted px-2 py-0.5 text-[11px] font-medium text-muted-foreground tabular-nums">
+            <span className="app-chip tabular-nums">
               {issues.length}
             </span>
           ) : null
@@ -78,22 +81,37 @@ export function IssuesBoard() {
           <div className="flex flex-col gap-4 py-4 md:gap-6 md:py-6">
             {error && (
               <div className="px-4 lg:px-6">
-                <div className="rounded-xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-900">
+                <div className="app-status-warning">
                   Issue backend unavailable: {error}
                 </div>
               </div>
             )}
 
             {loading && (
-              <div className="px-4 lg:px-6">
-                <div className="rounded-xl border border-border/60 bg-card p-5 text-sm text-muted-foreground">
-                  Loading issues...
-                </div>
+              <div className="space-y-3 px-4 lg:px-6">
+                {Array.from({ length: 4 }).map((_, index) => (
+                  <div
+                    key={index}
+                    className="app-surface animate-fade-in-up p-5"
+                    style={{ animationDelay: `${index * 75}ms` }}
+                  >
+                    <div className="space-y-3">
+                      <Skeleton className="h-4 w-3/4" />
+                      <Skeleton className="h-4 w-5/6" />
+                      <Skeleton className="h-4 w-2/3" />
+                    </div>
+                    <div className="mt-4 flex items-center gap-2">
+                      <Skeleton className="h-6 w-16 rounded-full" />
+                      <Skeleton className="h-6 w-14 rounded-full" />
+                      <Skeleton className="ml-auto h-4 w-24" />
+                    </div>
+                  </div>
+                ))}
               </div>
             )}
 
             {!loading && issues.length === 0 && (
-              <div className="flex flex-col items-center gap-3 py-20 text-center">
+              <div className="app-surface mx-4 flex flex-col items-center gap-3 py-20 text-center lg:mx-6">
                 <div className="text-4xl opacity-20">~</div>
                 <p className="text-sm text-muted-foreground/60">
                   Nothing open right now. Drop something in.

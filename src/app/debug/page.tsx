@@ -6,6 +6,7 @@ import { AppSidebar } from "@/components/app-sidebar";
 import { SiteHeader } from "@/components/site-header";
 import { fetchIssues } from "@/lib/issues";
 import { apiURL } from "@/lib/api";
+import { postJSON } from "@/lib/http";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 
@@ -111,23 +112,11 @@ export default function DebugPage() {
     setSandboxError(null);
 
     try {
-      const response = await fetch(apiURL(path), {
-        method: "POST",
-      });
-
-      const payload = (await response.json()) as
-        | DebugIssueStoreResponse
-        | { error?: string };
-
-      if (!response.ok) {
-        throw new Error(
-          "error" in payload && payload.error
-            ? payload.error
-            : `Request failed with ${response.status}`
-        );
-      }
-
-      setIssueCount((payload as DebugIssueStoreResponse).issueCount);
+      const payload = await postJSON<DebugIssueStoreResponse, Record<string, never>>(
+        apiURL(path),
+        {}
+      );
+      setIssueCount(payload.issueCount);
     } catch (caughtError) {
       setSandboxError(
         caughtError instanceof Error
@@ -191,6 +180,7 @@ export default function DebugPage() {
     <AppShell sidebar={<AppSidebar things={SECTION_LINKS} />}>
       <SiteHeader
         title="Debug analyzer"
+        eyebrow="Debug"
         subtitle="Paste an issue, inspect tags, inspect embedding output."
       />
 
@@ -198,7 +188,7 @@ export default function DebugPage() {
         <div className="mx-auto flex w-full max-w-7xl flex-col gap-6 px-4 py-6 lg:px-6">
           <section
             id="sandbox"
-            className="rounded-2xl border border-border/60 bg-card p-5"
+            className="app-surface p-5"
           >
             <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
               <div>
@@ -212,7 +202,7 @@ export default function DebugPage() {
               </div>
 
               <div className="flex flex-wrap items-center gap-3">
-                <span className="rounded-full bg-muted px-3 py-1 text-xs text-muted-foreground">
+                <span className="app-chip px-3 py-1 text-xs">
                   {issueCount == null ? "Checking issues..." : `${issueCount} issues`}
                 </span>
                 <Button
@@ -232,7 +222,7 @@ export default function DebugPage() {
             </div>
 
             {sandboxError && (
-              <div className="mt-4 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-950">
+              <div className="app-status-warning mt-4">
                 {sandboxError}
               </div>
             )}
@@ -240,7 +230,7 @@ export default function DebugPage() {
 
           <section
             id="prompt"
-            className="grid gap-6 rounded-2xl border border-border/60 bg-card p-5 lg:grid-cols-[minmax(0,1.4fr)_minmax(20rem,0.8fr)]"
+            className="app-surface grid gap-6 p-5 lg:grid-cols-[minmax(0,1.4fr)_minmax(20rem,0.8fr)]"
           >
             <div className="space-y-3">
               <div>
@@ -257,7 +247,7 @@ export default function DebugPage() {
                 value={text}
                 onChange={(event) => setText(event.target.value)}
                 placeholder="Paste an issue here..."
-                className="min-h-64 w-full rounded-xl border border-input bg-background px-3 py-3 text-sm leading-6 outline-none transition-colors focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50"
+                className="min-h-64 w-full rounded-xl border border-input/80 bg-background/72 px-3 py-3 text-sm leading-6 outline-none transition-colors focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50"
               />
             </div>
 
@@ -299,13 +289,13 @@ export default function DebugPage() {
               </div>
 
               {error && (
-                <div className="rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-950">
+                <div className="app-status-warning">
                   {error}
                 </div>
               )}
 
               {result && (
-                <div className="rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-950">
+                <div className="app-status-success">
                   <p className="font-medium">Analysis complete</p>
                   <p className="mt-1">
                     Tagger: {result.tagger.provider} / {result.tagger.model}
@@ -321,7 +311,7 @@ export default function DebugPage() {
 
           <section
             id="tags"
-            className="rounded-2xl border border-border/60 bg-card p-5"
+            className="app-surface p-5"
           >
             <div className="flex items-center justify-between gap-3">
               <div>
@@ -333,7 +323,7 @@ export default function DebugPage() {
                 </p>
               </div>
               {result && (
-                <span className="rounded-full bg-muted px-2 py-1 text-xs text-muted-foreground">
+                <span className="app-chip text-xs">
                   {result.tags.length} tags
                 </span>
               )}
@@ -350,7 +340,7 @@ export default function DebugPage() {
                 {topTags.map((tag) => (
                   <div
                     key={tag.tag}
-                    className="rounded-2xl border border-border bg-muted px-3 py-2 text-sm"
+                    className="app-subtle-surface rounded-2xl px-3 py-2 text-sm"
                   >
                     <div className="flex items-center gap-2">
                       <span className="font-medium">{tag.tag}</span>
@@ -376,7 +366,7 @@ export default function DebugPage() {
 
           <section
             id="embedding"
-            className="rounded-2xl border border-border/60 bg-card p-5"
+            className="app-surface p-5"
           >
             <div className="flex items-center justify-between gap-3">
               <div>
@@ -388,7 +378,7 @@ export default function DebugPage() {
                 </p>
               </div>
               {result && (
-                <span className="rounded-full bg-muted px-2 py-1 text-xs text-muted-foreground">
+                <span className="app-chip text-xs">
                   {result.embedding.dimensions} dims
                 </span>
               )}
@@ -402,7 +392,7 @@ export default function DebugPage() {
 
             {result && (
               <div className="mt-4 grid gap-3 lg:grid-cols-[minmax(0,16rem)_minmax(0,16rem)_minmax(0,1fr)]">
-                <div className="rounded-xl border border-border/70 bg-background px-4 py-3">
+                <div className="app-subtle-surface px-4 py-3">
                   <p className="text-[11px] uppercase tracking-[0.16em] text-muted-foreground">
                     Estimated tokens
                   </p>
@@ -410,7 +400,7 @@ export default function DebugPage() {
                     {result.embedding.estimatedTokenCount}
                   </p>
                 </div>
-                <div className="rounded-xl border border-border/70 bg-background px-4 py-3">
+                <div className="app-subtle-surface px-4 py-3">
                   <p className="text-[11px] uppercase tracking-[0.16em] text-muted-foreground">
                     Chunks
                   </p>
@@ -419,7 +409,7 @@ export default function DebugPage() {
                     {result.embedding.pooledFromChunks ? " pooled" : " direct"}
                   </p>
                 </div>
-                <div className="rounded-xl border border-border/70 bg-background px-4 py-3">
+                <div className="app-subtle-surface px-4 py-3">
                   <p className="text-[11px] uppercase tracking-[0.16em] text-muted-foreground">
                     Preview
                   </p>
@@ -440,7 +430,7 @@ export default function DebugPage() {
 
           <section
             id="similarity"
-            className="rounded-2xl border border-border/60 bg-card p-5"
+            className="app-surface p-5"
           >
             <div className="flex items-center justify-between gap-3">
               <div>
@@ -452,7 +442,7 @@ export default function DebugPage() {
                 </p>
               </div>
               {result && (
-                <span className="rounded-full bg-muted px-2 py-1 text-xs text-muted-foreground">
+                <span className="app-chip text-xs">
                   {result.comparedIssueCount} compared
                 </span>
               )}
@@ -466,7 +456,7 @@ export default function DebugPage() {
 
             {result && (
               <div className="mt-4 space-y-4">
-                <div className="rounded-xl border border-border/70 bg-background px-4 py-3">
+                <div className="app-subtle-surface px-4 py-3">
                   <p className="text-[11px] uppercase tracking-[0.16em] text-muted-foreground">
                     Average similarity
                   </p>
@@ -486,7 +476,7 @@ export default function DebugPage() {
                     {similarIssues.map((issue) => (
                       <div
                         key={issue.id}
-                        className="rounded-xl border border-border/70 bg-background px-4 py-3"
+                        className="app-subtle-surface px-4 py-3"
                       >
                         <div className="flex items-start justify-between gap-4">
                           <div>
@@ -500,7 +490,7 @@ export default function DebugPage() {
                               </p>
                             )}
                           </div>
-                          <span className="rounded-full bg-muted px-2 py-1 text-xs font-medium text-foreground">
+                          <span className="app-chip text-xs text-foreground">
                             {Math.round(issue.similarity * 100)}%
                           </span>
                         </div>
@@ -514,7 +504,7 @@ export default function DebugPage() {
 
           <section
             id="json"
-            className="rounded-2xl border border-border/60 bg-card p-5"
+            className="app-surface p-5"
           >
             <p className="text-xs font-medium uppercase tracking-[0.18em] text-muted-foreground">
               Raw JSON

@@ -17,6 +17,15 @@ type Issue struct {
 	EmbeddingJson     string
 }
 
+type IssuePost struct {
+	ID                string
+	IssueID           string
+	Raw               string
+	CreatedBy         string
+	CreatedAtUnixNano int64
+	Sequence          int64
+}
+
 type Metadata struct {
 	Key   string
 	Value string

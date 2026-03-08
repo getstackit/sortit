@@ -74,7 +74,7 @@ export function PasteModal({
       <Dialog.Portal>
         <Dialog.Backdrop className="fixed inset-0 z-50 bg-black/40 transition-opacity data-[ending-style]:opacity-0 data-[starting-style]:opacity-0" />
         <Dialog.Viewport className="fixed inset-0 z-50 flex items-start justify-center pt-[15vh]">
-          <Dialog.Popup className="w-full max-w-lg rounded-xl border bg-background p-5 shadow-lg transition-all data-[ending-style]:scale-95 data-[ending-style]:opacity-0 data-[starting-style]:scale-95 data-[starting-style]:opacity-0">
+          <Dialog.Popup className="app-surface w-full max-w-lg rounded-[1.5rem] p-5 transition-all data-[ending-style]:scale-95 data-[ending-style]:opacity-0 data-[starting-style]:scale-95 data-[starting-style]:opacity-0">
             <Dialog.Title className="text-sm font-medium">
               Paste anything
             </Dialog.Title>
@@ -98,7 +98,7 @@ export function PasteModal({
               }}
               placeholder="paste anything..."
               disabled={submitting}
-              className="mt-4 min-h-[100px] w-full resize-none rounded-md border border-input bg-transparent px-3 py-2 text-sm leading-relaxed placeholder:text-muted-foreground/50 focus:outline-none focus:ring-2 focus:ring-ring/40"
+              className="mt-4 min-h-[100px] w-full resize-none rounded-xl border border-input/80 bg-background/70 px-3 py-2 text-sm leading-relaxed placeholder:text-muted-foreground/50 focus:outline-none focus:ring-2 focus:ring-ring/40"
               rows={4}
             />
 

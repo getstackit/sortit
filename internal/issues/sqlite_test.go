@@ -62,6 +62,67 @@ func TestSQLiteStoreCreateListAndGet(t *testing.T) {
 	if loaded.Raw != created.Raw {
 		t.Fatalf("expected raw %q, got %q", created.Raw, loaded.Raw)
 	}
+	if len(loaded.Discussion) != 1 {
+		t.Fatalf("expected initial discussion post, got %#v", loaded.Discussion)
+	}
+	if loaded.Discussion[0].Raw != created.Raw {
+		t.Fatalf("expected discussion to preserve original raw, got %q", loaded.Discussion[0].Raw)
+	}
+}
+
+func TestSQLiteStoreRefineAppendsDiscussionAndUpdatesCanonicalIssue(t *testing.T) {
+	store := newSQLiteTestStore(t)
+
+	created, err := store.Create(context.Background(), CreateInput{
+		Raw:       "export fails on ipad",
+		CreatedBy: "Casey",
+		TagScores: []TagRelevance{{Tag: "export", Relevance: 0.8}},
+		Embedding: []float64{0.25, 0.5},
+	})
+	if err != nil {
+		t.Fatalf("create issue: %v", err)
+	}
+
+	refined, err := store.Refine(context.Background(), created.ID, RefineInput{
+		PostRaw:      "Customer says this only happens in Safari after tapping share twice.",
+		CanonicalRaw: "Export fails in Safari on iPad after tapping share twice.",
+		CreatedBy:    "Jordan",
+		TagScores: []TagRelevance{
+			{Tag: "export", Relevance: 0.95},
+			{Tag: "safari", Relevance: 0.73},
+		},
+		Embedding: []float64{0.7, 0.2},
+	})
+	if err != nil {
+		t.Fatalf("refine issue: %v", err)
+	}
+
+	if refined.Raw != "Export fails in Safari on iPad after tapping share twice." {
+		t.Fatalf("unexpected canonical raw: %q", refined.Raw)
+	}
+	if len(refined.Discussion) != 2 {
+		t.Fatalf("expected 2 discussion posts, got %#v", refined.Discussion)
+	}
+	if refined.Discussion[1].CreatedBy != "Jordan" {
+		t.Fatalf("expected refinement author Jordan, got %q", refined.Discussion[1].CreatedBy)
+	}
+	if refined.Discussion[1].Sequence != 2 {
+		t.Fatalf("expected refinement sequence 2, got %d", refined.Discussion[1].Sequence)
+	}
+	if len(refined.Tags) != 2 || refined.Tags[0] != "export" || refined.Tags[1] != "safari" {
+		t.Fatalf("unexpected refined tags: %#v", refined.Tags)
+	}
+
+	loaded, err := store.Get(context.Background(), created.ID)
+	if err != nil {
+		t.Fatalf("get refined issue: %v", err)
+	}
+	if loaded.Raw != refined.Raw {
+		t.Fatalf("expected persisted canonical raw %q, got %q", refined.Raw, loaded.Raw)
+	}
+	if len(loaded.Discussion) != 2 {
+		t.Fatalf("expected persisted discussion history, got %#v", loaded.Discussion)
+	}
 }
 
 func TestSQLiteStoreCloseAndReopenIssue(t *testing.T) {

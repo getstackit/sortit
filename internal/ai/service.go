@@ -12,14 +12,20 @@ import (
 var ErrNotConfigured = errors.New("ai analyzer not configured")
 
 type Analyzer struct {
-	tagger   Tagger
-	embedder Embedder
+	tagger        Tagger
+	embedder      Embedder
+	canonicalizer Canonicalizer
 }
 
 func NewAnalyzer(tagger Tagger, embedder Embedder) *Analyzer {
+	return NewAnalyzerWithCanonicalizer(tagger, embedder, NewStubCanonicalizer())
+}
+
+func NewAnalyzerWithCanonicalizer(tagger Tagger, embedder Embedder, canonicalizer Canonicalizer) *Analyzer {
 	return &Analyzer{
-		tagger:   tagger,
-		embedder: embedder,
+		tagger:        tagger,
+		embedder:      embedder,
+		canonicalizer: canonicalizer,
 	}
 }
 
@@ -71,6 +77,13 @@ func (a *Analyzer) EmbedText(ctx context.Context, text string) (EmbeddingResult,
 		return EmbeddingResult{}, ErrNotConfigured
 	}
 	return a.embedder.EmbedText(ctx, text)
+}
+
+func (a *Analyzer) CanonicalizeDiscussion(ctx context.Context, posts []string) (string, error) {
+	if a == nil || a.canonicalizer == nil {
+		return "", ErrNotConfigured
+	}
+	return a.canonicalizer.CanonicalizeDiscussion(ctx, posts)
 }
 
 func normalizeScores(scores []TagScore, taxonomy []Tag) []TagScore {

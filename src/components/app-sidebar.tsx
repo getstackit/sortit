@@ -40,8 +40,9 @@ function SidebarLink({
       title={label}
       onClick={onClick}
       className={cn(
-        "flex items-center rounded-md px-2 py-2 text-sm transition-colors hover:bg-sidebar-accent hover:text-sidebar-accent-foreground",
-        active && "bg-sidebar-accent font-medium text-sidebar-accent-foreground",
+        "flex items-center rounded-xl border border-transparent px-2.5 py-2 text-sm transition-all hover:border-sidebar-border/70 hover:bg-sidebar-accent/80 hover:text-sidebar-accent-foreground",
+        active &&
+          "border-sidebar-border/70 bg-sidebar-accent/90 font-medium text-sidebar-accent-foreground shadow-sm",
         collapsed && "justify-center px-0"
       )}
     >
@@ -67,18 +68,27 @@ export function AppSidebar({
 
   return (
     <div className="flex h-full flex-col">
-      <div className="border-b border-sidebar-border px-3 py-3">
+      <div className="relative overflow-hidden border-b border-sidebar-border/70 px-3 py-3">
         <div
           className={cn(
             "flex items-center gap-2",
             collapsed && "justify-center"
           )}
         >
-          <span className="text-lg font-semibold tracking-tight">s</span>
+          <span
+            className="flex size-8 items-center justify-center rounded-2xl text-sm font-semibold text-white shadow-sm"
+            style={{
+              background:
+                "linear-gradient(135deg, var(--gradient-start), var(--gradient-mid) 55%, var(--gradient-end))",
+            }}
+          >
+            s
+          </span>
           <span className={cn("text-sm font-medium", collapsed && "hidden")}>
             splat
           </span>
         </div>
+        <div className="app-gradient-rule animate-gradient-shift absolute inset-x-0 bottom-0 h-px opacity-75" />
       </div>
 
       <div className="px-3 pt-3">
@@ -87,9 +97,13 @@ export function AppSidebar({
           aria-keyshortcuts="N"
           onClick={openComposer}
           className={cn(
-            "flex w-full items-center gap-2 rounded-md bg-primary px-2 py-2 text-sm font-medium text-primary-foreground transition-colors hover:bg-primary/90",
+            "flex w-full items-center gap-2 rounded-xl px-2.5 py-2.5 text-sm font-medium text-white shadow-sm transition-transform hover:-translate-y-0.5",
             collapsed && "justify-center px-0"
           )}
+          style={{
+            background:
+              "linear-gradient(135deg, var(--gradient-start), var(--gradient-mid) 55%, var(--gradient-end))",
+          }}
         >
           <svg
             aria-hidden="true"
@@ -168,7 +182,7 @@ export function AppSidebar({
             </p>
             <div className="space-y-1">
               {things.length === 0 && !collapsed && (
-                <p className="px-2 py-1 text-xs text-sidebar-foreground/50">
+                <p className="rounded-xl px-2.5 py-2 text-xs text-sidebar-foreground/50">
                   Nothing yet
                 </p>
               )}
@@ -179,7 +193,7 @@ export function AppSidebar({
                   title={thing.title}
                   onClick={closeMobileSidebar}
                   className={cn(
-                    "flex items-center rounded-md px-2 py-2 text-sm transition-colors hover:bg-sidebar-accent hover:text-sidebar-accent-foreground",
+                    "flex items-center rounded-xl border border-transparent px-2.5 py-2 text-sm transition-all hover:border-sidebar-border/70 hover:bg-sidebar-accent/80 hover:text-sidebar-accent-foreground",
                     collapsed && "justify-center px-0"
                   )}
                 >

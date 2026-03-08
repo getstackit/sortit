@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { apiURL } from "@/lib/api";
+import { getJSON } from "@/lib/http";
 
 type BackendHealth = {
   name: string;
@@ -19,15 +20,9 @@ export function BackendStatus() {
 
     async function load() {
       try {
-        const response = await fetch(apiURL("/api/health"), {
+        const payload = await getJSON<BackendHealth>(apiURL("/api/health"), {
           cache: "no-store",
         });
-
-        if (!response.ok) {
-          throw new Error(`Request failed with ${response.status}`);
-        }
-
-        const payload = (await response.json()) as BackendHealth;
         if (!cancelled) {
           setData(payload);
           setError(null);
@@ -51,7 +46,7 @@ export function BackendStatus() {
 
   if (error) {
     return (
-      <div className="rounded-xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-900">
+      <div className="app-status-warning">
         Backend unavailable: {error}
       </div>
     );
@@ -59,14 +54,14 @@ export function BackendStatus() {
 
   if (!data) {
     return (
-      <div className="rounded-xl border border-border/60 bg-card p-4 text-sm text-muted-foreground">
+      <div className="app-subtle-surface p-4 text-sm text-muted-foreground">
         Waiting for the Go backend...
       </div>
     );
   }
 
   return (
-    <div className="rounded-xl border border-emerald-200 bg-emerald-50 p-4 text-sm text-emerald-950">
+    <div className="app-status-success">
       <div className="flex items-center justify-between gap-3">
         <span className="font-medium">Backend connected</span>
         <span className="rounded-full bg-emerald-200 px-2 py-1 text-[10px] uppercase tracking-[0.18em]">

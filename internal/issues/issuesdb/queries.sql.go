@@ -37,6 +37,15 @@ func (q *Queries) DeleteAllIssues(ctx context.Context) error {
 	return err
 }
 
+const deleteAllIssuePosts = `-- name: DeleteAllIssuePosts :exec
+DELETE FROM issue_posts
+`
+
+func (q *Queries) DeleteAllIssuePosts(ctx context.Context) error {
+	_, err := q.db.ExecContext(ctx, deleteAllIssuePosts)
+	return err
+}
+
 const getIssue = `-- name: GetIssue :one
 SELECT id, raw, tags_json, created_by, created_at_unix_nano, status, closed_at_unix_nano, closed_by, tag_scores_json, embedding_json
 FROM issues
@@ -59,6 +68,43 @@ func (q *Queries) GetIssue(ctx context.Context, id string) (Issue, error) {
 		&i.EmbeddingJson,
 	)
 	return i, err
+}
+
+const listIssuePosts = `-- name: ListIssuePosts :many
+SELECT id, issue_id, raw, created_by, created_at_unix_nano, sequence
+FROM issue_posts
+WHERE issue_id = ?
+ORDER BY sequence ASC, created_at_unix_nano ASC, id ASC
+`
+
+func (q *Queries) ListIssuePosts(ctx context.Context, issueID string) ([]IssuePost, error) {
+	rows, err := q.db.QueryContext(ctx, listIssuePosts, issueID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []IssuePost
+	for rows.Next() {
+		var i IssuePost
+		if err := rows.Scan(
+			&i.ID,
+			&i.IssueID,
+			&i.Raw,
+			&i.CreatedBy,
+			&i.CreatedAtUnixNano,
+			&i.Sequence,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
 }
 
 const getMetadataValue = `-- name: GetMetadataValue :one
@@ -114,6 +160,38 @@ func (q *Queries) InsertIssue(ctx context.Context, arg InsertIssueParams) error 
 		arg.ClosedBy,
 		arg.TagScoresJson,
 		arg.EmbeddingJson,
+	)
+	return err
+}
+
+const insertIssuePost = `-- name: InsertIssuePost :exec
+INSERT INTO issue_posts (
+    id,
+    issue_id,
+    raw,
+    created_by,
+    created_at_unix_nano,
+    sequence
+) VALUES (?, ?, ?, ?, ?, ?)
+`
+
+type InsertIssuePostParams struct {
+	ID                string
+	IssueID           string
+	Raw               string
+	CreatedBy         string
+	CreatedAtUnixNano int64
+	Sequence          int64
+}
+
+func (q *Queries) InsertIssuePost(ctx context.Context, arg InsertIssuePostParams) error {
+	_, err := q.db.ExecContext(ctx, insertIssuePost,
+		arg.ID,
+		arg.IssueID,
+		arg.Raw,
+		arg.CreatedBy,
+		arg.CreatedAtUnixNano,
+		arg.Sequence,
 	)
 	return err
 }
@@ -218,6 +296,34 @@ type UpdateMetadataValueParams struct {
 
 func (q *Queries) UpdateMetadataValue(ctx context.Context, arg UpdateMetadataValueParams) error {
 	_, err := q.db.ExecContext(ctx, updateMetadataValue, arg.Value, arg.Key)
+	return err
+}
+
+const updateIssueRefinement = `-- name: UpdateIssueRefinement :exec
+UPDATE issues
+SET raw = ?,
+    tags_json = ?,
+    tag_scores_json = ?,
+    embedding_json = ?
+WHERE id = ?
+`
+
+type UpdateIssueRefinementParams struct {
+	Raw           string
+	TagsJson      string
+	TagScoresJson string
+	EmbeddingJson string
+	ID            string
+}
+
+func (q *Queries) UpdateIssueRefinement(ctx context.Context, arg UpdateIssueRefinementParams) error {
+	_, err := q.db.ExecContext(ctx, updateIssueRefinement,
+		arg.Raw,
+		arg.TagsJson,
+		arg.TagScoresJson,
+		arg.EmbeddingJson,
+		arg.ID,
+	)
 	return err
 }
 

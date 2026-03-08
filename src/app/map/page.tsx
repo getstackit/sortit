@@ -1,6 +1,7 @@
 "use client";
 
 import {
+  Suspense,
   startTransition,
   useCallback,
   useEffect,
@@ -20,505 +21,54 @@ import {
 import { AppSidebar } from "@/components/app-sidebar";
 import { SiteHeader } from "@/components/site-header";
 import { Switch } from "@/components/ui/switch";
-import { apiURL } from "@/lib/api";
-
-type TagRelevance = { tag: string; relevance: number };
-
-type MapIssue = {
-  id: string;
-  raw: string;
-  status: "open" | "closed";
-  tags: TagRelevance[];
-  x: number;
-  y: number;
-};
-
-type MapEdge = {
-  source: string;
-  target: string;
-  similarity: number;
-};
-
-type MapCluster = {
-  label: string;
-  centerX: number;
-  centerY: number;
-  radius: number;
-  color: string;
-};
-
-type MapData = {
-  issues: MapIssue[];
-  edges: MapEdge[];
-  clusters: MapCluster[];
-};
-
-type EdgeData = {
-  edges: MapEdge[];
-};
-
-type Viewport = {
-  xMin: number;
-  xMax: number;
-  yMin: number;
-  yMax: number;
-};
-
-type ScreenPoint = {
-  x: number;
-  y: number;
-};
-
-type Neighbor = {
-  id: string;
-  similarity: number;
-};
-
-type TagComparison = {
-  tag: string;
-  average: number;
-  minimum: number;
-  maximum: number;
-  spread: number;
-};
-
-type PairwiseTagSimilarity = {
-  sourceId: string;
-  targetId: string;
-  similarity: number;
-  sharedTags: TagComparison[];
-};
-
-type PairwiseEmbeddingSimilarity = {
-  sourceId: string;
-  targetId: string;
-  similarity: number;
-};
-
-type BatchEmbeddingAnalysis = {
-  comparedIssueCount: number;
-  averageEmbeddingSimilarity: number;
-  pairwiseEmbeddingSimilarity: PairwiseEmbeddingSimilarity[];
-};
-
-type BatchAnalysis = {
-  averageSimilarity: number;
-  sharedTags: TagComparison[];
-  supportingTags: TagComparison[];
-  pairwise: PairwiseTagSimilarity[];
-};
-
-type MapURLState = {
-  viewport: Viewport;
-  selectedId: string | null;
-  batchIds: string[];
-  showBatchAnalysis: boolean;
-  edgeThreshold: number;
-  showClosed: boolean;
-};
-
-const TAG_COLORS: Record<string, string> = {
-  bug: "#ef4444",
-  crash: "#dc2626",
-  feature: "#a855f7",
-  idea: "#a855f7",
-  improvement: "#22c55e",
-  ui: "#3b82f6",
-  ux: "#3b82f6",
-  frontend: "#60a5fa",
-  performance: "#f59e0b",
-  safari: "#f59e0b",
-  onboarding: "#06b6d4",
-  search: "#8b5cf6",
-  export: "#ec4899",
-};
+import {
+  compareIssueEmbeddings,
+  fetchMapData,
+  fetchViewportEdges,
+} from "@/features/map/api";
+import {
+  analyzeBatch,
+  clamp,
+  clusterIntersectsViewport,
+  dominantTag,
+  edgeRenderLimit,
+  issueRadius,
+  MAX_RENDERED_SELECTED_EDGES,
+  normalizeWheelDelta,
+  pointInPolygon,
+  TAG_COLORS,
+} from "@/features/map/model";
+import type {
+  BatchEmbeddingAnalysis,
+  MapCluster,
+  MapData,
+  MapIssue,
+  Neighbor,
+  ScreenPoint,
+  Viewport,
+} from "@/features/map/types";
+import {
+  clampViewport,
+  DEFAULT_VIEWPORT,
+  mapQuery,
+  MAX_VIEW_SIZE,
+  MIN_VIEW_SIZE,
+  parseMapURLState,
+  viewportQuery,
+} from "@/features/map/url-state";
 
 const PADDING = 60;
-const DEFAULT_VIEWPORT: Viewport = {
-  xMin: 0,
-  xMax: 1,
-  yMin: 0,
-  yMax: 1,
-};
 const EMPTY_ISSUES: MapIssue[] = [];
-const EMPTY_EDGES: MapEdge[] = [];
+const EMPTY_EDGES: MapData["edges"] = [];
 const EMPTY_CLUSTERS: MapCluster[] = [];
 const EMPTY_NEIGHBORS: Neighbor[] = [];
-const MIN_VIEW_SIZE = 0.12;
-const MAX_VIEW_SIZE = 2.4;
-const PAN_OVERSCAN = 0.35;
 const EDGE_FETCH_DEBOUNCE_MS = 120;
-const DEFAULT_EDGE_THRESHOLD = 0.4;
-const MIN_RENDERED_AMBIENT_EDGES = 24;
-const RENDERED_EDGE_RATIO = 0.2;
-const MAX_RENDERED_AMBIENT_EDGES = 180;
-const MAX_RENDERED_SELECTED_EDGES = 40;
-
-function dominantTag(tags: TagRelevance[]): string {
-  if (tags.length === 0) return "bug";
-  return tags.reduce((a, b) => (a.relevance > b.relevance ? a : b)).tag;
-}
-
-function issueRadius(tags: TagRelevance[]): number {
-  if (tags.length === 0) return 6;
-  const maxRelevance = Math.max(...tags.map((t) => t.relevance));
-  return 6 + maxRelevance * 14;
-}
-
-function pointInPolygon(
-  px: number,
-  py: number,
-  polygon: ScreenPoint[]
-) {
-  let inside = false;
-
-  for (let i = 0, j = polygon.length - 1; i < polygon.length; j = i++) {
-    const xi = polygon[i].x;
-    const yi = polygon[i].y;
-    const xj = polygon[j].x;
-    const yj = polygon[j].y;
-
-    if (
-      (yi > py) !== (yj > py) &&
-      px < ((xj - xi) * (py - yi)) / (yj - yi) + xi
-    ) {
-      inside = !inside;
-    }
-  }
-
-  return inside;
-}
-
-function clamp(value: number, min: number, max: number) {
-  return Math.min(Math.max(value, min), max);
-}
-
-function normalizeWheelDelta(delta: number, deltaMode: number, pageHeight: number) {
-  if (deltaMode === 1) {
-    return delta * 18;
-  }
-
-  if (deltaMode === 2) {
-    return delta * pageHeight;
-  }
-
-  return delta;
-}
-
-function edgeRenderLimit(visibleNodeCount: number) {
-  if (visibleNodeCount <= 0) return 0;
-
-  return Math.min(
-    MAX_RENDERED_AMBIENT_EDGES,
-    Math.max(
-      MIN_RENDERED_AMBIENT_EDGES,
-      Math.ceil(visibleNodeCount * RENDERED_EDGE_RATIO)
-    )
-  );
-}
-
-function clampViewport(viewport: Viewport): Viewport {
-  const width = clamp(viewport.xMax - viewport.xMin, MIN_VIEW_SIZE, MAX_VIEW_SIZE);
-  const height = clamp(viewport.yMax - viewport.yMin, MIN_VIEW_SIZE, MAX_VIEW_SIZE);
-  const centerX = (viewport.xMin + viewport.xMax) / 2;
-  const centerY = (viewport.yMin + viewport.yMax) / 2;
-
-  return {
-    xMin: clamp(centerX - width / 2, -PAN_OVERSCAN, 1 + PAN_OVERSCAN - width),
-    xMax: clamp(centerX + width / 2, -PAN_OVERSCAN + width, 1 + PAN_OVERSCAN),
-    yMin: clamp(centerY - height / 2, -PAN_OVERSCAN, 1 + PAN_OVERSCAN - height),
-    yMax: clamp(centerY + height / 2, -PAN_OVERSCAN + height, 1 + PAN_OVERSCAN),
-  };
-}
-
-function viewportQuery(viewport: Viewport) {
-  const params = new URLSearchParams({
-    xMin: viewport.xMin.toFixed(4),
-    xMax: viewport.xMax.toFixed(4),
-    yMin: viewport.yMin.toFixed(4),
-    yMax: viewport.yMax.toFixed(4),
-  });
-  return params.toString();
-}
-
-function mapQuery(
-  viewport: Viewport,
-  edgeThreshold: number,
-  showClosed: boolean
-) {
-  const params = new URLSearchParams(viewportQuery(viewport));
-  params.set("edgeThreshold", edgeThreshold.toFixed(2));
-  params.set("status", showClosed ? "all" : "open");
-  return params.toString();
-}
-
-function parseNumberParam(
-  params: Pick<URLSearchParams, "get">,
-  key: keyof Viewport
-) {
-  const raw = params.get(key);
-  if (!raw) {
-    return null;
-  }
-
-  const parsed = Number(raw);
-  return Number.isFinite(parsed) ? parsed : null;
-}
-
-function parseSelectedIssueID(params: Pick<URLSearchParams, "get">) {
-  const value = params.get("issue");
-  if (!value) {
-    return null;
-  }
-
-  const normalized = value.trim();
-  return normalized === "" ? null : normalized;
-}
-
-function parseBatchIssueIDs(params: Pick<URLSearchParams, "get">) {
-  const value = params.get("batch");
-  if (!value) {
-    return [];
-  }
-
-  const seen = new Set<string>();
-  const ids: string[] = [];
-
-  for (const raw of value.split(",")) {
-    const normalized = raw.trim();
-    if (normalized === "" || seen.has(normalized)) {
-      continue;
-    }
-
-    seen.add(normalized);
-    ids.push(normalized);
-  }
-
-  return ids;
-}
-
-function parseViewportFromParams(params: Pick<URLSearchParams, "get">) {
-  const xMin = parseNumberParam(params, "xMin");
-  const xMax = parseNumberParam(params, "xMax");
-  const yMin = parseNumberParam(params, "yMin");
-  const yMax = parseNumberParam(params, "yMax");
-
-  if (xMin == null || xMax == null || yMin == null || yMax == null) {
-    return DEFAULT_VIEWPORT;
-  }
-
-  return clampViewport({ xMin, xMax, yMin, yMax });
-}
-
-function parseEdgeThresholdParam(params: Pick<URLSearchParams, "get">) {
-  const raw = params.get("edgeThreshold");
-  if (!raw) {
-    return DEFAULT_EDGE_THRESHOLD;
-  }
-
-  const parsed = Number(raw);
-  if (!Number.isFinite(parsed) || parsed < 0 || parsed > 1) {
-    return DEFAULT_EDGE_THRESHOLD;
-  }
-
-  return parsed;
-}
-
-function parseShowClosedParam(params: Pick<URLSearchParams, "get">) {
-  return params.get("status") === "all";
-}
-
-function parseMapURLState(params: Pick<URLSearchParams, "get">): MapURLState {
-  const batchIds = parseBatchIssueIDs(params);
-
-  return {
-    viewport: parseViewportFromParams(params),
-    selectedId: batchIds.length > 0 ? null : parseSelectedIssueID(params),
-    batchIds,
-    showBatchAnalysis: batchIds.length > 1 && params.get("analyze") === "1",
-    edgeThreshold: parseEdgeThresholdParam(params),
-    showClosed: parseShowClosedParam(params),
-  };
-}
-
-function clusterIntersectsViewport(cluster: MapCluster, viewport: Viewport) {
-  return !(
-    cluster.centerX + cluster.radius < viewport.xMin ||
-    cluster.centerX - cluster.radius > viewport.xMax ||
-    cluster.centerY + cluster.radius < viewport.yMin ||
-    cluster.centerY - cluster.radius > viewport.yMax
-  );
-}
-
-async function fetchJSON<T>(input: string, signal?: AbortSignal): Promise<T> {
-  const res = await fetch(apiURL(input), { signal });
-
-  if (!res.ok) {
-    throw new Error(`HTTP ${res.status}`);
-  }
-
-  return res.json() as Promise<T>;
-}
-
-async function fetchViewportEdges(
-  viewportKey: string,
-  signal: AbortSignal
-): Promise<EdgeData> {
-  try {
-    return await fetchJSON<EdgeData>(`/api/v1/map/edges?${viewportKey}`, signal);
-  } catch (error) {
-    if (!(error instanceof Error) || error.message !== "HTTP 404") {
-      throw error;
-    }
-
-    const fallback = await fetchJSON<MapData>(`/api/v1/map?${viewportKey}`, signal);
-    return { edges: fallback.edges };
-  }
-}
-
-async function compareIssueEmbeddings(
-  ids: string[],
-  signal: AbortSignal
-): Promise<BatchEmbeddingAnalysis> {
-  const response = await fetch(apiURL("/api/v1/issues/compare"), {
-    method: "POST",
-    signal,
-    headers: {
-      "Content-Type": "application/json",
-    },
-    body: JSON.stringify({ ids }),
-  });
-
-  if (!response.ok) {
-    throw new Error(`HTTP ${response.status}`);
-  }
-
-  return (await response.json()) as BatchEmbeddingAnalysis;
-}
 
 function issueLabel(raw: string, maxLength: number) {
   return raw.length > maxLength ? `${raw.slice(0, maxLength)}...` : raw;
 }
 
-function tagRelevanceMap(tags: TagRelevance[]): Record<string, number> {
-  return Object.fromEntries(tags.map(({ tag, relevance }) => [tag, relevance]));
-}
-
-function cosineSimilarity(
-  left: Record<string, number>,
-  right: Record<string, number>,
-  tags: string[]
-) {
-  let dot = 0;
-  let leftMagnitude = 0;
-  let rightMagnitude = 0;
-
-  for (const tag of tags) {
-    const a = left[tag] ?? 0;
-    const b = right[tag] ?? 0;
-    dot += a * b;
-    leftMagnitude += a * a;
-    rightMagnitude += b * b;
-  }
-
-  if (leftMagnitude === 0 || rightMagnitude === 0) {
-    return 0;
-  }
-
-  return dot / (Math.sqrt(leftMagnitude) * Math.sqrt(rightMagnitude));
-}
-
-function analyzeBatch(batchIssues: MapIssue[]): BatchAnalysis | null {
-  if (batchIssues.length < 2) {
-    return null;
-  }
-
-  const loadingByIssue = batchIssues.map((issue) => ({
-    issue,
-    loadings: tagRelevanceMap(issue.tags),
-  }));
-  const tagUniverse = Array.from(
-    new Set(batchIssues.flatMap((issue) => issue.tags.map(({ tag }) => tag)))
-  );
-
-  const tagComparisons = tagUniverse
-    .map((tag) => {
-      const values = loadingByIssue.map(({ loadings }) => loadings[tag] ?? 0);
-      const average =
-        values.reduce((sum, value) => sum + value, 0) / loadingByIssue.length;
-      const minimum = Math.min(...values);
-      const maximum = Math.max(...values);
-
-      return {
-        tag,
-        average,
-        minimum,
-        maximum,
-        spread: maximum - minimum,
-      };
-    })
-    .sort((left, right) => {
-      if (right.minimum !== left.minimum) {
-        return right.minimum - left.minimum;
-      }
-
-      if (right.average !== left.average) {
-        return right.average - left.average;
-      }
-
-      return left.tag.localeCompare(right.tag);
-    });
-
-  const pairwise: PairwiseTagSimilarity[] = [];
-  for (let index = 0; index < loadingByIssue.length; index += 1) {
-    for (let inner = index + 1; inner < loadingByIssue.length; inner += 1) {
-      const source = loadingByIssue[index];
-      const target = loadingByIssue[inner];
-
-      pairwise.push({
-        sourceId: source.issue.id,
-        targetId: target.issue.id,
-        similarity: cosineSimilarity(source.loadings, target.loadings, tagUniverse),
-        sharedTags: tagComparisons
-          .map((comparison) => {
-            const sourceValue = source.loadings[comparison.tag] ?? 0;
-            const targetValue = target.loadings[comparison.tag] ?? 0;
-
-            return {
-              tag: comparison.tag,
-              average: (sourceValue + targetValue) / 2,
-              minimum: Math.min(sourceValue, targetValue),
-              maximum: Math.max(sourceValue, targetValue),
-              spread: Math.abs(sourceValue - targetValue),
-            };
-          })
-          .filter((comparison) => comparison.minimum >= 0.12)
-          .sort((left, right) => {
-            if (right.minimum !== left.minimum) {
-              return right.minimum - left.minimum;
-            }
-
-            return right.average - left.average;
-          })
-          .slice(0, 3),
-      });
-    }
-  }
-
-  pairwise.sort((left, right) => right.similarity - left.similarity);
-
-  return {
-    averageSimilarity:
-      pairwise.reduce((sum, pair) => sum + pair.similarity, 0) / pairwise.length,
-    sharedTags: tagComparisons.filter((comparison) => comparison.minimum >= 0.12),
-    supportingTags: tagComparisons.filter(
-      (comparison) => comparison.average >= 0.2 && comparison.minimum < 0.12
-    ),
-    pairwise,
-  };
-}
-
-export default function MapPage() {
+function MapPageContent() {
   const pathname = usePathname();
   const searchParams = useSearchParams();
   const initialURLState = useMemo(() => parseMapURLState(searchParams), [searchParams]);
@@ -591,7 +141,7 @@ export default function MapPage() {
   useEffect(() => {
     const initialViewportQuery = initialViewportKeyRef.current;
 
-    fetchJSON<MapData>(`/api/v1/map?${initialViewportQuery}`)
+    fetchMapData(initialViewportQuery)
       .then((data) => {
         setMapData(data);
         setLoadedEdgeKey(initialViewportQuery);
@@ -614,7 +164,7 @@ export default function MapPage() {
     const controller = new AbortController();
     const query = mapQuery(viewport, edgeThreshold, showClosed);
 
-    fetchJSON<MapData>(`/api/v1/map?${query}`, controller.signal)
+    fetchMapData(query, controller.signal)
       .then((data) => {
         setMapData(data);
         setLoadedEdgeKey(query);
@@ -1447,8 +997,10 @@ export default function MapPage() {
     return (
       <AppShell sidebar={<AppSidebar />}>
         <SiteHeader title="Map" />
-        <div className="flex flex-1 items-center justify-center text-sm text-muted-foreground">
-          Loading map...
+        <div className="flex flex-1 items-center justify-center p-6">
+          <div className="app-subtle-surface flex w-full max-w-xl items-center justify-center px-6 py-14 text-sm text-muted-foreground">
+            Loading map...
+          </div>
         </div>
       </AppShell>
     );
@@ -1458,8 +1010,10 @@ export default function MapPage() {
     return (
       <AppShell sidebar={<AppSidebar />}>
         <SiteHeader title="Map" />
-        <div className="flex flex-1 items-center justify-center text-sm text-destructive">
-          Failed to load map: {error}
+        <div className="flex flex-1 items-center justify-center p-6">
+          <div className="app-status-warning w-full max-w-xl">
+            Failed to load map: {error}
+          </div>
         </div>
       </AppShell>
     );
@@ -1469,20 +1023,21 @@ export default function MapPage() {
     <AppShell sidebar={<AppSidebar />}>
       <SiteHeader
         title="Map"
+        eyebrow="Explore"
         meta={
           <>
-            <span className="rounded-full bg-muted px-2 py-0.5 text-[11px] font-medium text-muted-foreground tabular-nums">
+            <span className="app-chip tabular-nums">
               {issues.length} issues
             </span>
             {closedIssueCount > 0 && (
-              <span className="rounded-full bg-muted px-2 py-0.5 text-[11px] font-medium text-muted-foreground tabular-nums">
+              <span className="app-chip tabular-nums">
                 {closedIssueCount} closed
               </span>
             )}
-            <span className="rounded-full bg-muted px-2 py-0.5 text-[11px] font-medium text-muted-foreground tabular-nums">
+            <span className="app-chip tabular-nums">
               {visibleIssues.length} visible
             </span>
-            <span className="rounded-full bg-muted px-2 py-0.5 text-[11px] font-medium text-muted-foreground tabular-nums">
+            <span className="app-chip tabular-nums">
               {renderedEdges.length} edges
             </span>
           </>
@@ -1525,7 +1080,7 @@ export default function MapPage() {
             </button>
             {selectedBatch.size > 0 && (
               <>
-                <span className="rounded-full bg-primary px-2 py-0.5 text-[11px] font-medium text-primary-foreground">
+                <span className="rounded-full bg-primary px-2 py-0.5 text-[11px] font-medium text-primary-foreground shadow-sm">
                   {selectedBatch.size} selected
                 </span>
                 <button
@@ -1588,7 +1143,7 @@ export default function MapPage() {
           </IssueMapCanvas>
 
           <div
-            className={`absolute right-0 top-0 h-full w-96 border-l bg-card shadow-lg transition-transform duration-200 ease-in-out ${
+            className={`absolute right-0 top-0 h-full w-96 border-l border-border/60 bg-card/88 shadow-lg backdrop-blur-xl transition-transform duration-200 ease-in-out ${
               activeIssue && selectedBatch.size === 0
                 ? "translate-x-0"
                 : "translate-x-full"
@@ -1599,7 +1154,7 @@ export default function MapPage() {
                 <div className="flex items-start justify-between gap-3">
                   <div className="space-y-2">
                     <div className="flex flex-wrap items-center gap-2">
-                      <span className="rounded-full bg-muted px-2 py-0.5 text-[10px] font-medium text-muted-foreground">
+                      <span className="app-chip px-2 py-0.5 text-[10px]">
                         {activeIssue.id}
                       </span>
                       <span
@@ -1699,7 +1254,7 @@ export default function MapPage() {
           </div>
 
           <div
-            className={`absolute right-0 top-0 h-full w-96 border-l bg-card shadow-lg transition-transform duration-200 ease-in-out ${
+            className={`absolute right-0 top-0 h-full w-96 border-l border-border/60 bg-card/88 shadow-lg backdrop-blur-xl transition-transform duration-200 ease-in-out ${
               selectedBatch.size > 0 ? "translate-x-0" : "translate-x-full"
             }`}
           >
@@ -1716,14 +1271,14 @@ export default function MapPage() {
                         : "Shift-click or shift-drag issues to build a comparison batch."}
                     </p>
                   </div>
-                  <span className="rounded-full bg-primary px-2 py-0.5 text-[11px] font-medium text-primary-foreground">
-                    {selectedBatch.size} issues
-                  </span>
+                    <span className="rounded-full bg-primary px-2 py-0.5 text-[11px] font-medium text-primary-foreground shadow-sm">
+                      {selectedBatch.size} issues
+                    </span>
                 </div>
                 {showBatchAnalysis && batchAnalysis ? (
                   <div className="mt-4 space-y-5">
                     <div className="grid gap-3 md:grid-cols-2">
-                      <div className="rounded-xl border border-border/50 bg-muted/20 p-3">
+                      <div className="app-subtle-surface p-3">
                         <p className="text-[11px] font-medium uppercase tracking-[0.14em] text-muted-foreground">
                           Tag Similarity
                         </p>
@@ -1734,7 +1289,7 @@ export default function MapPage() {
                           Based on selected issues&apos; tag loadings.
                         </p>
                       </div>
-                      <div className="rounded-xl border border-border/50 bg-muted/20 p-3">
+                      <div className="app-subtle-surface p-3">
                         <p className="text-[11px] font-medium uppercase tracking-[0.14em] text-muted-foreground">
                           Embedding Similarity
                         </p>
@@ -1752,7 +1307,7 @@ export default function MapPage() {
                     </div>
 
                     {batchEmbeddingError && (
-                      <div className="rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-950">
+                      <div className="app-status-warning">
                         {batchEmbeddingError}
                       </div>
                     )}
@@ -1769,7 +1324,7 @@ export default function MapPage() {
                         .map((comparison) => (
                           <div
                             key={comparison.tag}
-                            className="rounded-lg border border-border/40 p-3"
+                            className="app-subtle-surface rounded-lg p-3"
                           >
                             <div className="flex items-center justify-between gap-3">
                               <span className="text-[12px] font-medium">
@@ -1867,7 +1422,7 @@ export default function MapPage() {
                     {batchIssues.map((issue) => (
                       <div
                         key={issue.id}
-                        className="rounded-lg border border-border/40 p-2"
+                        className="app-subtle-surface rounded-lg p-2"
                       >
                         <p className="text-[12px] leading-snug">
                           {issueLabel(issue.raw, 80)}
@@ -1924,5 +1479,26 @@ export default function MapPage() {
         </div>
       </div>
     </AppShell>
+  );
+}
+
+function MapPageFallback() {
+  return (
+    <AppShell sidebar={<AppSidebar />}>
+      <SiteHeader title="Map" eyebrow="Explore" />
+      <div className="flex flex-1 items-center justify-center p-6">
+        <div className="app-subtle-surface flex w-full max-w-xl items-center justify-center px-6 py-14 text-sm text-muted-foreground">
+          Loading map...
+        </div>
+      </div>
+    </AppShell>
+  );
+}
+
+export default function MapPage() {
+  return (
+    <Suspense fallback={<MapPageFallback />}>
+      <MapPageContent />
+    </Suspense>
   );
 }

@@ -28,11 +28,15 @@ func NewAnalyzerFromEnv() (*Analyzer, error) {
 		if err != nil {
 			return nil, err
 		}
+		canonicalizer, err := NewOpenAICanonicalizer(cfg)
+		if err != nil {
+			return nil, err
+		}
 		embedder, err := NewOpenAIEmbedder(cfg)
 		if err != nil {
 			return nil, err
 		}
-		return NewAnalyzer(tagger, embedder), nil
+		return NewAnalyzerWithCanonicalizer(tagger, embedder, canonicalizer), nil
 	default:
 		return nil, fmt.Errorf("unsupported AI_PROVIDER %q", provider)
 	}

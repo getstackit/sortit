@@ -19,7 +19,14 @@ import {
 import { AppSidebar } from "@/components/app-sidebar";
 import { SiteHeader } from "@/components/site-header";
 import { Button, buttonVariants } from "@/components/ui/button";
-import { apiURL } from "@/lib/api";
+import { fetchMapData as fetchSharedMapData } from "@/features/map/api";
+import { dominantTag } from "@/features/map/model";
+import type {
+  MapCluster,
+  MapData,
+  MapEdge,
+  MapIssue,
+} from "@/features/map/types";
 import { cn } from "@/lib/utils";
 import {
   closeIssue,
@@ -27,40 +34,6 @@ import {
   reopenIssue,
   type IssueRecord,
 } from "@/lib/issues";
-
-type TagRelevance = {
-  tag: string;
-  relevance: number;
-};
-
-type MapIssue = {
-  id: string;
-  raw: string;
-  status: IssueRecord["status"];
-  tags: TagRelevance[];
-  x: number;
-  y: number;
-};
-
-type MapEdge = {
-  source: string;
-  target: string;
-  similarity: number;
-};
-
-type MapCluster = {
-  label: string;
-  centerX: number;
-  centerY: number;
-  radius: number;
-  color: string;
-};
-
-type MapData = {
-  issues: MapIssue[];
-  edges: MapEdge[];
-  clusters: MapCluster[];
-};
 
 type SemanticNeighbor = {
   issue: MapIssue;
@@ -133,16 +106,6 @@ function statusClasses(status: IssueRecord["status"]) {
     : "bg-emerald-100 text-emerald-700";
 }
 
-function dominantTag(tags: TagRelevance[]) {
-  if (tags.length === 0) {
-    return null;
-  }
-
-  return tags.reduce((best, current) =>
-    current.relevance > best.relevance ? current : best
-  ).tag;
-}
-
 function distanceBetween(
   left: Pick<MapIssue, "x" | "y">,
   right: Pick<MapIssue, "x" | "y">
@@ -166,16 +129,7 @@ function projectPoint(x: number, y: number, width: number, height: number) {
 }
 
 async function fetchMapData(signal?: AbortSignal): Promise<MapData> {
-  const response = await fetch(apiURL("/api/v1/map?status=all&edgeThreshold=0.4"), {
-    cache: "no-store",
-    signal,
-  });
-
-  if (!response.ok) {
-    throw new Error(`HTTP ${response.status}`);
-  }
-
-  return (await response.json()) as MapData;
+  return fetchSharedMapData("status=all&edgeThreshold=0.4", signal);
 }
 
 async function copyText(value: string) {
@@ -562,15 +516,15 @@ export function IssueDetailPage({ issueID }: { issueID: string }) {
       />
 
       <div className="min-h-0 flex-1 overflow-y-auto">
-        <div className="mx-auto flex w-full max-w-6xl flex-col gap-6 px-4 py-6 lg:px-6">
+        <div className="flex w-full flex-col gap-6 px-4 py-6 lg:px-6 xl:px-8">
           {loading && (
-            <div className="rounded-2xl border border-border/60 bg-card p-5 text-sm text-muted-foreground">
+            <div className="app-subtle-surface p-5 text-sm text-muted-foreground">
               Loading issue...
             </div>
           )}
 
           {!loading && issueError && (
-            <div className="rounded-2xl border border-amber-200 bg-amber-50 p-5 text-sm text-amber-900">
+            <div className="app-status-warning p-5">
               {issueError === "issue not found"
                 ? `No issue exists for "${issueID}".`
                 : `Issue backend unavailable: ${issueError}`}
@@ -578,15 +532,15 @@ export function IssueDetailPage({ issueID }: { issueID: string }) {
           )}
 
           {!loading && issue && (
-            <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_18rem]">
+            <div className="grid gap-6 xl:grid-cols-[minmax(0,1fr)_19rem] 2xl:grid-cols-[minmax(0,1.15fr)_20rem]">
               <div className="space-y-6">
                 {actionError && (
-                  <div className="rounded-2xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-900">
+                  <div className="app-status-warning">
                     {actionError}
                   </div>
                 )}
 
-                <section className="rounded-[1.75rem] border border-border/60 bg-card p-6 shadow-sm">
+                <section className="app-surface rounded-[1.75rem] p-6">
                   <div className="flex flex-wrap items-start justify-between gap-4">
                     <div className="space-y-2">
                       <p className="text-[11px] font-medium uppercase tracking-[0.18em] text-muted-foreground">
@@ -609,7 +563,7 @@ export function IssueDetailPage({ issueID }: { issueID: string }) {
                     </div>
                   </div>
 
-                  <div className="mt-6 rounded-[1.5rem] border border-border/50 bg-muted/20 p-5">
+                  <div className="app-subtle-surface mt-6 rounded-[1.5rem] p-5">
                     {looksLikeStructuredText(issue.raw) ? (
                       <pre className="overflow-x-auto whitespace-pre-wrap break-words font-mono text-[13px] leading-6 text-foreground/85">
                         {issue.raw}
@@ -624,7 +578,7 @@ export function IssueDetailPage({ issueID }: { issueID: string }) {
                   </div>
                 </section>
 
-                <section className="rounded-[1.75rem] border border-border/60 bg-card p-6 shadow-sm">
+                <section className="app-surface rounded-[1.75rem] p-6">
                   <div className="flex flex-wrap items-start justify-between gap-4">
                     <div>
                       <p className="text-[11px] font-medium uppercase tracking-[0.18em] text-muted-foreground">
@@ -637,7 +591,7 @@ export function IssueDetailPage({ issueID }: { issueID: string }) {
                         The mini-map uses the same coordinates and edge graph as the full map.
                       </p>
                     </div>
-                    <span className="rounded-full bg-muted px-2.5 py-1 text-[11px] font-medium text-muted-foreground">
+                    <span className="app-chip">
                       {currentClusters.length > 0
                         ? `${currentClusters.length} cluster${currentClusters.length === 1 ? "" : "s"}`
                         : "No cluster hit"}
@@ -645,52 +599,56 @@ export function IssueDetailPage({ issueID }: { issueID: string }) {
                   </div>
 
                   {mapError && (
-                    <div className="mt-5 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">
+                    <div className="app-status-warning mt-5">
                       Map context unavailable: {mapError}
                     </div>
                   )}
 
                   {!mapError && !currentMapIssue && (
-                    <div className="mt-5 rounded-xl border border-dashed border-border/80 px-4 py-6 text-sm text-muted-foreground">
+                    <div className="app-subtle-surface mt-5 border-dashed px-4 py-6 text-sm text-muted-foreground">
                       This issue is not present in the current map payload yet.
                     </div>
                   )}
 
                   {!mapError && currentMapIssue && (
                     <div className="mt-5 grid gap-5 xl:grid-cols-[minmax(0,1.2fr)_minmax(0,0.8fr)]">
-                      <div className="rounded-[1.5rem] border border-border/50 bg-muted/20 p-4">
-                        <IssueMapCanvas
-                          width={320}
-                          height={220}
-                          className="h-auto w-full"
-                          role="img"
-                          aria-label={`Mini map centered on ${currentMapIssue.id}`}
-                          background={
-                            <rect
-                              x="0"
-                              y="0"
-                              width="320"
-                              height="220"
-                              rx="18"
-                              fill="currentColor"
-                              className="text-background"
-                            />
-                          }
-                          clusters={miniMapClusters}
-                          edges={miniMapEdges}
-                          nodes={miniMapNodes}
-                        />
+                      <div className="app-subtle-surface rounded-[1.5rem] p-4">
+                        <div className="relative aspect-[16/10] min-h-[18rem] w-full overflow-hidden rounded-[1.15rem]">
+                          <IssueMapCanvas
+                            width={320}
+                            height={220}
+                            viewBox="0 0 320 220"
+                            preserveAspectRatio="xMidYMid meet"
+                            className="absolute inset-0 h-full w-full"
+                            role="img"
+                            aria-label={`Mini map centered on ${currentMapIssue.id}`}
+                            background={
+                              <rect
+                                x="0"
+                                y="0"
+                                width="320"
+                                height="220"
+                                rx="18"
+                                fill="currentColor"
+                                className="text-background"
+                              />
+                            }
+                            clusters={miniMapClusters}
+                            edges={miniMapEdges}
+                            nodes={miniMapNodes}
+                          />
+                        </div>
 
                         <div className="mt-4 flex flex-wrap gap-2 text-[11px] text-muted-foreground">
-                          <span className="inline-flex items-center gap-1 rounded-full bg-background px-2 py-1">
+                          <span className="app-chip inline-flex items-center gap-1">
                             <span className="size-2 rounded-full bg-slate-900" />
                             Current issue
                           </span>
-                          <span className="inline-flex items-center gap-1 rounded-full bg-background px-2 py-1">
+                          <span className="app-chip inline-flex items-center gap-1">
                             <span className="size-2 rounded-full bg-blue-600" />
                             Clustered nearby
                           </span>
-                          <span className="inline-flex items-center gap-1 rounded-full bg-background px-2 py-1">
+                          <span className="app-chip inline-flex items-center gap-1">
                             <span className="size-2 rounded-full bg-amber-500" />
                             Semantic neighbor
                           </span>
@@ -698,7 +656,7 @@ export function IssueDetailPage({ issueID }: { issueID: string }) {
                       </div>
 
                       <div className="grid gap-4">
-                        <div className="rounded-[1.25rem] border border-border/50 bg-muted/20 p-4">
+                        <div className="app-subtle-surface rounded-[1.25rem] p-4">
                           <div className="flex items-start justify-between gap-3">
                             <div>
                               <p className="text-[11px] font-medium uppercase tracking-[0.14em] text-muted-foreground">
@@ -708,7 +666,7 @@ export function IssueDetailPage({ issueID }: { issueID: string }) {
                                 Nearest issues in the same local cluster when possible.
                               </p>
                             </div>
-                            <span className="rounded-full bg-background px-2 py-0.5 text-[11px] font-medium text-muted-foreground">
+                            <span className="app-chip px-2 py-0.5">
                               {clusterNeighbors.length}
                             </span>
                           </div>
@@ -719,7 +677,7 @@ export function IssueDetailPage({ issueID }: { issueID: string }) {
                                 <Link
                                   key={neighbor.id}
                                   href={`/issues/${neighbor.id}`}
-                                  className="group flex items-center gap-3 rounded-xl bg-background px-3 py-2 transition-colors hover:bg-white"
+                                  className="group app-subtle-surface flex items-center gap-3 px-3 py-2 transition-colors hover:bg-accent/70"
                                 >
                                   <span className="size-2.5 rounded-full bg-blue-600" />
                                   <div className="min-w-0 flex-1">
@@ -741,7 +699,7 @@ export function IssueDetailPage({ issueID }: { issueID: string }) {
                           </div>
                         </div>
 
-                        <div className="rounded-[1.25rem] border border-border/50 bg-muted/20 p-4">
+                        <div className="app-subtle-surface rounded-[1.25rem] p-4">
                           <div className="flex items-start justify-between gap-3">
                             <div>
                               <p className="text-[11px] font-medium uppercase tracking-[0.14em] text-muted-foreground">
@@ -751,7 +709,7 @@ export function IssueDetailPage({ issueID }: { issueID: string }) {
                                 Strongest embedding edges connected to this issue.
                               </p>
                             </div>
-                            <span className="rounded-full bg-background px-2 py-0.5 text-[11px] font-medium text-muted-foreground">
+                            <span className="app-chip px-2 py-0.5">
                               {semanticNeighbors.length}
                             </span>
                           </div>
@@ -762,7 +720,7 @@ export function IssueDetailPage({ issueID }: { issueID: string }) {
                                 <Link
                                   key={neighbor.id}
                                   href={`/issues/${neighbor.id}`}
-                                  className="group flex items-center gap-3 rounded-xl bg-background px-3 py-2 transition-colors hover:bg-white"
+                                  className="group app-subtle-surface flex items-center gap-3 px-3 py-2 transition-colors hover:bg-accent/70"
                                 >
                                   <span className="size-2.5 rounded-full bg-amber-500" />
                                   <div className="min-w-0 flex-1">
@@ -790,7 +748,7 @@ export function IssueDetailPage({ issueID }: { issueID: string }) {
               </div>
 
               <aside className="space-y-4 lg:sticky lg:top-6 lg:self-start">
-                <section className="rounded-[1.5rem] border border-border/60 bg-card p-5 shadow-sm">
+                <section className="app-surface rounded-[1.5rem] p-5">
                   <div className="flex items-center gap-2">
                     <HashIcon className="size-4 text-muted-foreground" />
                     <h3 className="text-sm font-semibold">Summary</h3>
@@ -822,7 +780,7 @@ export function IssueDetailPage({ issueID }: { issueID: string }) {
                           issue.tags.map((tag) => (
                             <span
                               key={tag}
-                              className="rounded-full bg-muted px-2 py-0.5 text-[11px] font-medium text-foreground"
+                              className="app-chip text-foreground"
                             >
                               {tag}
                             </span>
@@ -837,7 +795,7 @@ export function IssueDetailPage({ issueID }: { issueID: string }) {
                   </dl>
                 </section>
 
-                <section className="rounded-[1.5rem] border border-border/60 bg-card p-5 shadow-sm">
+                <section className="app-surface rounded-[1.5rem] p-5">
                   <div className="flex items-center gap-2">
                     <Clock3Icon className="size-4 text-muted-foreground" />
                     <h3 className="text-sm font-semibold">Timeline</h3>
@@ -847,7 +805,7 @@ export function IssueDetailPage({ issueID }: { issueID: string }) {
                     {timeline.map((entry) => (
                       <div
                         key={entry.label}
-                        className="rounded-xl border border-border/50 bg-muted/20 p-3"
+                        className="app-subtle-surface p-3"
                       >
                         <p className="text-[11px] font-medium uppercase tracking-[0.14em] text-muted-foreground">
                           {entry.label}
@@ -861,7 +819,7 @@ export function IssueDetailPage({ issueID }: { issueID: string }) {
                   </div>
                 </section>
 
-                <section className="rounded-[1.5rem] border border-border/60 bg-card p-5 shadow-sm">
+                <section className="app-surface rounded-[1.5rem] p-5">
                   <div className="flex items-center gap-2">
                     <Link2Icon className="size-4 text-muted-foreground" />
                     <h3 className="text-sm font-semibold">Actions</h3>

@@ -58,6 +58,10 @@ type Embedder interface {
 	Model() string
 }
 
+type Canonicalizer interface {
+	CanonicalizeDiscussion(ctx context.Context, posts []string) (string, error)
+}
+
 func TagsFromNames(names []string) []Tag {
 	tags := make([]Tag, 0, len(names))
 	for _, name := range names {

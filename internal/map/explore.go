@@ -29,14 +29,21 @@ type RelatedIssue struct {
 	Reason             string             `json:"reason"`
 }
 
+type OpportunityIssue struct {
+	ID          string             `json:"id"`
+	Description string             `json:"description"`
+	Status      issues.IssueStatus `json:"status"`
+}
+
 type Opportunity struct {
-	Title      string   `json:"title"`
-	Summary    string   `json:"summary"`
-	Theme      string   `json:"theme"`
-	IssueIDs   []string `json:"issueIds"`
-	SharedTags []string `json:"sharedTags"`
-	Confidence float64  `json:"confidence"`
-	Reason     string   `json:"reason"`
+	Title      string             `json:"title"`
+	Summary    string             `json:"summary"`
+	Theme      string             `json:"theme"`
+	IssueIDs   []string           `json:"issueIds"`
+	Issues     []OpportunityIssue `json:"issues"`
+	SharedTags []string           `json:"sharedTags"`
+	Confidence float64            `json:"confidence"`
+	Reason     string             `json:"reason"`
 }
 
 type ExploreResponse struct {
@@ -304,10 +311,21 @@ func buildExploreOpportunities(target ExploreIssue, related []RelatedIssue) []Op
 
 		issueIDs := make([]string, 0, len(group.issues)+1)
 		issueIDs = append(issueIDs, target.ID)
+		opportunityIssues := make([]OpportunityIssue, 0, len(group.issues)+1)
+		opportunityIssues = append(opportunityIssues, OpportunityIssue{
+			ID:          target.ID,
+			Description: target.Raw,
+			Status:      target.Status,
+		})
 
 		total := 0.0
 		for _, item := range group.issues {
 			issueIDs = append(issueIDs, item.ID)
+			opportunityIssues = append(opportunityIssues, OpportunityIssue{
+				ID:          item.ID,
+				Description: item.Raw,
+				Status:      item.Status,
+			})
 			total += item.CombinedSimilarity
 		}
 		confidence := round(total/float64(len(group.issues)), 2)
@@ -327,6 +345,7 @@ func buildExploreOpportunities(target ExploreIssue, related []RelatedIssue) []Op
 			Summary:    summary,
 			Theme:      group.theme,
 			IssueIDs:   issueIDs,
+			Issues:     opportunityIssues,
 			SharedTags: append([]string(nil), group.sharedTags...),
 			Confidence: confidence,
 			Reason:     group.reason,

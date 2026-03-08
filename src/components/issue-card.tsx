@@ -92,8 +92,8 @@ export function IssueCard({ issue, href, className }: IssueCardProps) {
     return (
       <div
         className={cn(
-          "rounded-2xl border border-border/60 bg-card p-5",
-          issue.status === "closed" && "bg-slate-50/80",
+          "app-surface p-5",
+          issue.status === "closed" && "bg-muted/45",
           className
         )}
       >
@@ -106,8 +106,8 @@ export function IssueCard({ issue, href, className }: IssueCardProps) {
     <Link
       href={href}
       className={cn(
-        "group/card block rounded-xl border border-border/60 bg-card p-5 transition-colors hover:border-border hover:bg-accent/30",
-        issue.status === "closed" && "bg-slate-50/80",
+        "group/card app-surface block p-5 transition-all hover:-translate-y-0.5 hover:border-foreground/10 hover:bg-card/95",
+        issue.status === "closed" && "bg-muted/45",
         className
       )}
     >

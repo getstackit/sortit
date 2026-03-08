@@ -50,6 +50,8 @@ func (t *integrationMockTagger) Model() string {
 
 type integrationMockEmbedder struct{}
 
+type integrationMockCanonicalizer struct{}
+
 func (e *integrationMockEmbedder) EmbedText(_ context.Context, text string) (ai.EmbeddingResult, error) {
 	vector := integrationVector(strings.ToLower(strings.TrimSpace(text)))
 	return ai.EmbeddingResult{
@@ -70,6 +72,10 @@ func (e *integrationMockEmbedder) Provider() string {
 
 func (e *integrationMockEmbedder) Model() string {
 	return "integration-embedder"
+}
+
+func (c *integrationMockCanonicalizer) CanonicalizeDiscussion(_ context.Context, posts []string) (string, error) {
+	return strings.Join(posts, "\n\n"), nil
 }
 
 func integrationVector(text string) []float32 {
@@ -305,6 +311,54 @@ func TestAPIIntegrationCreateAndCloseIssue(t *testing.T) {
 	}
 }
 
+func TestAPIIntegrationRefineIssueUpdatesCanonicalTagsAndDiscussion(t *testing.T) {
+	store := newSQLiteIssueStore(t, nil)
+	server := NewServer(ServerConfig{
+		CORSOrigins: []string{"http://localhost:3000"},
+		APIPrefixes: []string{"/api"},
+		Analyzer: ai.NewAnalyzerWithCanonicalizer(
+			&integrationMockTagger{},
+			&integrationMockEmbedder{},
+			&integrationMockCanonicalizer{},
+		),
+		IssueStore: store,
+	})
+	if err := server.Initialize(context.Background()); err != nil {
+		t.Fatalf("initialize server: %v", err)
+	}
+
+	handler := server.Handler()
+	created := createIssueViaAPI(t, handler, createIssueRequest{
+		Raw:       "Maybe we should improve this workflow",
+		CreatedBy: "Casey",
+	})
+	if !slices.Equal(created.Tags, []string{"idea"}) {
+		t.Fatalf("unexpected tags before refinement: %#v", created.Tags)
+	}
+
+	refined := refineIssueViaAPI(t, handler, created.ID, refineIssueRequest{
+		Raw:       "Customer reports export spins forever when downloading a CSV.",
+		CreatedBy: "Jordan",
+	})
+	if len(refined.Discussion) != 2 {
+		t.Fatalf("expected 2 discussion posts, got %#v", refined.Discussion)
+	}
+	if !strings.Contains(strings.ToLower(refined.Raw), "export") {
+		t.Fatalf("expected canonical raw to include refinement context, got %q", refined.Raw)
+	}
+	if !slices.Equal(refined.Tags, []string{"export", "csv", "performance"}) {
+		t.Fatalf("unexpected tags after refinement: %#v", refined.Tags)
+	}
+
+	stored := getIssueViaAPI(t, handler, created.ID)
+	if len(stored.Discussion) != 2 {
+		t.Fatalf("expected stored discussion history, got %#v", stored.Discussion)
+	}
+	if stored.Discussion[1].CreatedBy != "Jordan" {
+		t.Fatalf("expected refinement author Jordan, got %q", stored.Discussion[1].CreatedBy)
+	}
+}
+
 func createIssueViaAPI(t *testing.T, handler http.Handler, request createIssueRequest) issues.Issue {
 	t.Helper()
 
@@ -376,6 +430,39 @@ func closeIssueViaAPI(
 	var issue issues.Issue
 	if err := json.NewDecoder(rec.Body).Decode(&issue); err != nil {
 		t.Fatalf("decode closed issue: %v", err)
+	}
+	return issue
+}
+
+func refineIssueViaAPI(
+	t *testing.T,
+	handler http.Handler,
+	id string,
+	request refineIssueRequest,
+) issues.Issue {
+	t.Helper()
+
+	body, err := json.Marshal(request)
+	if err != nil {
+		t.Fatalf("marshal refine issue request: %v", err)
+	}
+
+	req := httptest.NewRequest(
+		http.MethodPost,
+		"/api/issues/"+id+"/refine",
+		bytes.NewReader(body),
+	)
+	req.Header.Set("Content-Type", "application/json")
+	rec := httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200 for issue refine, got %d", rec.Code)
+	}
+
+	var issue issues.Issue
+	if err := json.NewDecoder(rec.Body).Decode(&issue); err != nil {
+		t.Fatalf("decode refined issue: %v", err)
 	}
 	return issue
 }

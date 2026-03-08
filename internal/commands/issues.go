@@ -30,6 +30,31 @@ func (h CreateIssueHandler) Handle(ctx context.Context, input CreateIssue) (issu
 	return h.Store.Create(ctx, enriched)
 }
 
+type RefineIssue struct {
+	ID        string
+	Raw       string
+	CreatedBy string
+}
+
+type RefineIssueHandler struct {
+	Store    issues.Store
+	Enricher *services.IssueEnricher
+}
+
+func (h RefineIssueHandler) Handle(ctx context.Context, input RefineIssue) (issues.Issue, error) {
+	current, err := h.Store.Get(ctx, input.ID)
+	if err != nil {
+		return issues.Issue{}, err
+	}
+
+	enriched, err := h.Enricher.AnalyzeRefineInput(ctx, current, input.Raw, input.CreatedBy)
+	if err != nil {
+		return issues.Issue{}, err
+	}
+
+	return h.Store.Refine(ctx, input.ID, enriched)
+}
+
 type CloseIssue struct {
 	ID       string
 	ClosedBy string

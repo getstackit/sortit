@@ -80,12 +80,18 @@ type StubEmbedder struct {
 	previewSize    int
 }
 
+type StubCanonicalizer struct{}
+
 func NewStubEmbedder() *StubEmbedder {
 	return &StubEmbedder{
 		dimensions:     stubEmbeddingDimensions,
 		maxChunkTokens: defaultEmbeddingChunkTokens,
 		previewSize:    defaultEmbeddingPreviewSize,
 	}
+}
+
+func NewStubCanonicalizer() *StubCanonicalizer {
+	return &StubCanonicalizer{}
 }
 
 func (e *StubEmbedder) EmbedText(ctx context.Context, text string) (EmbeddingResult, error) {
@@ -139,6 +145,31 @@ func (e *StubEmbedder) Provider() string {
 
 func (e *StubEmbedder) Model() string {
 	return "hash-embedding-v1"
+}
+
+func (c *StubCanonicalizer) CanonicalizeDiscussion(_ context.Context, posts []string) (string, error) {
+	normalized := make([]string, 0, len(posts))
+	for _, post := range posts {
+		post = strings.TrimSpace(post)
+		if post == "" {
+			continue
+		}
+		normalized = append(normalized, post)
+	}
+	if len(normalized) == 0 {
+		return "", nil
+	}
+	if len(normalized) == 1 {
+		return normalized[0], nil
+	}
+
+	var builder strings.Builder
+	builder.WriteString(normalized[0])
+	for _, post := range normalized[1:] {
+		builder.WriteString("\n\nAdditional context: ")
+		builder.WriteString(post)
+	}
+	return builder.String(), nil
 }
 
 func matchWeight(text string, signal string, weight float64) float64 {

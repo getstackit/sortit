@@ -21,16 +21,26 @@ const (
 )
 
 type Issue struct {
-	ID        string         `json:"id"`
-	Raw       string         `json:"raw"`
-	Tags      []string       `json:"tags"`
-	CreatedBy string         `json:"createdBy"`
-	CreatedAt time.Time      `json:"createdAt"`
-	Status    IssueStatus    `json:"status"`
-	ClosedAt  *time.Time     `json:"closedAt"`
-	ClosedBy  string         `json:"closedBy,omitempty"`
-	TagScores []TagRelevance `json:"-"`
-	Embedding []float64      `json:"-"`
+	ID         string         `json:"id"`
+	Raw        string         `json:"raw"`
+	Tags       []string       `json:"tags"`
+	CreatedBy  string         `json:"createdBy"`
+	CreatedAt  time.Time      `json:"createdAt"`
+	Status     IssueStatus    `json:"status"`
+	ClosedAt   *time.Time     `json:"closedAt"`
+	ClosedBy   string         `json:"closedBy,omitempty"`
+	Discussion []IssuePost    `json:"discussion,omitempty"`
+	TagScores  []TagRelevance `json:"-"`
+	Embedding  []float64      `json:"-"`
+}
+
+type IssuePost struct {
+	ID        string    `json:"id"`
+	IssueID   string    `json:"issueId,omitempty"`
+	Raw       string    `json:"raw"`
+	CreatedBy string    `json:"createdBy"`
+	CreatedAt time.Time `json:"createdAt"`
+	Sequence  int       `json:"sequence"`
 }
 
 type Tag struct {
@@ -53,10 +63,20 @@ type CreateInput struct {
 	Embedding []float64
 }
 
+type RefineInput struct {
+	PostRaw      string
+	CanonicalRaw string
+	Tags         []string
+	CreatedBy    string
+	TagScores    []TagRelevance
+	Embedding    []float64
+}
+
 type Store interface {
 	List(context.Context) ([]Issue, error)
 	Get(context.Context, string) (Issue, error)
 	Create(context.Context, CreateInput) (Issue, error)
+	Refine(context.Context, string, RefineInput) (Issue, error)
 	CloseIssue(context.Context, string, string) (Issue, error)
 	ReopenIssue(context.Context, string) (Issue, error)
 }
@@ -80,14 +100,20 @@ func DefaultTags() []Tag {
 }
 
 type InMemoryStore struct {
-	mu      sync.RWMutex
-	issues  []Issue
-	nextSeq atomic.Uint64
+	mu         sync.RWMutex
+	issues     []Issue
+	discussion map[string][]IssuePost
+	nextSeq    atomic.Uint64
 }
 
 func NewInMemoryStore(seed []Issue) *InMemoryStore {
 	store := &InMemoryStore{
-		issues: cloneIssues(seed),
+		issues:     cloneIssues(seed),
+		discussion: make(map[string][]IssuePost, len(seed)),
+	}
+
+	for _, issue := range store.issues {
+		store.discussion[issue.ID] = initialDiscussion(issue)
 	}
 
 	slices.SortStableFunc(store.issues, compareIssueOrder)
@@ -99,7 +125,11 @@ func (s *InMemoryStore) List(_ context.Context) ([]Issue, error) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 
-	return cloneIssues(s.issues), nil
+	items := cloneIssues(s.issues)
+	for i := range items {
+		items[i].Discussion = nil
+	}
+	return items, nil
 }
 
 func (s *InMemoryStore) Get(_ context.Context, id string) (Issue, error) {
@@ -109,7 +139,9 @@ func (s *InMemoryStore) Get(_ context.Context, id string) (Issue, error) {
 	id = strings.TrimSpace(id)
 	for _, issue := range s.issues {
 		if issue.ID == id {
-			return cloneIssues([]Issue{issue})[0], nil
+			cloned := cloneIssues([]Issue{issue})[0]
+			cloned.Discussion = cloneIssuePosts(s.discussion[id])
+			return cloned, nil
 		}
 	}
 
@@ -137,12 +169,64 @@ func (s *InMemoryStore) Create(_ context.Context, input CreateInput) (Issue, err
 		TagScores: copyTagScores(input.TagScores),
 		Embedding: copyEmbedding(input.Embedding),
 	}
+	issue.Discussion = initialDiscussion(issue)
 
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
 	s.issues = append([]Issue{issue}, s.issues...)
-	return issue, nil
+	s.discussion[issue.ID] = cloneIssuePosts(issue.Discussion)
+	return cloneIssues([]Issue{issue})[0], nil
+}
+
+func (s *InMemoryStore) Refine(_ context.Context, id string, input RefineInput) (Issue, error) {
+	id = strings.TrimSpace(id)
+	if id == "" {
+		return Issue{}, ErrNotFound
+	}
+
+	postRaw := strings.TrimSpace(input.PostRaw)
+	if postRaw == "" {
+		return Issue{}, fmt.Errorf("post raw is required")
+	}
+
+	canonicalRaw := strings.TrimSpace(input.CanonicalRaw)
+	if canonicalRaw == "" {
+		return Issue{}, fmt.Errorf("canonical raw is required")
+	}
+
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	for index, issue := range s.issues {
+		if issue.ID != id {
+			continue
+		}
+
+		discussion := cloneIssuePosts(s.discussion[id])
+		post := IssuePost{
+			ID:        issuePostID(id, len(discussion)+1),
+			IssueID:   id,
+			Raw:       postRaw,
+			CreatedBy: defaultActor(input.CreatedBy),
+			CreatedAt: time.Now().UTC(),
+			Sequence:  len(discussion) + 1,
+		}
+		discussion = append(discussion, post)
+
+		issue.Raw = canonicalRaw
+		issue.Tags = displayTags(input.Tags, input.TagScores)
+		issue.TagScores = copyTagScores(input.TagScores)
+		issue.Embedding = copyEmbedding(input.Embedding)
+		issue.Discussion = cloneIssuePosts(discussion)
+
+		s.issues[index] = issue
+		s.discussion[id] = cloneIssuePosts(discussion)
+
+		return cloneIssues([]Issue{issue})[0], nil
+	}
+
+	return Issue{}, ErrNotFound
 }
 
 func (s *InMemoryStore) CloseIssue(_ context.Context, id string, closedBy string) (Issue, error) {
@@ -156,7 +240,9 @@ func (s *InMemoryStore) CloseIssue(_ context.Context, id string, closedBy string
 		}
 
 		if issue.Status == StatusClosed && issue.ClosedAt != nil {
-			return cloneIssues([]Issue{issue})[0], nil
+			cloned := cloneIssues([]Issue{issue})[0]
+			cloned.Discussion = cloneIssuePosts(s.discussion[id])
+			return cloned, nil
 		}
 
 		closedAt := time.Now().UTC()
@@ -164,7 +250,9 @@ func (s *InMemoryStore) CloseIssue(_ context.Context, id string, closedBy string
 		issue.ClosedAt = &closedAt
 		issue.ClosedBy = defaultActor(closedBy)
 		s.issues[index] = issue
-		return cloneIssues([]Issue{issue})[0], nil
+		cloned := cloneIssues([]Issue{issue})[0]
+		cloned.Discussion = cloneIssuePosts(s.discussion[id])
+		return cloned, nil
 	}
 
 	return Issue{}, ErrNotFound
@@ -181,14 +269,18 @@ func (s *InMemoryStore) ReopenIssue(_ context.Context, id string) (Issue, error)
 		}
 
 		if issue.Status == StatusOpen {
-			return cloneIssues([]Issue{issue})[0], nil
+			cloned := cloneIssues([]Issue{issue})[0]
+			cloned.Discussion = cloneIssuePosts(s.discussion[id])
+			return cloned, nil
 		}
 
 		issue.Status = StatusOpen
 		issue.ClosedAt = nil
 		issue.ClosedBy = ""
 		s.issues[index] = issue
-		return cloneIssues([]Issue{issue})[0], nil
+		cloned := cloneIssues([]Issue{issue})[0]
+		cloned.Discussion = cloneIssuePosts(s.discussion[id])
+		return cloned, nil
 	}
 
 	return Issue{}, ErrNotFound
@@ -202,6 +294,10 @@ func (s *InMemoryStore) Replace(_ context.Context, next []Issue) error {
 	defer s.mu.Unlock()
 
 	s.issues = items
+	s.discussion = make(map[string][]IssuePost, len(items))
+	for _, issue := range items {
+		s.discussion[issue.ID] = initialDiscussion(issue)
+	}
 	return nil
 }
 
@@ -279,16 +375,36 @@ func cloneIssues(input []Issue) []Issue {
 	items := make([]Issue, len(input))
 	for i, issue := range input {
 		items[i] = Issue{
-			ID:        issue.ID,
-			Raw:       issue.Raw,
-			Tags:      append([]string(nil), issue.Tags...),
-			CreatedBy: issue.CreatedBy,
-			CreatedAt: issue.CreatedAt,
-			Status:    normalizeIssueStatus(issue.Status),
-			ClosedAt:  cloneTimePtr(issue.ClosedAt),
-			ClosedBy:  issue.ClosedBy,
-			TagScores: copyTagScores(issue.TagScores),
-			Embedding: copyEmbedding(issue.Embedding),
+			ID:         issue.ID,
+			Raw:        issue.Raw,
+			Tags:       append([]string(nil), issue.Tags...),
+			CreatedBy:  issue.CreatedBy,
+			CreatedAt:  issue.CreatedAt,
+			Status:     normalizeIssueStatus(issue.Status),
+			ClosedAt:   cloneTimePtr(issue.ClosedAt),
+			ClosedBy:   issue.ClosedBy,
+			Discussion: cloneIssuePosts(issue.Discussion),
+			TagScores:  copyTagScores(issue.TagScores),
+			Embedding:  copyEmbedding(issue.Embedding),
+		}
+	}
+	return items
+}
+
+func cloneIssuePosts(input []IssuePost) []IssuePost {
+	if len(input) == 0 {
+		return nil
+	}
+
+	items := make([]IssuePost, len(input))
+	for i, post := range input {
+		items[i] = IssuePost{
+			ID:        post.ID,
+			IssueID:   post.IssueID,
+			Raw:       post.Raw,
+			CreatedBy: post.CreatedBy,
+			CreatedAt: post.CreatedAt,
+			Sequence:  post.Sequence,
 		}
 	}
 	return items
@@ -358,6 +474,25 @@ func minInt(a, b int) int {
 		return a
 	}
 	return b
+}
+
+func initialDiscussion(issue Issue) []IssuePost {
+	if len(issue.Discussion) > 0 {
+		return cloneIssuePosts(issue.Discussion)
+	}
+
+	return []IssuePost{{
+		ID:        issuePostID(issue.ID, 1),
+		IssueID:   issue.ID,
+		Raw:       issue.Raw,
+		CreatedBy: issue.CreatedBy,
+		CreatedAt: issue.CreatedAt,
+		Sequence:  1,
+	}}
+}
+
+func issuePostID(issueID string, sequence int) string {
+	return fmt.Sprintf("%s-post-%06d", strings.TrimSpace(issueID), sequence)
 }
 
 func compareIssueOrder(a, b Issue) int {

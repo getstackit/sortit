@@ -31,6 +31,7 @@ type Server struct {
 	httpServer        *http.Server
 	startedAt         time.Time
 	createIssue       commands.CreateIssueHandler
+	refineIssue       commands.RefineIssueHandler
 	closeIssue        commands.CloseIssueHandler
 	reopenIssue       commands.ReopenIssueHandler
 	loadSampleIssues  commands.LoadSampleIssuesHandler
@@ -220,6 +221,10 @@ func NewServer(cfg ServerConfig) *Server {
 		config:    cfg,
 		startedAt: time.Now().UTC(),
 		createIssue: commands.CreateIssueHandler{
+			Store:    store,
+			Enricher: enricher,
+		},
+		refineIssue: commands.RefineIssueHandler{
 			Store:    store,
 			Enricher: enricher,
 		},

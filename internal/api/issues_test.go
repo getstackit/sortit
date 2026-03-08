@@ -32,6 +32,10 @@ func (s failingIssueStore) Create(context.Context, issues.CreateInput) (issues.I
 	return issues.Issue{}, nil
 }
 
+func (s failingIssueStore) Refine(context.Context, string, issues.RefineInput) (issues.Issue, error) {
+	return issues.Issue{}, nil
+}
+
 func (s failingIssueStore) CloseIssue(context.Context, string, string) (issues.Issue, error) {
 	return issues.Issue{}, nil
 }
@@ -124,6 +128,9 @@ func TestIssuesEndpointGetsIssueByID(t *testing.T) {
 	if payload.Raw == "" {
 		t.Fatal("expected issue body in response")
 	}
+	if len(payload.Discussion) != 1 {
+		t.Fatalf("expected initial discussion history, got %#v", payload.Discussion)
+	}
 }
 
 func TestIssuesEndpointReturnsNotFoundForMissingIssue(t *testing.T) {
@@ -187,6 +194,12 @@ func TestIssuesEndpointCreatesIssue(t *testing.T) {
 	if len(created.Tags) != 1 || created.Tags[0] != "bug" {
 		t.Fatalf("expected sanitized tags, got %#v", created.Tags)
 	}
+	if len(created.Discussion) != 1 {
+		t.Fatalf("expected initial discussion post, got %#v", created.Discussion)
+	}
+	if created.Discussion[0].Raw != created.Raw {
+		t.Fatalf("expected discussion to preserve original raw, got %q", created.Discussion[0].Raw)
+	}
 
 	listReq := httptest.NewRequest(http.MethodGet, "/api/issues", nil)
 	listRec := httptest.NewRecorder()
@@ -224,6 +237,81 @@ func TestIssuesEndpointCreatesIssue(t *testing.T) {
 	}
 	if len(tags[0].Embedding) == 0 {
 		t.Fatal("expected stored tags to include embeddings")
+	}
+}
+
+func TestIssuesEndpointRefinesIssue(t *testing.T) {
+	store := newSQLiteIssueStore(t, nil)
+	server := NewServer(ServerConfig{
+		CORSOrigins: []string{"http://localhost:3000"},
+		APIPrefixes: []string{"/api"},
+		IssueStore:  store,
+	})
+	handler := server.Handler()
+
+	createReq := httptest.NewRequest(
+		http.MethodPost,
+		"/api/issues",
+		bytes.NewBufferString(`{"raw":"Export fails on iPad"}`),
+	)
+	createReq.Header.Set("Content-Type", "application/json")
+	createRec := httptest.NewRecorder()
+	handler.ServeHTTP(createRec, createReq)
+
+	if createRec.Code != http.StatusCreated {
+		t.Fatalf("expected 201 for issue create, got %d", createRec.Code)
+	}
+
+	var created issues.Issue
+	if err := json.NewDecoder(createRec.Body).Decode(&created); err != nil {
+		t.Fatalf("decode created issue: %v", err)
+	}
+
+	refineReq := httptest.NewRequest(
+		http.MethodPost,
+		"/api/issues/"+created.ID+"/refine",
+		bytes.NewBufferString(`{"raw":"Customer says it only happens in Safari after tapping share twice","createdBy":"Jordan"}`),
+	)
+	refineReq.Header.Set("Content-Type", "application/json")
+	refineRec := httptest.NewRecorder()
+	handler.ServeHTTP(refineRec, refineReq)
+
+	if refineRec.Code != http.StatusOK {
+		t.Fatalf("expected 200 for issue refine, got %d", refineRec.Code)
+	}
+
+	var refined issues.Issue
+	if err := json.NewDecoder(refineRec.Body).Decode(&refined); err != nil {
+		t.Fatalf("decode refined issue: %v", err)
+	}
+
+	if len(refined.Discussion) != 2 {
+		t.Fatalf("expected 2 discussion posts, got %#v", refined.Discussion)
+	}
+	if refined.Discussion[1].CreatedBy != "Jordan" {
+		t.Fatalf("expected refinement author Jordan, got %q", refined.Discussion[1].CreatedBy)
+	}
+	if refined.Discussion[1].Raw != "Customer says it only happens in Safari after tapping share twice" {
+		t.Fatalf("unexpected refinement raw: %q", refined.Discussion[1].Raw)
+	}
+	if refined.Raw == created.Raw {
+		t.Fatalf("expected canonical raw to update after refinement, got %q", refined.Raw)
+	}
+
+	getReq := httptest.NewRequest(http.MethodGet, "/api/issues/"+created.ID, nil)
+	getRec := httptest.NewRecorder()
+	handler.ServeHTTP(getRec, getReq)
+
+	if getRec.Code != http.StatusOK {
+		t.Fatalf("expected 200 for issue lookup, got %d", getRec.Code)
+	}
+
+	var loaded issues.Issue
+	if err := json.NewDecoder(getRec.Body).Decode(&loaded); err != nil {
+		t.Fatalf("decode loaded issue: %v", err)
+	}
+	if len(loaded.Discussion) != 2 {
+		t.Fatalf("expected persisted discussion posts, got %#v", loaded.Discussion)
 	}
 }
 
@@ -459,6 +547,12 @@ func TestIssuesEndpointExploresIssue(t *testing.T) {
 	}
 	if payload.Opportunities[0].IssueIDs[0] != "issue-target" {
 		t.Fatalf("expected opportunity to include target issue first, got %+v", payload.Opportunities[0].IssueIDs)
+	}
+	if len(payload.Opportunities[0].Issues) == 0 {
+		t.Fatalf("expected opportunity issues with descriptions, got %+v", payload.Opportunities[0])
+	}
+	if payload.Opportunities[0].Issues[0].Description != "Safari export crashes on PDF download" {
+		t.Fatalf("expected target issue description in opportunity, got %+v", payload.Opportunities[0].Issues)
 	}
 	if len(payload.Opportunities[0].SharedTags) == 0 {
 		t.Fatalf("expected opportunity shared tags, got %+v", payload.Opportunities[0])

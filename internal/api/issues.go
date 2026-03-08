@@ -28,6 +28,11 @@ type closeIssueRequest struct {
 	ClosedBy string `json:"closedBy,omitempty"`
 }
 
+type refineIssueRequest struct {
+	Raw       string `json:"raw"`
+	CreatedBy string `json:"createdBy,omitempty"`
+}
+
 type compareIssuesRequest struct {
 	IDs []string `json:"ids"`
 }
@@ -159,6 +164,35 @@ func (s *Server) handleIssueByID(route string) http.HandlerFunc {
 			}
 
 			writeJSON(w, http.StatusOK, closed)
+		case "refine":
+			if r.Method != http.MethodPost {
+				w.Header().Set("Allow", http.MethodPost)
+				http.Error(w, http.StatusText(http.StatusMethodNotAllowed), http.StatusMethodNotAllowed)
+				return
+			}
+
+			request, err := decodeRefineIssueRequest(r)
+			if err != nil {
+				writeError(w, http.StatusBadRequest, err.Error())
+				return
+			}
+
+			refined, err := s.refineIssue.Handle(r.Context(), commands.RefineIssue{
+				ID:        id,
+				Raw:       request.Raw,
+				CreatedBy: request.CreatedBy,
+			})
+			if err != nil {
+				if errors.Is(err, issues.ErrNotFound) {
+					writeError(w, http.StatusNotFound, "issue not found")
+					return
+				}
+
+				writeInternalError(w, r, "failed to refine issue", err)
+				return
+			}
+
+			writeJSON(w, http.StatusOK, refined)
 		case "explore":
 			if r.Method != http.MethodGet {
 				w.Header().Set("Allow", http.MethodGet)
@@ -330,6 +364,26 @@ func decodeCloseIssueRequest(r *http.Request) (closeIssueRequest, error) {
 	}
 
 	request.ClosedBy = strings.TrimSpace(request.ClosedBy)
+	return request, nil
+}
+
+func decodeRefineIssueRequest(r *http.Request) (refineIssueRequest, error) {
+	defer r.Body.Close()
+
+	decoder := json.NewDecoder(io.LimitReader(r.Body, 1<<20))
+	decoder.DisallowUnknownFields()
+
+	var request refineIssueRequest
+	if err := decoder.Decode(&request); err != nil {
+		return refineIssueRequest{}, errors.New("invalid request body")
+	}
+
+	request.Raw = strings.TrimSpace(request.Raw)
+	request.CreatedBy = strings.TrimSpace(request.CreatedBy)
+	if request.Raw == "" {
+		return refineIssueRequest{}, errors.New("raw is required")
+	}
+
 	return request, nil
 }
 

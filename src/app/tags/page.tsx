@@ -6,6 +6,7 @@ import { AppShell } from "@/components/app-shell";
 import { AppSidebar } from "@/components/app-sidebar";
 import { SiteHeader } from "@/components/site-header";
 import { Button } from "@/components/ui/button";
+import { Skeleton } from "@/components/ui/skeleton";
 import { fetchTags, type TagRecord } from "@/lib/tags";
 
 type ProjectionMethod = "pca" | "umap";
@@ -118,6 +119,7 @@ export default function TagsPage() {
     <AppShell sidebar={<AppSidebar things={SECTION_LINKS} />}>
       <SiteHeader
         title="Tag Map"
+        eyebrow="Tags"
         subtitle="Visualize semantic relationships between tags from stored tag embeddings."
       />
 
@@ -125,7 +127,7 @@ export default function TagsPage() {
         <div className="mx-auto flex w-full max-w-7xl flex-col gap-6 px-4 py-6 lg:px-6">
           <section
             id="controls"
-            className="grid gap-4 rounded-2xl border border-border/60 bg-card p-5 lg:grid-cols-[minmax(0,1fr)_20rem]"
+            className="app-surface grid gap-4 p-5 lg:grid-cols-[minmax(0,1fr)_20rem]"
           >
             <div className="space-y-4">
               <div>
@@ -158,7 +160,7 @@ export default function TagsPage() {
                   Only show tag-to-tag links above this cosine similarity.
                 </p>
               </div>
-              <div className="rounded-xl border border-border/60 bg-background px-4 py-3">
+              <div className="app-subtle-surface px-4 py-3">
                 <div className="flex items-center justify-between text-sm">
                   <span>Similarity</span>
                   <span className="font-medium">{Math.round(edgeThreshold * 100)}%</span>
@@ -178,7 +180,7 @@ export default function TagsPage() {
 
           <section
             id="projection"
-            className="grid gap-6 rounded-2xl border border-border/60 bg-card p-5 lg:grid-cols-[minmax(0,1.5fr)_minmax(18rem,0.8fr)]"
+            className="app-surface grid gap-6 p-5 lg:grid-cols-[minmax(0,1.5fr)_minmax(18rem,0.8fr)]"
           >
             <div>
               <div className="flex items-center justify-between gap-3">
@@ -190,15 +192,15 @@ export default function TagsPage() {
                     Click a tag to inspect its nearest semantic neighbors.
                   </p>
                 </div>
-                <span className="rounded-full bg-muted px-2 py-1 text-xs text-muted-foreground">
+                <span className="app-chip text-xs">
                   {embeddedTags.length} tags
                 </span>
               </div>
 
-              <div className="mt-4 overflow-hidden rounded-2xl border border-border/70 bg-[radial-gradient(circle_at_top,#f8fafc,transparent_55%),linear-gradient(180deg,#f8fafc_0%,#eef2ff_100%)]">
+              <div className="mt-4 overflow-hidden rounded-2xl border border-border/70 bg-[radial-gradient(circle_at_top,var(--glow-color)_0%,transparent_55%),linear-gradient(180deg,color-mix(in_oklab,var(--background)_94%,white_6%)_0%,color-mix(in_oklab,var(--background)_90%,var(--gradient-end)_10%)_100%)]">
                 {loading ? (
-                  <div className="flex h-[34rem] items-center justify-center text-sm text-muted-foreground">
-                    Loading tags...
+                  <div className="p-6">
+                    <Skeleton className="h-[34rem] w-full rounded-[1.6rem]" />
                   </div>
                 ) : error ? (
                   <div className="flex h-[34rem] items-center justify-center px-6 text-sm text-destructive">
@@ -261,7 +263,7 @@ export default function TagsPage() {
             </div>
 
             <div className="space-y-4">
-              <div className="rounded-2xl border border-border/70 bg-background p-4">
+              <div className="app-subtle-surface p-4">
                 <p className="text-xs font-medium uppercase tracking-[0.18em] text-muted-foreground">
                   Inspector
                 </p>
@@ -279,7 +281,7 @@ export default function TagsPage() {
                         </p>
                       </div>
                       <span
-                        className="rounded-full px-2 py-1 text-xs font-medium text-white"
+                        className="rounded-full px-2 py-1 text-xs font-medium text-white shadow-sm"
                         style={{ backgroundColor: tagColor(selectedPoint.tag.name) }}
                       >
                         {METHOD_LABELS[method]}
@@ -295,7 +297,7 @@ export default function TagsPage() {
                           key={neighbor.name}
                           type="button"
                           onClick={() => setSelectedTagName(neighbor.name)}
-                          className="flex w-full items-start justify-between gap-3 rounded-xl border border-border/60 px-3 py-2 text-left hover:bg-muted/40"
+                          className="app-subtle-surface flex w-full items-start justify-between gap-3 px-3 py-2 text-left hover:bg-muted/40"
                         >
                           <div>
                             <p className="text-sm font-medium">{neighbor.name}</p>
@@ -313,7 +315,7 @@ export default function TagsPage() {
                 )}
               </div>
 
-              <div className="rounded-2xl border border-border/70 bg-background p-4">
+              <div className="app-subtle-surface p-4">
                 <p className="text-xs font-medium uppercase tracking-[0.18em] text-muted-foreground">
                   Notes
                 </p>
@@ -331,7 +333,7 @@ export default function TagsPage() {
 
           <section
             id="matrix"
-            className="rounded-2xl border border-border/60 bg-card p-5"
+            className="app-surface p-5"
           >
             <div>
               <p className="text-xs font-medium uppercase tracking-[0.18em] text-muted-foreground">
@@ -525,7 +527,9 @@ function powerIteration(matrix: number[][]) {
     return { vector: [] as number[], eigenvalue: 0 };
   }
 
-  let vector = new Array(dimensions).fill(0).map((_, index) => (index % 2 === 0 ? 1 : -1));
+  let vector: number[] = new Array(dimensions)
+    .fill(0)
+    .map((_, index) => (index % 2 === 0 ? 1 : -1));
   vector = normalizeVector(vector);
 
   for (let iteration = 0; iteration < 80; iteration += 1) {

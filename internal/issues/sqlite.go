@@ -26,7 +26,7 @@ import (
 const (
 	sqliteDriverName          = "sqlite"
 	issueSeqKey               = "next_issue_seq"
-	currentMigrationVersion   = 3
+	currentMigrationVersion   = 4
 	schemaMigrationsTableName = "schema_migrations"
 )
 
@@ -104,19 +104,7 @@ func (s *SQLiteStore) Get(ctx context.Context, id string) (Issue, error) {
 		return Issue{}, ErrNotFound
 	}
 
-	issueRow, err := s.queries.GetIssue(ctx, id)
-	if err != nil {
-		if errors.Is(err, sql.ErrNoRows) {
-			return Issue{}, ErrNotFound
-		}
-		return Issue{}, err
-	}
-
-	issue, err := issueFromQuery(issueRow)
-	if err != nil {
-		return Issue{}, err
-	}
-	return cloneIssues([]Issue{issue})[0], nil
+	return s.getIssueWithDiscussion(ctx, s.queries, id)
 }
 
 func (s *SQLiteStore) Create(ctx context.Context, input CreateInput) (Issue, error) {
@@ -152,6 +140,7 @@ func (s *SQLiteStore) Create(ctx context.Context, input CreateInput) (Issue, err
 		TagScores: copyTagScores(input.TagScores),
 		Embedding: copyEmbedding(input.Embedding),
 	}
+	issue.Discussion = initialDiscussion(issue)
 
 	record, err := recordFromIssue(issue)
 	if err != nil {
@@ -172,12 +161,91 @@ func (s *SQLiteStore) Create(ctx context.Context, input CreateInput) (Issue, err
 	}); err != nil {
 		return Issue{}, fmt.Errorf("insert issue: %w", err)
 	}
+	if err := insertIssuePosts(ctx, qtx, issue.Discussion); err != nil {
+		return Issue{}, err
+	}
 
 	if err := tx.Commit(); err != nil {
 		return Issue{}, fmt.Errorf("commit create issue: %w", err)
 	}
 
-	return issue, nil
+	return cloneIssues([]Issue{issue})[0], nil
+}
+
+func (s *SQLiteStore) Refine(ctx context.Context, id string, input RefineInput) (Issue, error) {
+	id = strings.TrimSpace(id)
+	if id == "" {
+		return Issue{}, ErrNotFound
+	}
+
+	postRaw := strings.TrimSpace(input.PostRaw)
+	if postRaw == "" {
+		return Issue{}, fmt.Errorf("post raw is required")
+	}
+
+	canonicalRaw := strings.TrimSpace(input.CanonicalRaw)
+	if canonicalRaw == "" {
+		return Issue{}, fmt.Errorf("canonical raw is required")
+	}
+
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return Issue{}, fmt.Errorf("begin refine issue tx: %w", err)
+	}
+	defer tx.Rollback()
+
+	qtx := s.queries.WithTx(tx)
+	current, err := s.getIssueWithDiscussion(ctx, qtx, id)
+	if err != nil {
+		return Issue{}, err
+	}
+
+	post := IssuePost{
+		ID:        issuePostID(id, len(current.Discussion)+1),
+		IssueID:   id,
+		Raw:       postRaw,
+		CreatedBy: defaultActor(input.CreatedBy),
+		CreatedAt: time.Now().UTC(),
+		Sequence:  len(current.Discussion) + 1,
+	}
+
+	updated := current
+	updated.Raw = canonicalRaw
+	updated.Tags = displayTags(input.Tags, input.TagScores)
+	updated.TagScores = copyTagScores(input.TagScores)
+	updated.Embedding = copyEmbedding(input.Embedding)
+	updated.Discussion = append(cloneIssuePosts(current.Discussion), post)
+
+	record, err := recordFromIssue(updated)
+	if err != nil {
+		return Issue{}, err
+	}
+
+	if err := qtx.InsertIssuePost(ctx, issuesdb.InsertIssuePostParams{
+		ID:                post.ID,
+		IssueID:           post.IssueID,
+		Raw:               post.Raw,
+		CreatedBy:         post.CreatedBy,
+		CreatedAtUnixNano: post.CreatedAt.UnixNano(),
+		Sequence:          int64(post.Sequence),
+	}); err != nil {
+		return Issue{}, fmt.Errorf("insert issue post: %w", err)
+	}
+	if err := qtx.UpdateIssueRefinement(ctx, issuesdb.UpdateIssueRefinementParams{
+		Raw:           record.Raw,
+		TagsJson:      record.TagsJSON,
+		TagScoresJson: record.TagScoresJSON,
+		EmbeddingJson: record.EmbeddingJSON,
+		ID:            updated.ID,
+	}); err != nil {
+		return Issue{}, fmt.Errorf("update issue refinement: %w", err)
+	}
+
+	if err := tx.Commit(); err != nil {
+		return Issue{}, fmt.Errorf("commit refine issue tx: %w", err)
+	}
+
+	return cloneIssues([]Issue{updated})[0], nil
 }
 
 func (s *SQLiteStore) CloseIssue(ctx context.Context, id string, closedBy string) (Issue, error) {
@@ -193,17 +261,9 @@ func (s *SQLiteStore) CloseIssue(ctx context.Context, id string, closedBy string
 	defer tx.Rollback()
 
 	qtx := s.queries.WithTx(tx)
-	current, err := qtx.GetIssue(ctx, id)
+	issue, err := s.getIssueWithDiscussion(ctx, qtx, id)
 	if err != nil {
-		if errors.Is(err, sql.ErrNoRows) {
-			return Issue{}, ErrNotFound
-		}
 		return Issue{}, fmt.Errorf("load issue for close: %w", err)
-	}
-
-	issue, err := issueFromQuery(current)
-	if err != nil {
-		return Issue{}, err
 	}
 	if issue.Status == StatusClosed && issue.ClosedAt != nil {
 		if err := tx.Commit(); err != nil {
@@ -228,7 +288,7 @@ func (s *SQLiteStore) CloseIssue(ctx context.Context, id string, closedBy string
 	if err := tx.Commit(); err != nil {
 		return Issue{}, fmt.Errorf("commit close issue tx: %w", err)
 	}
-	return issueFromQuery(updated)
+	return s.hydrateIssueWithDiscussion(ctx, updated, issue.Discussion)
 }
 
 func (s *SQLiteStore) ReopenIssue(ctx context.Context, id string) (Issue, error) {
@@ -244,17 +304,9 @@ func (s *SQLiteStore) ReopenIssue(ctx context.Context, id string) (Issue, error)
 	defer tx.Rollback()
 
 	qtx := s.queries.WithTx(tx)
-	current, err := qtx.GetIssue(ctx, id)
+	issue, err := s.getIssueWithDiscussion(ctx, qtx, id)
 	if err != nil {
-		if errors.Is(err, sql.ErrNoRows) {
-			return Issue{}, ErrNotFound
-		}
 		return Issue{}, fmt.Errorf("load issue for reopen: %w", err)
-	}
-
-	issue, err := issueFromQuery(current)
-	if err != nil {
-		return Issue{}, err
 	}
 	if issue.Status == StatusOpen {
 		if err := tx.Commit(); err != nil {
@@ -274,7 +326,7 @@ func (s *SQLiteStore) ReopenIssue(ctx context.Context, id string) (Issue, error)
 	if err := tx.Commit(); err != nil {
 		return Issue{}, fmt.Errorf("commit reopen issue tx: %w", err)
 	}
-	return issueFromQuery(updated)
+	return s.hydrateIssueWithDiscussion(ctx, updated, issue.Discussion)
 }
 
 func (s *SQLiteStore) Replace(ctx context.Context, next []Issue) error {
@@ -288,6 +340,9 @@ func (s *SQLiteStore) Replace(ctx context.Context, next []Issue) error {
 	defer tx.Rollback()
 
 	qtx := s.queries.WithTx(tx)
+	if err := qtx.DeleteAllIssuePosts(ctx); err != nil {
+		return fmt.Errorf("clear issue posts: %w", err)
+	}
 	if err := qtx.DeleteAllIssues(ctx); err != nil {
 		return fmt.Errorf("clear issues: %w", err)
 	}
@@ -311,6 +366,10 @@ func (s *SQLiteStore) Replace(ctx context.Context, next []Issue) error {
 			EmbeddingJson:     record.EmbeddingJSON,
 		}); err != nil {
 			return fmt.Errorf("replace issue %q: %w", issue.ID, err)
+		}
+
+		if err := insertIssuePosts(ctx, qtx, initialDiscussion(issue)); err != nil {
+			return err
 		}
 	}
 
@@ -445,6 +504,11 @@ func (s *SQLiteStore) bootstrapMigrationVersion(ctx context.Context, dbDriver mi
 			return fmt.Errorf("baseline sqlite migration version: %w", err)
 		}
 	}
+	if state == sqliteSchemaV3 {
+		if err := dbDriver.SetVersion(3, false); err != nil {
+			return fmt.Errorf("baseline sqlite migration version: %w", err)
+		}
+	}
 	if state == sqliteSchemaLegacy {
 		if err := dbDriver.SetVersion(1, false); err != nil {
 			return fmt.Errorf("baseline sqlite migration version: %w", err)
@@ -462,6 +526,7 @@ const (
 	sqliteSchemaEmpty sqliteSchemaState = iota
 	sqliteSchemaLegacy
 	sqliteSchemaV2
+	sqliteSchemaV3
 	sqliteSchemaCurrent
 	sqliteSchemaUnknown
 )
@@ -483,7 +548,14 @@ func (s *SQLiteStore) detectSchemaState(ctx context.Context) (sqliteSchemaState,
 		return sqliteSchemaV2, nil
 	}
 	if hasColumns(issueColumns, "id", "raw", "tags_json", "created_by", "created_at_unix_nano", "status", "closed_at_unix_nano", "closed_by", "tag_scores_json", "embedding_json") {
-		return sqliteSchemaCurrent, nil
+		postColumns, err := tableColumns(ctx, s.db, "issue_posts")
+		if err != nil {
+			return sqliteSchemaUnknown, err
+		}
+		if hasColumns(postColumns, "id", "issue_id", "raw", "created_by", "created_at_unix_nano", "sequence") {
+			return sqliteSchemaCurrent, nil
+		}
+		return sqliteSchemaV3, nil
 	}
 	return sqliteSchemaUnknown, nil
 }
@@ -543,6 +615,11 @@ type tagRecord struct {
 	Description       string
 	CreatedAtUnixNano int64
 	EmbeddingJSON     string
+}
+
+type issueQuerier interface {
+	GetIssue(context.Context, string) (issuesdb.Issue, error)
+	ListIssuePosts(context.Context, string) ([]issuesdb.IssuePost, error)
 }
 
 func recordFromIssue(issue Issue) (issueRecord, error) {
@@ -609,6 +686,17 @@ func issueFromQuery(row issuesdb.Issue) (Issue, error) {
 	}, nil
 }
 
+func issuePostFromQuery(row issuesdb.IssuePost) IssuePost {
+	return IssuePost{
+		ID:        row.ID,
+		IssueID:   row.IssueID,
+		Raw:       row.Raw,
+		CreatedBy: row.CreatedBy,
+		CreatedAt: time.Unix(0, row.CreatedAtUnixNano).UTC(),
+		Sequence:  int(row.Sequence),
+	}
+}
+
 func recordFromTag(tag Tag) (tagRecord, error) {
 	embeddingJSON, err := marshalEmbedding(tag.Embedding)
 	if err != nil {
@@ -640,6 +728,57 @@ func tagFromQuery(row issuesdb.Tag) (Tag, error) {
 		CreatedAt:   time.Unix(0, row.CreatedAtUnixNano).UTC(),
 		Embedding:   embedding,
 	}, nil
+}
+
+func (s *SQLiteStore) getIssueWithDiscussion(ctx context.Context, q issueQuerier, id string) (Issue, error) {
+	issueRow, err := q.GetIssue(ctx, id)
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return Issue{}, ErrNotFound
+		}
+		return Issue{}, err
+	}
+
+	postRows, err := q.ListIssuePosts(ctx, id)
+	if err != nil {
+		return Issue{}, fmt.Errorf("list issue posts: %w", err)
+	}
+
+	discussion := make([]IssuePost, 0, len(postRows))
+	for _, row := range postRows {
+		discussion = append(discussion, issuePostFromQuery(row))
+	}
+
+	return s.hydrateIssueWithDiscussion(ctx, issueRow, discussion)
+}
+
+func (s *SQLiteStore) hydrateIssueWithDiscussion(_ context.Context, issueRow issuesdb.Issue, discussion []IssuePost) (Issue, error) {
+	issue, err := issueFromQuery(issueRow)
+	if err != nil {
+		return Issue{}, err
+	}
+
+	if len(discussion) == 0 {
+		discussion = initialDiscussion(issue)
+	}
+	issue.Discussion = cloneIssuePosts(discussion)
+	return cloneIssues([]Issue{issue})[0], nil
+}
+
+func insertIssuePosts(ctx context.Context, q *issuesdb.Queries, posts []IssuePost) error {
+	for _, post := range posts {
+		if err := q.InsertIssuePost(ctx, issuesdb.InsertIssuePostParams{
+			ID:                strings.TrimSpace(post.ID),
+			IssueID:           strings.TrimSpace(post.IssueID),
+			Raw:               strings.TrimSpace(post.Raw),
+			CreatedBy:         strings.TrimSpace(post.CreatedBy),
+			CreatedAtUnixNano: post.CreatedAt.UTC().UnixNano(),
+			Sequence:          int64(post.Sequence),
+		}); err != nil {
+			return fmt.Errorf("insert issue post %q: %w", post.ID, err)
+		}
+	}
+	return nil
 }
 
 func closedAtUnixNano(issue Issue) int64 {

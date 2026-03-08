@@ -37,6 +37,11 @@ type OpenAITagger struct {
 	model  string
 }
 
+type OpenAICanonicalizer struct {
+	client *openAIClient
+	model  string
+}
+
 type OpenAIEmbedder struct {
 	client         *openAIClient
 	model          string
@@ -47,7 +52,7 @@ type OpenAIEmbedder struct {
 type openAIChatCompletionRequest struct {
 	Model          string                     `json:"model"`
 	Temperature    float64                    `json:"temperature"`
-	ResponseFormat openAIResponseFormat       `json:"response_format"`
+	ResponseFormat *openAIResponseFormat      `json:"response_format,omitempty"`
 	Messages       []openAIChatMessageRequest `json:"messages"`
 }
 
@@ -102,6 +107,17 @@ func NewOpenAITagger(cfg OpenAIConfig) (*OpenAITagger, error) {
 	}, nil
 }
 
+func NewOpenAICanonicalizer(cfg OpenAIConfig) (*OpenAICanonicalizer, error) {
+	client, err := newOpenAIClient(cfg)
+	if err != nil {
+		return nil, err
+	}
+	return &OpenAICanonicalizer{
+		client: client,
+		model:  withDefault(strings.TrimSpace(cfg.TagModel), defaultOpenAITagModel),
+	}, nil
+}
+
 func NewOpenAIEmbedder(cfg OpenAIConfig) (*OpenAIEmbedder, error) {
 	client, err := newOpenAIClient(cfg)
 	if err != nil {
@@ -119,7 +135,7 @@ func (t *OpenAITagger) Score(ctx context.Context, text string, tags []Tag) ([]Ta
 	request := openAIChatCompletionRequest{
 		Model:       t.model,
 		Temperature: 0,
-		ResponseFormat: openAIResponseFormat{
+		ResponseFormat: &openAIResponseFormat{
 			Type: "json_object",
 		},
 		Messages: []openAIChatMessageRequest{
@@ -155,6 +171,33 @@ func (t *OpenAITagger) Provider() string {
 
 func (t *OpenAITagger) Model() string {
 	return t.model
+}
+
+func (c *OpenAICanonicalizer) CanonicalizeDiscussion(ctx context.Context, posts []string) (string, error) {
+	request := openAIChatCompletionRequest{
+		Model:       c.model,
+		Temperature: 0,
+		Messages: []openAIChatMessageRequest{
+			{
+				Role:    "system",
+				Content: buildOpenAICanonicalizationSystemPrompt(),
+			},
+			{
+				Role:    "user",
+				Content: buildOpenAICanonicalizationPrompt(posts),
+			},
+		},
+	}
+
+	var response openAIChatCompletionResponse
+	if err := c.client.doJSON(ctx, http.MethodPost, "/chat/completions", request, &response); err != nil {
+		return "", err
+	}
+	if len(response.Choices) == 0 {
+		return "", errors.New("openai returned no completion choices")
+	}
+
+	return strings.TrimSpace(response.Choices[0].Message.Content), nil
 }
 
 func (e *OpenAIEmbedder) EmbedText(ctx context.Context, text string) (EmbeddingResult, error) {
@@ -278,6 +321,31 @@ func buildOpenAITaggingSystemPrompt() string {
 		"Do not suggest synonyms, spelling variants, or narrower/broader restatements of existing tags. " +
 		"Suggested tags must be short, lowercase, reusable across many issues, and not product-specific. " +
 		"Return at most 2 suggested tags, and every suggested tag must include a short description."
+}
+
+func buildOpenAICanonicalizationPrompt(posts []string) string {
+	var builder strings.Builder
+	builder.WriteString("Rewrite this issue discussion into one concise canonical issue description.\n")
+	builder.WriteString("Use the combined discussion, but prefer the latest corrected understanding when details conflict.\n")
+	builder.WriteString("Return plain text only.\n\n")
+
+	for index, post := range posts {
+		post = strings.TrimSpace(post)
+		if post == "" {
+			continue
+		}
+		builder.WriteString(fmt.Sprintf("Post %d:\n", index+1))
+		builder.WriteString(post)
+		builder.WriteString("\n\n")
+	}
+
+	return strings.TrimSpace(builder.String())
+}
+
+func buildOpenAICanonicalizationSystemPrompt() string {
+	return "You turn an issue discussion into a single canonical issue description for triage, tagging, and semantic search. " +
+		"Preserve the latest understanding, concrete failures, requested changes, affected surfaces, and important constraints. " +
+		"Do not mention discussion mechanics, authors, or timestamps."
 }
 
 func withDefault(value string, fallback string) string {
