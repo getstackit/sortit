@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useMemo } from "react";
 import { motion, AnimatePresence } from "motion/react";
 import { Rows3Icon, Rows4Icon } from "lucide-react";
 import { AppShell } from "@/components/app-shell";
@@ -9,7 +9,7 @@ import { IssueCard } from "@/components/issue-card";
 import { SiteHeader } from "@/components/site-header";
 import { Skeleton } from "@/components/ui/skeleton";
 import { CompactModeProvider, useCompactMode } from "@/hooks/use-compact-mode";
-import { fetchIssues, type IssueRecord } from "@/lib/issues";
+import { useIssues } from "@/hooks/use-issues";
 
 function CompactToggle() {
   const { isCompact, toggleCompact } = useCompactMode();
@@ -27,7 +27,7 @@ function CompactToggle() {
   );
 }
 
-function IssueList({ issues }: { issues: IssueRecord[] }) {
+function IssueList({ issues }: { issues: import("@/lib/issues").IssueRecord[] }) {
   const { isCompact } = useCompactMode();
 
   return (
@@ -54,37 +54,7 @@ function IssueList({ issues }: { issues: IssueRecord[] }) {
 }
 
 export function IssuesBoard() {
-  const [issues, setIssues] = useState<IssueRecord[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
-
-  useEffect(() => {
-    const controller = new AbortController();
-
-    fetchIssues("open", controller.signal)
-      .then((items) => {
-        setIssues(items);
-        setError(null);
-      })
-      .catch((caughtError) => {
-        if (controller.signal.aborted) {
-          return;
-        }
-
-        const message =
-          caughtError instanceof Error
-            ? caughtError.message
-            : "Unknown backend error";
-        setError(message);
-      })
-      .finally(() => {
-        if (!controller.signal.aborted) {
-          setLoading(false);
-        }
-      });
-
-    return () => controller.abort();
-  }, []);
+  const { data: issues = [], error, isLoading: loading, mutate } = useIssues("open");
 
   const things = useMemo(
     () =>
@@ -104,8 +74,7 @@ export function IssuesBoard() {
             things={things}
             navigateOnCreate={false}
             onIssueCreated={(created) => {
-              setIssues((prev) => [created, ...prev]);
-              setError(null);
+              mutate((prev) => prev ? [created, ...prev] : [created], { revalidate: false });
             }}
           />
         }
@@ -129,7 +98,7 @@ export function IssuesBoard() {
               {error && (
                 <div className="px-4 lg:px-6">
                   <div className="app-status-warning">
-                    Issue backend unavailable: {error}
+                    Issue backend unavailable: {error?.message}
                   </div>
                 </div>
               )}

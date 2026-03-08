@@ -22,17 +22,15 @@ import {
 import { AppSidebar } from "@/components/app-sidebar";
 import { SiteHeader } from "@/components/site-header";
 import { Button, buttonVariants } from "@/components/ui/button";
-import { fetchMapData as fetchSharedMapData } from "@/features/map/api";
 import { dominantTag } from "@/features/map/model";
 import type {
   MapCluster,
-  MapData,
   MapEdge,
   MapIssue,
 } from "@/features/map/types";
+import { useIssue, useIssueMapData } from "@/hooks/use-issues";
 import {
   closeIssue,
-  fetchIssue,
   reopenIssue,
   refineIssue,
   type IssuePostRecord,
@@ -134,7 +132,7 @@ function projectPoint(x: number, y: number, width: number, height: number) {
   };
 }
 
-function fallbackDiscussion(issue: IssueRecord | null): IssuePostRecord[] {
+function fallbackDiscussion(issue: IssueRecord | null | undefined): IssuePostRecord[] {
   if (!issue) {
     return [];
   }
@@ -153,10 +151,6 @@ function fallbackDiscussion(issue: IssueRecord | null): IssuePostRecord[] {
       sequence: 1,
     },
   ];
-}
-
-async function fetchMapData(signal?: AbortSignal): Promise<MapData> {
-  return fetchSharedMapData("status=all&edgeThreshold=0.4", signal);
 }
 
 async function copyText(value: string) {
@@ -204,11 +198,8 @@ function DiscussionBody({ text }: { text: string }) {
 }
 
 export function IssueDetailPage({ issueID }: { issueID: string }) {
-  const [issue, setIssue] = useState<IssueRecord | null>(null);
-  const [mapData, setMapData] = useState<MapData | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [issueError, setIssueError] = useState<string | null>(null);
-  const [mapError, setMapError] = useState<string | null>(null);
+  const { data: issue, error: issueError, isLoading: loading, mutate: mutateIssue } = useIssue(issueID);
+  const { data: mapData, error: mapError, mutate: mutateMap } = useIssueMapData();
   const [actionError, setActionError] = useState<string | null>(null);
   const [copyState, setCopyState] = useState<
     "idle" | "text-copied" | "link-copied" | "error"
@@ -216,49 +207,6 @@ export function IssueDetailPage({ issueID }: { issueID: string }) {
   const [statusPending, setStatusPending] = useState(false);
   const [refineInput, setRefineInput] = useState("");
   const [refinePending, setRefinePending] = useState(false);
-
-  useEffect(() => {
-    const controller = new AbortController();
-
-    setLoading(true);
-    setIssueError(null);
-    setMapError(null);
-    setActionError(null);
-
-    Promise.allSettled([fetchIssue(issueID, controller.signal), fetchMapData(controller.signal)])
-      .then(([issueResult, mapResult]) => {
-        if (issueResult.status === "fulfilled") {
-          setIssue(issueResult.value);
-          setIssueError(null);
-        } else if (!controller.signal.aborted) {
-          const message =
-            issueResult.reason instanceof Error
-              ? issueResult.reason.message
-              : "Unknown backend error";
-          setIssue(null);
-          setIssueError(message);
-        }
-
-        if (mapResult.status === "fulfilled") {
-          setMapData(mapResult.value);
-          setMapError(null);
-        } else if (!controller.signal.aborted) {
-          const message =
-            mapResult.reason instanceof Error
-              ? mapResult.reason.message
-              : "Unknown backend error";
-          setMapData(null);
-          setMapError(message);
-        }
-      })
-      .finally(() => {
-        if (!controller.signal.aborted) {
-          setLoading(false);
-        }
-      });
-
-    return () => controller.abort();
-  }, [issueID]);
 
   useEffect(() => {
     if (copyState === "idle") {
@@ -317,7 +265,7 @@ export function IssueDetailPage({ issueID }: { issueID: string }) {
           ? await reopenIssue(issue.id)
           : await closeIssue(issue.id);
 
-      setIssue(updated);
+      mutateIssue(updated, { revalidate: false });
       setActionError(null);
     } catch (caughtError) {
       const message =
@@ -328,7 +276,7 @@ export function IssueDetailPage({ issueID }: { issueID: string }) {
     } finally {
       setStatusPending(false);
     }
-  }, [issue, statusPending]);
+  }, [issue, statusPending, mutateIssue]);
 
   const handleRefine = useCallback(async () => {
     if (!issue || refinePending) {
@@ -344,21 +292,11 @@ export function IssueDetailPage({ issueID }: { issueID: string }) {
 
     try {
       const updated = await refineIssue(issue.id, { raw });
-      setIssue(updated);
+      mutateIssue(updated, { revalidate: false });
       setRefineInput("");
       setActionError(null);
 
-      try {
-        const nextMap = await fetchMapData();
-        setMapData(nextMap);
-        setMapError(null);
-      } catch (caughtError) {
-        const message =
-          caughtError instanceof Error
-            ? caughtError.message
-            : "Unknown backend error";
-        setMapError(message);
-      }
+      mutateMap();
     } catch (caughtError) {
       const message =
         caughtError instanceof Error
@@ -368,7 +306,7 @@ export function IssueDetailPage({ issueID }: { issueID: string }) {
     } finally {
       setRefinePending(false);
     }
-  }, [issue, refineInput, refinePending]);
+  }, [issue, refineInput, refinePending, mutateIssue, mutateMap]);
 
   const shortcuts = useMemo(
     () =>
@@ -614,9 +552,9 @@ export function IssueDetailPage({ issueID }: { issueID: string }) {
 
           {!loading && issueError && (
             <div className="app-status-warning p-5">
-              {issueError === "issue not found"
+              {issueError.message === "issue not found"
                 ? `No issue exists for "${issueID}".`
-                : `Issue backend unavailable: ${issueError}`}
+                : `Issue backend unavailable: ${issueError.message}`}
             </div>
           )}
 
@@ -784,7 +722,7 @@ export function IssueDetailPage({ issueID }: { issueID: string }) {
 
                   {mapError && (
                     <div className="app-status-warning mt-5">
-                      Map context unavailable: {mapError}
+                      Map context unavailable: {mapError.message}
                     </div>
                   )}
 

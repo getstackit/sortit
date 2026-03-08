@@ -1,53 +1,14 @@
 "use client";
 
-import { useEffect, useState } from "react";
-import { apiURL } from "@/lib/api";
-import { getJSON } from "@/lib/http";
-
-type BackendHealth = {
-  name: string;
-  status: string;
-  timestamp: string;
-  uptime: string;
-};
+import { useBackendHealth } from "@/hooks/use-backend-health";
 
 export function BackendStatus() {
-  const [data, setData] = useState<BackendHealth | null>(null);
-  const [error, setError] = useState<string | null>(null);
-
-  useEffect(() => {
-    let cancelled = false;
-
-    async function load() {
-      try {
-        const payload = await getJSON<BackendHealth>(apiURL("/api/health"), {
-          cache: "no-store",
-        });
-        if (!cancelled) {
-          setData(payload);
-          setError(null);
-        }
-      } catch (caughtError) {
-        if (!cancelled) {
-          const message =
-            caughtError instanceof Error
-              ? caughtError.message
-              : "Unknown backend error";
-          setError(message);
-        }
-      }
-    }
-
-    load();
-    return () => {
-      cancelled = true;
-    };
-  }, []);
+  const { data, error } = useBackendHealth();
 
   if (error) {
     return (
       <div className="app-status-warning">
-        Backend unavailable: {error}
+        Backend unavailable: {error.message}
       </div>
     );
   }
