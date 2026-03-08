@@ -15,10 +15,37 @@ export type IssuePostRecord = {
   kind?: IssuePostKind;
 };
 
+export type IssueTagScore = {
+  tag: string;
+  relevance: number;
+};
+
+export type IssueSearchQuery = {
+  raw: string;
+  tags: IssueTagScore[];
+};
+
+export type SearchIssueRecord = {
+  id: string;
+  raw: string;
+  status: IssueStatus;
+  tags: IssueTagScore[];
+  semanticSimilarity: number;
+  factorSimilarity: number;
+  combinedSimilarity: number;
+  reason: string;
+};
+
+export type IssueSearchResponse = {
+  query: IssueSearchQuery;
+  relatedIssues: SearchIssueRecord[];
+};
+
 export type IssueRecord = {
   id: string;
   raw: string;
   tags: string[];
+  tagScores?: IssueTagScore[];
   createdBy: string;
   createdAt: string;
   status: IssueStatus;
@@ -51,6 +78,11 @@ type ProgressIssueInput = {
   createdBy?: string;
 };
 
+type SearchIssuesOptions = {
+  status?: IssueListStatus;
+  limit?: number;
+};
+
 export async function fetchIssues(
   status: IssueListStatus = "open",
   signal?: AbortSignal
@@ -76,6 +108,27 @@ export async function fetchIssue(
     cache: "no-store",
     signal,
   });
+}
+
+export async function searchIssues(
+  query: string,
+  options: SearchIssuesOptions = {},
+  signal?: AbortSignal
+): Promise<IssueSearchResponse> {
+  const params = new URLSearchParams();
+  params.set("q", query);
+  params.set("status", options.status ?? "open");
+  if (options.limit) {
+    params.set("limit", String(options.limit));
+  }
+
+  return getJSON<IssueSearchResponse>(
+    apiURL(`/api/v1/issues/search?${params.toString()}`),
+    {
+      cache: "no-store",
+      signal,
+    }
+  );
 }
 
 export async function createIssue(input: CreateIssueInput): Promise<IssueRecord> {

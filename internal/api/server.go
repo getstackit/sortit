@@ -32,6 +32,7 @@ type Server struct {
 	startedAt         time.Time
 	createIssue       commands.CreateIssueHandler
 	refineIssue       commands.RefineIssueHandler
+	progressIssue     commands.ProgressIssueHandler
 	closeIssue        commands.CloseIssueHandler
 	reopenIssue       commands.ReopenIssueHandler
 	loadSampleIssues  commands.LoadSampleIssuesHandler
@@ -39,6 +40,7 @@ type Server struct {
 	listIssues        queries.ListIssuesHandler
 	getIssue          queries.GetIssueHandler
 	compareIssues     queries.CompareIssuesHandler
+	searchIssues      queries.SearchIssuesHandler
 	listTags          queries.ListTagsHandler
 	getMap            queries.MapHandler
 	getMapEdges       queries.EdgeHandler
@@ -82,6 +84,7 @@ func (s *Server) Handler() http.Handler {
 		healthRoute := path.Join(prefix, "health")
 		issuesRoute := path.Join(prefix, "issues")
 		issuesCompareRoute := path.Join(prefix, "issues", "compare")
+		issuesSearchRoute := path.Join(prefix, "issues", "search")
 		issueItemSubtreeRoute := issueItemRoute(prefix)
 		tagsRoute := path.Join(prefix, "tags")
 		mapRoute := path.Join(prefix, "map")
@@ -93,6 +96,7 @@ func (s *Server) Handler() http.Handler {
 		apiRoutes[healthRoute] = struct{}{}
 		apiRoutes[issuesRoute] = struct{}{}
 		apiRoutes[issuesCompareRoute] = struct{}{}
+		apiRoutes[issuesSearchRoute] = struct{}{}
 		apiRoutes[issueItemSubtreeRoute] = struct{}{}
 		apiRoutes[tagsRoute] = struct{}{}
 		apiRoutes[mapRoute] = struct{}{}
@@ -104,6 +108,7 @@ func (s *Server) Handler() http.Handler {
 		apiMux.HandleFunc(healthRoute, s.handleHealth)
 		apiMux.HandleFunc(issuesRoute, s.handleIssues)
 		apiMux.HandleFunc(issuesCompareRoute, s.handleIssueCompare)
+		apiMux.HandleFunc(issuesSearchRoute, s.handleIssueSearch)
 		apiMux.HandleFunc(issueItemSubtreeRoute, s.handleIssueByID(issueItemSubtreeRoute))
 		apiMux.HandleFunc(tagsRoute, s.handleTags)
 		apiMux.HandleFunc(mapRoute, s.handleMap)
@@ -228,7 +233,8 @@ func NewServer(cfg ServerConfig) *Server {
 			Store:    store,
 			Enricher: enricher,
 		},
-		closeIssue: commands.CloseIssueHandler{Store: store},
+		progressIssue: commands.ProgressIssueHandler{Store: store},
+		closeIssue:    commands.CloseIssueHandler{Store: store},
 		reopenIssue: commands.ReopenIssueHandler{
 			Store: store,
 		},
@@ -239,9 +245,14 @@ func NewServer(cfg ServerConfig) *Server {
 		resetIssues: commands.ResetIssuesHandler{
 			Store: replaceable,
 		},
-		listIssues:        queries.ListIssuesHandler{Store: store},
-		getIssue:          queries.GetIssueHandler{Store: store},
-		compareIssues:     queries.CompareIssuesHandler{Store: store},
+		listIssues:    queries.ListIssuesHandler{Store: store},
+		getIssue:      queries.GetIssueHandler{Store: store},
+		compareIssues: queries.CompareIssuesHandler{Store: store},
+		searchIssues: queries.SearchIssuesHandler{
+			Analyzer: commandAnalyzer,
+			Catalog:  catalog,
+			Store:    store,
+		},
 		listTags:          queries.ListTagsHandler{Catalog: catalog},
 		getMap:            queries.MapHandler{IssueStore: store, Catalog: catalog},
 		getMapEdges:       queries.EdgeHandler{IssueStore: store, Catalog: catalog},

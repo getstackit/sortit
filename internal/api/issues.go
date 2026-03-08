@@ -33,6 +33,11 @@ type refineIssueRequest struct {
 	CreatedBy string `json:"createdBy,omitempty"`
 }
 
+type progressIssueRequest struct {
+	Raw       string `json:"raw"`
+	CreatedBy string `json:"createdBy,omitempty"`
+}
+
 type compareIssuesRequest struct {
 	IDs []string `json:"ids"`
 }
@@ -91,6 +96,52 @@ func (s *Server) handleIssueCompare(w http.ResponseWriter, r *http.Request) {
 			result.PairwiseEmbeddingSimilarity,
 		),
 	})
+}
+
+func (s *Server) handleIssueSearch(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		w.Header().Set("Allow", http.MethodGet)
+		http.Error(w, http.StatusText(http.StatusMethodNotAllowed), http.StatusMethodNotAllowed)
+		return
+	}
+
+	query := strings.TrimSpace(r.URL.Query().Get("q"))
+	if query == "" {
+		query = strings.TrimSpace(r.URL.Query().Get("query"))
+	}
+	if query == "" {
+		writeError(w, http.StatusBadRequest, "query is required")
+		return
+	}
+
+	filter, err := ParseIssueStatusFilter(r.URL.Query())
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "invalid status query")
+		return
+	}
+
+	limit, err := ParsePositiveIntQuery(r.URL.Query(), "limit")
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "invalid limit query")
+		return
+	}
+
+	searchLimit := 0
+	if limit != nil {
+		searchLimit = *limit
+	}
+
+	result, err := s.searchIssues.Handle(r.Context(), queries.SearchIssues{
+		Query:  query,
+		Limit:  searchLimit,
+		Status: filter,
+	})
+	if err != nil {
+		writeInternalError(w, r, "failed to search issues", err)
+		return
+	}
+
+	writeJSON(w, http.StatusOK, result)
 }
 
 func (s *Server) handleIssueByID(route string) http.HandlerFunc {
@@ -235,6 +286,35 @@ func (s *Server) handleIssueByID(route string) http.HandlerFunc {
 			}
 
 			writeJSON(w, http.StatusOK, result)
+		case "progress":
+			if r.Method != http.MethodPost {
+				w.Header().Set("Allow", http.MethodPost)
+				http.Error(w, http.StatusText(http.StatusMethodNotAllowed), http.StatusMethodNotAllowed)
+				return
+			}
+
+			request, err := decodeProgressIssueRequest(r)
+			if err != nil {
+				writeError(w, http.StatusBadRequest, err.Error())
+				return
+			}
+
+			progressed, err := s.progressIssue.Handle(r.Context(), commands.ProgressIssue{
+				ID:        id,
+				Raw:       request.Raw,
+				CreatedBy: request.CreatedBy,
+			})
+			if err != nil {
+				if errors.Is(err, issues.ErrNotFound) {
+					writeError(w, http.StatusNotFound, "issue not found")
+					return
+				}
+
+				writeInternalError(w, r, "failed to post progress", err)
+				return
+			}
+
+			writeJSON(w, http.StatusOK, progressed)
 		case "reopen":
 			if r.Method != http.MethodPost {
 				w.Header().Set("Allow", http.MethodPost)
@@ -382,6 +462,26 @@ func decodeRefineIssueRequest(r *http.Request) (refineIssueRequest, error) {
 	request.CreatedBy = strings.TrimSpace(request.CreatedBy)
 	if request.Raw == "" {
 		return refineIssueRequest{}, errors.New("raw is required")
+	}
+
+	return request, nil
+}
+
+func decodeProgressIssueRequest(r *http.Request) (progressIssueRequest, error) {
+	defer r.Body.Close()
+
+	decoder := json.NewDecoder(io.LimitReader(r.Body, 1<<20))
+	decoder.DisallowUnknownFields()
+
+	var request progressIssueRequest
+	if err := decoder.Decode(&request); err != nil {
+		return progressIssueRequest{}, errors.New("invalid request body")
+	}
+
+	request.Raw = strings.TrimSpace(request.Raw)
+	request.CreatedBy = strings.TrimSpace(request.CreatedBy)
+	if request.Raw == "" {
+		return progressIssueRequest{}, errors.New("raw is required")
 	}
 
 	return request, nil

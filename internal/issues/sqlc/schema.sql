@@ -18,6 +18,7 @@ CREATE TABLE issue_posts (
     created_by TEXT NOT NULL,
     created_at_unix_nano INTEGER NOT NULL,
     sequence INTEGER NOT NULL,
+    kind TEXT NOT NULL DEFAULT '',
     FOREIGN KEY(issue_id) REFERENCES issues(id) ON DELETE CASCADE,
     UNIQUE(issue_id, sequence)
 );

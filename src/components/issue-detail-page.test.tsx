@@ -1,6 +1,7 @@
 import type { ReactNode } from "react";
 import { render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
+import { SWRConfig } from "swr";
 import { IssueDetailPage } from "@/components/issue-detail-page";
 import {
   closeIssue,
@@ -102,7 +103,26 @@ function makeIssue(overrides: Partial<IssueRecord> = {}): IssueRecord {
   };
 }
 
+function renderIssueDetail(issueID: string) {
+  return render(
+    <SWRConfig
+      value={{
+        provider: () => new Map(),
+        dedupingInterval: 0,
+      }}
+    >
+      <IssueDetailPage issueID={issueID} />
+    </SWRConfig>
+  );
+}
+
 describe("IssueDetailPage", () => {
+  const originalClipboard = Object.getOwnPropertyDescriptor(
+    globalThis.navigator,
+    "clipboard"
+  );
+  const writeTextMock = vi.fn<() => Promise<void>>();
+
   beforeEach(() => {
     vi.mocked(fetchIssue).mockReset();
     vi.mocked(progressIssue).mockReset();
@@ -110,6 +130,15 @@ describe("IssueDetailPage", () => {
     vi.mocked(closeIssue).mockReset();
     vi.mocked(reopenIssue).mockReset();
     vi.mocked(fetchMapData).mockReset();
+    writeTextMock.mockReset();
+    writeTextMock.mockResolvedValue();
+
+    Object.defineProperty(globalThis.navigator, "clipboard", {
+      configurable: true,
+      value: {
+        writeText: writeTextMock,
+      },
+    });
 
     vi.mocked(fetchMapData).mockResolvedValue({
       issues: [],
@@ -118,10 +147,19 @@ describe("IssueDetailPage", () => {
     });
   });
 
+  afterEach(() => {
+    if (originalClipboard) {
+      Object.defineProperty(globalThis.navigator, "clipboard", originalClipboard);
+      return;
+    }
+
+    Reflect.deleteProperty(globalThis.navigator, "clipboard");
+  });
+
   it("renders the canonical summary separately from the discussion feed", async () => {
     vi.mocked(fetchIssue).mockResolvedValue(makeIssue());
 
-    render(<IssueDetailPage issueID="issue-123" />);
+    renderIssueDetail("issue-123");
 
     expect(await screen.findByText("Canonical summary")).toBeInTheDocument();
     expect(
@@ -163,7 +201,7 @@ describe("IssueDetailPage", () => {
     vi.mocked(fetchIssue).mockResolvedValue(initialIssue);
     vi.mocked(refineIssue).mockResolvedValue(refinedIssue);
 
-    render(<IssueDetailPage issueID="issue-123" />);
+    renderIssueDetail("issue-123");
 
     await screen.findByText("Canonical summary");
 
@@ -216,7 +254,7 @@ describe("IssueDetailPage", () => {
       })
     );
 
-    render(<IssueDetailPage issueID="issue-progress-label" />);
+    renderIssueDetail("issue-progress-label");
 
     expect(await screen.findByText("Progress update")).toBeInTheDocument();
     expect(screen.queryByText("Refinement 1")).not.toBeInTheDocument();
@@ -243,7 +281,7 @@ describe("IssueDetailPage", () => {
     vi.mocked(fetchIssue).mockResolvedValue(initialIssue);
     vi.mocked(progressIssue).mockResolvedValue(updatedIssue);
 
-    render(<IssueDetailPage issueID="issue-progress-post" />);
+    renderIssueDetail("issue-progress-post");
 
     await screen.findByText("Canonical summary");
 
@@ -262,6 +300,52 @@ describe("IssueDetailPage", () => {
     });
 
     expect(refineIssue).not.toHaveBeenCalled();
+  });
+
+  it("copies the canonical summary to the clipboard", async () => {
+    vi.mocked(fetchIssue).mockResolvedValue(
+      makeIssue({
+        id: "issue-copy-summary",
+        raw: "Copy this canonical summary exactly.",
+      })
+    );
+
+    renderIssueDetail("issue-copy-summary");
+
+    await screen.findByText("Canonical summary");
+
+    await userEvent.click(screen.getByRole("button", { name: "Copy summary" }));
+
+    await waitFor(() => {
+      expect(writeTextMock).toHaveBeenCalledWith("Copy this canonical summary exactly.");
+    });
+
+    expect(
+      screen.getByRole("button", { name: "Copied summary" })
+    ).toBeInTheDocument();
+  });
+
+  it("copies the current issue link to the clipboard", async () => {
+    vi.mocked(fetchIssue).mockResolvedValue(
+      makeIssue({
+        id: "issue-copy-link",
+      })
+    );
+    window.history.replaceState({}, "", "/issues/issue-copy-link");
+
+    renderIssueDetail("issue-copy-link");
+
+    await screen.findByText("Canonical summary");
+
+    await userEvent.click(screen.getByRole("button", { name: "Copy link" }));
+
+    await waitFor(() => {
+      expect(writeTextMock).toHaveBeenCalledWith(
+        "http://localhost:3000/issues/issue-copy-link"
+      );
+    });
+
+    expect(screen.getByRole("button", { name: "Copied link" })).toBeInTheDocument();
   });
 
   it("refinement numbering skips progress posts", async () => {
@@ -308,11 +392,122 @@ describe("IssueDetailPage", () => {
       })
     );
 
-    render(<IssueDetailPage issueID="issue-numbering" />);
+    renderIssueDetail("issue-numbering");
 
     expect(await screen.findByText("Initial report")).toBeInTheDocument();
     expect(screen.getByText("Refinement 1")).toBeInTheDocument();
     expect(screen.getByText("Progress update")).toBeInTheDocument();
     expect(screen.getByText("Refinement 2")).toBeInTheDocument();
+  });
+
+  it("promotes related context in the side rail", async () => {
+    vi.mocked(fetchIssue).mockResolvedValue(makeIssue({ id: "issue-related-context" }));
+    vi.mocked(fetchMapData).mockResolvedValue({
+      issues: [
+        {
+          id: "issue-related-context",
+          raw: "Current issue",
+          status: "open",
+          tags: [{ tag: "export", relevance: 0.9 }],
+          x: 0.5,
+          y: 0.5,
+        },
+        {
+          id: "issue-open-neighbor",
+          raw: "Open semantic neighbor",
+          status: "open",
+          tags: [{ tag: "export", relevance: 0.8 }],
+          x: 0.58,
+          y: 0.53,
+        },
+      ],
+      edges: [
+        {
+          source: "issue-related-context",
+          target: "issue-open-neighbor",
+          similarity: 0.81,
+        },
+      ],
+      clusters: [
+        {
+          label: "Export cluster",
+          centerX: 0.54,
+          centerY: 0.52,
+          radius: 0.15,
+          color: "#2563eb",
+        },
+      ],
+    });
+
+    renderIssueDetail("issue-related-context");
+
+    expect(await screen.findByText("Related context")).toBeInTheDocument();
+    expect(screen.getByText("Map context and nearby issues")).toBeInTheDocument();
+    expect(screen.getByText("Semantic neighbors")).toBeInTheDocument();
+    expect(screen.getByText("Clustered nearby")).toBeInTheDocument();
+  });
+
+  it("sorts semantic and clustered neighbors with open issues first", async () => {
+    vi.mocked(fetchIssue).mockResolvedValue(makeIssue({ id: "issue-sorting" }));
+    vi.mocked(fetchMapData).mockResolvedValue({
+      issues: [
+        {
+          id: "issue-sorting",
+          raw: "Current issue",
+          status: "open",
+          tags: [{ tag: "export", relevance: 0.9 }],
+          x: 0.5,
+          y: 0.5,
+        },
+        {
+          id: "issue-closed-neighbor",
+          raw: "Closed semantic neighbor",
+          status: "closed",
+          tags: [{ tag: "export", relevance: 0.88 }],
+          x: 0.55,
+          y: 0.51,
+        },
+        {
+          id: "issue-open-neighbor",
+          raw: "Open semantic neighbor",
+          status: "open",
+          tags: [{ tag: "export", relevance: 0.82 }],
+          x: 0.6,
+          y: 0.52,
+        },
+      ],
+      edges: [
+        {
+          source: "issue-sorting",
+          target: "issue-closed-neighbor",
+          similarity: 0.98,
+        },
+        {
+          source: "issue-sorting",
+          target: "issue-open-neighbor",
+          similarity: 0.8,
+        },
+      ],
+      clusters: [
+        {
+          label: "Export cluster",
+          centerX: 0.55,
+          centerY: 0.51,
+          radius: 0.16,
+          color: "#2563eb",
+        },
+      ],
+    });
+
+    renderIssueDetail("issue-sorting");
+
+    await screen.findByText("Semantic neighbors");
+
+    const openNeighbor = screen.getAllByText("Open semantic neighbor")[0];
+    const closedNeighbor = screen.getAllByText("Closed semantic neighbor")[0];
+
+    expect(
+      openNeighbor.compareDocumentPosition(closedNeighbor) & Node.DOCUMENT_POSITION_FOLLOWING
+    ).toBeTruthy();
   });
 });

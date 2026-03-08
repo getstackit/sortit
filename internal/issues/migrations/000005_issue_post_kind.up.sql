@@ -1,0 +1,1 @@
+ALTER TABLE issue_posts ADD COLUMN kind TEXT NOT NULL DEFAULT '';

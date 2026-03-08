@@ -39,6 +39,7 @@ import {
   type IssueRecord,
 } from "@/lib/issues";
 import { cn } from "@/lib/utils";
+import { TagRelevanceBars } from "@/components/tag-relevance-bars";
 import { entityStyle } from "@/lib/entity-colors";
 
 type SemanticNeighbor = {
@@ -110,6 +111,14 @@ function statusClasses(status: IssueRecord["status"]) {
   return status === "closed"
     ? "bg-slate-200 text-slate-700"
     : "bg-emerald-100 text-emerald-700";
+}
+
+function compareIssueStatus(left: { status: IssueRecord["status"] }, right: { status: IssueRecord["status"] }) {
+  if (left.status === right.status) {
+    return 0;
+  }
+
+  return left.status === "open" ? -1 : 1;
 }
 
 function postKind(post: IssuePostRecord): IssuePostKind {
@@ -418,7 +427,13 @@ export function IssueDetailPage({ issueID }: { issueID: string }) {
       })
       .filter((neighbor): neighbor is SemanticNeighbor => neighbor !== null);
 
-    neighbors.sort((left, right) => right.similarity - left.similarity);
+    neighbors.sort((left, right) => {
+      const statusOrder = compareIssueStatus(left.issue, right.issue);
+      if (statusOrder !== 0) {
+        return statusOrder;
+      }
+      return right.similarity - left.similarity;
+    });
     return neighbors.slice(0, 5);
   }, [currentMapIssue, mapEdges, mapIssueIndex]);
 
@@ -441,7 +456,13 @@ export function IssueDetailPage({ issueID }: { issueID: string }) {
       distance: distanceBetween(currentMapIssue, candidate),
     }));
 
-    ranked.sort((left, right) => left.distance - right.distance);
+    ranked.sort((left, right) => {
+      const statusOrder = compareIssueStatus(left.issue, right.issue);
+      if (statusOrder !== 0) {
+        return statusOrder;
+      }
+      return left.distance - right.distance;
+    });
     return ranked.slice(0, 5);
   }, [currentClusters, currentMapIssue, mapIssues]);
 
@@ -612,7 +633,7 @@ export function IssueDetailPage({ issueID }: { issueID: string }) {
               initial={{ opacity: 0, x: 20 }}
               animate={{ opacity: 1, x: 0 }}
               transition={{ duration: 0.25, ease: "easeOut" }}
-              className="grid gap-6 xl:grid-cols-[minmax(0,1fr)_19rem] 2xl:grid-cols-[minmax(0,1.15fr)_20rem]"
+              className="grid gap-6 xl:grid-cols-[minmax(0,1fr)_21rem] 2xl:grid-cols-[minmax(0,1.1fr)_24rem]"
             >
               <div className="space-y-6">
                 {actionError && <div className="app-status-warning">{actionError}</div>}
@@ -789,10 +810,151 @@ export function IssueDetailPage({ issueID }: { issueID: string }) {
               </div>
 
               <aside className="space-y-4 xl:sticky xl:top-6 xl:self-start">
+                {!mapError && currentMapIssue && (
+                  <section className="app-surface rounded-[1.75rem] p-6">
+                    <div className="flex flex-wrap items-start justify-between gap-3">
+                      <div>
+                        <p className="text-[11px] font-medium uppercase tracking-[0.18em] text-muted-foreground">
+                          Related context
+                        </p>
+                        <h3 className="mt-1 text-base font-semibold tracking-tight">
+                          Map context and nearby issues
+                        </h3>
+                        <p className="mt-1 text-sm text-muted-foreground">
+                          Open issues are surfaced ahead of closed ones.
+                        </p>
+                      </div>
+                      <div className="flex flex-wrap gap-1.5">
+                        <span className="app-chip">
+                          {currentClusters.length > 0
+                            ? `${currentClusters.length} cluster${currentClusters.length === 1 ? "" : "s"}`
+                            : "No cluster"}
+                        </span>
+                        {semanticNeighbors.length > 0 && (
+                          <span className="app-chip">
+                            {semanticNeighbors.length} semantic
+                          </span>
+                        )}
+                        {clusterNeighbors.length > 0 && (
+                          <span className="app-chip">
+                            {clusterNeighbors.length} nearby
+                          </span>
+                        )}
+                      </div>
+                    </div>
+
+                    <div className="app-subtle-surface mt-4 rounded-[1.25rem] p-3">
+                      <div className="relative aspect-[16/11] w-full overflow-hidden rounded-[1rem]">
+                        <IssueMapCanvas
+                          width={320}
+                          height={220}
+                          viewBox="0 0 320 220"
+                          preserveAspectRatio="xMidYMid meet"
+                          className="absolute inset-0 h-full w-full"
+                          role="img"
+                          aria-label={`Mini map centered on ${currentMapIssue.id}`}
+                          background={
+                            <rect
+                              x="0"
+                              y="0"
+                              width="320"
+                              height="220"
+                              rx="18"
+                              fill="currentColor"
+                              className="text-background"
+                            />
+                          }
+                          clusters={miniMapClusters}
+                          edges={miniMapEdges}
+                          nodes={miniMapNodes}
+                        />
+                      </div>
+
+                      <div className="mt-3 flex flex-wrap gap-2 text-[11px] text-muted-foreground">
+                        <span className="app-chip inline-flex items-center gap-1">
+                          <span className="size-2 rounded-full bg-slate-900" />
+                          Current
+                        </span>
+                        <span className="app-chip inline-flex items-center gap-1">
+                          <span className="size-2 rounded-full bg-blue-600" />
+                          Cluster
+                        </span>
+                        <span className="app-chip inline-flex items-center gap-1">
+                          <span className="size-2 rounded-full bg-amber-500" />
+                          Semantic
+                        </span>
+                      </div>
+                    </div>
+
+                    {semanticNeighbors.length > 0 && (
+                      <div className="mt-4">
+                        <p className="text-[11px] font-medium uppercase tracking-[0.14em] text-muted-foreground">
+                          Semantic neighbors
+                        </p>
+                        <div className="mt-2 space-y-1.5">
+                          {semanticNeighbors.map(({ issue: neighbor, similarity }) => (
+                            <Link
+                              key={neighbor.id}
+                              href={`/issues/${neighbor.id}`}
+                              className="group app-subtle-surface flex items-center gap-2 px-2.5 py-1.5 transition-colors hover:bg-accent/70"
+                            >
+                              <span className="size-2 rounded-full bg-amber-500" />
+                              <p className="min-w-0 flex-1 truncate text-xs">
+                                {formatIssueTitle(neighbor.raw, 44)}
+                              </p>
+                              <span
+                                className={cn(
+                                  "shrink-0 rounded-full px-1.5 py-0.5 text-[9px] font-medium leading-none",
+                                  statusClasses(neighbor.status)
+                                )}
+                              >
+                                {neighbor.status === "closed" ? "Closed" : "Open"}
+                              </span>
+                              <span className="text-[10px] tabular-nums text-muted-foreground">
+                                {(similarity * 100).toFixed(0)}%
+                              </span>
+                            </Link>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+
+                    {clusterNeighbors.length > 0 && (
+                      <div className="mt-4">
+                        <p className="text-[11px] font-medium uppercase tracking-[0.14em] text-muted-foreground">
+                          Clustered nearby
+                        </p>
+                        <div className="mt-2 space-y-1.5">
+                          {clusterNeighbors.map(({ issue: neighbor }) => (
+                            <Link
+                              key={neighbor.id}
+                              href={`/issues/${neighbor.id}`}
+                              className="group app-subtle-surface flex items-center gap-2 px-2.5 py-1.5 transition-colors hover:bg-accent/70"
+                            >
+                              <span className="size-2 rounded-full bg-blue-600" />
+                              <p className="min-w-0 flex-1 truncate text-xs">
+                                {formatIssueTitle(neighbor.raw, 44)}
+                              </p>
+                              <span
+                                className={cn(
+                                  "shrink-0 rounded-full px-1.5 py-0.5 text-[9px] font-medium leading-none",
+                                  statusClasses(neighbor.status)
+                                )}
+                              >
+                                {neighbor.status === "closed" ? "Closed" : "Open"}
+                              </span>
+                            </Link>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+                  </section>
+                )}
+
                 <section className="app-surface rounded-[1.5rem] p-5">
                   <div className="flex items-center gap-2">
                     <HashIcon className="size-4 text-muted-foreground" />
-                    <h3 className="text-sm font-semibold">Summary</h3>
+                    <h3 className="text-sm font-semibold">Issue details</h3>
                   </div>
 
                   <dl className="mt-4 space-y-4 text-sm">
@@ -832,6 +994,10 @@ export function IssueDetailPage({ issueID }: { issueID: string }) {
                         )}
                       </dd>
                     </div>
+
+                    {issue.tagScores && issue.tagScores.length > 0 && (
+                      <TagRelevanceBars tags={issue.tagScores} />
+                    )}
 
                     <div className="space-y-1">
                       <dt className="text-[11px] font-medium uppercase tracking-[0.14em] text-muted-foreground">
@@ -939,109 +1105,6 @@ export function IssueDetailPage({ issueID }: { issueID: string }) {
                     copies the current summary.
                   </p>
                 </section>
-
-                {!mapError && currentMapIssue && (
-                  <section className="app-surface rounded-[1.5rem] p-5">
-                    <div className="flex items-center justify-between gap-2">
-                      <h3 className="text-sm font-semibold">Map context</h3>
-                      <span className="app-chip">
-                        {currentClusters.length > 0
-                          ? `${currentClusters.length} cluster${currentClusters.length === 1 ? "" : "s"}`
-                          : "No cluster"}
-                      </span>
-                    </div>
-
-                    <div className="app-subtle-surface mt-4 rounded-[1.25rem] p-3">
-                      <div className="relative aspect-[16/11] w-full overflow-hidden rounded-[1rem]">
-                        <IssueMapCanvas
-                          width={320}
-                          height={220}
-                          viewBox="0 0 320 220"
-                          preserveAspectRatio="xMidYMid meet"
-                          className="absolute inset-0 h-full w-full"
-                          role="img"
-                          aria-label={`Mini map centered on ${currentMapIssue.id}`}
-                          background={
-                            <rect
-                              x="0"
-                              y="0"
-                              width="320"
-                              height="220"
-                              rx="18"
-                              fill="currentColor"
-                              className="text-background"
-                            />
-                          }
-                          clusters={miniMapClusters}
-                          edges={miniMapEdges}
-                          nodes={miniMapNodes}
-                        />
-                      </div>
-
-                      <div className="mt-3 flex flex-wrap gap-2 text-[11px] text-muted-foreground">
-                        <span className="app-chip inline-flex items-center gap-1">
-                          <span className="size-2 rounded-full bg-slate-900" />
-                          Current
-                        </span>
-                        <span className="app-chip inline-flex items-center gap-1">
-                          <span className="size-2 rounded-full bg-blue-600" />
-                          Cluster
-                        </span>
-                        <span className="app-chip inline-flex items-center gap-1">
-                          <span className="size-2 rounded-full bg-amber-500" />
-                          Semantic
-                        </span>
-                      </div>
-                    </div>
-
-                    {clusterNeighbors.length > 0 && (
-                      <div className="mt-4">
-                        <p className="text-[11px] font-medium uppercase tracking-[0.14em] text-muted-foreground">
-                          Clustered nearby
-                        </p>
-                        <div className="mt-2 space-y-1.5">
-                          {clusterNeighbors.map(({ issue: neighbor }) => (
-                            <Link
-                              key={neighbor.id}
-                              href={`/issues/${neighbor.id}`}
-                              className="group app-subtle-surface flex items-center gap-2 px-2.5 py-1.5 transition-colors hover:bg-accent/70"
-                            >
-                              <span className="size-2 rounded-full bg-blue-600" />
-                              <p className="min-w-0 flex-1 truncate text-xs">
-                                {formatIssueTitle(neighbor.raw, 40)}
-                              </p>
-                            </Link>
-                          ))}
-                        </div>
-                      </div>
-                    )}
-
-                    {semanticNeighbors.length > 0 && (
-                      <div className="mt-4">
-                        <p className="text-[11px] font-medium uppercase tracking-[0.14em] text-muted-foreground">
-                          Semantic neighbors
-                        </p>
-                        <div className="mt-2 space-y-1.5">
-                          {semanticNeighbors.map(({ issue: neighbor, similarity }) => (
-                            <Link
-                              key={neighbor.id}
-                              href={`/issues/${neighbor.id}`}
-                              className="group app-subtle-surface flex items-center gap-2 px-2.5 py-1.5 transition-colors hover:bg-accent/70"
-                            >
-                              <span className="size-2 rounded-full bg-amber-500" />
-                              <p className="min-w-0 flex-1 truncate text-xs">
-                                {formatIssueTitle(neighbor.raw, 40)}
-                              </p>
-                              <span className="text-[10px] tabular-nums text-muted-foreground">
-                                {(similarity * 100).toFixed(0)}%
-                              </span>
-                            </Link>
-                          ))}
-                        </div>
-                      </div>
-                    )}
-                  </section>
-                )}
 
                 {mapError && (
                   <div className="app-status-warning text-sm">

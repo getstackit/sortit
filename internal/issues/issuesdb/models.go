@@ -24,6 +24,7 @@ type IssuePost struct {
 	CreatedBy         string
 	CreatedAtUnixNano int64
 	Sequence          int64
+	Kind              string
 }
 
 type Metadata struct {

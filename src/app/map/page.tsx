@@ -21,6 +21,7 @@ import {
 } from "@/components/issue-map-canvas";
 import { AppSidebar } from "@/components/app-sidebar";
 import { SiteHeader } from "@/components/site-header";
+import { TagRelevanceBars } from "@/components/tag-relevance-bars";
 import { Switch } from "@/components/ui/switch";
 import {
   compareIssueEmbeddings,
@@ -1227,28 +1228,10 @@ function MapPageContent() {
                   </Link>
                 </div>
                 <div className="mt-5 space-y-2">
-                  <p className="text-[11px] font-medium text-muted-foreground">
-                    Tag Relevance
-                  </p>
-                  {activeIssue.tags.map(({ tag, relevance }) => (
-                    <div key={tag} className="flex items-center gap-2">
-                      <span className="w-20 text-[11px] text-muted-foreground">
-                        {tag}
-                      </span>
-                      <div className="h-1.5 flex-1 rounded-full bg-muted">
-                        <div
-                          className="h-full rounded-full"
-                          style={{
-                            width: `${relevance * 100}%`,
-                            backgroundColor: TAG_COLORS[tag] ?? "#94a3b8",
-                          }}
-                        />
-                      </div>
-                      <span className="w-8 text-right text-[11px] tabular-nums text-muted-foreground">
-                        {relevance.toFixed(1)}
-                      </span>
-                    </div>
-                  ))}
+                  <TagRelevanceBars
+                    tags={activeIssue.tags}
+                    colorFor={(tag) => TAG_COLORS[tag] ?? "#94a3b8"}
+                  />
                   {selectedId === activeIssue.id && selectedNeighbors.length > 0 && (
                     <div className="mt-5 space-y-1.5">
                       <p className="text-[11px] font-medium text-muted-foreground">

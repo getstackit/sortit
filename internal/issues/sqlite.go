@@ -26,7 +26,7 @@ import (
 const (
 	sqliteDriverName          = "sqlite"
 	issueSeqKey               = "next_issue_seq"
-	currentMigrationVersion   = 4
+	currentMigrationVersion   = 5
 	schemaMigrationsTableName = "schema_migrations"
 )
 
@@ -245,6 +245,60 @@ func (s *SQLiteStore) Refine(ctx context.Context, id string, input RefineInput) 
 		return Issue{}, fmt.Errorf("commit refine issue tx: %w", err)
 	}
 
+	return cloneIssues([]Issue{updated})[0], nil
+}
+
+func (s *SQLiteStore) ProgressPost(ctx context.Context, id string, input ProgressInput) (Issue, error) {
+	id = strings.TrimSpace(id)
+	if id == "" {
+		return Issue{}, ErrNotFound
+	}
+
+	raw := strings.TrimSpace(input.Raw)
+	if raw == "" {
+		return Issue{}, fmt.Errorf("raw is required")
+	}
+
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return Issue{}, fmt.Errorf("begin progress post tx: %w", err)
+	}
+	defer tx.Rollback()
+
+	qtx := s.queries.WithTx(tx)
+	current, err := s.getIssueWithDiscussion(ctx, qtx, id)
+	if err != nil {
+		return Issue{}, err
+	}
+
+	post := IssuePost{
+		ID:        issuePostID(id, len(current.Discussion)+1),
+		IssueID:   id,
+		Raw:       raw,
+		CreatedBy: defaultActor(input.CreatedBy),
+		CreatedAt: time.Now().UTC(),
+		Sequence:  len(current.Discussion) + 1,
+		Kind:      "progress",
+	}
+
+	if err := qtx.InsertIssuePost(ctx, issuesdb.InsertIssuePostParams{
+		ID:                post.ID,
+		IssueID:           post.IssueID,
+		Raw:               post.Raw,
+		CreatedBy:         post.CreatedBy,
+		CreatedAtUnixNano: post.CreatedAt.UnixNano(),
+		Sequence:          int64(post.Sequence),
+		Kind:              post.Kind,
+	}); err != nil {
+		return Issue{}, fmt.Errorf("insert progress post: %w", err)
+	}
+
+	if err := tx.Commit(); err != nil {
+		return Issue{}, fmt.Errorf("commit progress post tx: %w", err)
+	}
+
+	updated := current
+	updated.Discussion = append(cloneIssuePosts(current.Discussion), post)
 	return cloneIssues([]Issue{updated})[0], nil
 }
 
@@ -694,6 +748,7 @@ func issuePostFromQuery(row issuesdb.IssuePost) IssuePost {
 		CreatedBy: row.CreatedBy,
 		CreatedAt: time.Unix(0, row.CreatedAtUnixNano).UTC(),
 		Sequence:  int(row.Sequence),
+		Kind:      row.Kind,
 	}
 }
 
@@ -774,6 +829,7 @@ func insertIssuePosts(ctx context.Context, q *issuesdb.Queries, posts []IssuePos
 			CreatedBy:         strings.TrimSpace(post.CreatedBy),
 			CreatedAtUnixNano: post.CreatedAt.UTC().UnixNano(),
 			Sequence:          int64(post.Sequence),
+			Kind:              post.Kind,
 		}); err != nil {
 			return fmt.Errorf("insert issue post %q: %w", post.ID, err)
 		}

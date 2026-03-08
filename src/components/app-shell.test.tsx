@@ -51,4 +51,29 @@ describe("AppShell shortcuts", () => {
       expect(push).toHaveBeenCalledWith("/map");
     });
   });
+
+  it("runs page shortcuts like slash when not typing", async () => {
+    const focusSearch = vi.fn();
+
+    render(
+      <AppShell
+        sidebar={<div>Sidebar</div>}
+        shortcuts={[
+          {
+            key: "/",
+            description: "Focus semantic search",
+            action: focusSearch,
+          },
+        ]}
+      >
+        Body
+      </AppShell>
+    );
+
+    fireEvent.keyDown(window, { key: "/" });
+
+    await waitFor(() => {
+      expect(focusSearch).toHaveBeenCalled();
+    });
+  });
 });

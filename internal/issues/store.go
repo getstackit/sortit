@@ -30,7 +30,7 @@ type Issue struct {
 	ClosedAt   *time.Time     `json:"closedAt"`
 	ClosedBy   string         `json:"closedBy,omitempty"`
 	Discussion []IssuePost    `json:"discussion,omitempty"`
-	TagScores  []TagRelevance `json:"-"`
+	TagScores  []TagRelevance `json:"tagScores"`
 	Embedding  []float64      `json:"-"`
 }
 
@@ -41,6 +41,7 @@ type IssuePost struct {
 	CreatedBy string    `json:"createdBy"`
 	CreatedAt time.Time `json:"createdAt"`
 	Sequence  int       `json:"sequence"`
+	Kind      string    `json:"kind,omitempty"`
 }
 
 type Tag struct {
@@ -72,11 +73,17 @@ type RefineInput struct {
 	Embedding    []float64
 }
 
+type ProgressInput struct {
+	Raw       string
+	CreatedBy string
+}
+
 type Store interface {
 	List(context.Context) ([]Issue, error)
 	Get(context.Context, string) (Issue, error)
 	Create(context.Context, CreateInput) (Issue, error)
 	Refine(context.Context, string, RefineInput) (Issue, error)
+	ProgressPost(context.Context, string, ProgressInput) (Issue, error)
 	CloseIssue(context.Context, string, string) (Issue, error)
 	ReopenIssue(context.Context, string) (Issue, error)
 }
@@ -220,6 +227,47 @@ func (s *InMemoryStore) Refine(_ context.Context, id string, input RefineInput) 
 		issue.Embedding = copyEmbedding(input.Embedding)
 		issue.Discussion = cloneIssuePosts(discussion)
 
+		s.issues[index] = issue
+		s.discussion[id] = cloneIssuePosts(discussion)
+
+		return cloneIssues([]Issue{issue})[0], nil
+	}
+
+	return Issue{}, ErrNotFound
+}
+
+func (s *InMemoryStore) ProgressPost(_ context.Context, id string, input ProgressInput) (Issue, error) {
+	id = strings.TrimSpace(id)
+	if id == "" {
+		return Issue{}, ErrNotFound
+	}
+
+	raw := strings.TrimSpace(input.Raw)
+	if raw == "" {
+		return Issue{}, fmt.Errorf("raw is required")
+	}
+
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	for index, issue := range s.issues {
+		if issue.ID != id {
+			continue
+		}
+
+		discussion := cloneIssuePosts(s.discussion[id])
+		post := IssuePost{
+			ID:        issuePostID(id, len(discussion)+1),
+			IssueID:   id,
+			Raw:       raw,
+			CreatedBy: defaultActor(input.CreatedBy),
+			CreatedAt: time.Now().UTC(),
+			Sequence:  len(discussion) + 1,
+			Kind:      "progress",
+		}
+		discussion = append(discussion, post)
+
+		issue.Discussion = cloneIssuePosts(discussion)
 		s.issues[index] = issue
 		s.discussion[id] = cloneIssuePosts(discussion)
 
@@ -405,6 +453,7 @@ func cloneIssuePosts(input []IssuePost) []IssuePost {
 			CreatedBy: post.CreatedBy,
 			CreatedAt: post.CreatedAt,
 			Sequence:  post.Sequence,
+			Kind:      post.Kind,
 		}
 	}
 	return items

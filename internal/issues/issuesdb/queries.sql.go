@@ -28,21 +28,21 @@ func (q *Queries) CloseIssue(ctx context.Context, arg CloseIssueParams) error {
 	return err
 }
 
-const deleteAllIssues = `-- name: DeleteAllIssues :exec
-DELETE FROM issues
-`
-
-func (q *Queries) DeleteAllIssues(ctx context.Context) error {
-	_, err := q.db.ExecContext(ctx, deleteAllIssues)
-	return err
-}
-
 const deleteAllIssuePosts = `-- name: DeleteAllIssuePosts :exec
 DELETE FROM issue_posts
 `
 
 func (q *Queries) DeleteAllIssuePosts(ctx context.Context) error {
 	_, err := q.db.ExecContext(ctx, deleteAllIssuePosts)
+	return err
+}
+
+const deleteAllIssues = `-- name: DeleteAllIssues :exec
+DELETE FROM issues
+`
+
+func (q *Queries) DeleteAllIssues(ctx context.Context) error {
+	_, err := q.db.ExecContext(ctx, deleteAllIssues)
 	return err
 }
 
@@ -68,43 +68,6 @@ func (q *Queries) GetIssue(ctx context.Context, id string) (Issue, error) {
 		&i.EmbeddingJson,
 	)
 	return i, err
-}
-
-const listIssuePosts = `-- name: ListIssuePosts :many
-SELECT id, issue_id, raw, created_by, created_at_unix_nano, sequence
-FROM issue_posts
-WHERE issue_id = ?
-ORDER BY sequence ASC, created_at_unix_nano ASC, id ASC
-`
-
-func (q *Queries) ListIssuePosts(ctx context.Context, issueID string) ([]IssuePost, error) {
-	rows, err := q.db.QueryContext(ctx, listIssuePosts, issueID)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	var items []IssuePost
-	for rows.Next() {
-		var i IssuePost
-		if err := rows.Scan(
-			&i.ID,
-			&i.IssueID,
-			&i.Raw,
-			&i.CreatedBy,
-			&i.CreatedAtUnixNano,
-			&i.Sequence,
-		); err != nil {
-			return nil, err
-		}
-		items = append(items, i)
-	}
-	if err := rows.Close(); err != nil {
-		return nil, err
-	}
-	if err := rows.Err(); err != nil {
-		return nil, err
-	}
-	return items, nil
 }
 
 const getMetadataValue = `-- name: GetMetadataValue :one
@@ -171,8 +134,9 @@ INSERT INTO issue_posts (
     raw,
     created_by,
     created_at_unix_nano,
-    sequence
-) VALUES (?, ?, ?, ?, ?, ?)
+    sequence,
+    kind
+) VALUES (?, ?, ?, ?, ?, ?, ?)
 `
 
 type InsertIssuePostParams struct {
@@ -182,6 +146,7 @@ type InsertIssuePostParams struct {
 	CreatedBy         string
 	CreatedAtUnixNano int64
 	Sequence          int64
+	Kind              string
 }
 
 func (q *Queries) InsertIssuePost(ctx context.Context, arg InsertIssuePostParams) error {
@@ -192,8 +157,47 @@ func (q *Queries) InsertIssuePost(ctx context.Context, arg InsertIssuePostParams
 		arg.CreatedBy,
 		arg.CreatedAtUnixNano,
 		arg.Sequence,
+		arg.Kind,
 	)
 	return err
+}
+
+const listIssuePosts = `-- name: ListIssuePosts :many
+SELECT id, issue_id, raw, created_by, created_at_unix_nano, sequence, kind
+FROM issue_posts
+WHERE issue_id = ?
+ORDER BY sequence ASC, created_at_unix_nano ASC, id ASC
+`
+
+func (q *Queries) ListIssuePosts(ctx context.Context, issueID string) ([]IssuePost, error) {
+	rows, err := q.db.QueryContext(ctx, listIssuePosts, issueID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []IssuePost
+	for rows.Next() {
+		var i IssuePost
+		if err := rows.Scan(
+			&i.ID,
+			&i.IssueID,
+			&i.Raw,
+			&i.CreatedBy,
+			&i.CreatedAtUnixNano,
+			&i.Sequence,
+			&i.Kind,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
 }
 
 const listIssues = `-- name: ListIssues :many
@@ -236,19 +240,6 @@ func (q *Queries) ListIssues(ctx context.Context) ([]Issue, error) {
 	return items, nil
 }
 
-const reopenIssue = `-- name: ReopenIssue :exec
-UPDATE issues
-SET status = 'open',
-    closed_at_unix_nano = 0,
-    closed_by = ''
-WHERE id = ?
-`
-
-func (q *Queries) ReopenIssue(ctx context.Context, id string) error {
-	_, err := q.db.ExecContext(ctx, reopenIssue, id)
-	return err
-}
-
 const listTags = `-- name: ListTags :many
 SELECT name, description, created_at_unix_nano, embedding_json
 FROM tags
@@ -283,19 +274,16 @@ func (q *Queries) ListTags(ctx context.Context) ([]Tag, error) {
 	return items, nil
 }
 
-const updateMetadataValue = `-- name: UpdateMetadataValue :exec
-UPDATE metadata
-SET value = ?
-WHERE key = ?
+const reopenIssue = `-- name: ReopenIssue :exec
+UPDATE issues
+SET status = 'open',
+    closed_at_unix_nano = 0,
+    closed_by = ''
+WHERE id = ?
 `
 
-type UpdateMetadataValueParams struct {
-	Value string
-	Key   string
-}
-
-func (q *Queries) UpdateMetadataValue(ctx context.Context, arg UpdateMetadataValueParams) error {
-	_, err := q.db.ExecContext(ctx, updateMetadataValue, arg.Value, arg.Key)
+func (q *Queries) ReopenIssue(ctx context.Context, id string) error {
+	_, err := q.db.ExecContext(ctx, reopenIssue, id)
 	return err
 }
 
@@ -324,6 +312,22 @@ func (q *Queries) UpdateIssueRefinement(ctx context.Context, arg UpdateIssueRefi
 		arg.EmbeddingJson,
 		arg.ID,
 	)
+	return err
+}
+
+const updateMetadataValue = `-- name: UpdateMetadataValue :exec
+UPDATE metadata
+SET value = ?
+WHERE key = ?
+`
+
+type UpdateMetadataValueParams struct {
+	Value string
+	Key   string
+}
+
+func (q *Queries) UpdateMetadataValue(ctx context.Context, arg UpdateMetadataValueParams) error {
+	_, err := q.db.ExecContext(ctx, updateMetadataValue, arg.Value, arg.Key)
 	return err
 }
 

@@ -5,8 +5,12 @@ import (
 	"errors"
 	"math"
 	"sort"
+	"strings"
 
+	"splat/internal/ai"
 	"splat/internal/issues"
+	issuemap "splat/internal/map"
+	"splat/internal/services"
 )
 
 type IssueStatusFilter string
@@ -83,6 +87,58 @@ func (h CompareIssuesHandler) Handle(ctx context.Context, input CompareIssues) (
 		AverageEmbeddingSimilarity:  average,
 		PairwiseEmbeddingSimilarity: pairs,
 	}, nil
+}
+
+type SearchIssues struct {
+	Query  string
+	Limit  int
+	Status IssueStatusFilter
+}
+
+type SearchIssuesHandler struct {
+	Analyzer *ai.Analyzer
+	Catalog  *services.CatalogService
+	Store    issues.Store
+}
+
+func (h SearchIssuesHandler) Handle(ctx context.Context, input SearchIssues) (issuemap.SearchResponse, error) {
+	query := strings.TrimSpace(input.Query)
+	if query == "" {
+		return issuemap.SearchResponse{}, errors.New("query is required")
+	}
+	if input.Status == "" {
+		input.Status = IssueStatusFilterOpen
+	}
+
+	taxonomy, err := h.Catalog.IssueTaxonomy(ctx, nil)
+	if err != nil {
+		return issuemap.SearchResponse{}, err
+	}
+
+	analyzed, err := h.Analyzer.AnalyzeIssueData(ctx, query, taxonomy)
+	if err != nil {
+		return issuemap.SearchResponse{}, err
+	}
+
+	storeIssues, err := h.Store.List(ctx)
+	if err != nil {
+		return issuemap.SearchResponse{}, err
+	}
+	storeIssues = FilterIssuesByStatus(storeIssues, input.Status)
+
+	storeTags, err := h.Catalog.StoredTags(ctx)
+	if err != nil {
+		return issuemap.SearchResponse{}, err
+	}
+
+	return issuemap.SearchFromQueryWithTags(
+		storeIssues,
+		storeTags,
+		query,
+		services.IssueTagScoresFromAnalysis(analyzed.Tags),
+		services.Float32VectorToFloat64(analyzed.Embedding.Vector),
+		input.Limit,
+	), nil
 }
 
 func FilterIssuesByStatus(items []issues.Issue, filter IssueStatusFilter) []issues.Issue {

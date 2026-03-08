@@ -12,6 +12,7 @@ import (
 	"testing"
 	"time"
 
+	"splat/internal/ai"
 	"splat/internal/issues"
 	issuemap "splat/internal/map"
 )
@@ -33,6 +34,10 @@ func (s failingIssueStore) Create(context.Context, issues.CreateInput) (issues.I
 }
 
 func (s failingIssueStore) Refine(context.Context, string, issues.RefineInput) (issues.Issue, error) {
+	return issues.Issue{}, nil
+}
+
+func (s failingIssueStore) ProgressPost(context.Context, string, issues.ProgressInput) (issues.Issue, error) {
 	return issues.Issue{}, nil
 }
 
@@ -556,6 +561,148 @@ func TestIssuesEndpointExploresIssue(t *testing.T) {
 	}
 	if len(payload.Opportunities[0].SharedTags) == 0 {
 		t.Fatalf("expected opportunity shared tags, got %+v", payload.Opportunities[0])
+	}
+}
+
+func TestIssuesEndpointSearchesIssues(t *testing.T) {
+	store := newSQLiteIssueStore(t, nil)
+	if err := store.UpsertTags(context.Background(), []issues.Tag{
+		{Name: "frontend", Embedding: []float64{1, 0, 0}},
+		{Name: "improvement", Embedding: []float64{0.8, 0.2, 0}},
+		{Name: "backend", Embedding: []float64{0, 1, 0}},
+	}); err != nil {
+		t.Fatalf("seed tags: %v", err)
+	}
+
+	if err := store.Replace(context.Background(), []issues.Issue{
+		{
+			ID:        "issue-frontend",
+			Raw:       "Frontend polish for the issue detail page",
+			CreatedBy: "Casey",
+			CreatedAt: issues.SeedIssues()[0].CreatedAt,
+			Status:    issues.StatusOpen,
+			TagScores: []issues.TagRelevance{
+				{Tag: "frontend", Relevance: 0.95},
+				{Tag: "improvement", Relevance: 0.86},
+			},
+			Embedding: []float64{1, 0, 0},
+		},
+		{
+			ID:        "issue-ui",
+			Raw:       "UI cleanup for issue cards and spacing",
+			CreatedBy: "Casey",
+			CreatedAt: issues.SeedIssues()[1].CreatedAt,
+			Status:    issues.StatusOpen,
+			TagScores: []issues.TagRelevance{
+				{Tag: "frontend", Relevance: 0.74},
+				{Tag: "improvement", Relevance: 0.71},
+			},
+			Embedding: []float64{0.86, 0.14, 0},
+		},
+		{
+			ID:        "issue-backend",
+			Raw:       "Backend queue for async enrichment",
+			CreatedBy: "Casey",
+			CreatedAt: issues.SeedIssues()[2].CreatedAt,
+			Status:    issues.StatusOpen,
+			TagScores: []issues.TagRelevance{
+				{Tag: "backend", Relevance: 0.93},
+			},
+			Embedding: []float64{0, 1, 0},
+		},
+		{
+			ID:        "issue-closed",
+			Raw:       "Closed frontend cleanup follow-up",
+			CreatedBy: "Casey",
+			CreatedAt: issues.SeedIssues()[3].CreatedAt,
+			Status:    issues.StatusClosed,
+			TagScores: []issues.TagRelevance{
+				{Tag: "frontend", Relevance: 0.97},
+			},
+			Embedding: []float64{1, 0, 0},
+		},
+	}); err != nil {
+		t.Fatalf("seed store: %v", err)
+	}
+
+	server := NewServer(ServerConfig{
+		CORSOrigins: []string{"http://localhost:3000"},
+		APIPrefixes: []string{"/api"},
+		Analyzer: ai.NewAnalyzer(&fakeTagger{
+			scores: []ai.TagScore{
+				{Tag: "frontend", Relevance: 0.96},
+				{Tag: "improvement", Relevance: 0.79},
+			},
+		}, &fakeEmbedder{
+			result: ai.EmbeddingResult{
+				Vector: []float32{1, 0, 0},
+				Info: ai.EmbeddingInfo{
+					Dimensions:          3,
+					Preview:             []float32{1, 0, 0},
+					ChunkCount:          1,
+					EstimatedTokenCount: 3,
+					PooledFromChunks:    false,
+				},
+			},
+		}),
+		IssueStore: store,
+	})
+
+	req := httptest.NewRequest(http.MethodGet, "/api/issues/search?q=front%20end%20changes&limit=2", nil)
+	rec := httptest.NewRecorder()
+	server.Handler().ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200 for issue search, got %d", rec.Code)
+	}
+
+	var payload issuemap.SearchResponse
+	if err := json.NewDecoder(rec.Body).Decode(&payload); err != nil {
+		t.Fatalf("decode search response: %v", err)
+	}
+
+	if payload.Query.Raw != "front end changes" {
+		t.Fatalf("expected query echo, got %q", payload.Query.Raw)
+	}
+	if len(payload.Query.Tags) < 2 || payload.Query.Tags[0].Tag != "frontend" {
+		t.Fatalf("expected query tags in response, got %+v", payload.Query.Tags)
+	}
+	if len(payload.RelatedIssues) != 2 {
+		t.Fatalf("expected 2 related issues, got %d", len(payload.RelatedIssues))
+	}
+	if payload.RelatedIssues[0].ID != "issue-frontend" {
+		t.Fatalf("expected issue-frontend first, got %q", payload.RelatedIssues[0].ID)
+	}
+	if payload.RelatedIssues[1].ID != "issue-ui" {
+		t.Fatalf("expected issue-ui second, got %q", payload.RelatedIssues[1].ID)
+	}
+	for _, item := range payload.RelatedIssues {
+		if item.Status != issues.StatusOpen {
+			t.Fatalf("expected only open issues in search results, got %+v", payload.RelatedIssues)
+		}
+	}
+}
+
+func TestIssuesEndpointSearchRequiresQuery(t *testing.T) {
+	server := NewServer(ServerConfig{
+		CORSOrigins: []string{"http://localhost:3000"},
+		APIPrefixes: []string{"/api"},
+	})
+
+	req := httptest.NewRequest(http.MethodGet, "/api/issues/search?limit=2", nil)
+	rec := httptest.NewRecorder()
+	server.Handler().ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("expected 400 for missing query, got %d", rec.Code)
+	}
+
+	var payload errorResponse
+	if err := json.NewDecoder(rec.Body).Decode(&payload); err != nil {
+		t.Fatalf("decode error response: %v", err)
+	}
+	if payload.Error != "query is required" {
+		t.Fatalf("expected query error, got %q", payload.Error)
 	}
 }
 

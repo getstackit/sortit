@@ -53,6 +53,23 @@ func NewHandler(cfg ServerConfig) http.Handler {
 	)
 
 	s.AddTool(
+		mcp.NewTool("search_issues",
+			mcp.WithDescription("Search stored Splat issues from arbitrary text. Returns the most related issues using a blend of semantic similarity and tag-factor relevance."),
+			mcp.WithString("query",
+				mcp.Required(),
+				mcp.Description("The search text, page description, or other freeform query to match against stored issues."),
+			),
+			mcp.WithNumber("limit",
+				mcp.Description("Maximum number of related issues to return. Defaults to 8."),
+			),
+			mcp.WithString("status",
+				mcp.Description("Optional issue status filter: open, closed, or all. Defaults to open."),
+			),
+		),
+		h.handleSearchIssues,
+	)
+
+	s.AddTool(
 		mcp.NewTool("get_issue",
 			mcp.WithDescription("Get a Splat issue by ID."),
 			mcp.WithString("id",
@@ -178,6 +195,53 @@ func (h *handlers) handleGetIssue(ctx context.Context, req mcp.CallToolRequest) 
 	}
 
 	result, err := mcp.NewToolResultJSON(issue)
+	if err != nil {
+		return mcp.NewToolResultError(fmt.Sprintf("failed to encode response: %v", err)), nil
+	}
+	return result, nil
+}
+
+func (h *handlers) handleSearchIssues(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+	query, err := req.RequireString("query")
+	if err != nil {
+		return mcp.NewToolResultError("query is required"), nil
+	}
+
+	query = strings.TrimSpace(query)
+	if query == "" {
+		return mcp.NewToolResultError("query is required"), nil
+	}
+
+	limit := req.GetInt("limit", 8)
+	if limit <= 0 {
+		return mcp.NewToolResultError("limit must be greater than 0"), nil
+	}
+
+	status := strings.ToLower(strings.TrimSpace(req.GetString("status", "open")))
+	switch status {
+	case "", "open":
+		status = "open"
+	case "closed", "all":
+	default:
+		return mcp.NewToolResultError("status must be one of: open, closed, all"), nil
+	}
+
+	queryString := url.Values{}
+	queryString.Set("q", query)
+	if limit != 8 {
+		queryString.Set("limit", strconv.Itoa(limit))
+	}
+	if status != "open" {
+		queryString.Set("status", status)
+	}
+
+	var response issuemap.SearchResponse
+	err = h.doJSONRequest(ctx, http.MethodGet, "/issues/search?"+queryString.Encode(), nil, &response)
+	if err != nil {
+		return mcp.NewToolResultError(err.Error()), nil
+	}
+
+	result, err := mcp.NewToolResultJSON(response)
 	if err != nil {
 		return mcp.NewToolResultError(fmt.Sprintf("failed to encode response: %v", err)), nil
 	}

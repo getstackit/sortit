@@ -55,6 +55,23 @@ func (h RefineIssueHandler) Handle(ctx context.Context, input RefineIssue) (issu
 	return h.Store.Refine(ctx, input.ID, enriched)
 }
 
+type ProgressIssue struct {
+	ID        string
+	Raw       string
+	CreatedBy string
+}
+
+type ProgressIssueHandler struct {
+	Store issues.Store
+}
+
+func (h ProgressIssueHandler) Handle(ctx context.Context, input ProgressIssue) (issues.Issue, error) {
+	return h.Store.ProgressPost(ctx, input.ID, issues.ProgressInput{
+		Raw:       input.Raw,
+		CreatedBy: input.CreatedBy,
+	})
+}
+
 type CloseIssue struct {
 	ID       string
 	ClosedBy string

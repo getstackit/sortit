@@ -174,6 +174,101 @@ func TestHandleGetIssueNotFound(t *testing.T) {
 	}
 }
 
+func TestHandleSearchIssues(t *testing.T) {
+	t.Parallel()
+
+	expected := issuemap.SearchResponse{
+		Query: issuemap.SearchQuery{
+			Raw: "front end changes",
+			Tags: []issuemap.TagRelevance{
+				{Tag: "frontend", Relevance: 0.96},
+			},
+		},
+		RelatedIssues: []issuemap.RelatedIssue{
+			{
+				ID:                 "issue-000011",
+				Raw:                "Make related issues and map context more prominent",
+				Status:             issues.StatusOpen,
+				SemanticSimilarity: 0.81,
+				FactorSimilarity:   0.74,
+				CombinedSimilarity: 0.78,
+				Reason:             "Shared factor relevance in frontend",
+			},
+		},
+	}
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodGet {
+			t.Fatalf("expected GET, got %s", r.Method)
+		}
+		if r.URL.Path != "/issues/search" {
+			t.Fatalf("expected /issues/search path, got %s", r.URL.Path)
+		}
+		if got := r.URL.Query().Get("q"); got != expected.Query.Raw {
+			t.Fatalf("expected q %q, got %q", expected.Query.Raw, got)
+		}
+		if got := r.URL.Query().Get("limit"); got != "3" {
+			t.Fatalf("expected limit 3, got %q", got)
+		}
+		if got := r.URL.Query().Get("status"); got != "all" {
+			t.Fatalf("expected status all, got %q", got)
+		}
+
+		w.Header().Set("Content-Type", "application/json")
+		if err := json.NewEncoder(w).Encode(expected); err != nil {
+			t.Fatalf("encode response: %v", err)
+		}
+	}))
+	defer server.Close()
+
+	handler := &handlers{
+		baseURL: server.URL,
+		client:  server.Client(),
+	}
+
+	result, err := handler.handleSearchIssues(context.Background(), toolRequest(map[string]any{
+		"query":  expected.Query.Raw,
+		"limit":  3,
+		"status": "all",
+	}))
+	if err != nil {
+		t.Fatalf("handleSearchIssues returned error: %v", err)
+	}
+	if result.IsError {
+		t.Fatalf("expected success result, got error: %s", firstText(result))
+	}
+
+	response, ok := result.StructuredContent.(issuemap.SearchResponse)
+	if !ok {
+		t.Fatalf("expected issuemap.SearchResponse structured content, got %T", result.StructuredContent)
+	}
+	if len(response.RelatedIssues) != 1 || response.RelatedIssues[0].ID != "issue-000011" {
+		t.Fatalf("unexpected related issues: %+v", response.RelatedIssues)
+	}
+	if firstText(result) == "" {
+		t.Fatal("expected text fallback in MCP result")
+	}
+}
+
+func TestHandleSearchIssuesRejectsInvalidStatus(t *testing.T) {
+	t.Parallel()
+
+	handler := &handlers{}
+	result, err := handler.handleSearchIssues(context.Background(), toolRequest(map[string]any{
+		"query":  "front end changes",
+		"status": "recent",
+	}))
+	if err != nil {
+		t.Fatalf("handleSearchIssues returned error: %v", err)
+	}
+	if !result.IsError {
+		t.Fatal("expected MCP error result")
+	}
+	if !strings.Contains(firstText(result), "status must be one of") {
+		t.Fatalf("expected status validation error, got %q", firstText(result))
+	}
+}
+
 func TestHandleRefineIssue(t *testing.T) {
 	t.Parallel()
 
