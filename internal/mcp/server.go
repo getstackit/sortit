@@ -82,6 +82,24 @@ func NewHandler(cfg ServerConfig) http.Handler {
 	)
 
 	s.AddTool(
+		mcp.NewTool("progress_issue",
+			mcp.WithDescription("Post a progress update on an existing Splat issue. Progress updates report work done toward resolving an issue without changing the canonical summary, tags, or semantic similarity."),
+			mcp.WithString("id",
+				mcp.Required(),
+				mcp.Description("The issue ID to post progress on, for example issue-000003."),
+			),
+			mcp.WithString("raw",
+				mcp.Required(),
+				mcp.Description("The progress update text describing work done toward resolving the issue."),
+			),
+			mcp.WithString("created_by",
+				mcp.Description("Who authored the progress update. Defaults to 'Claude'."),
+			),
+		),
+		h.handleProgressIssue,
+	)
+
+	s.AddTool(
 		mcp.NewTool("close_issue",
 			mcp.WithDescription("Close a Splat issue by ID."),
 			mcp.WithString("id",
@@ -190,6 +208,44 @@ func (h *handlers) handleRefineIssue(ctx context.Context, req mcp.CallToolReques
 
 	var issue issues.Issue
 	err = h.doJSONRequest(ctx, http.MethodPost, "/issues/"+url.PathEscape(id)+"/refine", map[string]string{
+		"raw":       raw,
+		"createdBy": createdBy,
+	}, &issue)
+	if err != nil {
+		return mcp.NewToolResultError(err.Error()), nil
+	}
+
+	result, err := mcp.NewToolResultJSON(issue)
+	if err != nil {
+		return mcp.NewToolResultError(fmt.Sprintf("failed to encode response: %v", err)), nil
+	}
+	return result, nil
+}
+
+func (h *handlers) handleProgressIssue(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+	id, err := req.RequireString("id")
+	if err != nil {
+		return mcp.NewToolResultError("id is required"), nil
+	}
+
+	raw, err := req.RequireString("raw")
+	if err != nil {
+		return mcp.NewToolResultError("raw is required"), nil
+	}
+
+	id = strings.TrimSpace(id)
+	raw = strings.TrimSpace(raw)
+	if id == "" {
+		return mcp.NewToolResultError("id is required"), nil
+	}
+	if raw == "" {
+		return mcp.NewToolResultError("raw is required"), nil
+	}
+
+	createdBy := req.GetString("created_by", "Claude")
+
+	var issue issues.Issue
+	err = h.doJSONRequest(ctx, http.MethodPost, "/issues/"+url.PathEscape(id)+"/progress", map[string]string{
 		"raw":       raw,
 		"createdBy": createdBy,
 	}, &issue)

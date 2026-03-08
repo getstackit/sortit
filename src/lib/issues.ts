@@ -3,6 +3,7 @@ import { getJSON, postJSON } from "@/lib/http";
 
 export type IssueStatus = "open" | "closed";
 export type IssueListStatus = IssueStatus | "all";
+export type IssuePostKind = "report" | "refinement" | "progress";
 
 export type IssuePostRecord = {
   id: string;
@@ -11,6 +12,7 @@ export type IssuePostRecord = {
   createdBy: string;
   createdAt: string;
   sequence: number;
+  kind?: IssuePostKind;
 };
 
 export type IssueRecord = {
@@ -40,6 +42,11 @@ type CloseIssueInput = {
 };
 
 type RefineIssueInput = {
+  raw: string;
+  createdBy?: string;
+};
+
+type ProgressIssueInput = {
   raw: string;
   createdBy?: string;
 };
@@ -98,6 +105,16 @@ export async function refineIssue(
 ): Promise<IssueRecord> {
   return postJSON<IssueRecord, RefineIssueInput>(
     apiURL(`/api/v1/issues/${encodeURIComponent(id)}/refine`),
+    input
+  );
+}
+
+export async function progressIssue(
+  id: string,
+  input: ProgressIssueInput
+): Promise<IssueRecord> {
+  return postJSON<IssueRecord, ProgressIssueInput>(
+    apiURL(`/api/v1/issues/${encodeURIComponent(id)}/progress`),
     input
   );
 }

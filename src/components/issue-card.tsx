@@ -69,6 +69,24 @@ export function IssueCard({ issue, href, className, compact }: IssueCardProps) {
               {tag}
             </span>
           ))}
+          {(() => {
+            const progressCount = (issue.discussion ?? []).filter(
+              (p) => p.kind === "progress"
+            ).length;
+            if (progressCount > 0) {
+              return (
+                <span
+                  className={cn(
+                    "rounded-full bg-blue-100 font-medium text-blue-700",
+                    compact ? "px-1.5 py-px text-[10px]" : "px-2 py-0.5 text-[11px]"
+                  )}
+                >
+                  {progressCount} progress
+                </span>
+              );
+            }
+            return null;
+          })()}
         </div>
         <span className={cn(
           "ml-auto tracking-wide text-muted-foreground/40 transition-colors group-hover/card:text-muted-foreground/60",

@@ -10,6 +10,7 @@ import {
   useState,
 } from "react";
 import type { MouseEvent as ReactMouseEvent } from "react";
+import Link from "next/link";
 import { usePathname, useSearchParams } from "next/navigation";
 import { AppShell } from "@/components/app-shell";
 import {
@@ -1170,6 +1171,20 @@ function MapPageContent() {
                     <p className="whitespace-pre-wrap text-[13px] leading-relaxed">
                       {activeIssue.raw}
                     </p>
+                    <div className="mt-2 flex flex-wrap gap-1.5">
+                      {activeIssue.tags.map(({ tag }) => (
+                        <span
+                          key={tag}
+                          className="rounded-full px-2 py-0.5 text-[10px] font-medium"
+                          style={{
+                            backgroundColor: `${TAG_COLORS[tag] ?? "#94a3b8"}20`,
+                            color: TAG_COLORS[tag] ?? "#94a3b8",
+                          }}
+                        >
+                          {tag}
+                        </span>
+                      ))}
+                    </div>
                   </div>
                   {selectedId && (
                     <button
@@ -1190,6 +1205,26 @@ function MapPageContent() {
                       </svg>
                     </button>
                   )}
+                </div>
+                <div className="mt-4">
+                  <Link
+                    href={`/issues/${activeIssue.id}`}
+                    className="inline-flex items-center gap-1.5 rounded-md bg-primary px-3 py-1.5 text-[12px] font-medium text-primary-foreground shadow-sm transition-colors hover:bg-primary/90"
+                  >
+                    View issue
+                    <svg
+                      width="12"
+                      height="12"
+                      viewBox="0 0 12 12"
+                      fill="none"
+                      stroke="currentColor"
+                      strokeWidth="1.5"
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                    >
+                      <path d="M4.5 2.5L8.5 6L4.5 9.5" />
+                    </svg>
+                  </Link>
                 </div>
                 <div className="mt-5 space-y-2">
                   <p className="text-[11px] font-medium text-muted-foreground">

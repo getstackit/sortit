@@ -258,6 +258,90 @@ func TestHandleRefineIssue(t *testing.T) {
 	}
 }
 
+func TestHandleProgressIssue(t *testing.T) {
+	t.Parallel()
+
+	createdAt := time.Date(2026, time.March, 7, 12, 0, 0, 0, time.UTC)
+	progressAt := createdAt.Add(30 * time.Minute)
+	expected := issues.Issue{
+		ID:        "issue-000003",
+		Raw:       "Safari crashes when exporting a PDF",
+		Tags:      []string{"bug", "safari", "export"},
+		CreatedBy: "Casey",
+		CreatedAt: createdAt,
+		Status:    issues.StatusOpen,
+		Discussion: []issues.IssuePost{
+			{
+				ID:        "issue-000003-post-000001",
+				IssueID:   "issue-000003",
+				Raw:       "Safari crashes when exporting a PDF",
+				CreatedBy: "Casey",
+				CreatedAt: createdAt,
+				Sequence:  1,
+			},
+			{
+				ID:        "issue-000003-post-000002",
+				IssueID:   "issue-000003",
+				Raw:       "Identified the root cause in the share handler.",
+				CreatedBy: "Jordan",
+				CreatedAt: progressAt,
+				Sequence:  2,
+			},
+		},
+	}
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost {
+			t.Fatalf("expected POST, got %s", r.Method)
+		}
+		if r.URL.Path != "/issues/issue-000003/progress" {
+			t.Fatalf("expected /issues/issue-000003/progress path, got %s", r.URL.Path)
+		}
+
+		var payload map[string]string
+		if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
+			t.Fatalf("decode request body: %v", err)
+		}
+		if payload["raw"] != expected.Discussion[1].Raw {
+			t.Fatalf("expected raw %q, got %q", expected.Discussion[1].Raw, payload["raw"])
+		}
+		if payload["createdBy"] != expected.Discussion[1].CreatedBy {
+			t.Fatalf("expected createdBy %q, got %q", expected.Discussion[1].CreatedBy, payload["createdBy"])
+		}
+
+		w.Header().Set("Content-Type", "application/json")
+		if err := json.NewEncoder(w).Encode(expected); err != nil {
+			t.Fatalf("encode response: %v", err)
+		}
+	}))
+	defer server.Close()
+
+	handler := &handlers{
+		baseURL: server.URL,
+		client:  server.Client(),
+	}
+
+	result, err := handler.handleProgressIssue(context.Background(), toolRequest(map[string]any{
+		"id":         " issue-000003 ",
+		"raw":        expected.Discussion[1].Raw,
+		"created_by": expected.Discussion[1].CreatedBy,
+	}))
+	if err != nil {
+		t.Fatalf("handleProgressIssue returned error: %v", err)
+	}
+	if result.IsError {
+		t.Fatalf("expected success result, got error: %s", firstText(result))
+	}
+
+	issue, ok := result.StructuredContent.(issues.Issue)
+	if !ok {
+		t.Fatalf("expected issues.Issue structured content, got %T", result.StructuredContent)
+	}
+	if len(issue.Discussion) != 2 {
+		t.Fatalf("expected discussion in progress issue, got %#v", issue.Discussion)
+	}
+}
+
 func TestHandleCloseIssue(t *testing.T) {
 	t.Parallel()
 

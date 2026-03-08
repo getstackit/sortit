@@ -5,6 +5,7 @@ import { IssueDetailPage } from "@/components/issue-detail-page";
 import {
   closeIssue,
   fetchIssue,
+  progressIssue,
   refineIssue,
   reopenIssue,
   type IssueRecord,
@@ -64,6 +65,7 @@ vi.mock("@/lib/issues", async () => {
   return {
     ...actual,
     fetchIssue: vi.fn(),
+    progressIssue: vi.fn(),
     refineIssue: vi.fn(),
     closeIssue: vi.fn(),
     reopenIssue: vi.fn(),
@@ -103,6 +105,7 @@ function makeIssue(overrides: Partial<IssueRecord> = {}): IssueRecord {
 describe("IssueDetailPage", () => {
   beforeEach(() => {
     vi.mocked(fetchIssue).mockReset();
+    vi.mocked(progressIssue).mockReset();
     vi.mocked(refineIssue).mockReset();
     vi.mocked(closeIssue).mockReset();
     vi.mocked(reopenIssue).mockReset();
@@ -123,7 +126,7 @@ describe("IssueDetailPage", () => {
     expect(await screen.findByText("Canonical summary")).toBeInTheDocument();
     expect(
       screen.getByText("Discussion", {
-        selector: "p",
+        selector: "h3",
       })
     ).toBeInTheDocument();
     expect(
@@ -184,6 +187,132 @@ describe("IssueDetailPage", () => {
     expect(
       screen.getByText("It hangs forever after the second tap and never saves the file.")
     ).toBeInTheDocument();
+    expect(screen.getByText("Refinement 2")).toBeInTheDocument();
+  });
+
+  it("renders progress posts with distinct label", async () => {
+    vi.mocked(fetchIssue).mockResolvedValue(
+      makeIssue({
+        id: "issue-progress-label",
+        discussion: [
+          {
+            id: "issue-pl-post-000001",
+            issueId: "issue-progress-label",
+            raw: "Export fails on iPad.",
+            createdBy: "Casey",
+            createdAt: new Date("2026-03-08T12:00:00Z").toISOString(),
+            sequence: 1,
+          },
+          {
+            id: "issue-pl-post-000002",
+            issueId: "issue-progress-label",
+            raw: "Started investigating the share handler.",
+            createdBy: "Jordan",
+            createdAt: new Date("2026-03-08T12:10:00Z").toISOString(),
+            sequence: 2,
+            kind: "progress",
+          },
+        ],
+      })
+    );
+
+    render(<IssueDetailPage issueID="issue-progress-label" />);
+
+    expect(await screen.findByText("Progress update")).toBeInTheDocument();
+    expect(screen.queryByText("Refinement 1")).not.toBeInTheDocument();
+  });
+
+  it("posts a progress update", async () => {
+    const initialIssue = makeIssue({ id: "issue-progress-post" });
+    const updatedIssue = makeIssue({
+      id: "issue-progress-post",
+      discussion: [
+        ...(initialIssue.discussion ?? []),
+        {
+          id: "issue-pp-post-000003",
+          issueId: "issue-progress-post",
+          raw: "Fixed the share handler crash.",
+          createdBy: "You",
+          createdAt: new Date("2026-03-08T12:20:00Z").toISOString(),
+          sequence: 3,
+          kind: "progress",
+        },
+      ],
+    });
+
+    vi.mocked(fetchIssue).mockResolvedValue(initialIssue);
+    vi.mocked(progressIssue).mockResolvedValue(updatedIssue);
+
+    render(<IssueDetailPage issueID="issue-progress-post" />);
+
+    await screen.findByText("Canonical summary");
+
+    await userEvent.click(screen.getByRole("button", { name: "Progress" }));
+
+    await userEvent.type(
+      screen.getByPlaceholderText("Report work done toward resolving this issue..."),
+      "Fixed the share handler crash."
+    );
+    await userEvent.click(screen.getByRole("button", { name: "Post progress" }));
+
+    await waitFor(() => {
+      expect(progressIssue).toHaveBeenCalledWith("issue-progress-post", {
+        raw: "Fixed the share handler crash.",
+      });
+    });
+
+    expect(refineIssue).not.toHaveBeenCalled();
+  });
+
+  it("refinement numbering skips progress posts", async () => {
+    vi.mocked(fetchIssue).mockResolvedValue(
+      makeIssue({
+        id: "issue-numbering",
+        discussion: [
+          {
+            id: "issue-num-post-000001",
+            issueId: "issue-numbering",
+            raw: "Export fails on iPad.",
+            createdBy: "Casey",
+            createdAt: new Date("2026-03-08T12:00:00Z").toISOString(),
+            sequence: 1,
+          },
+          {
+            id: "issue-num-post-000002",
+            issueId: "issue-numbering",
+            raw: "It only happens in Safari.",
+            createdBy: "Jordan",
+            createdAt: new Date("2026-03-08T12:10:00Z").toISOString(),
+            sequence: 2,
+            kind: "refinement",
+          },
+          {
+            id: "issue-num-post-000003",
+            issueId: "issue-numbering",
+            raw: "Started investigating.",
+            createdBy: "Jordan",
+            createdAt: new Date("2026-03-08T12:15:00Z").toISOString(),
+            sequence: 3,
+            kind: "progress",
+          },
+          {
+            id: "issue-num-post-000004",
+            issueId: "issue-numbering",
+            raw: "Also affects macOS Safari.",
+            createdBy: "Casey",
+            createdAt: new Date("2026-03-08T12:20:00Z").toISOString(),
+            sequence: 4,
+            kind: "refinement",
+          },
+        ],
+      })
+    );
+
+    render(<IssueDetailPage issueID="issue-numbering" />);
+
+    expect(await screen.findByText("Initial report")).toBeInTheDocument();
+    expect(screen.getByText("Refinement 1")).toBeInTheDocument();
+    expect(screen.getByText("Progress update")).toBeInTheDocument();
     expect(screen.getByText("Refinement 2")).toBeInTheDocument();
   });
 });

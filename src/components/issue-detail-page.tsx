@@ -4,8 +4,8 @@ import Link from "next/link";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { motion } from "motion/react";
 import {
+  ArrowUpCircleIcon,
   CheckIcon,
-  Clock3Icon,
   CopyIcon,
   HashIcon,
   Link2Icon,
@@ -33,6 +33,8 @@ import {
   closeIssue,
   reopenIssue,
   refineIssue,
+  progressIssue,
+  type IssuePostKind,
   type IssuePostRecord,
   type IssueRecord,
 } from "@/lib/issues";
@@ -108,6 +110,13 @@ function statusClasses(status: IssueRecord["status"]) {
   return status === "closed"
     ? "bg-slate-200 text-slate-700"
     : "bg-emerald-100 text-emerald-700";
+}
+
+function postKind(post: IssuePostRecord): IssuePostKind {
+  if (post.kind) {
+    return post.kind;
+  }
+  return post.sequence === 1 ? "report" : "refinement";
 }
 
 function distanceBetween(
@@ -207,6 +216,8 @@ export function IssueDetailPage({ issueID }: { issueID: string }) {
   const [statusPending, setStatusPending] = useState(false);
   const [refineInput, setRefineInput] = useState("");
   const [refinePending, setRefinePending] = useState(false);
+  const [postMode, setPostMode] = useState<"refinement" | "progress">("refinement");
+  const [progressPending, setProgressPending] = useState(false);
 
   useEffect(() => {
     if (copyState === "idle") {
@@ -307,6 +318,41 @@ export function IssueDetailPage({ issueID }: { issueID: string }) {
       setRefinePending(false);
     }
   }, [issue, refineInput, refinePending, mutateIssue, mutateMap]);
+
+  const handleProgress = useCallback(async () => {
+    if (!issue || progressPending) {
+      return;
+    }
+
+    const raw = refineInput.trim();
+    if (!raw) {
+      return;
+    }
+
+    setProgressPending(true);
+
+    try {
+      const updated = await progressIssue(issue.id, { raw });
+      mutateIssue(updated, { revalidate: false });
+      setRefineInput("");
+      setActionError(null);
+    } catch (caughtError) {
+      const message =
+        caughtError instanceof Error
+          ? caughtError.message
+          : "Unknown backend error";
+      setActionError(message);
+    } finally {
+      setProgressPending(false);
+    }
+  }, [issue, refineInput, progressPending, mutateIssue]);
+
+  const handleSubmit = useCallback(() => {
+    if (postMode === "progress") {
+      return handleProgress();
+    }
+    return handleRefine();
+  }, [postMode, handleProgress, handleRefine]);
 
   const shortcuts = useMemo(
     () =>
@@ -477,6 +523,18 @@ export function IssueDetailPage({ issueID }: { issueID: string }) {
     });
   }, [clusterNeighborIds, currentMapIssue, mapIssues, semanticNeighborIds]);
 
+  const refinementIndices = useMemo(() => {
+    const indices = new Map<string, number>();
+    let count = 0;
+    for (const post of discussion) {
+      if (postKind(post) === "refinement") {
+        count++;
+        indices.set(post.id, count);
+      }
+    }
+    return indices;
+  }, [discussion]);
+
   const timeline = useMemo(() => {
     if (!issue) {
       return [];
@@ -523,22 +581,12 @@ export function IssueDetailPage({ issueID }: { issueID: string }) {
           ) : null
         }
         actions={
-          <>
-            <Link
-              href="/"
-              className="rounded-md border border-border px-3 py-1 text-xs font-medium text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
-            >
-              All issues
-            </Link>
-            {issue && (
-              <Link
-                href={`/map?issue=${encodeURIComponent(issue.id)}`}
-                className="rounded-md border border-border px-3 py-1 text-xs font-medium text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
-              >
-                Open on map
-              </Link>
-            )}
-          </>
+          <Link
+            href="/"
+            className="rounded-md border border-border px-3 py-1 text-xs font-medium text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+          >
+            All issues
+          </Link>
         }
       />
 
@@ -564,35 +612,22 @@ export function IssueDetailPage({ issueID }: { issueID: string }) {
               initial={{ opacity: 0, x: 20 }}
               animate={{ opacity: 1, x: 0 }}
               transition={{ duration: 0.25, ease: "easeOut" }}
-              className="grid gap-6 xl:grid-cols-[minmax(0,1fr)_19rem] 2xl:grid-cols-[minmax(0,1.15fr)_20rem]">
+              className="grid gap-6 xl:grid-cols-[minmax(0,1fr)_19rem] 2xl:grid-cols-[minmax(0,1.15fr)_20rem]"
+            >
               <div className="space-y-6">
                 {actionError && <div className="app-status-warning">{actionError}</div>}
 
                 <section className="app-surface rounded-[1.75rem] p-6">
-                  <div className="flex flex-wrap items-start justify-between gap-4">
-                    <div className="space-y-2">
-                      <p className="text-[11px] font-medium uppercase tracking-[0.18em] text-muted-foreground">
-                        Canonical summary
-                      </p>
-                      <h2 className="max-w-3xl text-2xl leading-tight font-semibold tracking-tight text-balance">
-                        {formatIssueTitle(issue.raw, 140)}
-                      </h2>
-                      <p className="text-sm text-muted-foreground">
-                        This is the current synthesized understanding of the issue. New
-                        discussion can update it.
-                      </p>
-                    </div>
-                    <div className="flex flex-wrap items-center gap-2">
-                      <span className="app-chip">Derived from discussion</span>
-                      <div
-                        className={cn(
-                          "rounded-full px-3 py-1 text-xs font-medium",
-                          statusClasses(issue.status)
-                        )}
-                      >
-                        {issue.status === "closed" ? "Closed" : "Open"}
-                      </div>
-                    </div>
+                  <div className="space-y-2">
+                    <p className="text-[11px] font-medium uppercase tracking-[0.18em] text-muted-foreground">
+                      Canonical summary
+                    </p>
+                    <h2 className="max-w-3xl text-2xl leading-tight font-semibold tracking-tight text-balance">
+                      {formatIssueTitle(issue.raw, 140)}
+                    </h2>
+                    <p className="text-sm text-muted-foreground">
+                      Synthesized from discussion. New posts can update it.
+                    </p>
                   </div>
 
                   <div className="app-subtle-surface mt-6 rounded-[1.5rem] p-5">
@@ -601,73 +636,20 @@ export function IssueDetailPage({ issueID }: { issueID: string }) {
                 </section>
 
                 <section className="app-surface rounded-[1.75rem] p-6">
-                  <div className="flex flex-wrap items-start justify-between gap-4">
-                    <div>
-                      <p className="text-[11px] font-medium uppercase tracking-[0.18em] text-muted-foreground">
-                        Discussion
-                      </p>
-                      <h3 className="mt-2 text-lg font-semibold tracking-tight">
-                        Context, feedback, and refinements
-                      </h3>
-                      <p className="mt-1 text-sm text-muted-foreground">
-                        The first post is the initial issue state. Every new refinement updates
-                        the canonical summary above.
-                      </p>
-                    </div>
+                  <div className="flex flex-wrap items-center justify-between gap-4">
+                    <h3 className="text-lg font-semibold tracking-tight">Discussion</h3>
                     <span className="app-chip">
                       {discussion.length} post{discussion.length === 1 ? "" : "s"}
                     </span>
                   </div>
 
-                  <div className="app-subtle-surface mt-5 rounded-[1.5rem] p-4">
-                    <div className="flex items-start gap-3">
-                      <div className="mt-0.5 rounded-full bg-amber-100 p-2 text-amber-700">
-                        <SparklesIcon className="size-4" />
-                      </div>
-                      <div className="min-w-0 flex-1">
-                        <p className="text-sm font-medium">Refine this issue</p>
-                        <p className="mt-1 text-sm text-muted-foreground">
-                          Add context, corrections, or feedback. Tags and map similarity refresh
-                          from the updated discussion.
-                        </p>
-                        <textarea
-                          value={refineInput}
-                          onChange={(event) => {
-                            setRefineInput(event.target.value);
-                            if (actionError) {
-                              setActionError(null);
-                            }
-                          }}
-                          onKeyDown={(event) => {
-                            if ((event.metaKey || event.ctrlKey) && event.key === "Enter") {
-                              event.preventDefault();
-                              void handleRefine();
-                            }
-                          }}
-                          placeholder="Add more context, corrections, or feedback..."
-                          disabled={refinePending}
-                          className="mt-4 min-h-[120px] w-full resize-y rounded-xl border border-input/80 bg-background/70 px-3 py-2 text-sm leading-relaxed placeholder:text-muted-foreground/50 focus:outline-none focus:ring-2 focus:ring-ring/40"
-                        />
-                        <div className="mt-3 flex flex-wrap items-center justify-between gap-3">
-                          <p className="text-[11px] text-muted-foreground">
-                            Press <span className="font-medium text-foreground">Cmd/Ctrl + Enter</span>{" "}
-                            to post.
-                          </p>
-                          <Button
-                            type="button"
-                            onClick={() => void handleRefine()}
-                            disabled={refinePending || refineInput.trim().length === 0}
-                          >
-                            {refinePending ? "Posting..." : "Post refinement"}
-                          </Button>
-                        </div>
-                      </div>
-                    </div>
-                  </div>
-
                   <div className="mt-5 space-y-4">
                     {discussion.map((post) => {
-                      const isInitial = post.sequence === 1;
+                      const kind = postKind(post);
+                      const refinementIndex =
+                        kind === "refinement"
+                          ? (refinementIndices.get(post.id) ?? 0)
+                          : 0;
 
                       return (
                         <article
@@ -677,10 +659,19 @@ export function IssueDetailPage({ issueID }: { issueID: string }) {
                           <div className="flex flex-wrap items-start justify-between gap-3">
                             <div className="space-y-1">
                               <div className="flex flex-wrap items-center gap-2">
+                                {kind === "progress" && (
+                                  <span className="inline-flex items-center gap-1 rounded-full bg-blue-100 px-2 py-0.5 text-blue-700">
+                                    <ArrowUpCircleIcon className="size-3.5" />
+                                  </span>
+                                )}
                                 <span className="text-sm font-semibold">
-                                  {isInitial ? "Initial report" : `Refinement ${post.sequence - 1}`}
+                                  {kind === "report"
+                                    ? "Initial report"
+                                    : kind === "progress"
+                                      ? "Progress update"
+                                      : `Refinement ${refinementIndex}`}
                                 </span>
-                                {isInitial && <span className="app-chip">Starting state</span>}
+                                {kind === "report" && <span className="app-chip">Starting state</span>}
                               </div>
                               <p className="text-sm text-muted-foreground">
                                 {post.createdBy} · {formatRelativeTime(post.createdAt)}
@@ -698,178 +689,106 @@ export function IssueDetailPage({ issueID }: { issueID: string }) {
                       );
                     })}
                   </div>
-                </section>
 
-                <section className="app-surface rounded-[1.75rem] p-6">
-                  <div className="flex flex-wrap items-start justify-between gap-4">
-                    <div>
-                      <p className="text-[11px] font-medium uppercase tracking-[0.18em] text-muted-foreground">
-                        Map context
-                      </p>
-                      <h3 className="mt-2 text-lg font-semibold tracking-tight">
-                        Cluster position and semantic edges
-                      </h3>
-                      <p className="mt-1 text-sm text-muted-foreground">
-                        The mini-map uses the same coordinates and edge graph as the full map.
-                      </p>
+                  <div className="app-subtle-surface mt-5 rounded-[1.5rem] p-4">
+                    <div className="mb-3 flex gap-1">
+                      <button
+                        type="button"
+                        onClick={() => setPostMode("refinement")}
+                        className={cn(
+                          "rounded-full px-3 py-1 text-xs font-medium transition-colors",
+                          postMode === "refinement"
+                            ? "bg-amber-100 text-amber-700"
+                            : "bg-muted text-muted-foreground hover:bg-muted/80"
+                        )}
+                      >
+                        Refinement
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setPostMode("progress")}
+                        className={cn(
+                          "rounded-full px-3 py-1 text-xs font-medium transition-colors",
+                          postMode === "progress"
+                            ? "bg-blue-100 text-blue-700"
+                            : "bg-muted text-muted-foreground hover:bg-muted/80"
+                        )}
+                      >
+                        Progress
+                      </button>
                     </div>
-                    <span className="app-chip">
-                      {currentClusters.length > 0
-                        ? `${currentClusters.length} cluster${currentClusters.length === 1 ? "" : "s"}`
-                        : "No cluster hit"}
-                    </span>
-                  </div>
-
-                  {mapError && (
-                    <div className="app-status-warning mt-5">
-                      Map context unavailable: {mapError.message}
-                    </div>
-                  )}
-
-                  {!mapError && !currentMapIssue && (
-                    <div className="app-subtle-surface mt-5 border-dashed px-4 py-6 text-sm text-muted-foreground">
-                      This issue is not present in the current map payload yet.
-                    </div>
-                  )}
-
-                  {!mapError && currentMapIssue && (
-                    <div className="mt-5 grid gap-5 xl:grid-cols-[minmax(0,1.2fr)_minmax(0,0.8fr)]">
-                      <div className="app-subtle-surface rounded-[1.5rem] p-4">
-                        <div className="relative aspect-[16/10] min-h-[18rem] w-full overflow-hidden rounded-[1.15rem]">
-                          <IssueMapCanvas
-                            width={320}
-                            height={220}
-                            viewBox="0 0 320 220"
-                            preserveAspectRatio="xMidYMid meet"
-                            className="absolute inset-0 h-full w-full"
-                            role="img"
-                            aria-label={`Mini map centered on ${currentMapIssue.id}`}
-                            background={
-                              <rect
-                                x="0"
-                                y="0"
-                                width="320"
-                                height="220"
-                                rx="18"
-                                fill="currentColor"
-                                className="text-background"
-                              />
+                    <div className="flex items-start gap-3">
+                      <div
+                        className={cn(
+                          "mt-0.5 rounded-full p-2",
+                          postMode === "progress"
+                            ? "bg-blue-100 text-blue-700"
+                            : "bg-amber-100 text-amber-700"
+                        )}
+                      >
+                        {postMode === "progress" ? (
+                          <ArrowUpCircleIcon className="size-4" />
+                        ) : (
+                          <SparklesIcon className="size-4" />
+                        )}
+                      </div>
+                      <div className="min-w-0 flex-1">
+                        <p className="text-sm font-medium">
+                          {postMode === "progress"
+                            ? "Post a progress update"
+                            : "Refine this issue"}
+                        </p>
+                        <p className="mt-1 text-sm text-muted-foreground">
+                          {postMode === "progress"
+                            ? "Report work done toward resolving this issue."
+                            : "Add context, corrections, or feedback."}
+                        </p>
+                        <textarea
+                          value={refineInput}
+                          onChange={(event) => {
+                            setRefineInput(event.target.value);
+                            if (actionError) {
+                              setActionError(null);
                             }
-                            clusters={miniMapClusters}
-                            edges={miniMapEdges}
-                            nodes={miniMapNodes}
-                          />
-                        </div>
-
-                        <div className="mt-4 flex flex-wrap gap-2 text-[11px] text-muted-foreground">
-                          <span className="app-chip inline-flex items-center gap-1">
-                            <span className="size-2 rounded-full bg-slate-900" />
-                            Current issue
-                          </span>
-                          <span className="app-chip inline-flex items-center gap-1">
-                            <span className="size-2 rounded-full bg-blue-600" />
-                            Clustered nearby
-                          </span>
-                          <span className="app-chip inline-flex items-center gap-1">
-                            <span className="size-2 rounded-full bg-amber-500" />
-                            Semantic neighbor
-                          </span>
-                        </div>
-                      </div>
-
-                      <div className="grid gap-4">
-                        <div className="app-subtle-surface rounded-[1.25rem] p-4">
-                          <div className="flex items-start justify-between gap-3">
-                            <div>
-                              <p className="text-[11px] font-medium uppercase tracking-[0.14em] text-muted-foreground">
-                                Clustered nearby
-                              </p>
-                              <p className="mt-1 text-sm text-muted-foreground">
-                                Nearest issues in the same local cluster when possible.
-                              </p>
-                            </div>
-                            <span className="app-chip px-2 py-0.5">
-                              {clusterNeighbors.length}
-                            </span>
-                          </div>
-
-                          <div className="mt-4 space-y-2">
-                            {clusterNeighbors.length > 0 ? (
-                              clusterNeighbors.map(({ issue: neighbor }) => (
-                                <Link
-                                  key={neighbor.id}
-                                  href={`/issues/${neighbor.id}`}
-                                  className="group app-subtle-surface flex items-center gap-3 px-3 py-2 transition-colors hover:bg-accent/70"
-                                >
-                                  <span className="size-2.5 rounded-full bg-blue-600" />
-                                  <div className="min-w-0 flex-1">
-                                    <p className="truncate text-xs font-medium">{neighbor.id}</p>
-                                    <p className="truncate text-[11px] text-muted-foreground">
-                                      {formatIssueTitle(neighbor.raw, 52)}
-                                    </p>
-                                  </div>
-                                  <span className="text-[10px] uppercase tracking-[0.14em] text-muted-foreground">
-                                    {dominantTag(neighbor.tags) ?? "issue"}
-                                  </span>
-                                </Link>
-                              ))
-                            ) : (
-                              <p className="text-sm text-muted-foreground">
-                                No nearby cluster matches yet.
-                              </p>
-                            )}
-                          </div>
-                        </div>
-
-                        <div className="app-subtle-surface rounded-[1.25rem] p-4">
-                          <div className="flex items-start justify-between gap-3">
-                            <div>
-                              <p className="text-[11px] font-medium uppercase tracking-[0.14em] text-muted-foreground">
-                                Semantic neighbors
-                              </p>
-                              <p className="mt-1 text-sm text-muted-foreground">
-                                Strongest embedding edges connected to this issue.
-                              </p>
-                            </div>
-                            <span className="app-chip px-2 py-0.5">
-                              {semanticNeighbors.length}
-                            </span>
-                          </div>
-
-                          <div className="mt-4 space-y-2">
-                            {semanticNeighbors.length > 0 ? (
-                              semanticNeighbors.map(({ issue: neighbor, similarity }) => (
-                                <Link
-                                  key={neighbor.id}
-                                  href={`/issues/${neighbor.id}`}
-                                  className="group app-subtle-surface flex items-center gap-3 px-3 py-2 transition-colors hover:bg-accent/70"
-                                >
-                                  <span className="size-2.5 rounded-full bg-amber-500" />
-                                  <div className="min-w-0 flex-1">
-                                    <p className="truncate text-xs font-medium">{neighbor.id}</p>
-                                    <p className="truncate text-[11px] text-muted-foreground">
-                                      {formatIssueTitle(neighbor.raw, 52)}
-                                    </p>
-                                  </div>
-                                  <span className="text-[11px] font-medium tabular-nums text-muted-foreground">
-                                    {(similarity * 100).toFixed(0)}%
-                                  </span>
-                                </Link>
-                              ))
-                            ) : (
-                              <p className="text-sm text-muted-foreground">
-                                No semantic edges for this issue yet.
-                              </p>
-                            )}
-                          </div>
+                          }}
+                          onKeyDown={(event) => {
+                            if ((event.metaKey || event.ctrlKey) && event.key === "Enter") {
+                              event.preventDefault();
+                              void handleSubmit();
+                            }
+                          }}
+                          placeholder={
+                            postMode === "progress"
+                              ? "Report work done toward resolving this issue..."
+                              : "Add more context, corrections, or feedback..."
+                          }
+                          disabled={refinePending || progressPending}
+                          className="mt-4 min-h-[120px] w-full resize-y rounded-xl border border-input/80 bg-background/70 px-3 py-2 text-sm leading-relaxed placeholder:text-muted-foreground/50 focus:outline-none focus:ring-2 focus:ring-ring/40"
+                        />
+                        <div className="mt-3 flex flex-wrap items-center justify-between gap-3">
+                          <p className="text-[11px] text-muted-foreground">
+                            Press <span className="font-medium text-foreground">Cmd/Ctrl + Enter</span>{" "}
+                            to post.
+                          </p>
+                          <Button
+                            type="button"
+                            onClick={() => void handleSubmit()}
+                            disabled={refinePending || progressPending || refineInput.trim().length === 0}
+                          >
+                            {refinePending || progressPending
+                              ? "Posting..."
+                              : postMode === "progress"
+                                ? "Post progress"
+                                : "Post refinement"}
+                          </Button>
                         </div>
                       </div>
                     </div>
-                  )}
+                  </div>
                 </section>
               </div>
 
-              <aside className="space-y-4 lg:sticky lg:top-6 lg:self-start">
+              <aside className="space-y-4 xl:sticky xl:top-6 xl:self-start">
                 <section className="app-surface rounded-[1.5rem] p-5">
                   <div className="flex items-center gap-2">
                     <HashIcon className="size-4 text-muted-foreground" />
@@ -918,35 +837,42 @@ export function IssueDetailPage({ issueID }: { issueID: string }) {
                       <dt className="text-[11px] font-medium uppercase tracking-[0.14em] text-muted-foreground">
                         Discussion
                       </dt>
-                      <dd className="flex items-center gap-2 text-sm">
-                        <MessageSquareMoreIcon className="size-4 text-muted-foreground" />
-                        <span>
-                          {discussion.length} post{discussion.length === 1 ? "" : "s"}
-                        </span>
+                      <dd className="text-sm">
+                        <div className="flex items-center gap-2">
+                          <MessageSquareMoreIcon className="size-4 text-muted-foreground" />
+                          <span>
+                            {discussion.length} post{discussion.length === 1 ? "" : "s"}
+                          </span>
+                        </div>
+                        {(() => {
+                          const refinementCount = discussion.filter((p) => postKind(p) === "refinement").length;
+                          const progressCount = discussion.filter((p) => postKind(p) === "progress").length;
+                          if (progressCount > 0) {
+                            return (
+                              <p className="mt-1 text-[11px] text-muted-foreground">
+                                {refinementCount} refinement{refinementCount === 1 ? "" : "s"}, {progressCount} progress
+                              </p>
+                            );
+                          }
+                          return null;
+                        })()}
                       </dd>
                     </div>
-                  </dl>
-                </section>
 
-                <section className="app-surface rounded-[1.5rem] p-5">
-                  <div className="flex items-center gap-2">
-                    <Clock3Icon className="size-4 text-muted-foreground" />
-                    <h3 className="text-sm font-semibold">Timeline</h3>
-                  </div>
-
-                  <div className="mt-4 space-y-4">
                     {timeline.map((entry) => (
-                      <div key={entry.label} className="app-subtle-surface p-3">
-                        <p className="text-[11px] font-medium uppercase tracking-[0.14em] text-muted-foreground">
+                      <div key={entry.label} className="space-y-1">
+                        <dt className="text-[11px] font-medium uppercase tracking-[0.14em] text-muted-foreground">
                           {entry.label}
-                        </p>
-                        <p className="mt-1 text-sm font-medium">{entry.value}</p>
-                        <p className="mt-1 text-[11px] text-muted-foreground">
-                          {entry.meta}
-                        </p>
+                        </dt>
+                        <dd>
+                          <p className="text-sm">{entry.value}</p>
+                          <p className="mt-0.5 text-[11px] text-muted-foreground">
+                            {entry.meta}
+                          </p>
+                        </dd>
                       </div>
                     ))}
-                  </div>
+                  </dl>
                 </section>
 
                 <section className="app-surface rounded-[1.5rem] p-5">
@@ -1013,6 +939,115 @@ export function IssueDetailPage({ issueID }: { issueID: string }) {
                     copies the current summary.
                   </p>
                 </section>
+
+                {!mapError && currentMapIssue && (
+                  <section className="app-surface rounded-[1.5rem] p-5">
+                    <div className="flex items-center justify-between gap-2">
+                      <h3 className="text-sm font-semibold">Map context</h3>
+                      <span className="app-chip">
+                        {currentClusters.length > 0
+                          ? `${currentClusters.length} cluster${currentClusters.length === 1 ? "" : "s"}`
+                          : "No cluster"}
+                      </span>
+                    </div>
+
+                    <div className="app-subtle-surface mt-4 rounded-[1.25rem] p-3">
+                      <div className="relative aspect-[16/11] w-full overflow-hidden rounded-[1rem]">
+                        <IssueMapCanvas
+                          width={320}
+                          height={220}
+                          viewBox="0 0 320 220"
+                          preserveAspectRatio="xMidYMid meet"
+                          className="absolute inset-0 h-full w-full"
+                          role="img"
+                          aria-label={`Mini map centered on ${currentMapIssue.id}`}
+                          background={
+                            <rect
+                              x="0"
+                              y="0"
+                              width="320"
+                              height="220"
+                              rx="18"
+                              fill="currentColor"
+                              className="text-background"
+                            />
+                          }
+                          clusters={miniMapClusters}
+                          edges={miniMapEdges}
+                          nodes={miniMapNodes}
+                        />
+                      </div>
+
+                      <div className="mt-3 flex flex-wrap gap-2 text-[11px] text-muted-foreground">
+                        <span className="app-chip inline-flex items-center gap-1">
+                          <span className="size-2 rounded-full bg-slate-900" />
+                          Current
+                        </span>
+                        <span className="app-chip inline-flex items-center gap-1">
+                          <span className="size-2 rounded-full bg-blue-600" />
+                          Cluster
+                        </span>
+                        <span className="app-chip inline-flex items-center gap-1">
+                          <span className="size-2 rounded-full bg-amber-500" />
+                          Semantic
+                        </span>
+                      </div>
+                    </div>
+
+                    {clusterNeighbors.length > 0 && (
+                      <div className="mt-4">
+                        <p className="text-[11px] font-medium uppercase tracking-[0.14em] text-muted-foreground">
+                          Clustered nearby
+                        </p>
+                        <div className="mt-2 space-y-1.5">
+                          {clusterNeighbors.map(({ issue: neighbor }) => (
+                            <Link
+                              key={neighbor.id}
+                              href={`/issues/${neighbor.id}`}
+                              className="group app-subtle-surface flex items-center gap-2 px-2.5 py-1.5 transition-colors hover:bg-accent/70"
+                            >
+                              <span className="size-2 rounded-full bg-blue-600" />
+                              <p className="min-w-0 flex-1 truncate text-xs">
+                                {formatIssueTitle(neighbor.raw, 40)}
+                              </p>
+                            </Link>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+
+                    {semanticNeighbors.length > 0 && (
+                      <div className="mt-4">
+                        <p className="text-[11px] font-medium uppercase tracking-[0.14em] text-muted-foreground">
+                          Semantic neighbors
+                        </p>
+                        <div className="mt-2 space-y-1.5">
+                          {semanticNeighbors.map(({ issue: neighbor, similarity }) => (
+                            <Link
+                              key={neighbor.id}
+                              href={`/issues/${neighbor.id}`}
+                              className="group app-subtle-surface flex items-center gap-2 px-2.5 py-1.5 transition-colors hover:bg-accent/70"
+                            >
+                              <span className="size-2 rounded-full bg-amber-500" />
+                              <p className="min-w-0 flex-1 truncate text-xs">
+                                {formatIssueTitle(neighbor.raw, 40)}
+                              </p>
+                              <span className="text-[10px] tabular-nums text-muted-foreground">
+                                {(similarity * 100).toFixed(0)}%
+                              </span>
+                            </Link>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+                  </section>
+                )}
+
+                {mapError && (
+                  <div className="app-status-warning text-sm">
+                    Map context unavailable: {mapError.message}
+                  </div>
+                )}
               </aside>
             </motion.div>
           )}
