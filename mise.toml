@@ -35,11 +35,28 @@ run = "npm run dev -- --hostname 0.0.0.0 --port ${APP_PORT:-3000}"
 description = "Run the Go API server in development mode"
 run = "watchexec -r -e go -w apps/server -w internal -- go run ./apps/server --port ${API_PORT:-8081}"
 
+[tasks."dev:stop"]
+description = "Stop local dev processes bound to the app and API ports"
+run = """
+  for port in ${APP_PORT:-3000} ${API_PORT:-8081}; do
+    pids=$(lsof -ti tcp:$port || true)
+    if [ -n "$pids" ]; then
+      kill $pids 2>/dev/null || true
+      sleep 1
+      remaining=$(lsof -ti tcp:$port || true)
+      if [ -n "$remaining" ]; then
+        kill -9 $remaining 2>/dev/null || true
+      fi
+    fi
+  done
+  rm -f /tmp/splat-overmind.sock
+"""
+
 [tasks."server:build"]
 description = "Build the Go API server"
 run = """
   mkdir -p bin
-  go build -o bin/bored-server ./apps/server
+  go build -o bin/splat-server ./apps/server
 """
 
 [tasks.build]
@@ -49,4 +66,5 @@ run = "npm run build"
 
 [tasks.dev]
 description = "Run the frontend and backend using overmind"
-run = "overmind start --no-port --socket /tmp/bored-overmind.sock -f Procfile.dev"
+depends = ["dev:stop"]
+run = "overmind start --no-port --socket /tmp/splat-overmind.sock -f Procfile.dev"

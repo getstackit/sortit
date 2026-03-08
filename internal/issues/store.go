@@ -23,6 +23,13 @@ type Issue struct {
 	Embedding []float64      `json:"-"`
 }
 
+type Tag struct {
+	Name        string    `json:"name"`
+	Description string    `json:"description,omitempty"`
+	CreatedAt   time.Time `json:"createdAt"`
+	Embedding   []float64 `json:"-"`
+}
+
 type TagRelevance struct {
 	Tag       string  `json:"tag"`
 	Relevance float64 `json:"relevance"`
@@ -40,6 +47,24 @@ type Store interface {
 	List(context.Context) ([]Issue, error)
 	Get(context.Context, string) (Issue, error)
 	Create(context.Context, CreateInput) (Issue, error)
+}
+
+func DefaultTags() []Tag {
+	return []Tag{
+		{Name: "bug", Description: "software defect or incorrect behavior"},
+		{Name: "crash", Description: "hard failure, freeze, or abrupt termination"},
+		{Name: "feature", Description: "request for a new capability"},
+		{Name: "idea", Description: "early concept, exploration, or brainstorming"},
+		{Name: "improvement", Description: "refinement to an existing workflow or capability"},
+		{Name: "ui", Description: "visual interface, layout, or component presentation"},
+		{Name: "ux", Description: "usability, clarity, friction, or flow quality"},
+		{Name: "frontend", Description: "client-side app behavior in the browser"},
+		{Name: "performance", Description: "speed, latency, efficiency, or scaling concerns"},
+		{Name: "safari", Description: "Safari or WebKit-specific behavior"},
+		{Name: "onboarding", Description: "first-run setup, signup, invite, or initial activation flow"},
+		{Name: "search", Description: "querying, filtering, ranking, or finding content"},
+		{Name: "export", Description: "download, file generation, sharing, or data extraction"},
+	}
 }
 
 type InMemoryStore struct {
@@ -202,6 +227,23 @@ func cloneIssues(input []Issue) []Issue {
 		}
 	}
 	return items
+}
+
+func cloneTags(input []Tag) []Tag {
+	items := make([]Tag, len(input))
+	for i, tag := range input {
+		items[i] = Tag{
+			Name:        tag.Name,
+			Description: tag.Description,
+			CreatedAt:   tag.CreatedAt,
+			Embedding:   copyEmbedding(tag.Embedding),
+		}
+	}
+	return items
+}
+
+func sanitizeTagName(name string) string {
+	return strings.ToLower(strings.Join(strings.Fields(strings.TrimSpace(name)), " "))
 }
 
 func copyTagScores(input []TagRelevance) []TagRelevance {

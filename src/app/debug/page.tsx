@@ -31,6 +31,14 @@ type IssueAnalysis = {
   };
   tagger: ModelInfo;
   embedder: ModelInfo;
+  comparedIssueCount: number;
+  averageIssueSimilarity: number;
+  similarIssues: Array<{
+    id: string;
+    raw: string;
+    tags: string[];
+    similarity: number;
+  }>;
 };
 
 type DebugIssueStoreResponse = {
@@ -42,6 +50,7 @@ const SECTION_LINKS = [
   { id: "prompt", title: "Prompt" },
   { id: "tags", title: "Tags" },
   { id: "embedding", title: "Embedding" },
+  { id: "similarity", title: "Similarity" },
   { id: "json", title: "JSON" },
 ];
 
@@ -79,6 +88,7 @@ export default function DebugPage() {
 
   const topTags = result?.tags.slice(0, 8) ?? [];
   const embeddingPreview = result?.embedding.preview ?? [];
+  const similarIssues = result?.similarIssues ?? [];
 
   useEffect(() => {
     fetchIssues()
@@ -431,6 +441,80 @@ export default function DebugPage() {
                     ))}
                   </div>
                 </div>
+              </div>
+            )}
+          </section>
+
+          <section
+            id="similarity"
+            className="rounded-2xl border border-border/60 bg-card p-5"
+          >
+            <div className="flex items-center justify-between gap-3">
+              <div>
+                <p className="text-xs font-medium uppercase tracking-[0.18em] text-muted-foreground">
+                  Embedding similarity
+                </p>
+                <p className="mt-1 text-sm text-muted-foreground">
+                  Cosine similarity between the analyzed issue embedding and stored issue embeddings.
+                </p>
+              </div>
+              {result && (
+                <span className="rounded-full bg-muted px-2 py-1 text-xs text-muted-foreground">
+                  {result.comparedIssueCount} compared
+                </span>
+              )}
+            </div>
+
+            {!result && (
+              <p className="mt-4 text-sm text-muted-foreground">
+                Run an analysis to inspect embedding-based similarity.
+              </p>
+            )}
+
+            {result && (
+              <div className="mt-4 space-y-4">
+                <div className="rounded-xl border border-border/70 bg-background px-4 py-3">
+                  <p className="text-[11px] uppercase tracking-[0.16em] text-muted-foreground">
+                    Average similarity
+                  </p>
+                  <p className="mt-1 text-lg font-medium">
+                    {result.comparedIssueCount === 0
+                      ? "No stored issues"
+                      : `${Math.round(result.averageIssueSimilarity * 100)}%`}
+                  </p>
+                </div>
+
+                {similarIssues.length === 0 ? (
+                  <p className="text-sm text-muted-foreground">
+                    No stored issue embeddings available to compare against.
+                  </p>
+                ) : (
+                  <div className="space-y-2">
+                    {similarIssues.map((issue) => (
+                      <div
+                        key={issue.id}
+                        className="rounded-xl border border-border/70 bg-background px-4 py-3"
+                      >
+                        <div className="flex items-start justify-between gap-4">
+                          <div>
+                            <p className="text-sm font-medium">{issue.id}</p>
+                            <p className="mt-1 text-sm text-muted-foreground">
+                              {issue.raw}
+                            </p>
+                            {issue.tags.length > 0 && (
+                              <p className="mt-2 text-xs text-muted-foreground">
+                                Tags: {issue.tags.join(", ")}
+                              </p>
+                            )}
+                          </div>
+                          <span className="rounded-full bg-muted px-2 py-1 text-xs font-medium text-foreground">
+                            {Math.round(issue.similarity * 100)}%
+                          </span>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
               </div>
             )}
           </section>

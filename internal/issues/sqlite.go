@@ -3,6 +3,7 @@ package issues
 import (
 	"context"
 	"database/sql"
+	"embed"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -13,16 +14,33 @@ import (
 	"strings"
 	"time"
 
+	"github.com/golang-migrate/migrate/v4"
+	migratedatabase "github.com/golang-migrate/migrate/v4/database"
+	migratesqlite "github.com/golang-migrate/migrate/v4/database/sqlite"
+	"github.com/golang-migrate/migrate/v4/source/iofs"
 	_ "modernc.org/sqlite"
+
+	"splat/internal/issues/issuesdb"
 )
 
 const (
-	sqliteDriverName = "sqlite"
-	issueSeqKey      = "next_issue_seq"
+	sqliteDriverName          = "sqlite"
+	issueSeqKey               = "next_issue_seq"
+	currentMigrationVersion   = 2
+	schemaMigrationsTableName = "schema_migrations"
 )
 
+//go:embed migrations/*.sql
+var sqliteMigrationsFS embed.FS
+
 type SQLiteStore struct {
-	db *sql.DB
+	db      *sql.DB
+	queries *issuesdb.Queries
+}
+
+type sqliteTagStore interface {
+	ListTags(context.Context) ([]Tag, error)
+	UpsertTags(context.Context, []Tag) error
 }
 
 func OpenSQLiteStore(ctx context.Context, path string) (*SQLiteStore, error) {
@@ -45,7 +63,10 @@ func OpenSQLiteStore(ctx context.Context, path string) (*SQLiteStore, error) {
 		return nil, fmt.Errorf("open sqlite database: %w", err)
 	}
 
-	store := &SQLiteStore{db: db}
+	store := &SQLiteStore{
+		db:      db,
+		queries: issuesdb.New(db),
+	}
 	store.db.SetMaxOpenConns(1)
 
 	if err := store.init(ctx); err != nil {
@@ -61,28 +82,19 @@ func (s *SQLiteStore) Close() error {
 }
 
 func (s *SQLiteStore) List(ctx context.Context) ([]Issue, error) {
-	rows, err := s.db.QueryContext(ctx, `
-		SELECT id, raw, tags_json, created_by, created_at_unix_nano, tag_scores_json, embedding_json
-		FROM issues
-		ORDER BY created_at_unix_nano DESC, id ASC
-	`)
+	rows, err := s.queries.ListIssues(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("list issues: %w", err)
 	}
-	defer rows.Close()
 
-	items := make([]Issue, 0)
-	for rows.Next() {
-		issue, err := scanIssue(rows.Scan)
+	items := make([]Issue, 0, len(rows))
+	for _, row := range rows {
+		issue, err := issueFromQuery(row)
 		if err != nil {
 			return nil, err
 		}
 		items = append(items, issue)
 	}
-	if err := rows.Err(); err != nil {
-		return nil, fmt.Errorf("iterate issues: %w", err)
-	}
-
 	return cloneIssues(items), nil
 }
 
@@ -92,11 +104,7 @@ func (s *SQLiteStore) Get(ctx context.Context, id string) (Issue, error) {
 		return Issue{}, ErrNotFound
 	}
 
-	issue, err := scanIssue(s.db.QueryRowContext(ctx, `
-		SELECT id, raw, tags_json, created_by, created_at_unix_nano, tag_scores_json, embedding_json
-		FROM issues
-		WHERE id = ?
-	`, id).Scan)
+	issueRow, err := s.queries.GetIssue(ctx, id)
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			return Issue{}, ErrNotFound
@@ -104,6 +112,10 @@ func (s *SQLiteStore) Get(ctx context.Context, id string) (Issue, error) {
 		return Issue{}, err
 	}
 
+	issue, err := issueFromQuery(issueRow)
+	if err != nil {
+		return Issue{}, err
+	}
 	return cloneIssues([]Issue{issue})[0], nil
 }
 
@@ -124,7 +136,8 @@ func (s *SQLiteStore) Create(ctx context.Context, input CreateInput) (Issue, err
 	}
 	defer tx.Rollback()
 
-	seq, err := nextSequence(ctx, tx)
+	qtx := s.queries.WithTx(tx)
+	seq, err := nextSequence(ctx, qtx)
 	if err != nil {
 		return Issue{}, err
 	}
@@ -144,10 +157,15 @@ func (s *SQLiteStore) Create(ctx context.Context, input CreateInput) (Issue, err
 		return Issue{}, err
 	}
 
-	if _, err := tx.ExecContext(ctx, `
-		INSERT INTO issues (id, raw, tags_json, created_by, created_at_unix_nano, tag_scores_json, embedding_json)
-		VALUES (?, ?, ?, ?, ?, ?, ?)
-	`, record.ID, record.Raw, record.TagsJSON, record.CreatedBy, record.CreatedAtUnixNano, record.TagScoresJSON, record.EmbeddingJSON); err != nil {
+	if err := qtx.InsertIssue(ctx, issuesdb.InsertIssueParams{
+		ID:                record.ID,
+		Raw:               record.Raw,
+		TagsJson:          record.TagsJSON,
+		CreatedBy:         record.CreatedBy,
+		CreatedAtUnixNano: record.CreatedAtUnixNano,
+		TagScoresJson:     record.TagScoresJSON,
+		EmbeddingJson:     record.EmbeddingJSON,
+	}); err != nil {
 		return Issue{}, fmt.Errorf("insert issue: %w", err)
 	}
 
@@ -168,7 +186,8 @@ func (s *SQLiteStore) Replace(ctx context.Context, next []Issue) error {
 	}
 	defer tx.Rollback()
 
-	if _, err := tx.ExecContext(ctx, `DELETE FROM issues`); err != nil {
+	qtx := s.queries.WithTx(tx)
+	if err := qtx.DeleteAllIssues(ctx); err != nil {
 		return fmt.Errorf("clear issues: %w", err)
 	}
 
@@ -178,20 +197,78 @@ func (s *SQLiteStore) Replace(ctx context.Context, next []Issue) error {
 			return err
 		}
 
-		if _, err := tx.ExecContext(ctx, `
-			INSERT INTO issues (id, raw, tags_json, created_by, created_at_unix_nano, tag_scores_json, embedding_json)
-			VALUES (?, ?, ?, ?, ?, ?, ?)
-		`, record.ID, record.Raw, record.TagsJSON, record.CreatedBy, record.CreatedAtUnixNano, record.TagScoresJSON, record.EmbeddingJSON); err != nil {
+		if err := qtx.InsertIssue(ctx, issuesdb.InsertIssueParams{
+			ID:                record.ID,
+			Raw:               record.Raw,
+			TagsJson:          record.TagsJSON,
+			CreatedBy:         record.CreatedBy,
+			CreatedAtUnixNano: record.CreatedAtUnixNano,
+			TagScoresJson:     record.TagScoresJSON,
+			EmbeddingJson:     record.EmbeddingJSON,
+		}); err != nil {
 			return fmt.Errorf("replace issue %q: %w", issue.ID, err)
 		}
 	}
 
-	if err := setSequence(ctx, tx, nextSequenceBase(items)); err != nil {
+	if err := setSequence(ctx, qtx, nextSequenceBase(items)); err != nil {
 		return err
 	}
 
 	if err := tx.Commit(); err != nil {
 		return fmt.Errorf("commit replace issues: %w", err)
+	}
+
+	return nil
+}
+
+func (s *SQLiteStore) ListTags(ctx context.Context) ([]Tag, error) {
+	rows, err := s.queries.ListTags(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("list tags: %w", err)
+	}
+
+	tags := make([]Tag, 0, len(rows))
+	for _, row := range rows {
+		tag, err := tagFromQuery(row)
+		if err != nil {
+			return nil, err
+		}
+		tags = append(tags, tag)
+	}
+	return cloneTags(tags), nil
+}
+
+func (s *SQLiteStore) UpsertTags(ctx context.Context, tags []Tag) error {
+	normalized := normalizeCatalogTags(tags)
+	if len(normalized) == 0 {
+		return nil
+	}
+
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return fmt.Errorf("begin upsert tags tx: %w", err)
+	}
+	defer tx.Rollback()
+
+	qtx := s.queries.WithTx(tx)
+	for _, tag := range normalized {
+		record, err := recordFromTag(tag)
+		if err != nil {
+			return err
+		}
+
+		if err := qtx.UpsertTag(ctx, issuesdb.UpsertTagParams{
+			Name:              record.Name,
+			Description:       record.Description,
+			CreatedAtUnixNano: record.CreatedAtUnixNano,
+			EmbeddingJson:     record.EmbeddingJSON,
+		}); err != nil {
+			return fmt.Errorf("upsert tag %q: %w", tag.Name, err)
+		}
+	}
+
+	if err := tx.Commit(); err != nil {
+		return fmt.Errorf("commit upsert tags: %w", err)
 	}
 
 	return nil
@@ -204,35 +281,129 @@ func (s *SQLiteStore) init(ctx context.Context) error {
 	if _, err := s.db.ExecContext(ctx, `PRAGMA journal_mode = WAL`); err != nil {
 		return fmt.Errorf("configure sqlite journal mode: %w", err)
 	}
-	if _, err := s.db.ExecContext(ctx, `
-		CREATE TABLE IF NOT EXISTS issues (
-			id TEXT PRIMARY KEY,
-			raw TEXT NOT NULL,
-			tags_json TEXT NOT NULL,
-			created_by TEXT NOT NULL,
-			created_at_unix_nano INTEGER NOT NULL,
-			tag_scores_json TEXT NOT NULL,
-			embedding_json TEXT NOT NULL
-		)
-	`); err != nil {
-		return fmt.Errorf("create issues table: %w", err)
-	}
-	if _, err := s.db.ExecContext(ctx, `
-		CREATE TABLE IF NOT EXISTS metadata (
-			key TEXT PRIMARY KEY,
-			value TEXT NOT NULL
-		)
-	`); err != nil {
-		return fmt.Errorf("create metadata table: %w", err)
-	}
-	if _, err := s.db.ExecContext(ctx, `
-		INSERT INTO metadata (key, value)
-		VALUES (?, '0')
-		ON CONFLICT(key) DO NOTHING
-	`, issueSeqKey); err != nil {
-		return fmt.Errorf("initialize issue sequence: %w", err)
+	if err := s.runMigrations(ctx); err != nil {
+		return err
 	}
 	return nil
+}
+
+func (s *SQLiteStore) runMigrations(ctx context.Context) error {
+	dbDriver, err := migratesqlite.WithInstance(s.db, &migratesqlite.Config{
+		MigrationsTable: schemaMigrationsTableName,
+	})
+	if err != nil {
+		return fmt.Errorf("create sqlite migrate driver: %w", err)
+	}
+
+	if err := s.bootstrapMigrationVersion(ctx, dbDriver); err != nil {
+		return err
+	}
+
+	sourceDriver, err := iofs.New(sqliteMigrationsFS, "migrations")
+	if err != nil {
+		return fmt.Errorf("open sqlite migrations: %w", err)
+	}
+
+	migrator, err := migrate.NewWithInstance("iofs", sourceDriver, sqliteDriverName, dbDriver)
+	if err != nil {
+		return fmt.Errorf("construct sqlite migrator: %w", err)
+	}
+
+	if err := migrator.Up(); err != nil && !errors.Is(err, migrate.ErrNoChange) {
+		return fmt.Errorf("run sqlite migrations: %w", err)
+	}
+	return nil
+}
+
+func (s *SQLiteStore) bootstrapMigrationVersion(ctx context.Context, dbDriver migratedatabase.Driver) error {
+	version, dirty, err := dbDriver.Version()
+	if err != nil {
+		return fmt.Errorf("read sqlite migration version: %w", err)
+	}
+	if dirty {
+		return nil
+	}
+	if version != migratedatabase.NilVersion {
+		return nil
+	}
+
+	state, err := s.detectSchemaState(ctx)
+	if err != nil {
+		return err
+	}
+	if state == sqliteSchemaCurrent {
+		if err := dbDriver.SetVersion(currentMigrationVersion, false); err != nil {
+			return fmt.Errorf("baseline sqlite migration version: %w", err)
+		}
+	}
+	if state == sqliteSchemaUnknown {
+		return fmt.Errorf("unsupported sqlite schema state")
+	}
+	return nil
+}
+
+type sqliteSchemaState int
+
+const (
+	sqliteSchemaEmpty sqliteSchemaState = iota
+	sqliteSchemaLegacy
+	sqliteSchemaCurrent
+	sqliteSchemaUnknown
+)
+
+func (s *SQLiteStore) detectSchemaState(ctx context.Context) (sqliteSchemaState, error) {
+	issueColumns, err := tableColumns(ctx, s.db, "issues")
+	if err != nil {
+		return sqliteSchemaUnknown, err
+	}
+	if len(issueColumns) == 0 {
+		return sqliteSchemaEmpty, nil
+	}
+
+	if hasColumns(issueColumns, "id", "raw", "tags_json", "created_by", "created_at", "tag_scores_json", "embedding_json") {
+		return sqliteSchemaLegacy, nil
+	}
+	if hasColumns(issueColumns, "id", "raw", "tags_json", "created_by", "created_at_unix_nano", "tag_scores_json", "embedding_json") {
+		return sqliteSchemaCurrent, nil
+	}
+	return sqliteSchemaUnknown, nil
+}
+
+func hasColumns(columns map[string]struct{}, required ...string) bool {
+	for _, requiredColumn := range required {
+		if _, ok := columns[requiredColumn]; !ok {
+			return false
+		}
+	}
+	return true
+}
+
+func tableColumns(ctx context.Context, db *sql.DB, table string) (map[string]struct{}, error) {
+	rows, err := db.QueryContext(ctx, fmt.Sprintf(`PRAGMA table_info(%s)`, table))
+	if err != nil {
+		return nil, fmt.Errorf("load columns for %s: %w", table, err)
+	}
+	defer rows.Close()
+
+	columns := make(map[string]struct{})
+	for rows.Next() {
+		var (
+			cid        int
+			name       string
+			columnType string
+			notNull    int
+			defaultVal sql.NullString
+			primaryKey int
+		)
+		if err := rows.Scan(&cid, &name, &columnType, &notNull, &defaultVal, &primaryKey); err != nil {
+			return nil, fmt.Errorf("scan column for %s: %w", table, err)
+		}
+		columns[name] = struct{}{}
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("iterate columns for %s: %w", table, err)
+	}
+	return columns, nil
 }
 
 type issueRecord struct {
@@ -242,6 +413,13 @@ type issueRecord struct {
 	CreatedBy         string
 	CreatedAtUnixNano int64
 	TagScoresJSON     string
+	EmbeddingJSON     string
+}
+
+type tagRecord struct {
+	Name              string
+	Description       string
+	CreatedAtUnixNano int64
 	EmbeddingJSON     string
 }
 
@@ -270,50 +448,67 @@ func recordFromIssue(issue Issue) (issueRecord, error) {
 	}, nil
 }
 
-func scanIssue(scan func(dest ...any) error) (Issue, error) {
-	var (
-		id                string
-		raw               string
-		tagsJSON          string
-		createdBy         string
-		createdAtUnixNano int64
-		tagScoresJSON     string
-		embeddingJSON     string
-	)
-
-	if err := scan(&id, &raw, &tagsJSON, &createdBy, &createdAtUnixNano, &tagScoresJSON, &embeddingJSON); err != nil {
-		return Issue{}, fmt.Errorf("scan issue: %w", err)
-	}
-
-	createdAt := time.Unix(0, createdAtUnixNano).UTC()
-
-	tags, err := unmarshalStringSlice(tagsJSON)
+func issueFromQuery(row issuesdb.Issue) (Issue, error) {
+	tags, err := unmarshalStringSlice(row.TagsJson)
 	if err != nil {
-		return Issue{}, fmt.Errorf("decode tags for %q: %w", id, err)
+		return Issue{}, fmt.Errorf("decode tags for %q: %w", row.ID, err)
 	}
-	tagScores, err := unmarshalTagScores(tagScoresJSON)
+	tagScores, err := unmarshalTagScores(row.TagScoresJson)
 	if err != nil {
-		return Issue{}, fmt.Errorf("decode tag scores for %q: %w", id, err)
+		return Issue{}, fmt.Errorf("decode tag scores for %q: %w", row.ID, err)
 	}
-	embedding, err := unmarshalEmbedding(embeddingJSON)
+	embedding, err := unmarshalEmbedding(row.EmbeddingJson)
 	if err != nil {
-		return Issue{}, fmt.Errorf("decode embedding for %q: %w", id, err)
+		return Issue{}, fmt.Errorf("decode embedding for %q: %w", row.ID, err)
 	}
 
 	return Issue{
-		ID:        id,
-		Raw:       raw,
+		ID:        row.ID,
+		Raw:       row.Raw,
 		Tags:      tags,
-		CreatedBy: createdBy,
-		CreatedAt: createdAt,
+		CreatedBy: row.CreatedBy,
+		CreatedAt: time.Unix(0, row.CreatedAtUnixNano).UTC(),
 		TagScores: tagScores,
 		Embedding: embedding,
 	}, nil
 }
 
-func nextSequence(ctx context.Context, tx *sql.Tx) (uint64, error) {
-	var raw string
-	if err := tx.QueryRowContext(ctx, `SELECT value FROM metadata WHERE key = ?`, issueSeqKey).Scan(&raw); err != nil {
+func recordFromTag(tag Tag) (tagRecord, error) {
+	embeddingJSON, err := marshalEmbedding(tag.Embedding)
+	if err != nil {
+		return tagRecord{}, fmt.Errorf("marshal tag embedding: %w", err)
+	}
+
+	createdAt := tag.CreatedAt.UTC()
+	if createdAt.IsZero() {
+		createdAt = time.Now().UTC()
+	}
+
+	return tagRecord{
+		Name:              sanitizeTagName(tag.Name),
+		Description:       strings.TrimSpace(tag.Description),
+		CreatedAtUnixNano: createdAt.UnixNano(),
+		EmbeddingJSON:     embeddingJSON,
+	}, nil
+}
+
+func tagFromQuery(row issuesdb.Tag) (Tag, error) {
+	embedding, err := unmarshalEmbedding(row.EmbeddingJson)
+	if err != nil {
+		return Tag{}, fmt.Errorf("decode embedding for tag %q: %w", row.Name, err)
+	}
+
+	return Tag{
+		Name:        row.Name,
+		Description: row.Description,
+		CreatedAt:   time.Unix(0, row.CreatedAtUnixNano).UTC(),
+		Embedding:   embedding,
+	}, nil
+}
+
+func nextSequence(ctx context.Context, q *issuesdb.Queries) (uint64, error) {
+	raw, err := q.GetMetadataValue(ctx, issueSeqKey)
+	if err != nil {
 		return 0, fmt.Errorf("load issue sequence: %w", err)
 	}
 
@@ -323,14 +518,17 @@ func nextSequence(ctx context.Context, tx *sql.Tx) (uint64, error) {
 	}
 
 	next := current + 1
-	if err := setSequence(ctx, tx, next); err != nil {
+	if err := setSequence(ctx, q, next); err != nil {
 		return 0, err
 	}
 	return next, nil
 }
 
-func setSequence(ctx context.Context, tx *sql.Tx, seq uint64) error {
-	if _, err := tx.ExecContext(ctx, `UPDATE metadata SET value = ? WHERE key = ?`, strconv.FormatUint(seq, 10), issueSeqKey); err != nil {
+func setSequence(ctx context.Context, q *issuesdb.Queries, seq uint64) error {
+	if err := q.UpdateMetadataValue(ctx, issuesdb.UpdateMetadataValueParams{
+		Value: strconv.FormatUint(seq, 10),
+		Key:   issueSeqKey,
+	}); err != nil {
 		return fmt.Errorf("update issue sequence: %w", err)
 	}
 	return nil
@@ -414,6 +612,63 @@ func unmarshalEmbedding(raw string) ([]float64, error) {
 		return nil, err
 	}
 	return values, nil
+}
+
+func normalizeCatalogTags(tags []Tag) []Tag {
+	if len(tags) == 0 {
+		return nil
+	}
+
+	merged := make(map[string]Tag, len(tags))
+	for _, raw := range tags {
+		name := sanitizeTagName(raw.Name)
+		if name == "" {
+			continue
+		}
+
+		next := Tag{
+			Name:        name,
+			Description: strings.TrimSpace(raw.Description),
+			CreatedAt:   raw.CreatedAt,
+			Embedding:   copyEmbedding(raw.Embedding),
+		}
+
+		existing, ok := merged[name]
+		if !ok {
+			merged[name] = next
+			continue
+		}
+
+		if existing.Description == "" && next.Description != "" {
+			existing.Description = next.Description
+		}
+		if len(existing.Embedding) == 0 && len(next.Embedding) > 0 {
+			existing.Embedding = copyEmbedding(next.Embedding)
+		}
+		if existing.CreatedAt.IsZero() && !next.CreatedAt.IsZero() {
+			existing.CreatedAt = next.CreatedAt
+		}
+		merged[name] = existing
+	}
+
+	if len(merged) == 0 {
+		return nil
+	}
+
+	out := make([]Tag, 0, len(merged))
+	for _, tag := range merged {
+		out = append(out, tag)
+	}
+	slices.SortStableFunc(out, func(a, b Tag) int {
+		if a.Name < b.Name {
+			return -1
+		}
+		if a.Name > b.Name {
+			return 1
+		}
+		return 0
+	})
+	return out
 }
 
 func ensureDir(path string) error {

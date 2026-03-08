@@ -1,4 +1,4 @@
-# bored
+# splat
 
 An issue tracker where you just dump text in and the system figures out the rest.
 
@@ -90,4 +90,4 @@ Open [http://localhost:3000](http://localhost:3000).
 
 In local development, browser API requests default to `http://127.0.0.1:8081` to avoid proxying through Next.js. Set `NEXT_PUBLIC_API_ORIGIN` if you need a different backend origin.
 
-The Go API now persists issues in SQLite at `data/bored.sqlite` by default. Override the location with `BORED_DB_PATH` or `go run ./apps/server --db /path/to/issues.sqlite`.
+The Go API now persists issues, tags, and tag embeddings in SQLite at `data/splat.sqlite` by default. Override the location with `SPLAT_DB_PATH` or `go run ./apps/server --db /path/to/issues.sqlite`.

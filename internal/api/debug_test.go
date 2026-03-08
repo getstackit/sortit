@@ -8,9 +8,9 @@ import (
 	"net/http/httptest"
 	"testing"
 
-	"bored/internal/ai"
-	"bored/internal/issues"
-	issuemap "bored/internal/map"
+	"splat/internal/ai"
+	"splat/internal/issues"
+	issuemap "splat/internal/map"
 )
 
 type fakeTagger struct {
@@ -85,7 +85,7 @@ func TestDebugIssueAnalyzeEndpoint(t *testing.T) {
 		t.Fatalf("expected 200, got %d", rec.Code)
 	}
 
-	var payload ai.IssueAnalysis
+	var payload debugIssueAnalyzeResponse
 	if err := json.NewDecoder(rec.Body).Decode(&payload); err != nil {
 		t.Fatalf("failed to decode response: %v", err)
 	}
@@ -108,11 +108,82 @@ func TestDebugIssueAnalyzeEndpoint(t *testing.T) {
 	if len(payload.Embedding.Preview) != 3 {
 		t.Fatalf("expected embedding preview length 3, got %d", len(payload.Embedding.Preview))
 	}
+	if payload.ComparedIssueCount != 0 {
+		t.Fatalf("expected no compared issues by default, got %d", payload.ComparedIssueCount)
+	}
 	if len(tagger.capturedTags) != len(issuemap.AllTags()) {
 		t.Fatalf("expected %d default tags, got %d", len(issuemap.AllTags()), len(tagger.capturedTags))
 	}
 	if tagger.capturedTags[0].Description == "" {
 		t.Fatalf("expected default tags to include descriptions")
+	}
+}
+
+func TestDebugIssueAnalyzeEndpointReturnsEmbeddingSimilarities(t *testing.T) {
+	store := newSQLiteIssueStore(t, nil)
+	if err := store.Replace(context.Background(), []issues.Issue{
+		{
+			ID:        "issue-1",
+			Raw:       "export fails in safari",
+			Tags:      []string{"export", "safari"},
+			CreatedBy: "Casey",
+			CreatedAt: issues.SeedIssues()[0].CreatedAt,
+			Embedding: []float64{1, 0},
+		},
+		{
+			ID:        "issue-2",
+			Raw:       "search is slow",
+			Tags:      []string{"search", "performance"},
+			CreatedBy: "Casey",
+			CreatedAt: issues.SeedIssues()[1].CreatedAt,
+			Embedding: []float64{0, 1},
+		},
+	}); err != nil {
+		t.Fatalf("seed issues: %v", err)
+	}
+
+	server := NewServer(ServerConfig{
+		CORSOrigins: []string{"http://localhost:3000"},
+		APIPrefixes: []string{"/api"},
+		IssueStore:  store,
+		Analyzer: ai.NewAnalyzer(&fakeTagger{}, &fakeEmbedder{
+			result: ai.EmbeddingResult{
+				Vector: []float32{1, 0},
+				Info: ai.EmbeddingInfo{
+					Dimensions:          2,
+					Preview:             []float32{1, 0},
+					ChunkCount:          1,
+					EstimatedTokenCount: 4,
+				},
+			},
+		}),
+	})
+
+	req := httptest.NewRequest(http.MethodPost, "/api/debug/issues/analyze", bytes.NewBufferString(`{"text":"export issue"}`))
+	rec := httptest.NewRecorder()
+
+	server.Handler().ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d", rec.Code)
+	}
+
+	var payload debugIssueAnalyzeResponse
+	if err := json.NewDecoder(rec.Body).Decode(&payload); err != nil {
+		t.Fatalf("decode payload: %v", err)
+	}
+
+	if payload.ComparedIssueCount != 2 {
+		t.Fatalf("expected 2 compared issues, got %d", payload.ComparedIssueCount)
+	}
+	if payload.AverageIssueSimilarity != 0.5 {
+		t.Fatalf("expected average similarity 0.5, got %v", payload.AverageIssueSimilarity)
+	}
+	if len(payload.SimilarIssues) != 2 {
+		t.Fatalf("expected 2 similar issues, got %d", len(payload.SimilarIssues))
+	}
+	if payload.SimilarIssues[0].ID != "issue-1" || payload.SimilarIssues[0].Similarity != 1 {
+		t.Fatalf("expected issue-1 similarity 1.0 first, got %+v", payload.SimilarIssues[0])
 	}
 }
 

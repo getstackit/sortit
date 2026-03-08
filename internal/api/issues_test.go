@@ -4,12 +4,31 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
+	"log"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 
-	"bored/internal/issues"
+	"splat/internal/issues"
 )
+
+type failingIssueStore struct {
+	listErr error
+}
+
+func (s failingIssueStore) List(context.Context) ([]issues.Issue, error) {
+	return nil, s.listErr
+}
+
+func (s failingIssueStore) Get(context.Context, string) (issues.Issue, error) {
+	return issues.Issue{}, issues.ErrNotFound
+}
+
+func (s failingIssueStore) Create(context.Context, issues.CreateInput) (issues.Issue, error) {
+	return issues.Issue{}, nil
+}
 
 func TestIssuesEndpointListsSeededIssues(t *testing.T) {
 	server := NewServer(ServerConfig{
@@ -182,6 +201,17 @@ func TestIssuesEndpointCreatesIssue(t *testing.T) {
 	if len(stored[0].Embedding) == 0 {
 		t.Fatal("expected stored issue to include embedding vector")
 	}
+
+	tags, err := store.ListTags(context.Background())
+	if err != nil {
+		t.Fatalf("failed to list stored tags: %v", err)
+	}
+	if len(tags) == 0 {
+		t.Fatal("expected stored tags to include analyzed taxonomy")
+	}
+	if len(tags[0].Embedding) == 0 {
+		t.Fatal("expected stored tags to include embeddings")
+	}
 }
 
 func TestIssuesEndpointRejectsInvalidBody(t *testing.T) {
@@ -205,5 +235,104 @@ func TestIssuesEndpointRejectsInvalidBody(t *testing.T) {
 	}
 	if payload.Error == "" {
 		t.Fatal("expected error message in response")
+	}
+}
+
+func TestIssuesEndpointLogsInternalServerErrors(t *testing.T) {
+	var logOutput bytes.Buffer
+	originalWriter := log.Writer()
+	log.SetOutput(&logOutput)
+	t.Cleanup(func() {
+		log.SetOutput(originalWriter)
+	})
+
+	server := NewServer(ServerConfig{
+		CORSOrigins: []string{"http://localhost:3000"},
+		APIPrefixes: []string{"/api"},
+		IssueStore: failingIssueStore{
+			listErr: errors.New("database offline"),
+		},
+	})
+
+	req := httptest.NewRequest(http.MethodGet, "/api/issues", nil)
+	rec := httptest.NewRecorder()
+
+	server.Handler().ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusInternalServerError {
+		t.Fatalf("expected 500, got %d", rec.Code)
+	}
+
+	var payload errorResponse
+	if err := json.NewDecoder(rec.Body).Decode(&payload); err != nil {
+		t.Fatalf("failed to decode error response: %v", err)
+	}
+	if payload.Error != "failed to list issues" {
+		t.Fatalf("expected stable client error message, got %q", payload.Error)
+	}
+
+	logged := logOutput.String()
+	if !strings.Contains(logged, "500 GET /api/issues: failed to list issues: database offline") {
+		t.Fatalf("expected internal error log, got %q", logged)
+	}
+}
+
+func TestIssuesCompareEndpointReturnsEmbeddingSimilarity(t *testing.T) {
+	store := newSQLiteIssueStore(t, nil)
+	if err := store.Replace(context.Background(), []issues.Issue{
+		{
+			ID:        "issue-a",
+			Raw:       "first",
+			CreatedBy: "Casey",
+			CreatedAt: issues.SeedIssues()[0].CreatedAt,
+			Embedding: []float64{1, 0},
+		},
+		{
+			ID:        "issue-b",
+			Raw:       "second",
+			CreatedBy: "Casey",
+			CreatedAt: issues.SeedIssues()[1].CreatedAt,
+			Embedding: []float64{0.6, 0.8},
+		},
+	}); err != nil {
+		t.Fatalf("seed store: %v", err)
+	}
+
+	server := NewServer(ServerConfig{
+		CORSOrigins: []string{"http://localhost:3000"},
+		APIPrefixes: []string{"/api"},
+		IssueStore:  store,
+	})
+
+	req := httptest.NewRequest(
+		http.MethodPost,
+		"/api/issues/compare",
+		bytes.NewBufferString(`{"ids":["issue-a","issue-b"]}`),
+	)
+	req.Header.Set("Content-Type", "application/json")
+	rec := httptest.NewRecorder()
+
+	server.Handler().ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d", rec.Code)
+	}
+
+	var payload compareIssuesResponse
+	if err := json.NewDecoder(rec.Body).Decode(&payload); err != nil {
+		t.Fatalf("decode compare payload: %v", err)
+	}
+
+	if payload.ComparedIssueCount != 2 {
+		t.Fatalf("expected 2 compared issues, got %d", payload.ComparedIssueCount)
+	}
+	if payload.AverageEmbeddingSimilarity != 0.6 {
+		t.Fatalf("expected average embedding similarity 0.6, got %v", payload.AverageEmbeddingSimilarity)
+	}
+	if len(payload.PairwiseEmbeddingSimilarity) != 1 {
+		t.Fatalf("expected 1 pair, got %d", len(payload.PairwiseEmbeddingSimilarity))
+	}
+	if payload.PairwiseEmbeddingSimilarity[0].Similarity != 0.6 {
+		t.Fatalf("expected pair similarity 0.6, got %v", payload.PairwiseEmbeddingSimilarity[0].Similarity)
 	}
 }

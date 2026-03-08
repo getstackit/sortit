@@ -66,6 +66,13 @@ func (a *Analyzer) AnalyzeIssue(ctx context.Context, text string, tags []Tag) (I
 	}, nil
 }
 
+func (a *Analyzer) EmbedText(ctx context.Context, text string) (EmbeddingResult, error) {
+	if a == nil || a.embedder == nil {
+		return EmbeddingResult{}, ErrNotConfigured
+	}
+	return a.embedder.EmbedText(ctx, text)
+}
+
 func normalizeScores(scores []TagScore, taxonomy []Tag) []TagScore {
 	taxonomyNames := make(map[string]string, len(taxonomy))
 	for _, tag := range taxonomy {

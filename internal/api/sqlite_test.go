@@ -5,7 +5,7 @@ import (
 	"path/filepath"
 	"testing"
 
-	"bored/internal/issues"
+	"splat/internal/issues"
 )
 
 func newSQLiteIssueStore(t *testing.T, seed []issues.Issue) *issues.SQLiteStore {

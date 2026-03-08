@@ -7,8 +7,8 @@ import (
 	"strconv"
 	"testing"
 
-	"bored/internal/issues"
-	issuemap "bored/internal/map"
+	"splat/internal/issues"
+	issuemap "splat/internal/map"
 )
 
 func TestHandlerReturnsNotFoundForUnknownPaths(t *testing.T) {
@@ -321,6 +321,43 @@ func TestMapEdgesEndpointUsesDefaultViewport(t *testing.T) {
 	}
 }
 
+func TestMapEdgesEndpointHonorsEdgeThreshold(t *testing.T) {
+	server := NewServer(ServerConfig{
+		CORSOrigins: []string{"http://localhost:3000"},
+		APIPrefixes: []string{"/api"},
+		IssueStore:  issues.NewInMemoryStore(issues.SeedIssues()),
+	})
+	handler := server.Handler()
+
+	req := httptest.NewRequest(http.MethodGet, "/api/map/edges?edgeThreshold=0.70", nil)
+	rec := httptest.NewRecorder()
+
+	handler.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200 for thresholded map edges request, got %d", rec.Code)
+	}
+
+	var payload issuemap.EdgeResponse
+	if err := json.NewDecoder(rec.Body).Decode(&payload); err != nil {
+		t.Fatalf("failed to decode edge response: %v", err)
+	}
+
+	expected, err := issuemap.BuildEdgeResponseFromIssuesWithTagsAndThreshold(
+		issues.SeedIssues(),
+		nil,
+		nil,
+		0.70,
+	)
+	if err != nil {
+		t.Fatalf("BuildEdgeResponseFromIssuesWithTagsAndThreshold returned error: %v", err)
+	}
+
+	if len(payload.Edges) != len(expected.Edges) {
+		t.Fatalf("expected %d edges, got %d", len(expected.Edges), len(payload.Edges))
+	}
+}
+
 func TestMapEdgesEndpointZoomedInViewport(t *testing.T) {
 	seed := issues.SeedIssues()
 	server := NewServer(ServerConfig{
@@ -526,6 +563,30 @@ func TestMapEdgesEndpointRejectsInvalidViewport(t *testing.T) {
 	}
 	if payload.Error != "invalid viewport query" {
 		t.Fatalf("expected invalid viewport error, got %q", payload.Error)
+	}
+}
+
+func TestMapEndpointsRejectInvalidEdgeThreshold(t *testing.T) {
+	server := NewServer(ServerConfig{
+		CORSOrigins: []string{"http://localhost:3000"},
+		APIPrefixes: []string{"/api"},
+	})
+	handler := server.Handler()
+
+	for _, path := range []string{
+		"/api/map?edgeThreshold=bad",
+		"/api/map?edgeThreshold=1.1",
+		"/api/map/edges?edgeThreshold=bad",
+		"/api/map/edges?edgeThreshold=-0.1",
+	} {
+		req := httptest.NewRequest(http.MethodGet, path, nil)
+		rec := httptest.NewRecorder()
+
+		handler.ServeHTTP(rec, req)
+
+		if rec.Code != http.StatusBadRequest {
+			t.Fatalf("expected 400 for invalid edge threshold query %q, got %d", path, rec.Code)
+		}
 	}
 }
 

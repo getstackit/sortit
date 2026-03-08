@@ -10,8 +10,8 @@ import (
 	"strings"
 	"time"
 
-	"bored/internal/ai"
-	"bored/internal/issues"
+	"splat/internal/ai"
+	"splat/internal/issues"
 )
 
 type ServerConfig struct {
@@ -29,6 +29,12 @@ type Server struct {
 	analyzer      *ai.Analyzer
 	issueAnalyzer *ai.Analyzer
 	issueStore    issues.Store
+	tagStore      issueTagStore
+}
+
+type issueTagStore interface {
+	ListTags(context.Context) ([]issues.Tag, error)
+	UpsertTags(context.Context, []issues.Tag) error
 }
 
 type healthResponse struct {
@@ -54,7 +60,16 @@ func NewServer(cfg ServerConfig) *Server {
 		analyzer:      cfg.Analyzer,
 		issueAnalyzer: fallbackAnalyzer(cfg.Analyzer),
 		issueStore:    store,
+		tagStore:      tagStoreFromIssueStore(store),
 	}
+}
+
+func tagStoreFromIssueStore(store issues.Store) issueTagStore {
+	tagStore, ok := store.(issueTagStore)
+	if !ok {
+		return nil
+	}
+	return tagStore
 }
 
 func fallbackAnalyzer(analyzer *ai.Analyzer) *ai.Analyzer {
@@ -64,6 +79,10 @@ func fallbackAnalyzer(analyzer *ai.Analyzer) *ai.Analyzer {
 	return defaultIssueAnalyzer()
 }
 
+func (s *Server) Initialize(ctx context.Context) error {
+	return s.ensureStoredTags(ctx, issues.DefaultTags())
+}
+
 func (s *Server) Handler() http.Handler {
 	apiMux := http.NewServeMux()
 	apiRoutes := make(map[string]struct{})
@@ -71,7 +90,9 @@ func (s *Server) Handler() http.Handler {
 	for _, prefix := range normalizeAPIPrefixes(s.config.APIPrefixes) {
 		healthRoute := path.Join(prefix, "health")
 		issuesRoute := path.Join(prefix, "issues")
+		issuesCompareRoute := path.Join(prefix, "issues", "compare")
 		issueItemSubtreeRoute := issueItemRoute(prefix)
+		tagsRoute := path.Join(prefix, "tags")
 		mapRoute := path.Join(prefix, "map")
 		mapEdgesRoute := path.Join(prefix, "map", "edges")
 		debugAnalyzeRoute := path.Join(prefix, "debug", "issues", "analyze")
@@ -80,7 +101,9 @@ func (s *Server) Handler() http.Handler {
 
 		apiRoutes[healthRoute] = struct{}{}
 		apiRoutes[issuesRoute] = struct{}{}
+		apiRoutes[issuesCompareRoute] = struct{}{}
 		apiRoutes[issueItemSubtreeRoute] = struct{}{}
+		apiRoutes[tagsRoute] = struct{}{}
 		apiRoutes[mapRoute] = struct{}{}
 		apiRoutes[mapEdgesRoute] = struct{}{}
 		apiRoutes[debugAnalyzeRoute] = struct{}{}
@@ -89,7 +112,9 @@ func (s *Server) Handler() http.Handler {
 
 		apiMux.HandleFunc(healthRoute, s.handleHealth)
 		apiMux.HandleFunc(issuesRoute, s.handleIssues)
+		apiMux.HandleFunc(issuesCompareRoute, s.handleIssueCompare)
 		apiMux.HandleFunc(issueItemSubtreeRoute, s.handleIssueByID(issueItemSubtreeRoute))
+		apiMux.HandleFunc(tagsRoute, s.handleTags)
 		apiMux.HandleFunc(mapRoute, s.handleMap)
 		apiMux.HandleFunc(mapEdgesRoute, s.handleMapEdges)
 		apiMux.HandleFunc(debugAnalyzeRoute, s.handleDebugIssueAnalyze)
@@ -105,7 +130,7 @@ func (s *Server) Handler() http.Handler {
 
 		if r.URL.Path == "/" {
 			writeJSON(w, http.StatusOK, map[string]string{
-				"name":   "bored-server",
+				"name":   "splat-server",
 				"status": "ok",
 			})
 			return
@@ -132,7 +157,7 @@ func (s *Server) Start() error {
 		ReadHeaderTimeout: 10 * time.Second,
 	}
 
-	log.Printf("bored server listening on http://localhost:%d", s.config.Port)
+	log.Printf("splat server listening on http://localhost:%d", s.config.Port)
 	return s.httpServer.ListenAndServe()
 }
 
@@ -151,7 +176,7 @@ func (s *Server) handleHealth(w http.ResponseWriter, r *http.Request) {
 	}
 
 	writeJSON(w, http.StatusOK, healthResponse{
-		Name:      "bored-server",
+		Name:      "splat-server",
 		Status:    "ok",
 		Timestamp: time.Now().UTC().Format(time.RFC3339),
 		Uptime:    time.Since(s.startedAt).Round(time.Second).String(),
@@ -166,6 +191,15 @@ func writeJSON(w http.ResponseWriter, status int, payload any) {
 
 func writeError(w http.ResponseWriter, status int, message string) {
 	writeJSON(w, status, errorResponse{Error: message})
+}
+
+func writeInternalError(w http.ResponseWriter, r *http.Request, message string, err error) {
+	if err != nil {
+		log.Printf("500 %s %s: %s: %v", r.Method, r.URL.Path, message, err)
+	} else {
+		log.Printf("500 %s %s: %s", r.Method, r.URL.Path, message)
+	}
+	writeError(w, http.StatusInternalServerError, message)
 }
 
 func normalizeAPIPrefixes(prefixes []string) []string {

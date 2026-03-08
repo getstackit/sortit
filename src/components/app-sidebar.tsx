@@ -63,9 +63,9 @@ export function AppSidebar({ things = [] }: AppSidebarProps) {
             collapsed && "justify-center"
           )}
         >
-          <span className="text-lg font-semibold tracking-tight">b</span>
+          <span className="text-lg font-semibold tracking-tight">s</span>
           <span className={cn("text-sm font-medium", collapsed && "hidden")}>
-            bored
+            splat
           </span>
         </div>
       </div>
@@ -92,6 +92,13 @@ export function AppSidebar({ things = [] }: AppSidebarProps) {
               href="/map"
               label="Map"
               active={pathname === "/map"}
+              collapsed={collapsed}
+              onClick={closeMobileSidebar}
+            />
+            <SidebarLink
+              href="/tags"
+              label="Tag Map"
+              active={pathname === "/tags"}
               collapsed={collapsed}
               onClick={closeMobileSidebar}
             />

@@ -1,0 +1,10 @@
+version: "2"
+sql:
+  - engine: "sqlite"
+    schema: "internal/issues/sqlc/schema.sql"
+    queries: "internal/issues/sqlc/queries.sql"
+    gen:
+      go:
+        package: "issuesdb"
+        out: "internal/issues/issuesdb"
+        sql_package: "database/sql"

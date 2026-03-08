@@ -11,7 +11,7 @@ import type { ReactNode } from "react";
 import { cn } from "@/lib/utils";
 import { useIsMobile } from "@/hooks/use-mobile";
 
-const DESKTOP_SIDEBAR_STORAGE_KEY = "bored-sidebar-collapsed";
+const DESKTOP_SIDEBAR_STORAGE_KEY = "splat-sidebar-collapsed";
 
 type AppShellContextValue = {
   collapsed: boolean;

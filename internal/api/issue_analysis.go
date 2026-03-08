@@ -2,11 +2,12 @@ package api
 
 import (
 	"context"
+	"fmt"
 	"strings"
+	"time"
 
-	"bored/internal/ai"
-	"bored/internal/issues"
-	issuemap "bored/internal/map"
+	"splat/internal/ai"
+	"splat/internal/issues"
 )
 
 func defaultIssueAnalyzer() *ai.Analyzer {
@@ -14,9 +15,16 @@ func defaultIssueAnalyzer() *ai.Analyzer {
 }
 
 func (s *Server) analyzeIssueInput(ctx context.Context, input issues.CreateInput) (issues.CreateInput, error) {
-	taxonomy := issueTaxonomy(input.Tags)
+	taxonomy, err := s.issueTaxonomy(ctx, input.Tags)
+	if err != nil {
+		return issues.CreateInput{}, err
+	}
 	analyzed, err := s.issueAnalyzer.AnalyzeIssueData(ctx, input.Raw, taxonomy)
 	if err != nil {
+		return issues.CreateInput{}, err
+	}
+
+	if err := s.ensureStoredTags(ctx, catalogTagsFromAnalysis(taxonomy, input.Tags, analyzed.Tags)); err != nil {
 		return issues.CreateInput{}, err
 	}
 
@@ -52,7 +60,7 @@ func (s *Server) analyzeSeedIssues(ctx context.Context, seeds []issues.Issue) ([
 	return enriched, nil
 }
 
-func issueTaxonomy(preferred []string) []ai.Tag {
+func (s *Server) issueTaxonomy(ctx context.Context, preferred []string) ([]ai.Tag, error) {
 	if len(preferred) > 0 {
 		tags := make([]ai.Tag, 0, len(preferred))
 		seen := make(map[string]struct{}, len(preferred))
@@ -69,11 +77,21 @@ func issueTaxonomy(preferred []string) []ai.Tag {
 			tags = append(tags, ai.Tag{Name: name})
 		}
 		if len(tags) > 0 {
-			return tags
+			return tags, nil
 		}
 	}
 
-	definitions := issuemap.AllTagDefinitions()
+	if s.tagStore != nil {
+		stored, err := s.tagStore.ListTags(ctx)
+		if err != nil {
+			return nil, fmt.Errorf("list stored tags: %w", err)
+		}
+		if len(stored) > 0 {
+			return aiTagsFromCatalog(stored), nil
+		}
+	}
+
+	definitions := issues.DefaultTags()
 	tags := make([]ai.Tag, 0, len(definitions))
 	for _, definition := range definitions {
 		if definition.Name == "" {
@@ -84,7 +102,7 @@ func issueTaxonomy(preferred []string) []ai.Tag {
 			Description: definition.Description,
 		})
 	}
-	return tags
+	return tags, nil
 }
 
 func issueTagScoresFromAnalysis(scores []ai.TagScore) []issues.TagRelevance {
@@ -115,4 +133,143 @@ func float32VectorToFloat64(values []float32) []float64 {
 		out[i] = float64(value)
 	}
 	return out
+}
+
+func (s *Server) ensureStoredTags(ctx context.Context, tags []issues.Tag) error {
+	if s.tagStore == nil || len(tags) == 0 {
+		return nil
+	}
+
+	existing, err := s.tagStore.ListTags(ctx)
+	if err != nil {
+		return fmt.Errorf("list tags for sync: %w", err)
+	}
+
+	existingByName := make(map[string]issues.Tag, len(existing))
+	for _, tag := range existing {
+		existingByName[normalizeCatalogTagName(tag.Name)] = tag
+	}
+
+	toPersist := make([]issues.Tag, 0, len(tags))
+	for _, raw := range tags {
+		name := normalizeCatalogTagName(raw.Name)
+		if name == "" {
+			continue
+		}
+
+		tag := issues.Tag{
+			Name:        name,
+			Description: strings.TrimSpace(raw.Description),
+			CreatedAt:   raw.CreatedAt,
+			Embedding:   append([]float64(nil), raw.Embedding...),
+		}
+
+		existingTag, exists := existingByName[name]
+		if exists {
+			if tag.Description == "" {
+				tag.Description = existingTag.Description
+			}
+			if len(tag.Embedding) == 0 {
+				tag.Embedding = append([]float64(nil), existingTag.Embedding...)
+			}
+			if tag.CreatedAt.IsZero() {
+				tag.CreatedAt = existingTag.CreatedAt
+			}
+		}
+
+		if tag.CreatedAt.IsZero() {
+			tag.CreatedAt = time.Now().UTC()
+		}
+		if len(tag.Embedding) == 0 {
+			embedding, err := s.embedTag(ctx, tag)
+			if err != nil {
+				return err
+			}
+			tag.Embedding = embedding
+		}
+
+		toPersist = append(toPersist, tag)
+	}
+
+	if len(toPersist) == 0 {
+		return nil
+	}
+	if err := s.tagStore.UpsertTags(ctx, toPersist); err != nil {
+		return fmt.Errorf("upsert stored tags: %w", err)
+	}
+	return nil
+}
+
+func (s *Server) embedTag(ctx context.Context, tag issues.Tag) ([]float64, error) {
+	descriptor := tag.Name
+	if description := strings.TrimSpace(tag.Description); description != "" {
+		descriptor += " - " + description
+	}
+
+	result, err := s.issueAnalyzer.EmbedText(ctx, descriptor)
+	if err != nil {
+		return nil, fmt.Errorf("embed tag %q: %w", tag.Name, err)
+	}
+	return float32VectorToFloat64(result.Vector), nil
+}
+
+func aiTagsFromCatalog(tags []issues.Tag) []ai.Tag {
+	out := make([]ai.Tag, 0, len(tags))
+	for _, tag := range tags {
+		name := normalizeCatalogTagName(tag.Name)
+		if name == "" {
+			continue
+		}
+		out = append(out, ai.Tag{
+			Name:        name,
+			Description: strings.TrimSpace(tag.Description),
+		})
+	}
+	return out
+}
+
+func catalogTagsFromAnalysis(taxonomy []ai.Tag, explicit []string, scores []ai.TagScore) []issues.Tag {
+	definitions := make(map[string]string, len(taxonomy))
+	for _, tag := range taxonomy {
+		name := normalizeCatalogTagName(tag.Name)
+		if name == "" {
+			continue
+		}
+		definitions[name] = strings.TrimSpace(tag.Description)
+	}
+
+	catalog := make([]issues.Tag, 0, len(explicit)+len(scores))
+	for _, tag := range explicit {
+		name := normalizeCatalogTagName(tag)
+		if name == "" {
+			continue
+		}
+		catalog = append(catalog, issues.Tag{
+			Name:        name,
+			Description: definitions[name],
+		})
+	}
+
+	for _, score := range scores {
+		name := normalizeCatalogTagName(score.Tag)
+		if name == "" {
+			continue
+		}
+
+		description := definitions[name]
+		if description == "" {
+			description = strings.TrimSpace(score.Description)
+		}
+
+		catalog = append(catalog, issues.Tag{
+			Name:        name,
+			Description: description,
+		})
+	}
+
+	return catalog
+}
+
+func normalizeCatalogTagName(name string) string {
+	return strings.ToLower(strings.Join(strings.Fields(strings.TrimSpace(name)), " "))
 }

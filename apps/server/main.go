@@ -11,9 +11,9 @@ import (
 	"syscall"
 	"time"
 
-	"bored/internal/ai"
-	"bored/internal/api"
-	"bored/internal/issues"
+	"splat/internal/ai"
+	"splat/internal/api"
+	"splat/internal/issues"
 )
 
 func main() {
@@ -26,7 +26,7 @@ func run() error {
 	var (
 		port          = flag.Int("port", 8081, "Port to listen on")
 		corsOrigins   = flag.String("cors", "http://localhost:3000,http://127.0.0.1:3000", "Comma-separated allowed CORS origins")
-		dbPath        = flag.String("db", envOrDefault("BORED_DB_PATH", "data/bored.sqlite"), "SQLite database path")
+		dbPath        = flag.String("db", envOrDefault("SPLAT_DB_PATH", "data/splat.sqlite"), "SQLite database path")
 		shutdownGrace = flag.Duration("shutdown-timeout", 10*time.Second, "Graceful shutdown timeout")
 	)
 	flag.Parse()
@@ -49,6 +49,9 @@ func run() error {
 		Analyzer:    analyzer,
 		IssueStore:  issueStore,
 	})
+	if err := server.Initialize(context.Background()); err != nil {
+		return err
+	}
 
 	errCh := make(chan error, 1)
 	go func() {

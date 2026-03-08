@@ -8,6 +8,7 @@ import {
   useState,
 } from "react";
 import type { MouseEvent as ReactMouseEvent } from "react";
+import { usePathname, useSearchParams } from "next/navigation";
 import { AppShell, AppShellToggle } from "@/components/app-shell";
 import { AppSidebar } from "@/components/app-sidebar";
 import { apiURL } from "@/lib/api";
@@ -78,11 +79,31 @@ type PairwiseTagSimilarity = {
   sharedTags: TagComparison[];
 };
 
+type PairwiseEmbeddingSimilarity = {
+  sourceId: string;
+  targetId: string;
+  similarity: number;
+};
+
+type BatchEmbeddingAnalysis = {
+  comparedIssueCount: number;
+  averageEmbeddingSimilarity: number;
+  pairwiseEmbeddingSimilarity: PairwiseEmbeddingSimilarity[];
+};
+
 type BatchAnalysis = {
   averageSimilarity: number;
   sharedTags: TagComparison[];
   supportingTags: TagComparison[];
   pairwise: PairwiseTagSimilarity[];
+};
+
+type MapURLState = {
+  viewport: Viewport;
+  selectedId: string | null;
+  batchIds: string[];
+  showBatchAnalysis: boolean;
+  edgeThreshold: number;
 };
 
 const TAG_COLORS: Record<string, string> = {
@@ -116,6 +137,7 @@ const MIN_VIEW_SIZE = 0.12;
 const MAX_VIEW_SIZE = 2.4;
 const PAN_OVERSCAN = 0.35;
 const EDGE_FETCH_DEBOUNCE_MS = 120;
+const DEFAULT_EDGE_THRESHOLD = 0.7;
 const MIN_RENDERED_AMBIENT_EDGES = 24;
 const RENDERED_EDGE_RATIO = 0.2;
 const MAX_RENDERED_AMBIENT_EDGES = 180;
@@ -208,6 +230,96 @@ function viewportQuery(viewport: Viewport) {
   return params.toString();
 }
 
+function mapQuery(viewport: Viewport, edgeThreshold: number) {
+  const params = new URLSearchParams(viewportQuery(viewport));
+  params.set("edgeThreshold", edgeThreshold.toFixed(2));
+  return params.toString();
+}
+
+function parseNumberParam(
+  params: Pick<URLSearchParams, "get">,
+  key: keyof Viewport
+) {
+  const raw = params.get(key);
+  if (!raw) {
+    return null;
+  }
+
+  const parsed = Number(raw);
+  return Number.isFinite(parsed) ? parsed : null;
+}
+
+function parseSelectedIssueID(params: Pick<URLSearchParams, "get">) {
+  const value = params.get("issue");
+  if (!value) {
+    return null;
+  }
+
+  const normalized = value.trim();
+  return normalized === "" ? null : normalized;
+}
+
+function parseBatchIssueIDs(params: Pick<URLSearchParams, "get">) {
+  const value = params.get("batch");
+  if (!value) {
+    return [];
+  }
+
+  const seen = new Set<string>();
+  const ids: string[] = [];
+
+  for (const raw of value.split(",")) {
+    const normalized = raw.trim();
+    if (normalized === "" || seen.has(normalized)) {
+      continue;
+    }
+
+    seen.add(normalized);
+    ids.push(normalized);
+  }
+
+  return ids;
+}
+
+function parseViewportFromParams(params: Pick<URLSearchParams, "get">) {
+  const xMin = parseNumberParam(params, "xMin");
+  const xMax = parseNumberParam(params, "xMax");
+  const yMin = parseNumberParam(params, "yMin");
+  const yMax = parseNumberParam(params, "yMax");
+
+  if (xMin == null || xMax == null || yMin == null || yMax == null) {
+    return DEFAULT_VIEWPORT;
+  }
+
+  return clampViewport({ xMin, xMax, yMin, yMax });
+}
+
+function parseEdgeThresholdParam(params: Pick<URLSearchParams, "get">) {
+  const raw = params.get("edgeThreshold");
+  if (!raw) {
+    return DEFAULT_EDGE_THRESHOLD;
+  }
+
+  const parsed = Number(raw);
+  if (!Number.isFinite(parsed) || parsed < 0 || parsed > 1) {
+    return DEFAULT_EDGE_THRESHOLD;
+  }
+
+  return parsed;
+}
+
+function parseMapURLState(params: Pick<URLSearchParams, "get">): MapURLState {
+  const batchIds = parseBatchIssueIDs(params);
+
+  return {
+    viewport: parseViewportFromParams(params),
+    selectedId: batchIds.length > 0 ? null : parseSelectedIssueID(params),
+    batchIds,
+    showBatchAnalysis: batchIds.length > 1 && params.get("analyze") === "1",
+    edgeThreshold: parseEdgeThresholdParam(params),
+  };
+}
+
 function clusterIntersectsViewport(cluster: MapCluster, viewport: Viewport) {
   return !(
     cluster.centerX + cluster.radius < viewport.xMin ||
@@ -241,6 +353,26 @@ async function fetchViewportEdges(
     const fallback = await fetchJSON<MapData>(`/api/v1/map?${viewportKey}`, signal);
     return { edges: fallback.edges };
   }
+}
+
+async function compareIssueEmbeddings(
+  ids: string[],
+  signal: AbortSignal
+): Promise<BatchEmbeddingAnalysis> {
+  const response = await fetch(apiURL("/api/v1/issues/compare"), {
+    method: "POST",
+    signal,
+    headers: {
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({ ids }),
+  });
+
+  if (!response.ok) {
+    throw new Error(`HTTP ${response.status}`);
+  }
+
+  return (await response.json()) as BatchEmbeddingAnalysis;
 }
 
 function issueLabel(raw: string, maxLength: number) {
@@ -366,17 +498,32 @@ function analyzeBatch(batchIssues: MapIssue[]): BatchAnalysis | null {
 }
 
 export default function MapPage() {
+  const pathname = usePathname();
+  const searchParams = useSearchParams();
+  const initialURLState = useMemo(() => parseMapURLState(searchParams), [searchParams]);
+  const baseQueryParamsRef = useRef(new URLSearchParams(searchParams.toString()));
   const [mapData, setMapData] = useState<MapData | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [viewport, setViewport] = useState<Viewport>(DEFAULT_VIEWPORT);
+  const [viewport, setViewport] = useState<Viewport>(initialURLState.viewport);
+  const [edgeThreshold, setEdgeThreshold] = useState(initialURLState.edgeThreshold);
   const [loadedEdgeKey, setLoadedEdgeKey] = useState("");
   const [hoveredId, setHoveredId] = useState<string | null>(null);
-  const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [selectedIdState, setSelectedId] = useState<string | null>(
+    initialURLState.selectedId
+  );
   const [lassoPoints, setLassoPoints] = useState<ScreenPoint[]>([]);
   const [isLassoing, setIsLassoing] = useState(false);
-  const [selectedBatch, setSelectedBatch] = useState<Set<string>>(new Set());
-  const [showBatchAnalysis, setShowBatchAnalysis] = useState(false);
+  const [selectedBatchState, setSelectedBatch] = useState<Set<string>>(
+    new Set(initialURLState.batchIds)
+  );
+  const [showBatchAnalysisState, setShowBatchAnalysis] = useState(
+    initialURLState.showBatchAnalysis
+  );
+  const [batchEmbeddingAnalysis, setBatchEmbeddingAnalysis] =
+    useState<BatchEmbeddingAnalysis | null>(null);
+  const [batchEmbeddingError, setBatchEmbeddingError] = useState<string | null>(null);
+  const [batchEmbeddingLoading, setBatchEmbeddingLoading] = useState(false);
   const [dimensions, setDimensions] = useState({ width: 800, height: 600 });
 
   const containerRef = useRef<HTMLDivElement>(null);
@@ -391,6 +538,9 @@ export default function MapPage() {
   const lassoFrameRef = useRef<number | null>(null);
   const blankClickCandidateRef = useRef(false);
   const blankClickStartRef = useRef<ScreenPoint | null>(null);
+  const initialViewportKeyRef = useRef(
+    mapQuery(initialURLState.viewport, initialURLState.edgeThreshold)
+  );
 
   useEffect(() => {
     viewportRef.current = viewport;
@@ -412,7 +562,7 @@ export default function MapPage() {
   }, []);
 
   useEffect(() => {
-    const initialViewportQuery = viewportQuery(DEFAULT_VIEWPORT);
+    const initialViewportQuery = initialViewportKeyRef.current;
 
     fetchJSON<MapData>(`/api/v1/map?${initialViewportQuery}`)
       .then((data) => {
@@ -460,7 +610,10 @@ export default function MapPage() {
     return () => observer.disconnect();
   }, [loading]);
 
-  const viewportKey = useMemo(() => viewportQuery(viewport), [viewport]);
+  const viewportKey = useMemo(
+    () => mapQuery(viewport, edgeThreshold),
+    [edgeThreshold, viewport]
+  );
 
   useEffect(() => {
     if (!mapData || viewportKey === loadedEdgeKey) {
@@ -493,6 +646,78 @@ export default function MapPage() {
   const clusters = mapData?.clusters ?? EMPTY_CLUSTERS;
   const hasCurrentEdges = loadedEdgeKey === viewportKey;
   const currentEdges = hasCurrentEdges ? edges : EMPTY_EDGES;
+  const validIssueIDs = useMemo(
+    () => new Set(issues.map((issue) => issue.id)),
+    [issues]
+  );
+  const selectedId = useMemo(() => {
+    if (!mapData || selectedIdState == null || validIssueIDs.has(selectedIdState)) {
+      return selectedIdState;
+    }
+
+    return null;
+  }, [mapData, selectedIdState, validIssueIDs]);
+  const selectedBatch = useMemo(() => {
+    if (!mapData) {
+      return selectedBatchState;
+    }
+
+    const next = new Set<string>();
+    for (const id of selectedBatchState) {
+      if (validIssueIDs.has(id)) {
+        next.add(id);
+      }
+    }
+    return next;
+  }, [mapData, selectedBatchState, validIssueIDs]);
+  const selectedBatchKey = useMemo(
+    () => Array.from(selectedBatch).sort().join(","),
+    [selectedBatch]
+  );
+  const showBatchAnalysis = showBatchAnalysisState && selectedBatch.size > 1;
+
+  useEffect(() => {
+    const params = new URLSearchParams(baseQueryParamsRef.current?.toString() ?? "");
+    params.delete("xMin");
+    params.delete("xMax");
+    params.delete("yMin");
+    params.delete("yMax");
+    params.delete("issue");
+    params.delete("batch");
+    params.delete("analyze");
+    params.delete("edgeThreshold");
+
+    const viewportParams = new URLSearchParams(viewportQuery(viewport));
+    for (const [key, value] of viewportParams.entries()) {
+      params.set(key, value);
+    }
+    params.set("edgeThreshold", edgeThreshold.toFixed(2));
+
+    if (selectedBatch.size > 0) {
+      params.set("batch", selectedBatchKey);
+      if (showBatchAnalysis && selectedBatch.size > 1) {
+        params.set("analyze", "1");
+      }
+    } else if (selectedId != null) {
+      params.set("issue", selectedId);
+    }
+
+    const nextSearch = params.toString();
+    const nextURL = nextSearch ? `${pathname}?${nextSearch}` : pathname;
+    const currentURL = `${window.location.pathname}${window.location.search}`;
+
+    if (nextURL !== currentURL) {
+      window.history.replaceState(window.history.state, "", nextURL);
+    }
+  }, [
+    edgeThreshold,
+    pathname,
+    selectedBatch,
+    selectedBatchKey,
+    selectedId,
+    showBatchAnalysis,
+    viewport,
+  ]);
 
   const issueIndex = useMemo(
     () => new Map(issues.map((issue) => [issue.id, issue])),
@@ -625,6 +850,57 @@ export default function MapPage() {
   );
   const batchAnalysis = useMemo(() => analyzeBatch(batchIssues), [batchIssues]);
 
+  useEffect(() => {
+    if (!showBatchAnalysis || batchIssues.length < 2) {
+      queueMicrotask(() => {
+        setBatchEmbeddingAnalysis(null);
+        setBatchEmbeddingError(null);
+        setBatchEmbeddingLoading(false);
+      });
+      return;
+    }
+
+    const controller = new AbortController();
+    queueMicrotask(() => {
+      if (controller.signal.aborted) {
+        return;
+      }
+      setBatchEmbeddingAnalysis(null);
+      setBatchEmbeddingLoading(true);
+      setBatchEmbeddingError(null);
+    });
+
+    compareIssueEmbeddings(
+      batchIssues.map((issue) => issue.id),
+      controller.signal
+    )
+      .then((payload) => {
+        setBatchEmbeddingAnalysis(payload);
+      })
+      .catch((error) => {
+        if (controller.signal.aborted) {
+          return;
+        }
+        setBatchEmbeddingAnalysis(null);
+        setBatchEmbeddingError(
+          error instanceof Error ? error.message : "Failed to compare issues"
+        );
+      })
+      .finally(() => {
+        if (!controller.signal.aborted) {
+          setBatchEmbeddingLoading(false);
+        }
+      });
+
+    return () => controller.abort();
+  }, [batchIssues, showBatchAnalysis]);
+
+  function resetBatchEmbeddingAnalysis() {
+    setBatchEmbeddingAnalysis(null);
+    setBatchEmbeddingError(null);
+    setBatchEmbeddingLoading(false);
+  }
+
   function scheduleViewport(nextViewport: Viewport) {
     viewportRef.current = nextViewport;
     pendingViewportRef.current = nextViewport;
@@ -674,6 +950,7 @@ export default function MapPage() {
     lassoPointsRef.current = [];
     pendingLassoRef.current = null;
     setShowBatchAnalysis(false);
+    resetBatchEmbeddingAnalysis();
     setSelectedBatch(new Set());
     setLassoPoints([]);
   }
@@ -707,6 +984,7 @@ export default function MapPage() {
 
   function toggleBatchIssue(issueId: string) {
     setShowBatchAnalysis(false);
+    resetBatchEmbeddingAnalysis();
     setSelectedId(null);
     setSelectedBatch((current) => {
       const next = new Set(current);
@@ -944,6 +1222,22 @@ export default function MapPage() {
           <span className="rounded-full bg-muted px-2 py-0.5 text-[11px] font-medium text-muted-foreground tabular-nums">
             {renderedEdges.length} edges
           </span>
+          <label className="ml-2 flex items-center gap-2 text-[11px] text-muted-foreground">
+            <span>Threshold {Math.round(edgeThreshold * 100)}%</span>
+            <input
+              type="range"
+              min="0"
+              max="1"
+              step="0.01"
+              value={edgeThreshold}
+              onChange={(event) => {
+                setEdgeThreshold(Number(event.target.value));
+                setLoadedEdgeKey("");
+              }}
+              className="h-1.5 w-28 accent-foreground"
+              aria-label="Similarity edge threshold"
+            />
+          </label>
           <button
             type="button"
             onClick={() => scheduleViewport(DEFAULT_VIEWPORT)}
@@ -966,7 +1260,7 @@ export default function MapPage() {
             </>
           )}
           <span className="ml-auto text-[11px] text-muted-foreground/50">
-            Scroll to zoom. Drag to pan. Shift-click to build a batch. Shift-drag to lasso. Use Analyze in the sidebar to compare tag loadings.
+            Scroll to zoom. Drag to pan. Shift-click to build a batch. Shift-drag to lasso. Use Analyze in the sidebar to compare tags and embeddings.
           </span>
         </div>
       </header>
@@ -1294,7 +1588,7 @@ export default function MapPage() {
                     </p>
                     <p className="mt-1 text-[11px] text-muted-foreground">
                       {showBatchAnalysis
-                        ? "Comparing the selected issues by their tag loadings."
+                        ? "Comparing the selected issues by both tag loadings and embeddings."
                         : "Shift-click or shift-drag issues to build a comparison batch."}
                     </p>
                   </div>
@@ -1304,14 +1598,40 @@ export default function MapPage() {
                 </div>
                 {showBatchAnalysis && batchAnalysis ? (
                   <div className="mt-4 space-y-5">
-                    <div className="rounded-xl border border-border/50 bg-muted/20 p-3">
-                      <p className="text-[11px] font-medium uppercase tracking-[0.14em] text-muted-foreground">
-                        Average Pairwise Similarity
-                      </p>
-                      <p className="mt-2 text-2xl font-semibold tabular-nums">
-                        {(batchAnalysis.averageSimilarity * 100).toFixed(0)}%
-                      </p>
+                    <div className="grid gap-3 md:grid-cols-2">
+                      <div className="rounded-xl border border-border/50 bg-muted/20 p-3">
+                        <p className="text-[11px] font-medium uppercase tracking-[0.14em] text-muted-foreground">
+                          Tag Similarity
+                        </p>
+                        <p className="mt-2 text-2xl font-semibold tabular-nums">
+                          {(batchAnalysis.averageSimilarity * 100).toFixed(0)}%
+                        </p>
+                        <p className="mt-1 text-[11px] text-muted-foreground">
+                          Based on selected issues&apos; tag loadings.
+                        </p>
+                      </div>
+                      <div className="rounded-xl border border-border/50 bg-muted/20 p-3">
+                        <p className="text-[11px] font-medium uppercase tracking-[0.14em] text-muted-foreground">
+                          Embedding Similarity
+                        </p>
+                        <p className="mt-2 text-2xl font-semibold tabular-nums">
+                          {batchEmbeddingLoading
+                            ? "..."
+                            : batchEmbeddingAnalysis
+                              ? `${(batchEmbeddingAnalysis.averageEmbeddingSimilarity * 100).toFixed(0)}%`
+                              : "--"}
+                        </p>
+                        <p className="mt-1 text-[11px] text-muted-foreground">
+                          Based on stored issue embeddings.
+                        </p>
+                      </div>
                     </div>
+
+                    {batchEmbeddingError && (
+                      <div className="rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-950">
+                        {batchEmbeddingError}
+                      </div>
+                    )}
 
                     <div className="space-y-2">
                       <p className="text-[11px] font-medium uppercase tracking-[0.14em] text-muted-foreground">
@@ -1362,6 +1682,13 @@ export default function MapPage() {
                         const source = issueIndex.get(pair.sourceId);
                         const target = issueIndex.get(pair.targetId);
                         if (!source || !target) return null;
+                        const embeddingPair = batchEmbeddingAnalysis?.pairwiseEmbeddingSimilarity.find(
+                          (item) =>
+                            (item.sourceId === pair.sourceId &&
+                              item.targetId === pair.targetId) ||
+                            (item.sourceId === pair.targetId &&
+                              item.targetId === pair.sourceId)
+                        );
 
                         return (
                           <div
@@ -1373,9 +1700,17 @@ export default function MapPage() {
                                 {issueLabel(source.raw, 28)} /{" "}
                                 {issueLabel(target.raw, 28)}
                               </p>
-                              <span className="shrink-0 text-[11px] font-medium tabular-nums text-muted-foreground">
-                                {(pair.similarity * 100).toFixed(0)}%
-                              </span>
+                              <div className="shrink-0 text-right text-[11px] font-medium tabular-nums text-muted-foreground">
+                                <div>Tags {(pair.similarity * 100).toFixed(0)}%</div>
+                                <div>
+                                  Emb{" "}
+                                  {embeddingPair
+                                    ? `${(embeddingPair.similarity * 100).toFixed(0)}%`
+                                    : batchEmbeddingLoading
+                                      ? "..."
+                                      : "--"}
+                                </div>
+                              </div>
                             </div>
                             <div className="mt-2 flex flex-wrap gap-1">
                               {pair.sharedTags.length > 0 ? (
@@ -1437,7 +1772,15 @@ export default function MapPage() {
                   {selectedBatch.size > 1 && (
                     <button
                       type="button"
-                      onClick={() => setShowBatchAnalysis((current) => !current)}
+                      onClick={() =>
+                        setShowBatchAnalysis((current) => {
+                          const next = !current;
+                          if (!next) {
+                            resetBatchEmbeddingAnalysis();
+                          }
+                          return next;
+                        })
+                      }
                       className="rounded-md bg-foreground px-3 py-2 text-sm text-background transition-opacity hover:opacity-90"
                     >
                       {showBatchAnalysis ? "Back to Selection" : "Analyze"}

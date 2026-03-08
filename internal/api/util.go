@@ -6,7 +6,7 @@ import (
 	"strconv"
 	"strings"
 
-	issuemap "bored/internal/map"
+	issuemap "splat/internal/map"
 )
 
 func ParseCSV(raw string) []string {
@@ -60,6 +60,22 @@ func ParseViewport(values url.Values) (*issuemap.Viewport, error) {
 	}, nil
 }
 
+func ParseEdgeThreshold(values url.Values) (*float64, error) {
+	raw := strings.TrimSpace(values.Get("edgeThreshold"))
+	if raw == "" {
+		return nil, nil
+	}
+
+	threshold, err := parseFloatQuery(values, "edgeThreshold")
+	if err != nil {
+		return nil, err
+	}
+	if threshold < 0 || threshold > 1 {
+		return nil, strconv.ErrSyntax
+	}
+	return &threshold, nil
+}
+
 func parseFloatQuery(values url.Values, key string) (float64, error) {
 	value := strings.TrimSpace(values.Get(key))
 	if value == "" {
@@ -73,4 +89,21 @@ func parseFloatQuery(values url.Values, key string) (float64, error) {
 		return 0, strconv.ErrSyntax
 	}
 	return parsed, nil
+}
+
+func cosineSimilarity(a, b []float64) float64 {
+	if len(a) == 0 || len(a) != len(b) {
+		return 0
+	}
+
+	var dot, magA, magB float64
+	for i := range a {
+		dot += a[i] * b[i]
+		magA += a[i] * a[i]
+		magB += b[i] * b[i]
+	}
+	if magA == 0 || magB == 0 {
+		return 0
+	}
+	return dot / (math.Sqrt(magA) * math.Sqrt(magB))
 }

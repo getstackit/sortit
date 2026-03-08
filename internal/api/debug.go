@@ -5,13 +5,14 @@ import (
 	"encoding/json"
 	"errors"
 	"io"
+	"math"
 	"net/http"
+	"sort"
 	"strings"
 	"time"
 
-	"bored/internal/ai"
-	"bored/internal/issues"
-	issuemap "bored/internal/map"
+	"splat/internal/ai"
+	"splat/internal/issues"
 )
 
 const debugAnalyzeTimeout = 45 * time.Second
@@ -27,6 +28,23 @@ type replaceableIssueStore interface {
 
 type debugIssueStoreResponse struct {
 	IssueCount int `json:"issueCount"`
+}
+
+type debugIssueSimilarity struct {
+	ID         string   `json:"id"`
+	Raw        string   `json:"raw"`
+	Tags       []string `json:"tags"`
+	Similarity float64  `json:"similarity"`
+}
+
+type debugIssueAnalyzeResponse struct {
+	Tags                   []ai.TagScore          `json:"tags"`
+	Embedding              ai.EmbeddingInfo       `json:"embedding"`
+	Tagger                 ai.ModelInfo           `json:"tagger"`
+	Embedder               ai.ModelInfo           `json:"embedder"`
+	ComparedIssueCount     int                    `json:"comparedIssueCount"`
+	AverageIssueSimilarity float64                `json:"averageIssueSimilarity"`
+	SimilarIssues          []debugIssueSimilarity `json:"similarIssues"`
 }
 
 func (s *Server) handleDebugIssueAnalyze(w http.ResponseWriter, r *http.Request) {
@@ -45,7 +63,13 @@ func (s *Server) handleDebugIssueAnalyze(w http.ResponseWriter, r *http.Request)
 	ctx, cancel := context.WithTimeout(r.Context(), debugAnalyzeTimeout)
 	defer cancel()
 
-	analysis, err := s.analyzer.AnalyzeIssue(ctx, request.Text, debugTags(request.Tags))
+	tags, err := s.issueTaxonomy(ctx, request.Tags)
+	if err != nil {
+		writeInternalError(w, r, "failed to load tag taxonomy", err)
+		return
+	}
+
+	analyzed, err := s.analyzer.AnalyzeIssueData(ctx, request.Text, tags)
 	if err != nil {
 		status := http.StatusInternalServerError
 		if errors.Is(err, ai.ErrNotConfigured) {
@@ -55,7 +79,21 @@ func (s *Server) handleDebugIssueAnalyze(w http.ResponseWriter, r *http.Request)
 		return
 	}
 
-	writeJSON(w, http.StatusOK, analysis)
+	similarities, comparedIssueCount, averageSimilarity, err := s.issueEmbeddingSimilarities(ctx, float32VectorToFloat64(analyzed.Embedding.Vector))
+	if err != nil {
+		writeInternalError(w, r, "failed to compute issue similarities", err)
+		return
+	}
+
+	writeJSON(w, http.StatusOK, debugIssueAnalyzeResponse{
+		Tags:                   analyzed.Tags,
+		Embedding:              analyzed.Embedding.Info,
+		Tagger:                 analyzed.Tagger,
+		Embedder:               analyzed.Embedder,
+		ComparedIssueCount:     comparedIssueCount,
+		AverageIssueSimilarity: averageSimilarity,
+		SimilarIssues:          similarities,
+	})
 }
 
 func (s *Server) handleDebugIssueSampleLoad(w http.ResponseWriter, r *http.Request) {
@@ -74,12 +112,12 @@ func (s *Server) handleDebugIssueSampleLoad(w http.ResponseWriter, r *http.Reque
 	samples := issues.SeedIssues()
 	enriched, err := s.analyzeSeedIssues(r.Context(), samples)
 	if err != nil {
-		writeError(w, http.StatusInternalServerError, "failed to analyze sample issues")
+		writeInternalError(w, r, "failed to analyze sample issues", err)
 		return
 	}
 
 	if err := store.Replace(r.Context(), enriched); err != nil {
-		writeError(w, http.StatusInternalServerError, "failed to load sample issues")
+		writeInternalError(w, r, "failed to load sample issues", err)
 		return
 	}
 
@@ -100,7 +138,7 @@ func (s *Server) handleDebugIssueReset(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if err := store.Replace(r.Context(), nil); err != nil {
-		writeError(w, http.StatusInternalServerError, "failed to clear issues")
+		writeInternalError(w, r, "failed to clear issues", err)
 		return
 	}
 
@@ -125,39 +163,50 @@ func decodeDebugIssueAnalyzeRequest(r *http.Request) (debugIssueAnalyzeRequest, 
 	return request, nil
 }
 
-func debugTags(rawTags []string) []ai.Tag {
-	if len(rawTags) == 0 {
-		definitions := issuemap.AllTagDefinitions()
-		tags := make([]ai.Tag, 0, len(definitions))
-		for _, definition := range definitions {
-			if definition.Name == "" {
-				continue
-			}
-			tags = append(tags, ai.Tag{
-				Name:        definition.Name,
-				Description: definition.Description,
-			})
-		}
-		return tags
+func (s *Server) issueEmbeddingSimilarities(ctx context.Context, query []float64) ([]debugIssueSimilarity, int, float64, error) {
+	storeIssues, err := s.issueStore.List(ctx)
+	if err != nil {
+		return nil, 0, 0, err
 	}
 
-	seen := make(map[string]struct{}, len(rawTags))
-	tags := make([]ai.Tag, 0, len(rawTags))
-	for _, raw := range rawTags {
-		name := strings.TrimSpace(raw)
-		if name == "" {
-			continue
-		}
-		key := strings.ToLower(name)
-		if _, ok := seen[key]; ok {
-			continue
-		}
-		seen[key] = struct{}{}
-		tags = append(tags, ai.Tag{Name: name})
+	if len(query) == 0 {
+		return []debugIssueSimilarity{}, 0, 0, nil
 	}
 
-	if len(tags) == 0 {
-		return ai.TagsFromNames(issuemap.AllTags())
+	comparisons := make([]debugIssueSimilarity, 0, len(storeIssues))
+	total := 0.0
+	compared := 0
+	for _, issue := range storeIssues {
+		if len(issue.Embedding) == 0 {
+			continue
+		}
+
+		similarity := cosineSimilarity(query, issue.Embedding)
+		compared++
+		total += similarity
+		comparisons = append(comparisons, debugIssueSimilarity{
+			ID:         issue.ID,
+			Raw:        issue.Raw,
+			Tags:       append([]string(nil), issue.Tags...),
+			Similarity: math.Round(similarity*100) / 100,
+		})
 	}
-	return tags
+
+	sort.Slice(comparisons, func(i, j int) bool {
+		if comparisons[i].Similarity == comparisons[j].Similarity {
+			return comparisons[i].ID < comparisons[j].ID
+		}
+		return comparisons[i].Similarity > comparisons[j].Similarity
+	})
+
+	average := 0.0
+	if compared > 0 {
+		average = total / float64(compared)
+		average = math.Round(average*100) / 100
+	}
+	if len(comparisons) > 8 {
+		comparisons = comparisons[:8]
+	}
+
+	return comparisons, compared, average, nil
 }

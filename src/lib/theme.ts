@@ -1,4 +1,4 @@
-export const THEME_STORAGE_KEY = "bored-theme";
+export const THEME_STORAGE_KEY = "splat-theme";
 
 export const themeInitScript = `
 (() => {

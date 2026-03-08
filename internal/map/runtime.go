@@ -7,11 +7,19 @@ import (
 	"strings"
 	"unicode"
 
-	"bored/internal/issues"
+	"splat/internal/issues"
 )
 
 func BuildMapFromIssues(storeIssues []issues.Issue, viewport *Viewport) (MapResponse, error) {
-	base, err := buildBaseMapDataFromIssues(storeIssues)
+	return BuildMapFromIssuesWithTags(storeIssues, nil, viewport)
+}
+
+func BuildMapFromIssuesWithTags(storeIssues []issues.Issue, storeTags []issues.Tag, viewport *Viewport) (MapResponse, error) {
+	return BuildMapFromIssuesWithTagsAndThreshold(storeIssues, storeTags, viewport, minEdgeSimilarity)
+}
+
+func BuildMapFromIssuesWithTagsAndThreshold(storeIssues []issues.Issue, storeTags []issues.Tag, viewport *Viewport, edgeThreshold float64) (MapResponse, error) {
+	base, err := buildBaseMapDataFromIssues(storeIssues, storeTags, edgeThreshold)
 	if err != nil {
 		return MapResponse{}, err
 	}
@@ -34,7 +42,15 @@ func BuildMapFromIssues(storeIssues []issues.Issue, viewport *Viewport) (MapResp
 }
 
 func BuildEdgeResponseFromIssues(storeIssues []issues.Issue, viewport *Viewport) (EdgeResponse, error) {
-	base, err := buildBaseMapDataFromIssues(storeIssues)
+	return BuildEdgeResponseFromIssuesWithTags(storeIssues, nil, viewport)
+}
+
+func BuildEdgeResponseFromIssuesWithTags(storeIssues []issues.Issue, storeTags []issues.Tag, viewport *Viewport) (EdgeResponse, error) {
+	return BuildEdgeResponseFromIssuesWithTagsAndThreshold(storeIssues, storeTags, viewport, minEdgeSimilarity)
+}
+
+func BuildEdgeResponseFromIssuesWithTagsAndThreshold(storeIssues []issues.Issue, storeTags []issues.Tag, viewport *Viewport, edgeThreshold float64) (EdgeResponse, error) {
+	base, err := buildBaseMapDataFromIssues(storeIssues, storeTags, edgeThreshold)
 	if err != nil {
 		return EdgeResponse{}, err
 	}
@@ -47,8 +63,8 @@ func BuildEdgeResponseFromIssues(storeIssues []issues.Issue, viewport *Viewport)
 	return EdgeResponse{Edges: edges}, nil
 }
 
-func buildBaseMapDataFromIssues(storeIssues []issues.Issue) (mapBaseData, error) {
-	mapIssuesInput, tags, issueEmbeddings, tagEmbeddings := runtimeMapInputs(storeIssues)
+func buildBaseMapDataFromIssues(storeIssues []issues.Issue, storeTags []issues.Tag, edgeThreshold float64) (mapBaseData, error) {
+	mapIssuesInput, tags, issueEmbeddings, tagEmbeddings := runtimeMapInputs(storeIssues, storeTags)
 
 	positions, err := ComputePositions(mapIssuesInput, tags, tagEmbeddings)
 	if err != nil {
@@ -74,7 +90,7 @@ func buildBaseMapDataFromIssues(storeIssues []issues.Issue) (mapBaseData, error)
 		}
 	}
 
-	edges := ComputeEdgesWithEmbeddings(mapIssuesInput, issueEmbeddings, minEdgeSimilarity)
+	edges := ComputeEdgesWithEmbeddings(mapIssuesInput, issueEmbeddings, edgeThreshold)
 	sortEdgesBySimilarity(edges)
 	clusters := ComputeClusters(mapIssuesInput, positions, 0.18)
 
@@ -86,9 +102,9 @@ func buildBaseMapDataFromIssues(storeIssues []issues.Issue) (mapBaseData, error)
 	}, nil
 }
 
-func runtimeMapInputs(storeIssues []issues.Issue) ([]Issue, []string, map[string][]float64, map[string][]float64) {
-	tagNames := runtimeTagNames(storeIssues)
-	tagEmbeddings := runtimeTagEmbeddings(tagNames)
+func runtimeMapInputs(storeIssues []issues.Issue, storeTags []issues.Tag) ([]Issue, []string, map[string][]float64, map[string][]float64) {
+	tagNames := runtimeTagNames(storeIssues, storeTags)
+	tagEmbeddings := runtimeTagEmbeddings(tagNames, storeTags)
 
 	mapIssues := make([]Issue, len(storeIssues))
 	embeddings := make(map[string][]float64, len(storeIssues))
@@ -119,16 +135,27 @@ func runtimeMapInputs(storeIssues []issues.Issue) ([]Issue, []string, map[string
 	return mapIssues, tagNames, embeddings, tagEmbeddings
 }
 
-func runtimeTagNames(storeIssues []issues.Issue) []string {
-	seen := make(map[string]struct{}, len(tagCatalog))
-	tags := make([]string, 0, len(tagCatalog))
+func runtimeTagNames(storeIssues []issues.Issue, storeTags []issues.Tag) []string {
+	seen := make(map[string]struct{}, len(tagCatalog)+len(storeTags))
+	tags := make([]string, 0, len(tagCatalog)+len(storeTags))
 
-	for _, spec := range tagCatalog {
-		if spec.Name == "" {
+	for _, tag := range storeTags {
+		name := strings.TrimSpace(tag.Name)
+		if name == "" {
 			continue
 		}
-		seen[spec.Name] = struct{}{}
-		tags = append(tags, spec.Name)
+		seen[name] = struct{}{}
+		tags = append(tags, name)
+	}
+
+	if len(tags) == 0 {
+		for _, spec := range tagCatalog {
+			if spec.Name == "" {
+				continue
+			}
+			seen[spec.Name] = struct{}{}
+			tags = append(tags, spec.Name)
+		}
 	}
 
 	for _, issue := range storeIssues {
@@ -161,7 +188,7 @@ func runtimeTagNames(storeIssues []issues.Issue) []string {
 	return tags
 }
 
-func runtimeTagEmbeddings(tags []string) map[string][]float64 {
+func runtimeTagEmbeddings(tags []string, storeTags []issues.Tag) map[string][]float64 {
 	if len(tags) == 0 {
 		return nil
 	}
@@ -171,8 +198,27 @@ func runtimeTagEmbeddings(tags []string) map[string][]float64 {
 		definitions[spec.Name] = spec.Description
 	}
 
+	storedEmbeddings := make(map[string][]float64, len(storeTags))
+	for _, tag := range storeTags {
+		name := strings.TrimSpace(tag.Name)
+		if name == "" {
+			continue
+		}
+		if description := strings.TrimSpace(tag.Description); description != "" {
+			definitions[name] = description
+		}
+		if len(tag.Embedding) > 0 {
+			storedEmbeddings[name] = append([]float64(nil), tag.Embedding...)
+		}
+	}
+
 	embeddings := make(map[string][]float64, len(tags))
 	for _, tag := range tags {
+		if embedding := storedEmbeddings[tag]; len(embedding) > 0 {
+			embeddings[tag] = embedding
+			continue
+		}
+
 		descriptor := tag
 		if description := definitions[tag]; description != "" {
 			descriptor += " " + description
