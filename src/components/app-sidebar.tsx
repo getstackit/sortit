@@ -1,6 +1,5 @@
 "use client";
 
-import { useState } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useAppShell } from "@/components/app-shell";
@@ -19,6 +18,7 @@ type AppSidebarProps = {
   things?: Thing[];
   onIssueCreated?: (issue: IssueRecord) => Promise<void> | void;
   navigateOnCreate?: boolean;
+  showThingsSection?: boolean;
 };
 
 function SidebarLink({
@@ -59,10 +59,11 @@ export function AppSidebar({
   things = [],
   onIssueCreated,
   navigateOnCreate = true,
+  showThingsSection = true,
 }: AppSidebarProps) {
   const pathname = usePathname();
-  const { collapsed, closeMobileSidebar } = useAppShell();
-  const [pasteOpen, setPasteOpen] = useState(false);
+  const { collapsed, closeMobileSidebar, composerOpen, openComposer, setComposerOpen } =
+    useAppShell();
 
   return (
     <div className="flex h-full flex-col">
@@ -83,7 +84,8 @@ export function AppSidebar({
       <div className="px-3 pt-3">
         <button
           type="button"
-          onClick={() => setPasteOpen(true)}
+          aria-keyshortcuts="N"
+          onClick={openComposer}
           className={cn(
             "flex w-full items-center gap-2 rounded-md bg-primary px-2 py-2 text-sm font-medium text-primary-foreground transition-colors hover:bg-primary/90",
             collapsed && "justify-center px-0"
@@ -106,8 +108,8 @@ export function AppSidebar({
       </div>
 
       <PasteModal
-        open={pasteOpen}
-        onOpenChange={setPasteOpen}
+        open={composerOpen}
+        onOpenChange={setComposerOpen}
         onIssueCreated={onIssueCreated}
         navigateOnCreate={navigateOnCreate}
       />
@@ -154,47 +156,49 @@ export function AppSidebar({
           </div>
         </section>
 
-        <section className="min-h-0 flex-1 space-y-2">
-          <p
-            className={cn(
-              "px-2 text-[11px] font-medium uppercase tracking-[0.16em] text-sidebar-foreground/50",
-              collapsed && "hidden"
-            )}
-          >
-            Things
-          </p>
-          <div className="space-y-1">
-            {things.length === 0 && !collapsed && (
-              <p className="px-2 py-1 text-xs text-sidebar-foreground/50">
-                Nothing yet
-              </p>
-            )}
-            {things.map((thing, index) => (
-              <Link
-                key={thing.id}
-                href={thing.href ?? `#${thing.id}`}
-                title={thing.title}
-                onClick={closeMobileSidebar}
-                className={cn(
-                  "flex items-center rounded-md px-2 py-2 text-sm transition-colors hover:bg-sidebar-accent hover:text-sidebar-accent-foreground",
-                  collapsed && "justify-center px-0"
-                )}
-              >
-                <span className={cn("truncate", collapsed && "hidden")}>
-                  {thing.title}
-                </span>
-                {collapsed && (
-                  <span
-                    aria-hidden="true"
-                    className="text-[11px] font-medium uppercase text-sidebar-foreground/70"
-                  >
-                    {(index + 1).toString(36)}
+        {showThingsSection && (
+          <section className="min-h-0 flex-1 space-y-2">
+            <p
+              className={cn(
+                "px-2 text-[11px] font-medium uppercase tracking-[0.16em] text-sidebar-foreground/50",
+                collapsed && "hidden"
+              )}
+            >
+              Things
+            </p>
+            <div className="space-y-1">
+              {things.length === 0 && !collapsed && (
+                <p className="px-2 py-1 text-xs text-sidebar-foreground/50">
+                  Nothing yet
+                </p>
+              )}
+              {things.map((thing, index) => (
+                <Link
+                  key={thing.id}
+                  href={thing.href ?? `#${thing.id}`}
+                  title={thing.title}
+                  onClick={closeMobileSidebar}
+                  className={cn(
+                    "flex items-center rounded-md px-2 py-2 text-sm transition-colors hover:bg-sidebar-accent hover:text-sidebar-accent-foreground",
+                    collapsed && "justify-center px-0"
+                  )}
+                >
+                  <span className={cn("truncate", collapsed && "hidden")}>
+                    {thing.title}
                   </span>
-                )}
-              </Link>
-            ))}
-          </div>
-        </section>
+                  {collapsed && (
+                    <span
+                      aria-hidden="true"
+                      className="text-[11px] font-medium uppercase text-sidebar-foreground/70"
+                    >
+                      {(index + 1).toString(36)}
+                    </span>
+                  )}
+                </Link>
+              ))}
+            </div>
+          </section>
+        )}
       </div>
 
       <div className="border-t border-sidebar-border px-3 py-3">

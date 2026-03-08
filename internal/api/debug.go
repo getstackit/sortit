@@ -5,14 +5,13 @@ import (
 	"encoding/json"
 	"errors"
 	"io"
-	"math"
 	"net/http"
-	"sort"
 	"strings"
 	"time"
 
 	"splat/internal/ai"
-	"splat/internal/issues"
+	"splat/internal/commands"
+	"splat/internal/queries"
 )
 
 const debugAnalyzeTimeout = 45 * time.Second
@@ -20,10 +19,6 @@ const debugAnalyzeTimeout = 45 * time.Second
 type debugIssueAnalyzeRequest struct {
 	Text string   `json:"text"`
 	Tags []string `json:"tags,omitempty"`
-}
-
-type replaceableIssueStore interface {
-	Replace(context.Context, []issues.Issue) error
 }
 
 type debugIssueStoreResponse struct {
@@ -63,36 +58,27 @@ func (s *Server) handleDebugIssueAnalyze(w http.ResponseWriter, r *http.Request)
 	ctx, cancel := context.WithTimeout(r.Context(), debugAnalyzeTimeout)
 	defer cancel()
 
-	tags, err := s.issueTaxonomy(ctx, request.Tags)
-	if err != nil {
-		writeInternalError(w, r, "failed to load tag taxonomy", err)
-		return
-	}
-
-	analyzed, err := s.analyzer.AnalyzeIssueData(ctx, request.Text, tags)
+	analyzed, err := s.debugAnalyzeIssue.Handle(ctx, queries.DebugAnalyzeIssue{
+		Text: request.Text,
+		Tags: request.Tags,
+	})
 	if err != nil {
 		status := http.StatusInternalServerError
-		if errors.Is(err, ai.ErrNotConfigured) {
+		if queries.AIUnavailable(err) {
 			status = http.StatusServiceUnavailable
 		}
 		writeError(w, status, err.Error())
 		return
 	}
 
-	similarities, comparedIssueCount, averageSimilarity, err := s.issueEmbeddingSimilarities(ctx, float32VectorToFloat64(analyzed.Embedding.Vector))
-	if err != nil {
-		writeInternalError(w, r, "failed to compute issue similarities", err)
-		return
-	}
-
 	writeJSON(w, http.StatusOK, debugIssueAnalyzeResponse{
 		Tags:                   analyzed.Tags,
-		Embedding:              analyzed.Embedding.Info,
+		Embedding:              analyzed.Embedding,
 		Tagger:                 analyzed.Tagger,
 		Embedder:               analyzed.Embedder,
-		ComparedIssueCount:     comparedIssueCount,
-		AverageIssueSimilarity: averageSimilarity,
-		SimilarIssues:          similarities,
+		ComparedIssueCount:     analyzed.ComparedIssueCount,
+		AverageIssueSimilarity: analyzed.AverageIssueSimilarity,
+		SimilarIssues:          toDebugIssueSimilarities(analyzed.SimilarIssues),
 	})
 }
 
@@ -103,25 +89,17 @@ func (s *Server) handleDebugIssueSampleLoad(w http.ResponseWriter, r *http.Reque
 		return
 	}
 
-	store, ok := s.issueStore.(replaceableIssueStore)
-	if !ok {
-		writeError(w, http.StatusNotImplemented, "issue store cannot be reset")
-		return
-	}
-
-	samples := issues.SeedIssues()
-	enriched, err := s.analyzeSeedIssues(r.Context(), samples)
+	count, err := s.loadSampleIssues.Handle(r.Context())
 	if err != nil {
-		writeInternalError(w, r, "failed to analyze sample issues", err)
-		return
-	}
-
-	if err := store.Replace(r.Context(), enriched); err != nil {
+		if errors.Is(err, commands.ErrNotSupported) {
+			writeError(w, http.StatusNotImplemented, "issue store cannot be reset")
+			return
+		}
 		writeInternalError(w, r, "failed to load sample issues", err)
 		return
 	}
 
-	writeJSON(w, http.StatusOK, debugIssueStoreResponse{IssueCount: len(samples)})
+	writeJSON(w, http.StatusOK, debugIssueStoreResponse{IssueCount: count})
 }
 
 func (s *Server) handleDebugIssueReset(w http.ResponseWriter, r *http.Request) {
@@ -131,13 +109,12 @@ func (s *Server) handleDebugIssueReset(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	store, ok := s.issueStore.(replaceableIssueStore)
-	if !ok {
-		writeError(w, http.StatusNotImplemented, "issue store cannot be reset")
-		return
-	}
-
-	if err := store.Replace(r.Context(), nil); err != nil {
+	err := s.resetIssues.Handle(r.Context())
+	if err != nil {
+		if errors.Is(err, commands.ErrNotSupported) {
+			writeError(w, http.StatusNotImplemented, "issue store cannot be reset")
+			return
+		}
 		writeInternalError(w, r, "failed to clear issues", err)
 		return
 	}
@@ -163,50 +140,15 @@ func decodeDebugIssueAnalyzeRequest(r *http.Request) (debugIssueAnalyzeRequest, 
 	return request, nil
 }
 
-func (s *Server) issueEmbeddingSimilarities(ctx context.Context, query []float64) ([]debugIssueSimilarity, int, float64, error) {
-	storeIssues, err := s.issueStore.List(ctx)
-	if err != nil {
-		return nil, 0, 0, err
-	}
-
-	if len(query) == 0 {
-		return []debugIssueSimilarity{}, 0, 0, nil
-	}
-
-	comparisons := make([]debugIssueSimilarity, 0, len(storeIssues))
-	total := 0.0
-	compared := 0
-	for _, issue := range storeIssues {
-		if len(issue.Embedding) == 0 {
-			continue
+func toDebugIssueSimilarities(items []queries.DebugIssueSimilarity) []debugIssueSimilarity {
+	out := make([]debugIssueSimilarity, len(items))
+	for i, item := range items {
+		out[i] = debugIssueSimilarity{
+			ID:         item.ID,
+			Raw:        item.Raw,
+			Tags:       append([]string(nil), item.Tags...),
+			Similarity: item.Similarity,
 		}
-
-		similarity := cosineSimilarity(query, issue.Embedding)
-		compared++
-		total += similarity
-		comparisons = append(comparisons, debugIssueSimilarity{
-			ID:         issue.ID,
-			Raw:        issue.Raw,
-			Tags:       append([]string(nil), issue.Tags...),
-			Similarity: math.Round(similarity*100) / 100,
-		})
 	}
-
-	sort.Slice(comparisons, func(i, j int) bool {
-		if comparisons[i].Similarity == comparisons[j].Similarity {
-			return comparisons[i].ID < comparisons[j].ID
-		}
-		return comparisons[i].Similarity > comparisons[j].Similarity
-	})
-
-	average := 0.0
-	if compared > 0 {
-		average = total / float64(compared)
-		average = math.Round(average*100) / 100
-	}
-	if len(comparisons) > 8 {
-		comparisons = comparisons[:8]
-	}
-
-	return comparisons, compared, average, nil
+	return out
 }

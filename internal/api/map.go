@@ -1,11 +1,9 @@
 package api
 
 import (
-	"context"
 	"net/http"
 
-	"splat/internal/issues"
-	issuemap "splat/internal/map"
+	"splat/internal/queries"
 )
 
 func (s *Server) handleMap(w http.ResponseWriter, r *http.Request) {
@@ -32,31 +30,11 @@ func (s *Server) handleMap(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	storeIssues, err := s.issueStore.List(r.Context())
-	if err != nil {
-		writeInternalError(w, r, "failed to list issues", err)
-		return
-	}
-	storeIssues = filterIssuesByStatus(storeIssues, statusFilter)
-
-	storeTags, err := s.listStoredTags(r.Context())
-	if err != nil {
-		writeInternalError(w, r, "failed to list tags", err)
-		return
-	}
-
-	if edgeThreshold != nil {
-		result, err := issuemap.BuildMapFromIssuesWithTagsAndThreshold(storeIssues, storeTags, viewport, *edgeThreshold)
-		if err != nil {
-			writeInternalError(w, r, "failed to build issue map", err)
-			return
-		}
-
-		writeJSON(w, http.StatusOK, result)
-		return
-	}
-
-	result, err := issuemap.BuildMapFromIssuesWithTags(storeIssues, storeTags, viewport)
+	result, err := s.getMap.Handle(r.Context(), queries.MapQuery{
+		Viewport:      viewport,
+		EdgeThreshold: edgeThreshold,
+		StatusFilter:  statusFilter,
+	})
 	if err != nil {
 		writeInternalError(w, r, "failed to build issue map", err)
 		return
@@ -89,42 +67,15 @@ func (s *Server) handleMapEdges(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	storeIssues, err := s.issueStore.List(r.Context())
-	if err != nil {
-		writeInternalError(w, r, "failed to list issues", err)
-		return
-	}
-	storeIssues = filterIssuesByStatus(storeIssues, statusFilter)
-
-	storeTags, err := s.listStoredTags(r.Context())
-	if err != nil {
-		writeInternalError(w, r, "failed to list tags", err)
-		return
-	}
-
-	if edgeThreshold != nil {
-		result, err := issuemap.BuildEdgeResponseFromIssuesWithTagsAndThreshold(storeIssues, storeTags, viewport, *edgeThreshold)
-		if err != nil {
-			writeInternalError(w, r, "failed to build edge response", err)
-			return
-		}
-
-		writeJSON(w, http.StatusOK, result)
-		return
-	}
-
-	result, err := issuemap.BuildEdgeResponseFromIssuesWithTags(storeIssues, storeTags, viewport)
+	result, err := s.getMapEdges.Handle(r.Context(), queries.MapQuery{
+		Viewport:      viewport,
+		EdgeThreshold: edgeThreshold,
+		StatusFilter:  statusFilter,
+	})
 	if err != nil {
 		writeInternalError(w, r, "failed to build edge response", err)
 		return
 	}
 
 	writeJSON(w, http.StatusOK, result)
-}
-
-func (s *Server) listStoredTags(ctx context.Context) ([]issues.Tag, error) {
-	if s.tagStore == nil {
-		return nil, nil
-	}
-	return s.tagStore.ListTags(ctx)
 }

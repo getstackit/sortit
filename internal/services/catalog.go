@@ -1,4 +1,4 @@
-package api
+package services
 
 import (
 	"context"
@@ -10,57 +10,49 @@ import (
 	"splat/internal/issues"
 )
 
-func defaultIssueAnalyzer() *ai.Analyzer {
+type TagStore interface {
+	ListTags(context.Context) ([]issues.Tag, error)
+	UpsertTags(context.Context, []issues.Tag) error
+}
+
+type CatalogService struct {
+	store    TagStore
+	analyzer *ai.Analyzer
+}
+
+func NewCatalogService(store TagStore, analyzer *ai.Analyzer) *CatalogService {
+	return &CatalogService{
+		store:    store,
+		analyzer: analyzer,
+	}
+}
+
+func FallbackAnalyzer(analyzer *ai.Analyzer) *ai.Analyzer {
+	if analyzer != nil {
+		return analyzer
+	}
 	return ai.NewAnalyzer(ai.NewStubTagger(), ai.NewStubEmbedder())
 }
 
-func (s *Server) analyzeIssueInput(ctx context.Context, input issues.CreateInput) (issues.CreateInput, error) {
-	taxonomy, err := s.issueTaxonomy(ctx, input.Tags)
-	if err != nil {
-		return issues.CreateInput{}, err
+func (s *CatalogService) StoredTags(ctx context.Context) ([]issues.Tag, error) {
+	if s == nil || s.store == nil {
+		return nil, nil
 	}
-	analyzed, err := s.issueAnalyzer.AnalyzeIssueData(ctx, input.Raw, taxonomy)
-	if err != nil {
-		return issues.CreateInput{}, err
-	}
-
-	if err := s.ensureStoredTags(ctx, catalogTagsFromAnalysis(taxonomy, input.Tags, analyzed.Tags)); err != nil {
-		return issues.CreateInput{}, err
-	}
-
-	input.TagScores = issueTagScoresFromAnalysis(analyzed.Tags)
-	input.Embedding = float32VectorToFloat64(analyzed.Embedding.Vector)
-	if len(input.Tags) == 0 {
-		input.Tags = nil
-	}
-	return input, nil
+	return s.store.ListTags(ctx)
 }
 
-func (s *Server) analyzeSeedIssues(ctx context.Context, seeds []issues.Issue) ([]issues.Issue, error) {
-	enriched := make([]issues.Issue, len(seeds))
-	for i, seed := range seeds {
-		analyzed, err := s.analyzeIssueInput(ctx, issues.CreateInput{
-			Raw:  seed.Raw,
-			Tags: seed.Tags,
-		})
-		if err != nil {
-			return nil, err
-		}
-
-		enriched[i] = issues.Issue{
-			ID:        seed.ID,
-			Raw:       seed.Raw,
-			Tags:      append([]string(nil), seed.Tags...),
-			CreatedBy: seed.CreatedBy,
-			CreatedAt: seed.CreatedAt,
-			TagScores: analyzed.TagScores,
-			Embedding: analyzed.Embedding,
-		}
+func (s *CatalogService) AvailableTags(ctx context.Context) ([]issues.Tag, error) {
+	tags, err := s.StoredTags(ctx)
+	if err != nil {
+		return nil, err
 	}
-	return enriched, nil
+	if len(tags) > 0 {
+		return tags, nil
+	}
+	return issues.DefaultTags(), nil
 }
 
-func (s *Server) issueTaxonomy(ctx context.Context, preferred []string) ([]ai.Tag, error) {
+func (s *CatalogService) IssueTaxonomy(ctx context.Context, preferred []string) ([]ai.Tag, error) {
 	if len(preferred) > 0 {
 		tags := make([]ai.Tag, 0, len(preferred))
 		seen := make(map[string]struct{}, len(preferred))
@@ -81,14 +73,12 @@ func (s *Server) issueTaxonomy(ctx context.Context, preferred []string) ([]ai.Ta
 		}
 	}
 
-	if s.tagStore != nil {
-		stored, err := s.tagStore.ListTags(ctx)
-		if err != nil {
-			return nil, fmt.Errorf("list stored tags: %w", err)
-		}
-		if len(stored) > 0 {
-			return aiTagsFromCatalog(stored), nil
-		}
+	stored, err := s.StoredTags(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("list stored tags: %w", err)
+	}
+	if len(stored) > 0 {
+		return aiTagsFromCatalog(stored), nil
 	}
 
 	definitions := issues.DefaultTags()
@@ -105,42 +95,12 @@ func (s *Server) issueTaxonomy(ctx context.Context, preferred []string) ([]ai.Ta
 	return tags, nil
 }
 
-func issueTagScoresFromAnalysis(scores []ai.TagScore) []issues.TagRelevance {
-	if len(scores) == 0 {
+func (s *CatalogService) EnsureStoredTags(ctx context.Context, tags []issues.Tag) error {
+	if s == nil || s.store == nil || len(tags) == 0 {
 		return nil
 	}
 
-	tagScores := make([]issues.TagRelevance, 0, len(scores))
-	for _, score := range scores {
-		name := strings.TrimSpace(score.Tag)
-		if name == "" {
-			continue
-		}
-		tagScores = append(tagScores, issues.TagRelevance{
-			Tag:       name,
-			Relevance: score.Relevance,
-		})
-	}
-	return tagScores
-}
-
-func float32VectorToFloat64(values []float32) []float64 {
-	if len(values) == 0 {
-		return nil
-	}
-	out := make([]float64, len(values))
-	for i, value := range values {
-		out[i] = float64(value)
-	}
-	return out
-}
-
-func (s *Server) ensureStoredTags(ctx context.Context, tags []issues.Tag) error {
-	if s.tagStore == nil || len(tags) == 0 {
-		return nil
-	}
-
-	existing, err := s.tagStore.ListTags(ctx)
+	existing, err := s.store.ListTags(ctx)
 	if err != nil {
 		return fmt.Errorf("list tags for sync: %w", err)
 	}
@@ -194,23 +154,23 @@ func (s *Server) ensureStoredTags(ctx context.Context, tags []issues.Tag) error 
 	if len(toPersist) == 0 {
 		return nil
 	}
-	if err := s.tagStore.UpsertTags(ctx, toPersist); err != nil {
+	if err := s.store.UpsertTags(ctx, toPersist); err != nil {
 		return fmt.Errorf("upsert stored tags: %w", err)
 	}
 	return nil
 }
 
-func (s *Server) embedTag(ctx context.Context, tag issues.Tag) ([]float64, error) {
+func (s *CatalogService) embedTag(ctx context.Context, tag issues.Tag) ([]float64, error) {
 	descriptor := tag.Name
 	if description := strings.TrimSpace(tag.Description); description != "" {
 		descriptor += " - " + description
 	}
 
-	result, err := s.issueAnalyzer.EmbedText(ctx, descriptor)
+	result, err := s.analyzer.EmbedText(ctx, descriptor)
 	if err != nil {
 		return nil, fmt.Errorf("embed tag %q: %w", tag.Name, err)
 	}
-	return float32VectorToFloat64(result.Vector), nil
+	return Float32VectorToFloat64(result.Vector), nil
 }
 
 func aiTagsFromCatalog(tags []issues.Tag) []ai.Tag {
@@ -228,7 +188,7 @@ func aiTagsFromCatalog(tags []issues.Tag) []ai.Tag {
 	return out
 }
 
-func catalogTagsFromAnalysis(taxonomy []ai.Tag, explicit []string, scores []ai.TagScore) []issues.Tag {
+func CatalogTagsFromAnalysis(taxonomy []ai.Tag, explicit []string, scores []ai.TagScore) []issues.Tag {
 	definitions := make(map[string]string, len(taxonomy))
 	for _, tag := range taxonomy {
 		name := normalizeCatalogTagName(tag.Name)

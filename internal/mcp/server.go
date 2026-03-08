@@ -9,12 +9,14 @@ import (
 	"io"
 	"net/http"
 	"net/url"
+	"strconv"
 	"strings"
 
 	"github.com/mark3labs/mcp-go/mcp"
 	"github.com/mark3labs/mcp-go/server"
 
 	"splat/internal/issues"
+	issuemap "splat/internal/map"
 )
 
 type ServerConfig struct {
@@ -73,6 +75,20 @@ func NewHandler(cfg ServerConfig) http.Handler {
 			),
 		),
 		h.handleCloseIssue,
+	)
+
+	s.AddTool(
+		mcp.NewTool("explore_issue",
+			mcp.WithDescription("Explore a stored Splat issue by ID. Returns related open issues using semantic similarity and factor relevance, plus structured opportunities to solve multiple issues together."),
+			mcp.WithString("id",
+				mcp.Required(),
+				mcp.Description("The issue ID to explore, for example issue-000003."),
+			),
+			mcp.WithNumber("limit",
+				mcp.Description("Maximum number of related issues to return. Defaults to 8."),
+			),
+		),
+		h.handleExploreIssue,
 	)
 
 	httpServer := server.NewStreamableHTTPServer(s)
@@ -154,6 +170,40 @@ func (h *handlers) handleCloseIssue(ctx context.Context, req mcp.CallToolRequest
 	}
 
 	result, err := mcp.NewToolResultJSON(issue)
+	if err != nil {
+		return mcp.NewToolResultError(fmt.Sprintf("failed to encode response: %v", err)), nil
+	}
+	return result, nil
+}
+
+func (h *handlers) handleExploreIssue(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+	id, err := req.RequireString("id")
+	if err != nil {
+		return mcp.NewToolResultError("id is required"), nil
+	}
+
+	id = strings.TrimSpace(id)
+	if id == "" {
+		return mcp.NewToolResultError("id is required"), nil
+	}
+
+	limit := req.GetInt("limit", 8)
+	if limit <= 0 {
+		return mcp.NewToolResultError("limit must be greater than 0"), nil
+	}
+
+	var query string
+	if limit != 8 {
+		query = "?limit=" + strconv.Itoa(limit)
+	}
+
+	var response issuemap.ExploreResponse
+	err = h.doJSONRequest(ctx, http.MethodGet, "/issues/"+url.PathEscape(id)+"/explore"+query, nil, &response)
+	if err != nil {
+		return mcp.NewToolResultError(err.Error()), nil
+	}
+
+	result, err := mcp.NewToolResultJSON(response)
 	if err != nil {
 		return mcp.NewToolResultError(fmt.Sprintf("failed to encode response: %v", err)), nil
 	}

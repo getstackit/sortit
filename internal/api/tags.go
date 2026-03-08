@@ -1,7 +1,6 @@
 package api
 
 import (
-	"context"
 	"net/http"
 	"time"
 
@@ -26,24 +25,13 @@ func (s *Server) handleTags(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	tags, err := s.availableTags(r.Context())
+	tags, err := s.listTags.Handle(r.Context())
 	if err != nil {
 		writeInternalError(w, r, "failed to list tags", err)
 		return
 	}
 
 	writeJSON(w, http.StatusOK, tagsResponse{Tags: toTagResponses(tags)})
-}
-
-func (s *Server) availableTags(ctx context.Context) ([]issues.Tag, error) {
-	tags, err := s.listStoredTags(ctx)
-	if err != nil {
-		return nil, err
-	}
-	if len(tags) > 0 {
-		return tags, nil
-	}
-	return issues.DefaultTags(), nil
 }
 
 func toTagResponses(tags []issues.Tag) []tagResponse {

@@ -10,7 +10,7 @@ import (
 )
 
 const (
-	minEdgeSimilarity   = 0.85
+	minEdgeSimilarity   = 0.40
 	minVisibleEdgeCount = 24
 	maxVisibleEdgeRatio = 0.2
 	maxVisibleEdges     = 180

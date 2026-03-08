@@ -12,6 +12,7 @@ import (
 	mcptypes "github.com/mark3labs/mcp-go/mcp"
 
 	"splat/internal/issues"
+	issuemap "splat/internal/map"
 )
 
 func TestHandleCreateIssue(t *testing.T) {
@@ -274,6 +275,113 @@ func TestHandleCloseIssueNotFound(t *testing.T) {
 	}
 	if !strings.Contains(firstText(result), "issue not found") {
 		t.Fatalf("expected issue not found error, got %q", firstText(result))
+	}
+}
+
+func TestHandleExploreIssue(t *testing.T) {
+	t.Parallel()
+
+	expected := issuemap.ExploreResponse{
+		Issue: issuemap.ExploreIssue{
+			ID:     "issue-000003",
+			Raw:    "Safari crashes when exporting a PDF",
+			Status: issues.StatusOpen,
+			Tags: []issuemap.TagRelevance{
+				{Tag: "export", Relevance: 0.92},
+				{Tag: "safari", Relevance: 0.9},
+			},
+		},
+		RelatedIssues: []issuemap.RelatedIssue{
+			{
+				ID:                 "issue-000004",
+				Raw:                "PDF export fails in Safari",
+				Status:             issues.StatusOpen,
+				Tags:               []issuemap.TagRelevance{{Tag: "export", Relevance: 0.9}},
+				SemanticSimilarity: 0.94,
+				FactorSimilarity:   0.89,
+				CombinedSimilarity: 0.92,
+				Reason:             "Shared factor relevance in export, safari",
+			},
+		},
+		Opportunities: []issuemap.Opportunity{
+			{
+				Title:      "Solve export + safari issues together",
+				Summary:    "A single fix may address issue-000003 and issue-000004.",
+				Theme:      "export + safari",
+				IssueIDs:   []string{"issue-000003", "issue-000004"},
+				SharedTags: []string{"export", "safari"},
+				Confidence: 0.92,
+				Reason:     "These issues share strong factor relevance in export, safari.",
+			},
+		},
+	}
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodGet {
+			t.Fatalf("expected GET, got %s", r.Method)
+		}
+		if r.URL.Path != "/issues/issue-000003/explore" {
+			t.Fatalf("expected /issues/issue-000003/explore path, got %s", r.URL.Path)
+		}
+		if r.URL.Query().Get("limit") != "5" {
+			t.Fatalf("expected limit query 5, got %q", r.URL.Query().Get("limit"))
+		}
+
+		w.Header().Set("Content-Type", "application/json")
+		if err := json.NewEncoder(w).Encode(expected); err != nil {
+			t.Fatalf("encode response: %v", err)
+		}
+	}))
+	defer server.Close()
+
+	handler := &handlers{
+		baseURL: server.URL,
+		client:  server.Client(),
+	}
+
+	result, err := handler.handleExploreIssue(context.Background(), toolRequest(map[string]any{
+		"id":    " issue-000003 ",
+		"limit": 5,
+	}))
+	if err != nil {
+		t.Fatalf("handleExploreIssue returned error: %v", err)
+	}
+	if result.IsError {
+		t.Fatalf("expected success result, got error: %s", firstText(result))
+	}
+
+	response, ok := result.StructuredContent.(issuemap.ExploreResponse)
+	if !ok {
+		t.Fatalf("expected ExploreResponse structured content, got %T", result.StructuredContent)
+	}
+	if response.Issue.ID != expected.Issue.ID {
+		t.Fatalf("expected target ID %q, got %q", expected.Issue.ID, response.Issue.ID)
+	}
+	if len(response.RelatedIssues) != 1 {
+		t.Fatalf("expected 1 related issue, got %d", len(response.RelatedIssues))
+	}
+	if firstText(result) == "" {
+		t.Fatal("expected text fallback in MCP result")
+	}
+}
+
+func TestHandleExploreIssueRejectsInvalidLimit(t *testing.T) {
+	t.Parallel()
+
+	handler := &handlers{}
+
+	result, err := handler.handleExploreIssue(context.Background(), toolRequest(map[string]any{
+		"id":    "issue-000003",
+		"limit": 0,
+	}))
+	if err != nil {
+		t.Fatalf("handleExploreIssue returned error: %v", err)
+	}
+	if !result.IsError {
+		t.Fatal("expected MCP error result")
+	}
+	if !strings.Contains(firstText(result), "limit must be greater than 0") {
+		t.Fatalf("expected invalid limit error, got %q", firstText(result))
 	}
 }
 

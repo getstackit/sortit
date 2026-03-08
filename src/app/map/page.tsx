@@ -2,6 +2,7 @@
 
 import {
   startTransition,
+  useCallback,
   useEffect,
   useMemo,
   useRef,
@@ -10,6 +11,12 @@ import {
 import type { MouseEvent as ReactMouseEvent } from "react";
 import { usePathname, useSearchParams } from "next/navigation";
 import { AppShell } from "@/components/app-shell";
+import {
+  IssueMapCanvas,
+  type IssueMapCanvasCluster,
+  type IssueMapCanvasLine,
+  type IssueMapCanvasNode,
+} from "@/components/issue-map-canvas";
 import { AppSidebar } from "@/components/app-sidebar";
 import { SiteHeader } from "@/components/site-header";
 import { Switch } from "@/components/ui/switch";
@@ -141,7 +148,7 @@ const MIN_VIEW_SIZE = 0.12;
 const MAX_VIEW_SIZE = 2.4;
 const PAN_OVERSCAN = 0.35;
 const EDGE_FETCH_DEBOUNCE_MS = 120;
-const DEFAULT_EDGE_THRESHOLD = 0.7;
+const DEFAULT_EDGE_THRESHOLD = 0.4;
 const MIN_RENDERED_AMBIENT_EDGES = 24;
 const RENDERED_EDGE_RATIO = 0.2;
 const MAX_RENDERED_AMBIENT_EDGES = 180;
@@ -952,11 +959,11 @@ export default function MapPage() {
     return () => controller.abort();
   }, [batchIssues, showBatchAnalysis]);
 
-  function resetBatchEmbeddingAnalysis() {
+  const resetBatchEmbeddingAnalysis = useCallback(() => {
     setBatchEmbeddingAnalysis(null);
     setBatchEmbeddingError(null);
     setBatchEmbeddingLoading(false);
-  }
+  }, []);
 
   function scheduleViewport(nextViewport: Viewport) {
     viewportRef.current = nextViewport;
@@ -998,7 +1005,7 @@ export default function MapPage() {
     });
   }
 
-  function clearSelection() {
+  const clearSelection = useCallback(() => {
     if (lassoFrameRef.current != null) {
       cancelAnimationFrame(lassoFrameRef.current);
       lassoFrameRef.current = null;
@@ -1010,14 +1017,14 @@ export default function MapPage() {
     resetBatchEmbeddingAnalysis();
     setSelectedBatch(new Set());
     setLassoPoints([]);
-  }
+  }, [resetBatchEmbeddingAnalysis]);
 
-  function clearAllSelections() {
+  const clearAllSelections = useCallback(() => {
     clearSelection();
     setSelectedId(null);
-  }
+  }, [clearSelection]);
 
-  function toScreen(nx: number, ny: number) {
+  const toScreen = useCallback((nx: number, ny: number) => {
     const width = viewport.xMax - viewport.xMin;
     const height = viewport.yMax - viewport.yMin;
 
@@ -1030,16 +1037,16 @@ export default function MapPage() {
         PADDING -
         ((ny - viewport.yMin) / height) * (dimensions.height - PADDING * 2),
     };
-  }
+  }, [dimensions.height, dimensions.width, viewport.xMax, viewport.xMin, viewport.yMax, viewport.yMin]);
 
-  function getSvgCoords(event: { clientX: number; clientY: number }) {
+  const getSvgCoords = useCallback((event: { clientX: number; clientY: number }) => {
     const svg = svgRef.current;
     if (!svg) return { x: 0, y: 0 };
     const rect = svg.getBoundingClientRect();
     return { x: event.clientX - rect.left, y: event.clientY - rect.top };
-  }
+  }, []);
 
-  function toggleBatchIssue(issueId: string) {
+  const toggleBatchIssue = useCallback((issueId: string) => {
     setShowBatchAnalysis(false);
     resetBatchEmbeddingAnalysis();
     setSelectedId(null);
@@ -1058,7 +1065,7 @@ export default function MapPage() {
 
       return next;
     });
-  }
+  }, [resetBatchEmbeddingAnalysis, selectedId]);
 
   useEffect(() => {
     const container = containerRef.current;
@@ -1130,11 +1137,11 @@ export default function MapPage() {
     return () => container.removeEventListener("wheel", onWheel);
   }, [dimensions.height, dimensions.width]);
 
-  function isHighlighted(id: string): boolean {
+  const isHighlighted = useCallback((id: string): boolean => {
     if (selectedBatch.size > 0) return selectedBatch.has(id);
     if (selectedId != null) return id === selectedId || neighborIds.has(id);
     return true;
-  }
+  }, [neighborIds, selectedBatch, selectedId]);
 
   function handleMouseDown(event: ReactMouseEvent<SVGSVGElement>) {
     if ((event.target as SVGElement).closest("[data-issue]")) return;
@@ -1243,6 +1250,199 @@ export default function MapPage() {
 
   const hasSelection = selectedId != null || selectedBatch.size > 0;
 
+  const canvasGridLines = useMemo<IssueMapCanvasLine[]>(() => {
+    return [0.25, 0.5, 0.75].flatMap((value) => {
+      const { sx } = toScreen(value, 0);
+      const { sy } = toScreen(0, value);
+
+      return [
+        {
+          key: `grid-x-${value}`,
+          x1: sx,
+          y1: PADDING,
+          x2: sx,
+          y2: dimensions.height - PADDING,
+          strokeOpacity: 0.06,
+        },
+        {
+          key: `grid-y-${value}`,
+          x1: PADDING,
+          y1: sy,
+          x2: dimensions.width - PADDING,
+          y2: sy,
+          strokeOpacity: 0.06,
+        },
+      ];
+    });
+  }, [toScreen, dimensions.height, dimensions.width]);
+
+  const canvasClusters = useMemo<IssueMapCanvasCluster[]>(() => {
+    return visibleClusters.map((cluster, index) => {
+      const { sx, sy } = toScreen(cluster.centerX, cluster.centerY);
+      const screenRadius =
+        (cluster.radius / (viewport.xMax - viewport.xMin)) *
+          (dimensions.width - PADDING * 2) +
+        40;
+
+      return {
+        key: `cluster-${index}`,
+        cx: sx,
+        cy: sy,
+        radius: screenRadius,
+        fill: cluster.color,
+        fillOpacity: 0.04,
+        stroke: cluster.color,
+        strokeOpacity: 0.1,
+        strokeWidth: 1,
+        strokeDasharray: "4 4",
+        label: cluster.label,
+        labelFill: cluster.color,
+        labelFillOpacity: 0.5,
+      };
+    });
+  }, [dimensions.width, toScreen, viewport.xMax, viewport.xMin, visibleClusters]);
+
+  const canvasEdges = useMemo<IssueMapCanvasLine[]>(() => {
+    return renderedEdges.flatMap((edge) => {
+      const issueA = issueIndex.get(edge.source);
+      const issueB = issueIndex.get(edge.target);
+      if (!issueA || !issueB) {
+        return [];
+      }
+
+      const { sx: x1, sy: y1 } = toScreen(issueA.x, issueA.y);
+      const { sx: x2, sy: y2 } = toScreen(issueB.x, issueB.y);
+      const isNeighborLink =
+        selectedId != null &&
+        ((edge.source === selectedId && neighborIds.has(edge.target)) ||
+          (edge.target === selectedId && neighborIds.has(edge.source)));
+      const bothHighlighted =
+        isHighlighted(edge.source) && isHighlighted(edge.target);
+      const baseOpacity = 0.16 + edge.similarity * 0.26;
+
+      return [
+        {
+          key: `${edge.source}-${edge.target}`,
+          x1,
+          y1,
+          x2,
+          y2,
+          stroke: isNeighborLink ? selectedIssueColor : "currentColor",
+          strokeOpacity: isNeighborLink
+            ? 0.5 + edge.similarity * 0.35
+            : hasSelection
+              ? bothHighlighted
+                ? Math.min(baseOpacity * 1.5, 0.72)
+                : baseOpacity * 0.45
+              : baseOpacity,
+          strokeWidth: isNeighborLink
+            ? 1 + edge.similarity * 3
+            : 0.5 + edge.similarity * 2.5,
+        },
+      ];
+    });
+  }, [
+    hasSelection,
+    issueIndex,
+    neighborIds,
+    renderedEdges,
+    selectedId,
+    selectedIssueColor,
+    isHighlighted,
+    toScreen,
+  ]);
+
+  const canvasNodes = useMemo<IssueMapCanvasNode[]>(() => {
+    return visibleIssues.map((issue) => {
+      const { sx, sy } = toScreen(issue.x, issue.y);
+      const color = TAG_COLORS[dominantTag(issue.tags)] ?? "#94a3b8";
+      const radius = issueRadius(issue.tags);
+      const isActive = issue.id === hoveredId || issue.id === selectedId;
+      const isNeighbor = neighborIds.has(issue.id);
+      const highlighted = isHighlighted(issue.id);
+      const dimmed = hasSelection && !highlighted;
+      const isClosed = issue.status === "closed";
+      const rings = [];
+
+      if (isNeighbor && selectedId != null) {
+        rings.push({
+          radius: radius + 6,
+          fill: "none",
+          stroke: color,
+          strokeWidth: 1.5,
+          strokeOpacity: 0.3,
+          strokeDasharray: "3 3",
+        });
+      }
+
+      if (isActive) {
+        rings.push({
+          radius: radius + 4,
+          fill: color,
+          fillOpacity: 0.15,
+        });
+      }
+
+      if (selectedBatch.has(issue.id)) {
+        rings.push({
+          radius: radius + 5,
+          fill: "none",
+          stroke: color,
+          strokeWidth: 2,
+          strokeOpacity: 0.6,
+        });
+      }
+
+      return {
+        key: issue.id,
+        dataIssue: issue.id,
+        cx: sx,
+        cy: sy,
+        radius,
+        fill: color,
+        fillOpacity: dimmed ? 0.15 : isClosed ? (isActive ? 0.42 : 0.22) : isActive ? 0.9 : 0.6,
+        stroke: color,
+        strokeWidth: isActive || isClosed ? 2 : 0,
+        strokeOpacity: 0.8,
+        strokeDasharray: isClosed ? "4 3" : undefined,
+        rings,
+        label:
+          isActive || (isNeighbor && selectedId != null)
+            ? issue.raw.length > 40
+              ? `${issue.raw.slice(0, 40)}...`
+              : issue.raw
+            : undefined,
+        labelY: sy - radius - (isNeighbor && !isActive ? 10 : 8),
+        labelFillOpacity: isNeighbor && !isActive ? 0.6 : 1,
+        className: "cursor-pointer",
+        onMouseEnter: () => setHoveredId(issue.id),
+        onMouseLeave: () => setHoveredId(null),
+        onClick: (event) => {
+          event.stopPropagation();
+
+          if (event.shiftKey) {
+            toggleBatchIssue(issue.id);
+            return;
+          }
+
+          clearSelection();
+          setSelectedId(selectedId === issue.id ? null : issue.id);
+        },
+      };
+    });
+  }, [
+    hasSelection,
+    hoveredId,
+    neighborIds,
+    selectedBatch,
+    selectedId,
+    clearSelection,
+    isHighlighted,
+    toScreen,
+    toggleBatchIssue,
+    visibleIssues,
+  ]);
+
   if (loading) {
     return (
       <AppShell sidebar={<AppSidebar />}>
@@ -1348,206 +1548,31 @@ export default function MapPage() {
           ref={containerRef}
           className="relative min-h-0 flex-1 overflow-hidden overscroll-none"
         >
-          <svg
+          <IssueMapCanvas
             ref={svgRef}
             width={dimensions.width}
             height={dimensions.height}
             className="absolute inset-0 touch-none overscroll-none"
             style={{ cursor: isLassoing ? "crosshair" : "default" }}
+            background={
+              <rect
+                x="0"
+                y="0"
+                width={dimensions.width}
+                height={dimensions.height}
+                fill="transparent"
+              />
+            }
             onMouseDown={handleMouseDown}
             onMouseMove={handleMouseMove}
             onMouseUp={handleMouseUp}
             onClick={handleCanvasClick}
             onMouseLeave={handleMouseUp}
+            gridLines={canvasGridLines}
+            clusters={canvasClusters}
+            edges={canvasEdges}
+            nodes={canvasNodes}
           >
-            {[0.25, 0.5, 0.75].map((value) => {
-              const { sx } = toScreen(value, 0);
-              const { sy } = toScreen(0, value);
-
-              return (
-                <g key={value}>
-                  <line
-                    x1={sx}
-                    y1={PADDING}
-                    x2={sx}
-                    y2={dimensions.height - PADDING}
-                    stroke="currentColor"
-                    strokeOpacity={0.06}
-                  />
-                  <line
-                    x1={PADDING}
-                    y1={sy}
-                    x2={dimensions.width - PADDING}
-                    y2={sy}
-                    stroke="currentColor"
-                    strokeOpacity={0.06}
-                  />
-                </g>
-              );
-            })}
-
-            {visibleClusters.map((cluster, index) => {
-              const { sx, sy } = toScreen(cluster.centerX, cluster.centerY);
-              const screenRadius =
-                (cluster.radius / (viewport.xMax - viewport.xMin)) *
-                  (dimensions.width - PADDING * 2) +
-                40;
-
-              return (
-                <g key={`cluster-${index}`}>
-                  <circle
-                    cx={sx}
-                    cy={sy}
-                    r={screenRadius}
-                    fill={cluster.color}
-                    fillOpacity={0.04}
-                    stroke={cluster.color}
-                    strokeOpacity={0.1}
-                    strokeWidth={1}
-                    strokeDasharray="4 4"
-                  />
-                  <text
-                    x={sx}
-                    y={sy - screenRadius - 6}
-                    textAnchor="middle"
-                    className="text-[10px] font-medium"
-                    fill={cluster.color}
-                    fillOpacity={0.5}
-                  >
-                    {cluster.label}
-                  </text>
-                </g>
-              );
-            })}
-
-            {renderedEdges.map((edge) => {
-              const issueA = issueIndex.get(edge.source);
-              const issueB = issueIndex.get(edge.target);
-              if (!issueA || !issueB) return null;
-
-              const { sx: x1, sy: y1 } = toScreen(issueA.x, issueA.y);
-              const { sx: x2, sy: y2 } = toScreen(issueB.x, issueB.y);
-              const isNeighborLink =
-                selectedId != null &&
-                ((edge.source === selectedId && neighborIds.has(edge.target)) ||
-                  (edge.target === selectedId && neighborIds.has(edge.source)));
-              const bothHighlighted =
-                isHighlighted(edge.source) && isHighlighted(edge.target);
-              const baseOpacity = 0.16 + edge.similarity * 0.26;
-
-              return (
-                <line
-                  key={`${edge.source}-${edge.target}`}
-                  x1={x1}
-                  y1={y1}
-                  x2={x2}
-                  y2={y2}
-                  stroke={isNeighborLink ? selectedIssueColor : "currentColor"}
-                  strokeOpacity={
-                    isNeighborLink
-                      ? 0.5 + edge.similarity * 0.35
-                      : hasSelection
-                        ? bothHighlighted
-                          ? Math.min(baseOpacity * 1.5, 0.72)
-                          : baseOpacity * 0.45
-                        : baseOpacity
-                  }
-                  strokeWidth={
-                    isNeighborLink ? 1 + edge.similarity * 3 : 0.5 + edge.similarity * 2.5
-                  }
-                />
-              );
-            })}
-
-            {visibleIssues.map((issue) => {
-              const { sx, sy } = toScreen(issue.x, issue.y);
-              const color = TAG_COLORS[dominantTag(issue.tags)] ?? "#94a3b8";
-              const radius = issueRadius(issue.tags);
-              const isActive = issue.id === hoveredId || issue.id === selectedId;
-              const isNeighbor = neighborIds.has(issue.id);
-              const highlighted = isHighlighted(issue.id);
-              const dimmed = hasSelection && !highlighted;
-              const isClosed = issue.status === "closed";
-
-              return (
-                <g
-                  key={issue.id}
-                  data-issue={issue.id}
-                  onMouseEnter={() => setHoveredId(issue.id)}
-                  onMouseLeave={() => setHoveredId(null)}
-                  onClick={(event) => {
-                    event.stopPropagation();
-
-                    if (event.shiftKey) {
-                      toggleBatchIssue(issue.id);
-                      return;
-                    }
-
-                    clearSelection();
-                    setSelectedId(selectedId === issue.id ? null : issue.id);
-                  }}
-                  className="cursor-pointer"
-                >
-                  {isNeighbor && selectedId != null && (
-                    <circle
-                      cx={sx}
-                      cy={sy}
-                      r={radius + 6}
-                      fill="none"
-                      stroke={color}
-                      strokeWidth={1.5}
-                      strokeOpacity={0.3}
-                      strokeDasharray="3 3"
-                    />
-                  )}
-                  {isActive && (
-                    <circle
-                      cx={sx}
-                      cy={sy}
-                      r={radius + 4}
-                      fill={color}
-                      fillOpacity={0.15}
-                    />
-                  )}
-                  {selectedBatch.has(issue.id) && (
-                    <circle
-                      cx={sx}
-                      cy={sy}
-                      r={radius + 5}
-                      fill="none"
-                      stroke={color}
-                      strokeWidth={2}
-                      strokeOpacity={0.6}
-                    />
-                  )}
-                  <circle
-                    cx={sx}
-                    cy={sy}
-                    r={radius}
-                    fill={color}
-                    fillOpacity={
-                      dimmed ? 0.15 : isClosed ? (isActive ? 0.42 : 0.22) : isActive ? 0.9 : 0.6
-                    }
-                    stroke={color}
-                    strokeWidth={isActive || isClosed ? 2 : 0}
-                    strokeOpacity={0.8}
-                    strokeDasharray={isClosed ? "4 3" : undefined}
-                  />
-                  {(isActive || (isNeighbor && selectedId != null)) && (
-                    <text
-                      x={sx}
-                      y={sy - radius - (isNeighbor && !isActive ? 10 : 8)}
-                      textAnchor="middle"
-                      className="fill-foreground text-[11px] font-medium"
-                      fillOpacity={isNeighbor && !isActive ? 0.6 : 1}
-                    >
-                      {issue.raw.length > 40 ? `${issue.raw.slice(0, 40)}...` : issue.raw}
-                    </text>
-                  )}
-                </g>
-              );
-            })}
-
             {lassoPoints.length > 1 && (
               <polygon
                 points={lassoPoints.map((point) => `${point.x},${point.y}`).join(" ")}
@@ -1560,7 +1585,7 @@ export default function MapPage() {
                 strokeLinejoin="round"
               />
             )}
-          </svg>
+          </IssueMapCanvas>
 
           <div
             className={`absolute right-0 top-0 h-full w-96 border-l bg-card shadow-lg transition-transform duration-200 ease-in-out ${

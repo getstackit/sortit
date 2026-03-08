@@ -4,13 +4,14 @@ import (
 	"encoding/json"
 	"errors"
 	"io"
-	"math"
 	"net/http"
 	"path"
-	"sort"
 	"strings"
 
+	"splat/internal/commands"
 	"splat/internal/issues"
+	issuemap "splat/internal/map"
+	"splat/internal/queries"
 )
 
 type issuesResponse struct {
@@ -68,32 +69,22 @@ func (s *Server) handleIssueCompare(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	storeIssues, err := s.issueStore.List(r.Context())
+	result, err := s.compareIssues.Handle(r.Context(), queries.CompareIssues{IDs: request.IDs})
 	if err != nil {
-		writeInternalError(w, r, "failed to list issues", err)
-		return
-	}
-
-	issuesByID := make(map[string]issues.Issue, len(storeIssues))
-	for _, issue := range storeIssues {
-		issuesByID[issue.ID] = issue
-	}
-
-	selected := make([]issues.Issue, 0, len(request.IDs))
-	for _, id := range request.IDs {
-		issue, ok := issuesByID[id]
-		if !ok {
+		if queries.NotFound(err) {
 			writeError(w, http.StatusNotFound, "issue not found")
 			return
 		}
-		selected = append(selected, issue)
+		writeInternalError(w, r, "failed to compare issues", err)
+		return
 	}
 
-	pairs, average := compareIssueEmbeddings(selected)
 	writeJSON(w, http.StatusOK, compareIssuesResponse{
-		ComparedIssueCount:          len(selected),
-		AverageEmbeddingSimilarity:  average,
-		PairwiseEmbeddingSimilarity: pairs,
+		ComparedIssueCount:         result.ComparedIssueCount,
+		AverageEmbeddingSimilarity: result.AverageEmbeddingSimilarity,
+		PairwiseEmbeddingSimilarity: toPairwiseIssueSimilarityResponse(
+			result.PairwiseEmbeddingSimilarity,
+		),
 	})
 }
 
@@ -124,7 +115,7 @@ func (s *Server) handleIssueByID(route string) http.HandlerFunc {
 				return
 			}
 
-			issue, err := s.issueStore.Get(r.Context(), id)
+			issue, err := s.getIssue.Handle(r.Context(), id)
 			if err != nil {
 				if errors.Is(err, issues.ErrNotFound) {
 					writeError(w, http.StatusNotFound, "issue not found")
@@ -153,7 +144,10 @@ func (s *Server) handleIssueByID(route string) http.HandlerFunc {
 				return
 			}
 
-			closed, err := s.issueStore.CloseIssue(r.Context(), id, request.ClosedBy)
+			closed, err := s.closeIssue.Handle(r.Context(), commands.CloseIssue{
+				ID:       id,
+				ClosedBy: request.ClosedBy,
+			})
 			if err != nil {
 				if errors.Is(err, issues.ErrNotFound) {
 					writeError(w, http.StatusNotFound, "issue not found")
@@ -165,6 +159,48 @@ func (s *Server) handleIssueByID(route string) http.HandlerFunc {
 			}
 
 			writeJSON(w, http.StatusOK, closed)
+		case "explore":
+			if r.Method != http.MethodGet {
+				w.Header().Set("Allow", http.MethodGet)
+				http.Error(w, http.StatusText(http.StatusMethodNotAllowed), http.StatusMethodNotAllowed)
+				return
+			}
+
+			limit, err := ParsePositiveIntQuery(r.URL.Query(), "limit")
+			if err != nil {
+				writeError(w, http.StatusBadRequest, "invalid limit query")
+				return
+			}
+
+			storeIssues, err := s.listIssues.Handle(r.Context(), queries.IssueStatusFilterAll)
+			if err != nil {
+				writeInternalError(w, r, "failed to list issues", err)
+				return
+			}
+
+			storeTags, err := s.catalog.StoredTags(r.Context())
+			if err != nil {
+				writeInternalError(w, r, "failed to list tags", err)
+				return
+			}
+
+			exploreLimit := 0
+			if limit != nil {
+				exploreLimit = *limit
+			}
+
+			result, err := issuemap.ExploreFromIssuesWithTags(storeIssues, storeTags, id, exploreLimit)
+			if err != nil {
+				if errors.Is(err, issues.ErrNotFound) {
+					writeError(w, http.StatusNotFound, "issue not found")
+					return
+				}
+
+				writeInternalError(w, r, "failed to explore issue", err)
+				return
+			}
+
+			writeJSON(w, http.StatusOK, result)
 		case "reopen":
 			if r.Method != http.MethodPost {
 				w.Header().Set("Allow", http.MethodPost)
@@ -172,7 +208,7 @@ func (s *Server) handleIssueByID(route string) http.HandlerFunc {
 				return
 			}
 
-			reopened, err := s.issueStore.ReopenIssue(r.Context(), id)
+			reopened, err := s.reopenIssue.Handle(r.Context(), commands.ReopenIssue{ID: id})
 			if err != nil {
 				if errors.Is(err, issues.ErrNotFound) {
 					writeError(w, http.StatusNotFound, "issue not found")
@@ -197,13 +233,13 @@ func (s *Server) handleIssueList(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	items, err := s.issueStore.List(r.Context())
+	items, err := s.listIssues.Handle(r.Context(), filter)
 	if err != nil {
 		writeInternalError(w, r, "failed to list issues", err)
 		return
 	}
 
-	writeJSON(w, http.StatusOK, issuesResponse{Issues: filterIssuesByStatus(items, filter)})
+	writeJSON(w, http.StatusOK, issuesResponse{Issues: items})
 }
 
 func (s *Server) handleIssueCreate(w http.ResponseWriter, r *http.Request) {
@@ -213,19 +249,13 @@ func (s *Server) handleIssueCreate(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	enriched, err := s.analyzeIssueInput(r.Context(), issues.CreateInput{
+	created, err := s.createIssue.Handle(r.Context(), commands.CreateIssue{
 		Raw:       request.Raw,
 		Tags:      request.Tags,
 		CreatedBy: request.CreatedBy,
 	})
 	if err != nil {
-		writeInternalError(w, r, "failed to analyze issue", err)
-		return
-	}
-
-	created, err := s.issueStore.Create(r.Context(), enriched)
-	if err != nil {
-		writeError(w, http.StatusBadRequest, err.Error())
+		writeInternalError(w, r, "failed to create issue", err)
 		return
 	}
 
@@ -303,39 +333,18 @@ func decodeCloseIssueRequest(r *http.Request) (closeIssueRequest, error) {
 	return request, nil
 }
 
-func compareIssueEmbeddings(items []issues.Issue) ([]pairwiseIssueSimilarity, float64) {
-	pairs := make([]pairwiseIssueSimilarity, 0, len(items)*(len(items)-1)/2)
-	total := 0.0
-
-	for i := 0; i < len(items); i++ {
-		for j := i + 1; j < len(items); j++ {
-			similarity := cosineSimilarity(items[i].Embedding, items[j].Embedding)
-			total += similarity
-			pairs = append(pairs, pairwiseIssueSimilarity{
-				SourceID:   items[i].ID,
-				TargetID:   items[j].ID,
-				Similarity: math.Round(similarity*100) / 100,
-			})
-		}
-	}
-
-	sort.Slice(pairs, func(i, j int) bool {
-		if pairs[i].Similarity == pairs[j].Similarity {
-			if pairs[i].SourceID == pairs[j].SourceID {
-				return pairs[i].TargetID < pairs[j].TargetID
-			}
-			return pairs[i].SourceID < pairs[j].SourceID
-		}
-		return pairs[i].Similarity > pairs[j].Similarity
-	})
-
-	average := 0.0
-	if len(pairs) > 0 {
-		average = math.Round((total/float64(len(pairs)))*100) / 100
-	}
-	return pairs, average
-}
-
 func issueItemRoute(prefix string) string {
 	return path.Join(prefix, "issues") + "/"
+}
+
+func toPairwiseIssueSimilarityResponse(items []queries.PairwiseIssueSimilarity) []pairwiseIssueSimilarity {
+	out := make([]pairwiseIssueSimilarity, len(items))
+	for i, item := range items {
+		out[i] = pairwiseIssueSimilarity{
+			SourceID:   item.SourceID,
+			TargetID:   item.TargetID,
+			Similarity: item.Similarity,
+		}
+	}
+	return out
 }

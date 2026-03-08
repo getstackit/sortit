@@ -11,8 +11,11 @@ import (
 	"time"
 
 	"splat/internal/ai"
+	"splat/internal/commands"
 	"splat/internal/issues"
 	mcpserver "splat/internal/mcp"
+	"splat/internal/queries"
+	"splat/internal/services"
 )
 
 type ServerConfig struct {
@@ -24,13 +27,22 @@ type ServerConfig struct {
 }
 
 type Server struct {
-	config        ServerConfig
-	httpServer    *http.Server
-	startedAt     time.Time
-	analyzer      *ai.Analyzer
-	issueAnalyzer *ai.Analyzer
-	issueStore    issues.Store
-	tagStore      issueTagStore
+	config            ServerConfig
+	httpServer        *http.Server
+	startedAt         time.Time
+	createIssue       commands.CreateIssueHandler
+	closeIssue        commands.CloseIssueHandler
+	reopenIssue       commands.ReopenIssueHandler
+	loadSampleIssues  commands.LoadSampleIssuesHandler
+	resetIssues       commands.ResetIssuesHandler
+	listIssues        queries.ListIssuesHandler
+	getIssue          queries.GetIssueHandler
+	compareIssues     queries.CompareIssuesHandler
+	listTags          queries.ListTagsHandler
+	getMap            queries.MapHandler
+	getMapEdges       queries.EdgeHandler
+	debugAnalyzeIssue queries.DebugAnalyzeIssueHandler
+	catalog           *services.CatalogService
 }
 
 type issueTagStore interface {
@@ -49,22 +61,6 @@ type errorResponse struct {
 	Error string `json:"error"`
 }
 
-func NewServer(cfg ServerConfig) *Server {
-	store := cfg.IssueStore
-	if store == nil {
-		store = issues.NewInMemoryStore(nil)
-	}
-
-	return &Server{
-		config:        cfg,
-		startedAt:     time.Now().UTC(),
-		analyzer:      cfg.Analyzer,
-		issueAnalyzer: fallbackAnalyzer(cfg.Analyzer),
-		issueStore:    store,
-		tagStore:      tagStoreFromIssueStore(store),
-	}
-}
-
 func tagStoreFromIssueStore(store issues.Store) issueTagStore {
 	tagStore, ok := store.(issueTagStore)
 	if !ok {
@@ -73,15 +69,8 @@ func tagStoreFromIssueStore(store issues.Store) issueTagStore {
 	return tagStore
 }
 
-func fallbackAnalyzer(analyzer *ai.Analyzer) *ai.Analyzer {
-	if analyzer != nil {
-		return analyzer
-	}
-	return defaultIssueAnalyzer()
-}
-
 func (s *Server) Initialize(ctx context.Context) error {
-	return s.ensureStoredTags(ctx, issues.DefaultTags())
+	return s.catalog.EnsureStoredTags(ctx, issues.DefaultTags())
 }
 
 func (s *Server) Handler() http.Handler {
@@ -210,6 +199,50 @@ func writeInternalError(w http.ResponseWriter, r *http.Request, message string, 
 		log.Printf("500 %s %s: %s", r.Method, r.URL.Path, message)
 	}
 	writeError(w, http.StatusInternalServerError, message)
+}
+
+func NewServer(cfg ServerConfig) *Server {
+	store := cfg.IssueStore
+	if store == nil {
+		store = issues.NewInMemoryStore(nil)
+	}
+
+	tagStore := tagStoreFromIssueStore(store)
+	commandAnalyzer := services.FallbackAnalyzer(cfg.Analyzer)
+	catalog := services.NewCatalogService(tagStore, commandAnalyzer)
+	enricher := services.NewIssueEnricher(commandAnalyzer, catalog)
+
+	replaceable, _ := store.(interface {
+		Replace(context.Context, []issues.Issue) error
+	})
+
+	return &Server{
+		config:    cfg,
+		startedAt: time.Now().UTC(),
+		createIssue: commands.CreateIssueHandler{
+			Store:    store,
+			Enricher: enricher,
+		},
+		closeIssue: commands.CloseIssueHandler{Store: store},
+		reopenIssue: commands.ReopenIssueHandler{
+			Store: store,
+		},
+		loadSampleIssues: commands.LoadSampleIssuesHandler{
+			Store:    replaceable,
+			Enricher: enricher,
+		},
+		resetIssues: commands.ResetIssuesHandler{
+			Store: replaceable,
+		},
+		listIssues:        queries.ListIssuesHandler{Store: store},
+		getIssue:          queries.GetIssueHandler{Store: store},
+		compareIssues:     queries.CompareIssuesHandler{Store: store},
+		listTags:          queries.ListTagsHandler{Catalog: catalog},
+		getMap:            queries.MapHandler{IssueStore: store, Catalog: catalog},
+		getMapEdges:       queries.EdgeHandler{IssueStore: store, Catalog: catalog},
+		debugAnalyzeIssue: queries.DebugAnalyzeIssueHandler{Analyzer: cfg.Analyzer, Catalog: catalog, Store: store},
+		catalog:           catalog,
+	}
 }
 
 func normalizeAPIPrefixes(prefixes []string) []string {

@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"splat/internal/issues"
+	issuemap "splat/internal/map"
 )
 
 type failingIssueStore struct {
@@ -343,6 +344,148 @@ func TestIssuesEndpointReopensIssue(t *testing.T) {
 	}
 	if reopened.ClosedBy != "" {
 		t.Fatalf("expected closedBy cleared, got %q", reopened.ClosedBy)
+	}
+}
+
+func TestIssuesEndpointExploresIssue(t *testing.T) {
+	store := newSQLiteIssueStore(t, nil)
+	if err := store.UpsertTags(context.Background(), []issues.Tag{
+		{Name: "export", Embedding: []float64{1, 0, 0}},
+		{Name: "safari", Embedding: []float64{0.9, 0.1, 0}},
+		{Name: "bug", Embedding: []float64{0.8, 0.2, 0}},
+		{Name: "feature", Embedding: []float64{0, 1, 0}},
+	}); err != nil {
+		t.Fatalf("seed tags: %v", err)
+	}
+
+	if err := store.Replace(context.Background(), []issues.Issue{
+		{
+			ID:        "issue-target",
+			Raw:       "Safari export crashes on PDF download",
+			CreatedBy: "Casey",
+			CreatedAt: issues.SeedIssues()[0].CreatedAt,
+			Status:    issues.StatusOpen,
+			TagScores: []issues.TagRelevance{
+				{Tag: "export", Relevance: 0.95},
+				{Tag: "safari", Relevance: 0.92},
+				{Tag: "bug", Relevance: 0.9},
+			},
+			Embedding: []float64{1, 0, 0},
+		},
+		{
+			ID:        "issue-related",
+			Raw:       "PDF export fails in Safari for some users",
+			CreatedBy: "Casey",
+			CreatedAt: issues.SeedIssues()[1].CreatedAt,
+			Status:    issues.StatusOpen,
+			TagScores: []issues.TagRelevance{
+				{Tag: "export", Relevance: 0.91},
+				{Tag: "safari", Relevance: 0.88},
+				{Tag: "bug", Relevance: 0.67},
+			},
+			Embedding: []float64{0.99, 0.1, 0},
+		},
+		{
+			ID:        "issue-other",
+			Raw:       "Feature request for dashboard filters",
+			CreatedBy: "Casey",
+			CreatedAt: issues.SeedIssues()[2].CreatedAt,
+			Status:    issues.StatusOpen,
+			TagScores: []issues.TagRelevance{
+				{Tag: "feature", Relevance: 0.95},
+			},
+			Embedding: []float64{0, 1, 0},
+		},
+		{
+			ID:        "issue-closed",
+			Raw:       "Closed Safari export bug",
+			CreatedBy: "Casey",
+			CreatedAt: issues.SeedIssues()[3].CreatedAt,
+			Status:    issues.StatusClosed,
+			TagScores: []issues.TagRelevance{
+				{Tag: "export", Relevance: 0.96},
+				{Tag: "safari", Relevance: 0.94},
+			},
+			Embedding: []float64{1, 0, 0},
+		},
+	}); err != nil {
+		t.Fatalf("seed store: %v", err)
+	}
+
+	server := NewServer(ServerConfig{
+		CORSOrigins: []string{"http://localhost:3000"},
+		APIPrefixes: []string{"/api"},
+		IssueStore:  store,
+	})
+
+	req := httptest.NewRequest(http.MethodGet, "/api/issues/issue-target/explore?limit=2", nil)
+	rec := httptest.NewRecorder()
+	server.Handler().ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200 for issue explore, got %d", rec.Code)
+	}
+
+	var payload issuemap.ExploreResponse
+	if err := json.NewDecoder(rec.Body).Decode(&payload); err != nil {
+		t.Fatalf("decode explore response: %v", err)
+	}
+
+	if payload.Issue.ID != "issue-target" {
+		t.Fatalf("expected target issue in response, got %q", payload.Issue.ID)
+	}
+	if len(payload.RelatedIssues) != 2 {
+		t.Fatalf("expected 2 related issues, got %d", len(payload.RelatedIssues))
+	}
+	if payload.RelatedIssues[0].ID != "issue-related" {
+		t.Fatalf("expected most related issue first, got %q", payload.RelatedIssues[0].ID)
+	}
+	if payload.RelatedIssues[0].CombinedSimilarity < payload.RelatedIssues[1].CombinedSimilarity {
+		t.Fatalf("expected related issues sorted by combined similarity: %+v", payload.RelatedIssues)
+	}
+	for _, item := range payload.RelatedIssues {
+		if item.ID == "issue-target" || item.ID == "issue-closed" {
+			t.Fatalf("expected target and closed issues excluded from related results, got %+v", payload.RelatedIssues)
+		}
+	}
+	if payload.RelatedIssues[0].SemanticSimilarity == 0 {
+		t.Fatal("expected semantic similarity to be populated")
+	}
+	if payload.RelatedIssues[0].FactorSimilarity == 0 {
+		t.Fatal("expected factor similarity to be populated")
+	}
+	if len(payload.Opportunities) == 0 {
+		t.Fatal("expected at least one structured opportunity")
+	}
+	if payload.Opportunities[0].IssueIDs[0] != "issue-target" {
+		t.Fatalf("expected opportunity to include target issue first, got %+v", payload.Opportunities[0].IssueIDs)
+	}
+	if len(payload.Opportunities[0].SharedTags) == 0 {
+		t.Fatalf("expected opportunity shared tags, got %+v", payload.Opportunities[0])
+	}
+}
+
+func TestIssuesEndpointExploreRejectsInvalidLimit(t *testing.T) {
+	server := NewServer(ServerConfig{
+		CORSOrigins: []string{"http://localhost:3000"},
+		APIPrefixes: []string{"/api"},
+		IssueStore:  newSQLiteIssueStore(t, issues.SeedIssues()),
+	})
+
+	req := httptest.NewRequest(http.MethodGet, "/api/issues/sample-1/explore?limit=0", nil)
+	rec := httptest.NewRecorder()
+	server.Handler().ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("expected 400 for invalid limit query, got %d", rec.Code)
+	}
+
+	var payload errorResponse
+	if err := json.NewDecoder(rec.Body).Decode(&payload); err != nil {
+		t.Fatalf("decode error response: %v", err)
+	}
+	if payload.Error != "invalid limit query" {
+		t.Fatalf("expected invalid limit error, got %q", payload.Error)
 	}
 }
 

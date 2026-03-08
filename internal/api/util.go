@@ -6,16 +6,8 @@ import (
 	"strconv"
 	"strings"
 
-	"splat/internal/issues"
 	issuemap "splat/internal/map"
-)
-
-type issueStatusFilter string
-
-const (
-	issueStatusFilterOpen   issueStatusFilter = "open"
-	issueStatusFilterClosed issueStatusFilter = "closed"
-	issueStatusFilterAll    issueStatusFilter = "all"
+	"splat/internal/queries"
 )
 
 func ParseCSV(raw string) []string {
@@ -85,44 +77,35 @@ func ParseEdgeThreshold(values url.Values) (*float64, error) {
 	return &threshold, nil
 }
 
-func ParseIssueStatusFilter(values url.Values) (issueStatusFilter, error) {
+func ParseIssueStatusFilter(values url.Values) (queries.IssueStatusFilter, error) {
 	raw := strings.TrimSpace(values.Get("status"))
 	if raw == "" {
-		return issueStatusFilterOpen, nil
+		return queries.IssueStatusFilterOpen, nil
 	}
 
 	switch strings.ToLower(raw) {
-	case string(issueStatusFilterOpen):
-		return issueStatusFilterOpen, nil
-	case string(issueStatusFilterClosed):
-		return issueStatusFilterClosed, nil
-	case string(issueStatusFilterAll):
-		return issueStatusFilterAll, nil
+	case string(queries.IssueStatusFilterOpen):
+		return queries.IssueStatusFilterOpen, nil
+	case string(queries.IssueStatusFilterClosed):
+		return queries.IssueStatusFilterClosed, nil
+	case string(queries.IssueStatusFilterAll):
+		return queries.IssueStatusFilterAll, nil
 	default:
 		return "", strconv.ErrSyntax
 	}
 }
 
-func filterIssuesByStatus(items []issues.Issue, filter issueStatusFilter) []issues.Issue {
-	if filter == issueStatusFilterAll {
-		return items
+func ParsePositiveIntQuery(values url.Values, key string) (*int, error) {
+	raw := strings.TrimSpace(values.Get(key))
+	if raw == "" {
+		return nil, nil
 	}
 
-	filtered := make([]issues.Issue, 0, len(items))
-	for _, item := range items {
-		status := item.Status
-		if status == "" {
-			status = issues.StatusOpen
-		}
-
-		if filter == issueStatusFilterOpen && status == issues.StatusOpen {
-			filtered = append(filtered, item)
-		}
-		if filter == issueStatusFilterClosed && status == issues.StatusClosed {
-			filtered = append(filtered, item)
-		}
+	parsed, err := strconv.Atoi(raw)
+	if err != nil || parsed <= 0 {
+		return nil, strconv.ErrSyntax
 	}
-	return filtered
+	return &parsed, nil
 }
 
 func parseFloatQuery(values url.Values, key string) (float64, error) {
@@ -138,21 +121,4 @@ func parseFloatQuery(values url.Values, key string) (float64, error) {
 		return 0, strconv.ErrSyntax
 	}
 	return parsed, nil
-}
-
-func cosineSimilarity(a, b []float64) float64 {
-	if len(a) == 0 || len(a) != len(b) {
-		return 0
-	}
-
-	var dot, magA, magB float64
-	for i := range a {
-		dot += a[i] * b[i]
-		magA += a[i] * a[i]
-		magB += b[i] * b[i]
-	}
-	if magA == 0 || magB == 0 {
-		return 0
-	}
-	return dot / (math.Sqrt(magA) * math.Sqrt(magB))
 }
