@@ -42,6 +42,33 @@ func (q *Queries) CloseIssue(ctx context.Context, arg CloseIssueParams) error {
 	return err
 }
 
+const deleteAllIssueLinks = `-- name: DeleteAllIssueLinks :exec
+DELETE FROM issue_links
+`
+
+func (q *Queries) DeleteAllIssueLinks(ctx context.Context) error {
+	_, err := q.db.ExecContext(ctx, deleteAllIssueLinks)
+	return err
+}
+
+const deleteAllIssueOperationParticipants = `-- name: DeleteAllIssueOperationParticipants :exec
+DELETE FROM issue_operation_participants
+`
+
+func (q *Queries) DeleteAllIssueOperationParticipants(ctx context.Context) error {
+	_, err := q.db.ExecContext(ctx, deleteAllIssueOperationParticipants)
+	return err
+}
+
+const deleteAllIssueOperations = `-- name: DeleteAllIssueOperations :exec
+DELETE FROM issue_operations
+`
+
+func (q *Queries) DeleteAllIssueOperations(ctx context.Context) error {
+	_, err := q.db.ExecContext(ctx, deleteAllIssueOperations)
+	return err
+}
+
 const deleteAllIssuePosts = `-- name: DeleteAllIssuePosts :exec
 DELETE FROM issue_posts
 `
@@ -145,6 +172,99 @@ func (q *Queries) InsertIssue(ctx context.Context, arg InsertIssueParams) error 
 	return err
 }
 
+const insertIssueLink = `-- name: InsertIssueLink :exec
+INSERT INTO issue_links (
+    id,
+    source_issue_id,
+    target_issue_id,
+    type,
+    created_by,
+    created_at_unix_nano,
+    note,
+    operation_id
+) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+`
+
+type InsertIssueLinkParams struct {
+	ID                string
+	SourceIssueID     string
+	TargetIssueID     string
+	Type              string
+	CreatedBy         string
+	CreatedAtUnixNano int64
+	Note              string
+	OperationID       string
+}
+
+func (q *Queries) InsertIssueLink(ctx context.Context, arg InsertIssueLinkParams) error {
+	_, err := q.db.ExecContext(ctx, insertIssueLink,
+		arg.ID,
+		arg.SourceIssueID,
+		arg.TargetIssueID,
+		arg.Type,
+		arg.CreatedBy,
+		arg.CreatedAtUnixNano,
+		arg.Note,
+		arg.OperationID,
+	)
+	return err
+}
+
+const insertIssueOperation = `-- name: InsertIssueOperation :exec
+INSERT INTO issue_operations (
+    id,
+    kind,
+    created_by,
+    created_at_unix_nano,
+    note
+) VALUES (?, ?, ?, ?, ?)
+`
+
+type InsertIssueOperationParams struct {
+	ID                string
+	Kind              string
+	CreatedBy         string
+	CreatedAtUnixNano int64
+	Note              string
+}
+
+func (q *Queries) InsertIssueOperation(ctx context.Context, arg InsertIssueOperationParams) error {
+	_, err := q.db.ExecContext(ctx, insertIssueOperation,
+		arg.ID,
+		arg.Kind,
+		arg.CreatedBy,
+		arg.CreatedAtUnixNano,
+		arg.Note,
+	)
+	return err
+}
+
+const insertIssueOperationParticipant = `-- name: InsertIssueOperationParticipant :exec
+INSERT INTO issue_operation_participants (
+    operation_id,
+    issue_id,
+    role,
+    sequence
+) VALUES (?, ?, ?, ?)
+`
+
+type InsertIssueOperationParticipantParams struct {
+	OperationID string
+	IssueID     string
+	Role        string
+	Sequence    int64
+}
+
+func (q *Queries) InsertIssueOperationParticipant(ctx context.Context, arg InsertIssueOperationParticipantParams) error {
+	_, err := q.db.ExecContext(ctx, insertIssueOperationParticipant,
+		arg.OperationID,
+		arg.IssueID,
+		arg.Role,
+		arg.Sequence,
+	)
+	return err
+}
+
 const insertIssuePost = `-- name: InsertIssuePost :exec
 INSERT INTO issue_posts (
     id,
@@ -178,6 +298,122 @@ func (q *Queries) InsertIssuePost(ctx context.Context, arg InsertIssuePostParams
 		arg.Kind,
 	)
 	return err
+}
+
+const listIssueLinksForIssue = `-- name: ListIssueLinksForIssue :many
+SELECT id, source_issue_id, target_issue_id, type, created_by, created_at_unix_nano, note, operation_id
+FROM issue_links
+WHERE source_issue_id = ? OR target_issue_id = ?
+ORDER BY created_at_unix_nano DESC, id DESC
+`
+
+type ListIssueLinksForIssueParams struct {
+	SourceIssueID string
+	TargetIssueID string
+}
+
+func (q *Queries) ListIssueLinksForIssue(ctx context.Context, arg ListIssueLinksForIssueParams) ([]IssueLink, error) {
+	rows, err := q.db.QueryContext(ctx, listIssueLinksForIssue, arg.SourceIssueID, arg.TargetIssueID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []IssueLink
+	for rows.Next() {
+		var i IssueLink
+		if err := rows.Scan(
+			&i.ID,
+			&i.SourceIssueID,
+			&i.TargetIssueID,
+			&i.Type,
+			&i.CreatedBy,
+			&i.CreatedAtUnixNano,
+			&i.Note,
+			&i.OperationID,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listIssueOperationParticipants = `-- name: ListIssueOperationParticipants :many
+SELECT operation_id, issue_id, role, sequence
+FROM issue_operation_participants
+WHERE operation_id = ?
+ORDER BY sequence ASC, issue_id ASC
+`
+
+func (q *Queries) ListIssueOperationParticipants(ctx context.Context, operationID string) ([]IssueOperationParticipant, error) {
+	rows, err := q.db.QueryContext(ctx, listIssueOperationParticipants, operationID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []IssueOperationParticipant
+	for rows.Next() {
+		var i IssueOperationParticipant
+		if err := rows.Scan(
+			&i.OperationID,
+			&i.IssueID,
+			&i.Role,
+			&i.Sequence,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listIssueOperationsForIssue = `-- name: ListIssueOperationsForIssue :many
+SELECT DISTINCT o.id, o.kind, o.created_by, o.created_at_unix_nano, o.note
+FROM issue_operations o
+JOIN issue_operation_participants p ON p.operation_id = o.id
+WHERE p.issue_id = ?
+ORDER BY o.created_at_unix_nano DESC, o.id DESC
+`
+
+func (q *Queries) ListIssueOperationsForIssue(ctx context.Context, issueID string) ([]IssueOperation, error) {
+	rows, err := q.db.QueryContext(ctx, listIssueOperationsForIssue, issueID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []IssueOperation
+	for rows.Next() {
+		var i IssueOperation
+		if err := rows.Scan(
+			&i.ID,
+			&i.Kind,
+			&i.CreatedBy,
+			&i.CreatedAtUnixNano,
+			&i.Note,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
 }
 
 const listIssuePosts = `-- name: ListIssuePosts :many

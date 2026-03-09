@@ -22,18 +22,20 @@ const (
 )
 
 type Issue struct {
-	ID         string         `json:"id"`
-	Raw        string         `json:"raw"`
-	Tags       []string       `json:"tags"`
-	CreatedBy  string         `json:"createdBy"`
-	CreatedAt  time.Time      `json:"createdAt"`
-	Status     IssueStatus    `json:"status"`
-	ClosedAt   *time.Time     `json:"closedAt"`
-	ClosedBy   string         `json:"closedBy,omitempty"`
-	AssignedTo string         `json:"assignedTo,omitempty"`
-	Discussion []IssuePost    `json:"discussion,omitempty"`
-	TagScores  []TagRelevance `json:"tagScores"`
-	Embedding  []float64      `json:"-"`
+	ID         string           `json:"id"`
+	Raw        string           `json:"raw"`
+	Tags       []string         `json:"tags"`
+	CreatedBy  string           `json:"createdBy"`
+	CreatedAt  time.Time        `json:"createdAt"`
+	Status     IssueStatus      `json:"status"`
+	ClosedAt   *time.Time       `json:"closedAt"`
+	ClosedBy   string           `json:"closedBy,omitempty"`
+	AssignedTo string           `json:"assignedTo,omitempty"`
+	Discussion []IssuePost      `json:"discussion,omitempty"`
+	Links      []IssueLink      `json:"links,omitempty"`
+	Operations []IssueOperation `json:"operations,omitempty"`
+	TagScores  []TagRelevance   `json:"tagScores"`
+	Embedding  []float64        `json:"-"`
 }
 
 type IssuePost struct {
@@ -56,6 +58,98 @@ type Tag struct {
 type TagRelevance struct {
 	Tag       string  `json:"tag"`
 	Relevance float64 `json:"relevance"`
+}
+
+type IssueLinkType string
+
+const (
+	IssueLinkTypeParentOf    IssueLinkType = "parent_of"
+	IssueLinkTypeChildOf     IssueLinkType = "child_of"
+	IssueLinkTypeMergedInto  IssueLinkType = "merged_into"
+	IssueLinkTypeDerivedFrom IssueLinkType = "derived_from"
+	IssueLinkTypeRelatedTo   IssueLinkType = "related_to"
+	IssueLinkTypeDuplicateOf IssueLinkType = "duplicate_of"
+)
+
+type IssueOperationKind string
+
+const (
+	IssueOperationKindSplit   IssueOperationKind = "split"
+	IssueOperationKindCombine IssueOperationKind = "combine"
+	IssueOperationKindLink    IssueOperationKind = "link"
+)
+
+type IssueReference struct {
+	ID     string      `json:"id"`
+	Raw    string      `json:"raw"`
+	Status IssueStatus `json:"status"`
+}
+
+type IssueLink struct {
+	ID            string          `json:"id"`
+	Type          IssueLinkType   `json:"type"`
+	SourceIssueID string          `json:"sourceIssueId"`
+	TargetIssueID string          `json:"targetIssueId"`
+	Direction     string          `json:"direction,omitempty"`
+	CreatedBy     string          `json:"createdBy"`
+	CreatedAt     time.Time       `json:"createdAt"`
+	Note          string          `json:"note,omitempty"`
+	OperationID   string          `json:"operationId,omitempty"`
+	RelatedIssue  *IssueReference `json:"relatedIssue,omitempty"`
+}
+
+type IssueOperationParticipant struct {
+	IssueID string          `json:"issueId"`
+	Role    string          `json:"role"`
+	Issue   *IssueReference `json:"issue,omitempty"`
+}
+
+type IssueOperation struct {
+	ID           string                      `json:"id"`
+	Kind         IssueOperationKind          `json:"kind"`
+	CreatedBy    string                      `json:"createdBy"`
+	CreatedAt    time.Time                   `json:"createdAt"`
+	Note         string                      `json:"note,omitempty"`
+	Participants []IssueOperationParticipant `json:"participants,omitempty"`
+}
+
+type SplitChildInput struct {
+	Raw       string
+	Tags      []string
+	TagScores []TagRelevance
+	Embedding []float64
+}
+
+type SplitInput struct {
+	SourceID    string
+	Children    []SplitChildInput
+	CreatedBy   string
+	Note        string
+	CloseSource bool
+}
+
+type CombineInput struct {
+	SourceIDs []string
+	Raw       string
+	Tags      []string
+	CreatedBy string
+	Note      string
+	TagScores []TagRelevance
+	Embedding []float64
+}
+
+type LinkInput struct {
+	SourceID  string
+	TargetID  string
+	Type      IssueLinkType
+	CreatedBy string
+	Note      string
+}
+
+type IssueOperationResult struct {
+	Operation     IssueOperation   `json:"operation"`
+	CreatedIssues []Issue          `json:"createdIssues,omitempty"`
+	TouchedIssues []IssueReference `json:"touchedIssues,omitempty"`
 }
 
 type CreateInput struct {
@@ -89,6 +183,9 @@ type Store interface {
 	CloseIssue(context.Context, string, string) (Issue, error)
 	ReopenIssue(context.Context, string) (Issue, error)
 	AssignIssue(ctx context.Context, id, assignee string) (Issue, error)
+	SplitIssue(context.Context, SplitInput) (IssueOperationResult, error)
+	CombineIssues(context.Context, CombineInput) (IssueOperationResult, error)
+	LinkIssues(context.Context, LinkInput) (IssueOperationResult, error)
 }
 
 func DefaultTags() []Tag {
@@ -114,6 +211,9 @@ type InMemoryStore struct {
 	issues     []Issue
 	discussion map[string][]IssuePost
 	nextSeq    atomic.Uint64
+	nextOpSeq  atomic.Uint64
+	links      []IssueLink
+	operations []IssueOperation
 }
 
 func NewInMemoryStore(seed []Issue) *InMemoryStore {
@@ -151,6 +251,7 @@ func (s *InMemoryStore) Get(_ context.Context, id string) (Issue, error) {
 		if issue.ID == id {
 			cloned := cloneIssues([]Issue{issue})[0]
 			cloned.Discussion = cloneIssuePosts(s.discussion[id])
+			s.hydrateIssueRelationships(&cloned)
 			return cloned, nil
 		}
 	}
@@ -368,6 +469,267 @@ func (s *InMemoryStore) AssignIssue(_ context.Context, id, assignee string) (Iss
 	return Issue{}, ErrNotFound
 }
 
+func (s *InMemoryStore) SplitIssue(_ context.Context, input SplitInput) (IssueOperationResult, error) {
+	sourceID := strings.TrimSpace(input.SourceID)
+	if sourceID == "" {
+		return IssueOperationResult{}, ErrNotFound
+	}
+	if len(input.Children) == 0 {
+		return IssueOperationResult{}, fmt.Errorf("at least one child issue is required")
+	}
+
+	actor := defaultActor(input.CreatedBy)
+	note := strings.TrimSpace(input.Note)
+
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	sourceIndex := -1
+	for index, issue := range s.issues {
+		if issue.ID == sourceID {
+			sourceIndex = index
+			break
+		}
+	}
+	if sourceIndex == -1 {
+		return IssueOperationResult{}, ErrNotFound
+	}
+
+	source := s.issues[sourceIndex]
+	createdAt := time.Now().UTC()
+	operation := IssueOperation{
+		ID:        fmt.Sprintf("issue-op-%06d", s.nextOpSeq.Add(1)),
+		Kind:      IssueOperationKindSplit,
+		CreatedBy: actor,
+		CreatedAt: createdAt,
+		Note:      note,
+		Participants: []IssueOperationParticipant{{
+			IssueID: sourceID,
+			Role:    "source",
+		}},
+	}
+
+	createdIssues := make([]Issue, 0, len(input.Children))
+	touched := []IssueReference{issueReference(source)}
+	for index, child := range input.Children {
+		raw := strings.TrimSpace(child.Raw)
+		if raw == "" {
+			return IssueOperationResult{}, fmt.Errorf("child raw is required")
+		}
+
+		issue := Issue{
+			ID:        fmt.Sprintf("issue-%06d", s.nextSeq.Add(1)),
+			Raw:       raw,
+			Tags:      displayTags(child.Tags, child.TagScores),
+			CreatedBy: actor,
+			CreatedAt: createdAt,
+			Status:    StatusOpen,
+			TagScores: copyTagScores(child.TagScores),
+			Embedding: copyEmbedding(child.Embedding),
+		}
+		issue.Discussion = initialDiscussion(issue)
+		s.issues = append([]Issue{issue}, s.issues...)
+		s.discussion[issue.ID] = cloneIssuePosts(issue.Discussion)
+		createdIssues = append(createdIssues, cloneIssues([]Issue{issue})[0])
+		touched = append(touched, issueReference(issue))
+
+		s.links = append(s.links,
+			IssueLink{
+				ID:            fmt.Sprintf("%s-link-%06d", operation.ID, len(createdIssues)*2-1),
+				Type:          IssueLinkTypeParentOf,
+				SourceIssueID: sourceID,
+				TargetIssueID: issue.ID,
+				CreatedBy:     actor,
+				CreatedAt:     createdAt,
+				Note:          note,
+				OperationID:   operation.ID,
+			},
+			IssueLink{
+				ID:            fmt.Sprintf("%s-link-%06d", operation.ID, len(createdIssues)*2),
+				Type:          IssueLinkTypeChildOf,
+				SourceIssueID: issue.ID,
+				TargetIssueID: sourceID,
+				CreatedBy:     actor,
+				CreatedAt:     createdAt,
+				Note:          note,
+				OperationID:   operation.ID,
+			},
+		)
+		operation.Participants = append(operation.Participants, IssueOperationParticipant{
+			IssueID: issue.ID,
+			Role:    fmt.Sprintf("child:%d", index+1),
+		})
+	}
+
+	if input.CloseSource {
+		source.Status = StatusClosed
+		source.ClosedAt = &createdAt
+		source.ClosedBy = actor
+		for index, issue := range s.issues {
+			if issue.ID == sourceID {
+				s.issues[index] = source
+				break
+			}
+		}
+		touched[0] = issueReference(source)
+	}
+
+	s.operations = append([]IssueOperation{operation}, s.operations...)
+
+	return IssueOperationResult{
+		Operation:     hydrateOperation(operation, issuesByIDFromList(s.issues)),
+		CreatedIssues: createdIssues,
+		TouchedIssues: touched,
+	}, nil
+}
+
+func (s *InMemoryStore) CombineIssues(_ context.Context, input CombineInput) (IssueOperationResult, error) {
+	sourceIDs := sanitizeIssueIDs(input.SourceIDs)
+	if len(sourceIDs) < 2 {
+		return IssueOperationResult{}, fmt.Errorf("at least two source issues are required")
+	}
+	raw := strings.TrimSpace(input.Raw)
+	if raw == "" {
+		return IssueOperationResult{}, fmt.Errorf("raw is required")
+	}
+
+	actor := defaultActor(input.CreatedBy)
+	note := strings.TrimSpace(input.Note)
+	createdAt := time.Now().UTC()
+
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	indexByID := make(map[string]int, len(s.issues))
+	for index, issue := range s.issues {
+		indexByID[issue.ID] = index
+	}
+	for _, id := range sourceIDs {
+		if _, ok := indexByID[id]; !ok {
+			return IssueOperationResult{}, ErrNotFound
+		}
+	}
+
+	createdIssue := Issue{
+		ID:        fmt.Sprintf("issue-%06d", s.nextSeq.Add(1)),
+		Raw:       raw,
+		Tags:      displayTags(input.Tags, input.TagScores),
+		CreatedBy: actor,
+		CreatedAt: createdAt,
+		Status:    StatusOpen,
+		TagScores: copyTagScores(input.TagScores),
+		Embedding: copyEmbedding(input.Embedding),
+	}
+	createdIssue.Discussion = initialDiscussion(createdIssue)
+	s.issues = append([]Issue{createdIssue}, s.issues...)
+	s.discussion[createdIssue.ID] = cloneIssuePosts(createdIssue.Discussion)
+
+	operation := IssueOperation{
+		ID:        fmt.Sprintf("issue-op-%06d", s.nextOpSeq.Add(1)),
+		Kind:      IssueOperationKindCombine,
+		CreatedBy: actor,
+		CreatedAt: createdAt,
+		Note:      note,
+		Participants: []IssueOperationParticipant{{
+			IssueID: createdIssue.ID,
+			Role:    "result",
+		}},
+	}
+
+	touched := []IssueReference{issueReference(createdIssue)}
+	for index, id := range sourceIDs {
+		source := s.issues[indexByID[id]+1]
+		source.Status = StatusClosed
+		source.ClosedAt = &createdAt
+		source.ClosedBy = actor
+		s.issues[indexByID[id]+1] = source
+		touched = append(touched, issueReference(source))
+
+		s.links = append(s.links, IssueLink{
+			ID:            fmt.Sprintf("%s-link-%06d", operation.ID, index+1),
+			Type:          IssueLinkTypeMergedInto,
+			SourceIssueID: id,
+			TargetIssueID: createdIssue.ID,
+			CreatedBy:     actor,
+			CreatedAt:     createdAt,
+			Note:          note,
+			OperationID:   operation.ID,
+		})
+		operation.Participants = append(operation.Participants, IssueOperationParticipant{
+			IssueID: id,
+			Role:    fmt.Sprintf("source:%d", index+1),
+		})
+	}
+
+	s.operations = append([]IssueOperation{operation}, s.operations...)
+
+	return IssueOperationResult{
+		Operation:     hydrateOperation(operation, issuesByIDFromList(s.issues)),
+		CreatedIssues: []Issue{cloneIssues([]Issue{createdIssue})[0]},
+		TouchedIssues: touched,
+	}, nil
+}
+
+func (s *InMemoryStore) LinkIssues(_ context.Context, input LinkInput) (IssueOperationResult, error) {
+	sourceID := strings.TrimSpace(input.SourceID)
+	targetID := strings.TrimSpace(input.TargetID)
+	if sourceID == "" || targetID == "" {
+		return IssueOperationResult{}, ErrNotFound
+	}
+	linkType := normalizeIssueLinkType(input.Type)
+	if linkType == "" {
+		return IssueOperationResult{}, fmt.Errorf("link type is required")
+	}
+
+	actor := defaultActor(input.CreatedBy)
+	note := strings.TrimSpace(input.Note)
+	createdAt := time.Now().UTC()
+
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	issuesByID := issuesByIDFromList(s.issues)
+	source, ok := issuesByID[sourceID]
+	if !ok {
+		return IssueOperationResult{}, ErrNotFound
+	}
+	target, ok := issuesByID[targetID]
+	if !ok {
+		return IssueOperationResult{}, ErrNotFound
+	}
+
+	operation := IssueOperation{
+		ID:        fmt.Sprintf("issue-op-%06d", s.nextOpSeq.Add(1)),
+		Kind:      IssueOperationKindLink,
+		CreatedBy: actor,
+		CreatedAt: createdAt,
+		Note:      note,
+		Participants: []IssueOperationParticipant{
+			{IssueID: sourceID, Role: "source"},
+			{IssueID: targetID, Role: "target"},
+		},
+	}
+	s.links = append(s.links, IssueLink{
+		ID:            fmt.Sprintf("%s-link-000001", operation.ID),
+		Type:          linkType,
+		SourceIssueID: sourceID,
+		TargetIssueID: targetID,
+		CreatedBy:     actor,
+		CreatedAt:     createdAt,
+		Note:          note,
+		OperationID:   operation.ID,
+	})
+	s.operations = append([]IssueOperation{operation}, s.operations...)
+
+	return IssueOperationResult{
+		Operation: hydrateOperation(operation, issuesByIDFromList(s.issues)),
+		TouchedIssues: []IssueReference{
+			issueReference(source),
+			issueReference(target),
+		},
+	}, nil
+}
+
 func (s *InMemoryStore) Replace(_ context.Context, next []Issue) error {
 	items := cloneIssues(next)
 	slices.SortStableFunc(items, compareIssueOrder)
@@ -377,6 +739,9 @@ func (s *InMemoryStore) Replace(_ context.Context, next []Issue) error {
 
 	s.issues = items
 	s.discussion = make(map[string][]IssuePost, len(items))
+	s.links = nil
+	s.operations = nil
+	s.nextOpSeq.Store(0)
 	for _, issue := range items {
 		s.discussion[issue.ID] = initialDiscussion(issue)
 	}
@@ -467,6 +832,8 @@ func cloneIssues(input []Issue) []Issue {
 			ClosedBy:   issue.ClosedBy,
 			AssignedTo: issue.AssignedTo,
 			Discussion: cloneIssuePosts(issue.Discussion),
+			Links:      cloneIssueLinks(issue.Links),
+			Operations: cloneIssueOperations(issue.Operations),
 			TagScores:  copyTagScores(issue.TagScores),
 			Embedding:  copyEmbedding(issue.Embedding),
 		}
@@ -492,6 +859,64 @@ func cloneIssuePosts(input []IssuePost) []IssuePost {
 		}
 	}
 	return items
+}
+
+func cloneIssueLinks(input []IssueLink) []IssueLink {
+	if len(input) == 0 {
+		return nil
+	}
+
+	items := make([]IssueLink, len(input))
+	for i, link := range input {
+		items[i] = IssueLink{
+			ID:            link.ID,
+			Type:          link.Type,
+			SourceIssueID: link.SourceIssueID,
+			TargetIssueID: link.TargetIssueID,
+			Direction:     link.Direction,
+			CreatedBy:     link.CreatedBy,
+			CreatedAt:     link.CreatedAt,
+			Note:          link.Note,
+			OperationID:   link.OperationID,
+			RelatedIssue:  cloneIssueReference(link.RelatedIssue),
+		}
+	}
+	return items
+}
+
+func cloneIssueOperations(input []IssueOperation) []IssueOperation {
+	if len(input) == 0 {
+		return nil
+	}
+
+	items := make([]IssueOperation, len(input))
+	for i, operation := range input {
+		participants := make([]IssueOperationParticipant, len(operation.Participants))
+		for j, participant := range operation.Participants {
+			participants[j] = IssueOperationParticipant{
+				IssueID: participant.IssueID,
+				Role:    participant.Role,
+				Issue:   cloneIssueReference(participant.Issue),
+			}
+		}
+		items[i] = IssueOperation{
+			ID:           operation.ID,
+			Kind:         operation.Kind,
+			CreatedBy:    operation.CreatedBy,
+			CreatedAt:    operation.CreatedAt,
+			Note:         operation.Note,
+			Participants: participants,
+		}
+	}
+	return items
+}
+
+func cloneIssueReference(input *IssueReference) *IssueReference {
+	if input == nil {
+		return nil
+	}
+	cloned := *input
+	return &cloned
 }
 
 func cloneTags(input []Tag) []Tag {
@@ -590,4 +1015,108 @@ func compareIssueOrder(a, b Issue) int {
 		return 1
 	}
 	return 0
+}
+
+func normalizeIssueLinkType(value IssueLinkType) IssueLinkType {
+	switch strings.TrimSpace(string(value)) {
+	case string(IssueLinkTypeParentOf):
+		return IssueLinkTypeParentOf
+	case string(IssueLinkTypeChildOf):
+		return IssueLinkTypeChildOf
+	case string(IssueLinkTypeMergedInto):
+		return IssueLinkTypeMergedInto
+	case string(IssueLinkTypeDerivedFrom):
+		return IssueLinkTypeDerivedFrom
+	case string(IssueLinkTypeRelatedTo):
+		return IssueLinkTypeRelatedTo
+	case string(IssueLinkTypeDuplicateOf):
+		return IssueLinkTypeDuplicateOf
+	default:
+		return ""
+	}
+}
+
+func sanitizeIssueIDs(ids []string) []string {
+	if len(ids) == 0 {
+		return nil
+	}
+	seen := make(map[string]struct{}, len(ids))
+	out := make([]string, 0, len(ids))
+	for _, id := range ids {
+		id = strings.TrimSpace(id)
+		if id == "" {
+			continue
+		}
+		if _, ok := seen[id]; ok {
+			continue
+		}
+		seen[id] = struct{}{}
+		out = append(out, id)
+	}
+	return out
+}
+
+func issueReference(issue Issue) IssueReference {
+	return IssueReference{
+		ID:     issue.ID,
+		Raw:    issue.Raw,
+		Status: normalizeIssueStatus(issue.Status),
+	}
+}
+
+func issuesByIDFromList(items []Issue) map[string]Issue {
+	index := make(map[string]Issue, len(items))
+	for _, issue := range items {
+		index[issue.ID] = issue
+	}
+	return index
+}
+
+func hydrateOperation(operation IssueOperation, issuesByID map[string]Issue) IssueOperation {
+	hydrated := operation
+	hydrated.Participants = make([]IssueOperationParticipant, len(operation.Participants))
+	for i, participant := range operation.Participants {
+		hydrated.Participants[i] = participant
+		if issue, ok := issuesByID[participant.IssueID]; ok {
+			ref := issueReference(issue)
+			hydrated.Participants[i].Issue = &ref
+		}
+	}
+	return hydrated
+}
+
+func (s *InMemoryStore) hydrateIssueRelationships(issue *Issue) {
+	issuesByID := issuesByIDFromList(s.issues)
+	links := make([]IssueLink, 0)
+	for _, link := range s.links {
+		if link.SourceIssueID != issue.ID && link.TargetIssueID != issue.ID {
+			continue
+		}
+		hydrated := link
+		if hydrated.SourceIssueID == issue.ID {
+			hydrated.Direction = "outgoing"
+			if related, ok := issuesByID[hydrated.TargetIssueID]; ok {
+				ref := issueReference(related)
+				hydrated.RelatedIssue = &ref
+			}
+		} else {
+			hydrated.Direction = "incoming"
+			if related, ok := issuesByID[hydrated.SourceIssueID]; ok {
+				ref := issueReference(related)
+				hydrated.RelatedIssue = &ref
+			}
+		}
+		links = append(links, hydrated)
+	}
+	operations := make([]IssueOperation, 0)
+	for _, operation := range s.operations {
+		for _, participant := range operation.Participants {
+			if participant.IssueID == issue.ID {
+				operations = append(operations, hydrateOperation(operation, issuesByID))
+				break
+			}
+		}
+	}
+	issue.Links = cloneIssueLinks(links)
+	issue.Operations = cloneIssueOperations(operations)
 }

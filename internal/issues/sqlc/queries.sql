@@ -65,6 +65,63 @@ SET status = 'open',
     closed_by = ''
 WHERE id = ?;
 
+-- name: ListIssueLinksForIssue :many
+SELECT id, source_issue_id, target_issue_id, type, created_by, created_at_unix_nano, note, operation_id
+FROM issue_links
+WHERE source_issue_id = ? OR target_issue_id = ?
+ORDER BY created_at_unix_nano DESC, id DESC;
+
+-- name: InsertIssueLink :exec
+INSERT INTO issue_links (
+    id,
+    source_issue_id,
+    target_issue_id,
+    type,
+    created_by,
+    created_at_unix_nano,
+    note,
+    operation_id
+) VALUES (?, ?, ?, ?, ?, ?, ?, ?);
+
+-- name: DeleteAllIssueLinks :exec
+DELETE FROM issue_links;
+
+-- name: ListIssueOperationsForIssue :many
+SELECT DISTINCT o.id, o.kind, o.created_by, o.created_at_unix_nano, o.note
+FROM issue_operations o
+JOIN issue_operation_participants p ON p.operation_id = o.id
+WHERE p.issue_id = ?
+ORDER BY o.created_at_unix_nano DESC, o.id DESC;
+
+-- name: InsertIssueOperation :exec
+INSERT INTO issue_operations (
+    id,
+    kind,
+    created_by,
+    created_at_unix_nano,
+    note
+) VALUES (?, ?, ?, ?, ?);
+
+-- name: DeleteAllIssueOperations :exec
+DELETE FROM issue_operations;
+
+-- name: ListIssueOperationParticipants :many
+SELECT operation_id, issue_id, role, sequence
+FROM issue_operation_participants
+WHERE operation_id = ?
+ORDER BY sequence ASC, issue_id ASC;
+
+-- name: InsertIssueOperationParticipant :exec
+INSERT INTO issue_operation_participants (
+    operation_id,
+    issue_id,
+    role,
+    sequence
+) VALUES (?, ?, ?, ?);
+
+-- name: DeleteAllIssueOperationParticipants :exec
+DELETE FROM issue_operation_participants;
+
 -- name: DeleteAllIssues :exec
 DELETE FROM issues;
 

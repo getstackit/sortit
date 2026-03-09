@@ -13,6 +13,7 @@ import {
   SparklesIcon,
   UserIcon,
 } from "lucide-react";
+import { useAuth } from "@/components/auth-provider";
 import { AppShell } from "@/components/app-shell";
 import {
   IssueMapCanvas,
@@ -35,7 +36,9 @@ import {
   reopenIssue,
   refineIssue,
   progressIssue,
+  type IssueLinkRecord,
   type IssuePostKind,
+  type IssueOperationRecord,
   type IssuePostRecord,
   type IssueRecord,
 } from "@/lib/issues";
@@ -128,6 +131,36 @@ function postKind(post: IssuePostRecord): IssuePostKind {
     return post.kind;
   }
   return post.sequence === 1 ? "report" : "refinement";
+}
+
+function formatLinkType(type: IssueLinkRecord["type"]) {
+  switch (type) {
+    case "parent_of":
+      return "Parent of";
+    case "child_of":
+      return "Child of";
+    case "merged_into":
+      return "Merged into";
+    case "derived_from":
+      return "Derived from";
+    case "duplicate_of":
+      return "Duplicate of";
+    case "related_to":
+    default:
+      return "Related to";
+  }
+}
+
+function formatOperationKind(kind: IssueOperationRecord["kind"]) {
+  switch (kind) {
+    case "split":
+      return "Split";
+    case "combine":
+      return "Combine";
+    case "link":
+    default:
+      return "Link";
+  }
 }
 
 function distanceBetween(
@@ -229,6 +262,7 @@ export function IssueDetailPage({ issueID }: { issueID: string }) {
   const [refinePending, setRefinePending] = useState(false);
   const [postMode, setPostMode] = useState<"refinement" | "progress">("refinement");
   const [progressPending, setProgressPending] = useState(false);
+  const { user } = useAuth();
   const [assignEditing, setAssignEditing] = useState(false);
   const [assignInput, setAssignInput] = useState("");
   const [assignPending, setAssignPending] = useState(false);
@@ -604,6 +638,35 @@ export function IssueDetailPage({ issueID }: { issueID: string }) {
     return entries;
   }, [issue]);
 
+  const relationshipGroups = useMemo(() => {
+    const groups = new Map<string, IssueLinkRecord[]>();
+    for (const link of issue?.links ?? []) {
+      const key = link.type;
+      const current = groups.get(key) ?? [];
+      current.push(link);
+      groups.set(key, current);
+    }
+
+    return [...groups.entries()].map(([type, links]) => ({
+      type,
+      label: formatLinkType(type as IssueLinkRecord["type"]),
+      links: [...links].sort((left, right) => {
+        const leftIssue = left.relatedIssue;
+        const rightIssue = right.relatedIssue;
+        if (leftIssue && rightIssue) {
+          const statusOrder = compareIssueStatus(leftIssue, rightIssue);
+          if (statusOrder !== 0) {
+            return statusOrder;
+          }
+          return leftIssue.id.localeCompare(rightIssue.id);
+        }
+        return left.id.localeCompare(right.id);
+      }),
+    }));
+  }, [issue?.links]);
+
+  const operationHistory = issue?.operations ?? [];
+
   return (
     <AppShell
       sidebar={<AppSidebar showThingsSection={false} />}
@@ -678,6 +741,84 @@ export function IssueDetailPage({ issueID }: { issueID: string }) {
                   <div className="app-subtle-surface mt-6 rounded-[1.5rem] p-5">
                     <DiscussionBody text={issue.raw} />
                   </div>
+                </section>
+
+                <section className="app-surface rounded-[1.75rem] p-6">
+                  <div className="flex flex-wrap items-center justify-between gap-4">
+                    <div>
+                      <h3 className="text-lg font-semibold tracking-tight">Related issues</h3>
+                      <p className="mt-1 text-sm text-muted-foreground">
+                        First-class issue links grouped by relationship type.
+                      </p>
+                    </div>
+                    <span className="app-chip">
+                      {issue.links?.length ?? 0} link{(issue.links?.length ?? 0) === 1 ? "" : "s"}
+                    </span>
+                  </div>
+
+                  {relationshipGroups.length === 0 ? (
+                    <div className="app-subtle-surface mt-5 rounded-[1.5rem] p-4 text-sm text-muted-foreground">
+                      No issue relationships recorded yet.
+                    </div>
+                  ) : (
+                    <div className="mt-5 space-y-4">
+                      {relationshipGroups.map((group) => (
+                        <div key={group.type} className="space-y-2">
+                          <p className="text-[11px] font-medium uppercase tracking-[0.14em] text-muted-foreground">
+                            {group.label}
+                          </p>
+                          <div className="space-y-2">
+                            {group.links.map((link) => (
+                              <Link
+                                key={link.id}
+                                href={
+                                  link.relatedIssue
+                                    ? `/issues/${link.relatedIssue.id}`
+                                    : `/issues/${link.direction === "outgoing" ? link.targetIssueId : link.sourceIssueId}`
+                                }
+                                className="group app-subtle-surface flex items-start gap-3 rounded-[1.25rem] px-4 py-3 transition-colors hover:bg-accent/70"
+                              >
+                                <span className="mt-1 size-2 rounded-full bg-emerald-500" />
+                                <div className="min-w-0 flex-1">
+                                  <div className="flex flex-wrap items-center gap-2">
+                                    <p className="truncate text-sm font-medium">
+                                      {formatIssueTitle(
+                                        link.relatedIssue?.raw ??
+                                          `${link.direction === "outgoing" ? link.targetIssueId : link.sourceIssueId}`,
+                                        72
+                                      )}
+                                    </p>
+                                    {link.relatedIssue && (
+                                      <span
+                                        className={cn(
+                                          "rounded-full px-1.5 py-0.5 text-[9px] font-medium leading-none",
+                                          statusClasses(link.relatedIssue.status)
+                                        )}
+                                      >
+                                        {link.relatedIssue.status === "closed" ? "Closed" : "Open"}
+                                      </span>
+                                    )}
+                                    {link.direction && <span className="app-chip">{link.direction}</span>}
+                                  </div>
+                                  <p className="mt-1 text-[11px] text-muted-foreground">
+                                    {link.relatedIssue?.id ??
+                                      (link.direction === "outgoing" ? link.targetIssueId : link.sourceIssueId)}
+                                    {" · "}
+                                    {formatRelativeTime(link.createdAt)} by {link.createdBy}
+                                  </p>
+                                  {link.note && (
+                                    <p className="mt-2 text-sm text-muted-foreground">
+                                      {link.note}
+                                    </p>
+                                  )}
+                                </div>
+                              </Link>
+                            ))}
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
                 </section>
 
                 <section className="app-surface rounded-[1.75rem] p-6">
@@ -1050,21 +1191,34 @@ export function IssueDetailPage({ issueID }: { issueID: string }) {
                             </Button>
                           </div>
                         ) : (
-                          <button
-                            type="button"
-                            onClick={() => {
-                              setAssignInput(issue.assignedTo ?? "");
-                              setAssignEditing(true);
-                            }}
-                            className="group flex items-center gap-1.5 rounded-lg px-1 py-0.5 text-sm transition-colors hover:bg-accent/70"
-                          >
-                            <UserIcon className="size-3.5 text-muted-foreground" />
-                            {issue.assignedTo ? (
-                              <span className="font-medium text-violet-700">{issue.assignedTo}</span>
-                            ) : (
-                              <span className="text-muted-foreground">Unassigned</span>
+                          <div className="flex items-center gap-1.5">
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setAssignInput(issue.assignedTo ?? "");
+                                setAssignEditing(true);
+                              }}
+                              className="group flex items-center gap-1.5 rounded-lg px-1 py-0.5 text-sm transition-colors hover:bg-accent/70"
+                            >
+                              <UserIcon className="size-3.5 text-muted-foreground" />
+                              {issue.assignedTo ? (
+                                <span className="font-medium text-violet-700">{issue.assignedTo}</span>
+                              ) : (
+                                <span className="text-muted-foreground">Unassigned</span>
+                              )}
+                            </button>
+                            {user && issue.assignedTo !== user.displayName && (
+                              <Button
+                                type="button"
+                                size="xs"
+                                variant="ghost"
+                                onClick={() => void handleAssign(user.displayName)}
+                                disabled={assignPending}
+                              >
+                                {assignPending ? "..." : "Assign to me"}
+                              </Button>
                             )}
-                          </button>
+                          </div>
                         )}
                       </dd>
                     </div>
@@ -1135,6 +1289,51 @@ export function IssueDetailPage({ issueID }: { issueID: string }) {
                       </div>
                     ))}
                   </dl>
+                </section>
+
+                <section className="app-surface rounded-[1.5rem] p-5">
+                  <div className="flex items-center gap-2">
+                    <SparklesIcon className="size-4 text-muted-foreground" />
+                    <h3 className="text-sm font-semibold">Operation history</h3>
+                  </div>
+
+                  {operationHistory.length === 0 ? (
+                    <p className="mt-4 text-sm text-muted-foreground">
+                      No grouped split, combine, or link operations yet.
+                    </p>
+                  ) : (
+                    <div className="mt-4 space-y-3">
+                      {operationHistory.map((operation) => (
+                        <article key={operation.id} className="app-subtle-surface rounded-[1.25rem] p-4">
+                          <div className="flex flex-wrap items-center justify-between gap-2">
+                            <div>
+                              <p className="text-sm font-semibold">{formatOperationKind(operation.kind)}</p>
+                              <p className="text-[11px] text-muted-foreground">
+                                {formatRelativeTime(operation.createdAt)} by {operation.createdBy}
+                              </p>
+                            </div>
+                            <span className="app-chip">{operation.id}</span>
+                          </div>
+                          {operation.participants && operation.participants.length > 0 && (
+                            <div className="mt-3 flex flex-wrap gap-1.5">
+                              {operation.participants.map((participant) => (
+                                <Link
+                                  key={`${operation.id}-${participant.issueId}-${participant.role}`}
+                                  href={`/issues/${participant.issueId}`}
+                                  className="rounded-full border border-border/70 px-2.5 py-1 text-[11px] font-medium transition-colors hover:bg-accent/70"
+                                >
+                                  {(participant.issue?.id ?? participant.issueId)} · {participant.role}
+                                </Link>
+                              ))}
+                            </div>
+                          )}
+                          {operation.note && (
+                            <p className="mt-3 text-sm text-muted-foreground">{operation.note}</p>
+                          )}
+                        </article>
+                      ))}
+                    </div>
+                  )}
                 </section>
 
                 <section className="app-surface rounded-[1.5rem] p-5">

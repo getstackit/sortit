@@ -180,6 +180,69 @@ describe("IssueDetailPage", () => {
     expect(screen.getByText("Refinement 1")).toBeInTheDocument();
   });
 
+  it("renders related issues and operation history when relationship data is present", async () => {
+    vi.mocked(fetchIssue).mockResolvedValue(
+      makeIssue({
+        links: [
+          {
+            id: "issue-link-1",
+            type: "parent_of",
+            sourceIssueId: "issue-123",
+            targetIssueId: "issue-456",
+            direction: "outgoing",
+            createdBy: "Casey",
+            createdAt: new Date("2026-03-08T12:15:00Z").toISOString(),
+            note: "Split this into a concrete child issue.",
+            operationId: "issue-op-000001",
+            relatedIssue: {
+              id: "issue-456",
+              raw: "Add onboarding checklist",
+              status: "open",
+            },
+          },
+        ],
+        operations: [
+          {
+            id: "issue-op-000001",
+            kind: "split",
+            createdBy: "Casey",
+            createdAt: new Date("2026-03-08T12:15:00Z").toISOString(),
+            note: "Split this into a concrete child issue.",
+            participants: [
+              {
+                issueId: "issue-123",
+                role: "source",
+                issue: {
+                  id: "issue-123",
+                  raw: "Export fails in Safari after tapping share twice.",
+                  status: "open",
+                },
+              },
+              {
+                issueId: "issue-456",
+                role: "child:1",
+                issue: {
+                  id: "issue-456",
+                  raw: "Add onboarding checklist",
+                  status: "open",
+                },
+              },
+            ],
+          },
+        ],
+      })
+    );
+
+    renderIssueDetail("issue-123");
+
+    expect(await screen.findByText("Related issues")).toBeInTheDocument();
+    expect(screen.getByText("Parent of")).toBeInTheDocument();
+    expect(screen.getByText("Add onboarding checklist")).toBeInTheDocument();
+    expect(screen.getByText("Operation history")).toBeInTheDocument();
+    expect(screen.getByText("Split")).toBeInTheDocument();
+    expect(screen.getByText("issue-456 · child:1")).toBeInTheDocument();
+  });
+
   it("posts a refinement and refreshes the canonical summary", async () => {
     const initialIssue = makeIssue();
     const refinedIssue = makeIssue({

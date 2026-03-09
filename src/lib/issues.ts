@@ -4,6 +4,14 @@ import { getJSON, postJSON } from "@/lib/http";
 export type IssueStatus = "open" | "closed";
 export type IssueListStatus = IssueStatus | "all";
 export type IssuePostKind = "report" | "refinement" | "progress";
+export type IssueLinkType =
+  | "parent_of"
+  | "child_of"
+  | "merged_into"
+  | "derived_from"
+  | "related_to"
+  | "duplicate_of";
+export type IssueOperationKind = "split" | "combine" | "link";
 
 export type IssuePostRecord = {
   id: string;
@@ -18,6 +26,40 @@ export type IssuePostRecord = {
 export type IssueTagScore = {
   tag: string;
   relevance: number;
+};
+
+export type IssueReferenceRecord = {
+  id: string;
+  raw: string;
+  status: IssueStatus;
+};
+
+export type IssueLinkRecord = {
+  id: string;
+  type: IssueLinkType;
+  sourceIssueId: string;
+  targetIssueId: string;
+  direction?: "incoming" | "outgoing";
+  createdBy: string;
+  createdAt: string;
+  note?: string;
+  operationId?: string;
+  relatedIssue?: IssueReferenceRecord;
+};
+
+export type IssueOperationParticipantRecord = {
+  issueId: string;
+  role: string;
+  issue?: IssueReferenceRecord;
+};
+
+export type IssueOperationRecord = {
+  id: string;
+  kind: IssueOperationKind;
+  createdBy: string;
+  createdAt: string;
+  note?: string;
+  participants?: IssueOperationParticipantRecord[];
 };
 
 export type IssueSearchQuery = {
@@ -53,6 +95,8 @@ export type IssueRecord = {
   closedBy?: string;
   assignedTo?: string;
   discussion?: IssuePostRecord[];
+  links?: IssueLinkRecord[];
+  operations?: IssueOperationRecord[];
 };
 
 type IssuesResponse = {

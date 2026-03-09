@@ -18,6 +18,32 @@ type Issue struct {
 	AssignedTo        string
 }
 
+type IssueLink struct {
+	ID                string
+	SourceIssueID     string
+	TargetIssueID     string
+	Type              string
+	CreatedBy         string
+	CreatedAtUnixNano int64
+	Note              string
+	OperationID       string
+}
+
+type IssueOperation struct {
+	ID                string
+	Kind              string
+	CreatedBy         string
+	CreatedAtUnixNano int64
+	Note              string
+}
+
+type IssueOperationParticipant struct {
+	OperationID string
+	IssueID     string
+	Role        string
+	Sequence    int64
+}
+
 type IssuePost struct {
 	ID                string
 	IssueID           string

@@ -148,6 +148,74 @@ func NewHandler(cfg ServerConfig) http.Handler {
 	)
 
 	s.AddTool(
+		mcp.NewTool("split_issue",
+			mcp.WithDescription("Split one issue into multiple child issues. This creates child issues, records parent/child relationships, and can optionally close the source issue."),
+			mcp.WithString("id",
+				mcp.Required(),
+				mcp.Description("The source issue ID to split."),
+			),
+			mcp.WithArray("children_raw",
+				mcp.Required(),
+				mcp.Description("The raw text for each child issue to create."),
+				mcp.WithStringItems(),
+			),
+			mcp.WithBoolean("close_source",
+				mcp.Description("Whether to automatically close the source issue after splitting."),
+			),
+			mcp.WithString("note",
+				mcp.Description("Optional rationale to attach to the grouped split operation."),
+			),
+			mcp.WithString("created_by",
+				mcp.Description("Who performed the split. Defaults to 'Claude'."),
+			),
+		),
+		h.handleSplitIssue,
+	)
+
+	s.AddTool(
+		mcp.NewTool("combine_issues",
+			mcp.WithDescription("Combine multiple source issues into a new canonical issue. The new issue text is synthesized automatically and the source issues are closed."),
+			mcp.WithArray("ids",
+				mcp.Required(),
+				mcp.Description("The source issue IDs to combine."),
+				mcp.WithStringItems(),
+			),
+			mcp.WithString("note",
+				mcp.Description("Optional rationale to attach to the grouped combine operation."),
+			),
+			mcp.WithString("created_by",
+				mcp.Description("Who performed the combine. Defaults to 'Claude'."),
+			),
+		),
+		h.handleCombineIssues,
+	)
+
+	s.AddTool(
+		mcp.NewTool("link_issues",
+			mcp.WithDescription("Create a direct relationship between two existing issues without creating a new issue."),
+			mcp.WithString("source_id",
+				mcp.Required(),
+				mcp.Description("The source issue ID."),
+			),
+			mcp.WithString("target_id",
+				mcp.Required(),
+				mcp.Description("The target issue ID."),
+			),
+			mcp.WithString("type",
+				mcp.Required(),
+				mcp.Description("Relationship type: parent_of, child_of, merged_into, derived_from, related_to, or duplicate_of."),
+			),
+			mcp.WithString("note",
+				mcp.Description("Optional rationale to attach to the link operation."),
+			),
+			mcp.WithString("created_by",
+				mcp.Description("Who created the link. Defaults to 'Claude'."),
+			),
+		),
+		h.handleLinkIssues,
+	)
+
+	s.AddTool(
 		mcp.NewTool("explore_issue",
 			mcp.WithDescription("Explore a stored Splat issue by ID. Returns related open issues using semantic similarity and factor relevance, plus structured opportunities to solve multiple issues together."),
 			mcp.WithString("id",
@@ -455,6 +523,110 @@ func (h *handlers) handleAssignIssue(ctx context.Context, req mcp.CallToolReques
 	}
 
 	result, err := mcp.NewToolResultJSON(issue)
+	if err != nil {
+		return mcp.NewToolResultError(fmt.Sprintf("failed to encode response: %v", err)), nil
+	}
+	return result, nil
+}
+
+func (h *handlers) handleSplitIssue(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+	id, err := req.RequireString("id")
+	if err != nil {
+		return mcp.NewToolResultError("id is required"), nil
+	}
+	children, err := req.RequireStringSlice("children_raw")
+	if err != nil {
+		return mcp.NewToolResultError("children_raw is required"), nil
+	}
+
+	id = strings.TrimSpace(id)
+	if id == "" {
+		return mcp.NewToolResultError("id is required"), nil
+	}
+
+	normalizedChildren := make([]map[string]any, 0, len(children))
+	for _, child := range children {
+		child = strings.TrimSpace(child)
+		if child == "" {
+			continue
+		}
+		normalizedChildren = append(normalizedChildren, map[string]any{"raw": child})
+	}
+	if len(normalizedChildren) == 0 {
+		return mcp.NewToolResultError("children_raw must include at least one non-empty child"), nil
+	}
+
+	var resultPayload issues.IssueOperationResult
+	err = h.doJSONRequest(ctx, http.MethodPost, "/issues/"+url.PathEscape(id)+"/split", map[string]any{
+		"children":    normalizedChildren,
+		"closeSource": req.GetBool("close_source", false),
+		"note":        req.GetString("note", ""),
+		"createdBy":   req.GetString("created_by", "Claude"),
+	}, &resultPayload)
+	if err != nil {
+		return mcp.NewToolResultError(err.Error()), nil
+	}
+
+	result, err := mcp.NewToolResultJSON(resultPayload)
+	if err != nil {
+		return mcp.NewToolResultError(fmt.Sprintf("failed to encode response: %v", err)), nil
+	}
+	return result, nil
+}
+
+func (h *handlers) handleCombineIssues(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+	ids, err := req.RequireStringSlice("ids")
+	if err != nil {
+		return mcp.NewToolResultError("ids is required"), nil
+	}
+	if len(ids) < 2 {
+		return mcp.NewToolResultError("at least two issue ids are required"), nil
+	}
+
+	var resultPayload issues.IssueOperationResult
+	err = h.doJSONRequest(ctx, http.MethodPost, "/issues/combine", map[string]any{
+		"ids":       ids,
+		"note":      req.GetString("note", ""),
+		"createdBy": req.GetString("created_by", "Claude"),
+	}, &resultPayload)
+	if err != nil {
+		return mcp.NewToolResultError(err.Error()), nil
+	}
+
+	result, err := mcp.NewToolResultJSON(resultPayload)
+	if err != nil {
+		return mcp.NewToolResultError(fmt.Sprintf("failed to encode response: %v", err)), nil
+	}
+	return result, nil
+}
+
+func (h *handlers) handleLinkIssues(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+	sourceID, err := req.RequireString("source_id")
+	if err != nil {
+		return mcp.NewToolResultError("source_id is required"), nil
+	}
+	targetID, err := req.RequireString("target_id")
+	if err != nil {
+		return mcp.NewToolResultError("target_id is required"), nil
+	}
+	linkType, err := req.RequireString("type")
+	if err != nil {
+		return mcp.NewToolResultError("type is required"), nil
+	}
+
+	var resultPayload issues.IssueOperationResult
+	err = h.doJSONRequest(ctx, http.MethodPost, "/issues/link", map[string]any{
+		"sourceId":  sourceID,
+		"targetId":  targetID,
+		"type":      linkType,
+		"note":      req.GetString("note", ""),
+		"createdBy": req.GetString("created_by", "Claude"),
+	}, &resultPayload)
+	if err != nil {
+		return mcp.NewToolResultError(err.Error()), nil
+	}
+
+	result, err := mcp.NewToolResultJSON(resultPayload)
 	if err != nil {
 		return mcp.NewToolResultError(fmt.Sprintf("failed to encode response: %v", err)), nil
 	}

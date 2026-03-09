@@ -53,6 +53,18 @@ func (s failingIssueStore) AssignIssue(context.Context, string, string) (issues.
 	return issues.Issue{}, nil
 }
 
+func (s failingIssueStore) SplitIssue(context.Context, issues.SplitInput) (issues.IssueOperationResult, error) {
+	return issues.IssueOperationResult{}, nil
+}
+
+func (s failingIssueStore) CombineIssues(context.Context, issues.CombineInput) (issues.IssueOperationResult, error) {
+	return issues.IssueOperationResult{}, nil
+}
+
+func (s failingIssueStore) LinkIssues(context.Context, issues.LinkInput) (issues.IssueOperationResult, error) {
+	return issues.IssueOperationResult{}, nil
+}
+
 func TestIssuesEndpointListsSeededIssues(t *testing.T) {
 	server := NewServer(ServerConfig{
 		CORSOrigins: []string{"http://localhost:3000"},

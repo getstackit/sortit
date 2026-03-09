@@ -164,6 +164,111 @@ func TestSQLiteStoreCloseAndReopenIssue(t *testing.T) {
 	}
 }
 
+func TestSQLiteStorePersistsIssueRelationshipsAndOperationHistory(t *testing.T) {
+	store := newSQLiteTestStore(t)
+
+	parent, err := store.Create(context.Background(), CreateInput{
+		Raw:       "Large onboarding redesign",
+		CreatedBy: "Casey",
+		TagScores: []TagRelevance{{Tag: "feature", Relevance: 0.9}},
+		Embedding: []float64{0.1, 0.2},
+	})
+	if err != nil {
+		t.Fatalf("create parent issue: %v", err)
+	}
+
+	splitResult, err := store.SplitIssue(context.Background(), SplitInput{
+		SourceID: parent.ID,
+		Children: []SplitChildInput{
+			{Raw: "Add onboarding checklist", TagScores: []TagRelevance{{Tag: "feature", Relevance: 0.8}}},
+			{Raw: "Improve invite acceptance copy", TagScores: []TagRelevance{{Tag: "ux", Relevance: 0.7}}},
+		},
+		CreatedBy:   "Casey",
+		Note:        "Break the umbrella issue into shippable work.",
+		CloseSource: true,
+	})
+	if err != nil {
+		t.Fatalf("split issue: %v", err)
+	}
+	if splitResult.Operation.Kind != IssueOperationKindSplit {
+		t.Fatalf("expected split operation, got %q", splitResult.Operation.Kind)
+	}
+	if len(splitResult.CreatedIssues) != 2 {
+		t.Fatalf("expected 2 child issues, got %d", len(splitResult.CreatedIssues))
+	}
+
+	linkedResult, err := store.LinkIssues(context.Background(), LinkInput{
+		SourceID:  splitResult.CreatedIssues[0].ID,
+		TargetID:  splitResult.CreatedIssues[1].ID,
+		Type:      IssueLinkTypeRelatedTo,
+		CreatedBy: "Jordan",
+		Note:      "These two child issues ship together.",
+	})
+	if err != nil {
+		t.Fatalf("link issues: %v", err)
+	}
+	if linkedResult.Operation.Kind != IssueOperationKindLink {
+		t.Fatalf("expected link operation, got %q", linkedResult.Operation.Kind)
+	}
+
+	combinedResult, err := store.CombineIssues(context.Background(), CombineInput{
+		SourceIDs: []string{splitResult.CreatedIssues[0].ID, splitResult.CreatedIssues[1].ID},
+		Raw:       "Deliver a tighter onboarding flow with checklist and invite improvements.",
+		CreatedBy: "Taylor",
+		Note:      "Roll the child issues into a single delivery artifact.",
+		TagScores: []TagRelevance{{Tag: "feature", Relevance: 0.95}},
+		Embedding: []float64{0.3, 0.7},
+	})
+	if err != nil {
+		t.Fatalf("combine issues: %v", err)
+	}
+	if len(combinedResult.CreatedIssues) != 1 {
+		t.Fatalf("expected one combined issue, got %d", len(combinedResult.CreatedIssues))
+	}
+
+	loadedParent, err := store.Get(context.Background(), parent.ID)
+	if err != nil {
+		t.Fatalf("get parent issue: %v", err)
+	}
+	if loadedParent.Status != StatusClosed {
+		t.Fatalf("expected parent to be closed after split, got %q", loadedParent.Status)
+	}
+	if len(loadedParent.Links) != 4 {
+		t.Fatalf("expected parent to expose split relationships, got %#v", loadedParent.Links)
+	}
+	if len(loadedParent.Operations) != 1 {
+		t.Fatalf("expected parent to show one split operation, got %#v", loadedParent.Operations)
+	}
+
+	loadedChild, err := store.Get(context.Background(), splitResult.CreatedIssues[0].ID)
+	if err != nil {
+		t.Fatalf("get child issue: %v", err)
+	}
+	if loadedChild.Status != StatusClosed {
+		t.Fatalf("expected child to be closed after combine, got %q", loadedChild.Status)
+	}
+	if len(loadedChild.Operations) != 3 {
+		t.Fatalf("expected child to show split, link, and combine operations, got %#v", loadedChild.Operations)
+	}
+	if loadedChild.Links[0].RelatedIssue == nil {
+		t.Fatalf("expected hydrated related issue reference, got %#v", loadedChild.Links[0])
+	}
+
+	loadedCombined, err := store.Get(context.Background(), combinedResult.CreatedIssues[0].ID)
+	if err != nil {
+		t.Fatalf("get combined issue: %v", err)
+	}
+	if loadedCombined.Status != StatusOpen {
+		t.Fatalf("expected combined issue to remain open, got %q", loadedCombined.Status)
+	}
+	if len(loadedCombined.Links) != 2 {
+		t.Fatalf("expected combined issue to show merged_into links, got %#v", loadedCombined.Links)
+	}
+	if len(loadedCombined.Operations) != 1 || loadedCombined.Operations[0].Kind != IssueOperationKindCombine {
+		t.Fatalf("expected combined issue to show combine operation, got %#v", loadedCombined.Operations)
+	}
+}
+
 func TestSQLiteStoreReplaceResetsSequenceFromLoadedItems(t *testing.T) {
 	store := newSQLiteTestStore(t)
 

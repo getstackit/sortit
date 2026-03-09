@@ -38,6 +38,9 @@ type Server struct {
 	closeIssue        commands.CloseIssueHandler
 	reopenIssue       commands.ReopenIssueHandler
 	assignIssue       commands.AssignIssueHandler
+	splitIssue        commands.SplitIssueHandler
+	combineIssues     commands.CombineIssuesHandler
+	linkIssues        commands.LinkIssuesHandler
 	loadSampleIssues  commands.LoadSampleIssuesHandler
 	resetIssues       commands.ResetIssuesHandler
 	listIssues        queries.ListIssuesHandler
@@ -98,6 +101,8 @@ func (s *Server) Handler() http.Handler {
 		authTokenItemSubtreeRoute := authTokenItemRoute(prefix)
 		issuesRoute := path.Join(prefix, "issues")
 		issuesCompareRoute := path.Join(prefix, "issues", "compare")
+		issuesCombineRoute := path.Join(prefix, "issues", "combine")
+		issuesLinkRoute := path.Join(prefix, "issues", "link")
 		issuesSearchRoute := path.Join(prefix, "issues", "search")
 		searchRoute := path.Join(prefix, "search")
 		issueItemSubtreeRoute := issueItemRoute(prefix)
@@ -113,6 +118,8 @@ func (s *Server) Handler() http.Handler {
 		apiRoutes[healthRoute] = struct{}{}
 		apiRoutes[issuesRoute] = struct{}{}
 		apiRoutes[issuesCompareRoute] = struct{}{}
+		apiRoutes[issuesCombineRoute] = struct{}{}
+		apiRoutes[issuesLinkRoute] = struct{}{}
 		apiRoutes[issuesSearchRoute] = struct{}{}
 		apiRoutes[searchRoute] = struct{}{}
 		apiRoutes[issueItemSubtreeRoute] = struct{}{}
@@ -145,6 +152,8 @@ func (s *Server) Handler() http.Handler {
 		apiMux.HandleFunc(authTokenItemSubtreeRoute, s.handleAuthTokenByID(authTokenItemSubtreeRoute))
 		apiMux.HandleFunc(issuesRoute, s.handleIssues)
 		apiMux.HandleFunc(issuesCompareRoute, s.handleIssueCompare)
+		apiMux.HandleFunc(issuesCombineRoute, s.handleIssueCombine)
+		apiMux.HandleFunc(issuesLinkRoute, s.handleIssueLink)
 		apiMux.HandleFunc(issuesSearchRoute, s.handleIssueSearch)
 		apiMux.HandleFunc(searchRoute, s.handleUnifiedSearch)
 		apiMux.HandleFunc(issueItemSubtreeRoute, s.handleIssueByID(issueItemSubtreeRoute))
@@ -280,6 +289,17 @@ func NewServer(cfg ServerConfig) *Server {
 			Store: store,
 		},
 		assignIssue: commands.AssignIssueHandler{
+			Store: store,
+		},
+		splitIssue: commands.SplitIssueHandler{
+			Store:    store,
+			Enricher: enricher,
+		},
+		combineIssues: commands.CombineIssuesHandler{
+			Store:    store,
+			Enricher: enricher,
+		},
+		linkIssues: commands.LinkIssuesHandler{
 			Store: store,
 		},
 		loadSampleIssues: commands.LoadSampleIssuesHandler{

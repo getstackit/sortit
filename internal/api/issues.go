@@ -43,6 +43,32 @@ type assignIssueRequest struct {
 	AssignedTo string `json:"assignedTo"`
 }
 
+type splitIssueChildRequest struct {
+	Raw  string   `json:"raw"`
+	Tags []string `json:"tags,omitempty"`
+}
+
+type splitIssueRequest struct {
+	Children    []splitIssueChildRequest `json:"children"`
+	CreatedBy   string                   `json:"createdBy,omitempty"`
+	Note        string                   `json:"note,omitempty"`
+	CloseSource bool                     `json:"closeSource"`
+}
+
+type combineIssuesRequest struct {
+	IDs       []string `json:"ids"`
+	CreatedBy string   `json:"createdBy,omitempty"`
+	Note      string   `json:"note,omitempty"`
+}
+
+type linkIssuesRequest struct {
+	SourceID  string `json:"sourceId"`
+	TargetID  string `json:"targetId"`
+	Type      string `json:"type"`
+	CreatedBy string `json:"createdBy,omitempty"`
+	Note      string `json:"note,omitempty"`
+}
+
 type compareIssuesRequest struct {
 	IDs []string `json:"ids"`
 }
@@ -147,6 +173,68 @@ func (s *Server) handleIssueSearch(w http.ResponseWriter, r *http.Request) {
 	}
 
 	writeJSON(w, http.StatusOK, result)
+}
+
+func (s *Server) handleIssueCombine(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		w.Header().Set("Allow", http.MethodPost)
+		http.Error(w, http.StatusText(http.StatusMethodNotAllowed), http.StatusMethodNotAllowed)
+		return
+	}
+
+	request, err := decodeCombineIssuesRequest(r)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+
+	result, err := s.combineIssues.Handle(r.Context(), commands.CombineIssues{
+		SourceIDs: request.IDs,
+		CreatedBy: actorForRequest(r, request.CreatedBy),
+		Note:      request.Note,
+	})
+	if err != nil {
+		if errors.Is(err, issues.ErrNotFound) {
+			writeError(w, http.StatusNotFound, "issue not found")
+			return
+		}
+		writeInternalError(w, r, "failed to combine issues", err)
+		return
+	}
+
+	writeJSON(w, http.StatusCreated, result)
+}
+
+func (s *Server) handleIssueLink(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		w.Header().Set("Allow", http.MethodPost)
+		http.Error(w, http.StatusText(http.StatusMethodNotAllowed), http.StatusMethodNotAllowed)
+		return
+	}
+
+	request, err := decodeLinkIssuesRequest(r)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+
+	result, err := s.linkIssues.Handle(r.Context(), commands.LinkIssues{
+		SourceID:  request.SourceID,
+		TargetID:  request.TargetID,
+		Type:      issues.IssueLinkType(request.Type),
+		CreatedBy: actorForRequest(r, request.CreatedBy),
+		Note:      request.Note,
+	})
+	if err != nil {
+		if errors.Is(err, issues.ErrNotFound) {
+			writeError(w, http.StatusNotFound, "issue not found")
+			return
+		}
+		writeInternalError(w, r, "failed to link issues", err)
+		return
+	}
+
+	writeJSON(w, http.StatusCreated, result)
 }
 
 func (s *Server) handleIssueByID(route string) http.HandlerFunc {
@@ -375,6 +463,44 @@ func (s *Server) handleIssueByID(route string) http.HandlerFunc {
 			}
 
 			writeJSON(w, http.StatusOK, assigned)
+		case "split":
+			if r.Method != http.MethodPost {
+				w.Header().Set("Allow", http.MethodPost)
+				http.Error(w, http.StatusText(http.StatusMethodNotAllowed), http.StatusMethodNotAllowed)
+				return
+			}
+
+			request, err := decodeSplitIssueRequest(r)
+			if err != nil {
+				writeError(w, http.StatusBadRequest, err.Error())
+				return
+			}
+
+			children := make([]commands.SplitIssueChild, 0, len(request.Children))
+			for _, child := range request.Children {
+				children = append(children, commands.SplitIssueChild{
+					Raw:  child.Raw,
+					Tags: child.Tags,
+				})
+			}
+
+			result, err := s.splitIssue.Handle(r.Context(), commands.SplitIssue{
+				SourceID:    id,
+				Children:    children,
+				CreatedBy:   actorForRequest(r, request.CreatedBy),
+				Note:        request.Note,
+				CloseSource: request.CloseSource,
+			})
+			if err != nil {
+				if errors.Is(err, issues.ErrNotFound) {
+					writeError(w, http.StatusNotFound, "issue not found")
+					return
+				}
+				writeInternalError(w, r, "failed to split issue", err)
+				return
+			}
+
+			writeJSON(w, http.StatusCreated, result)
 		default:
 			writeError(w, http.StatusNotFound, "route not found")
 		}
@@ -543,6 +669,87 @@ func decodeAssignIssueRequest(r *http.Request) (assignIssueRequest, error) {
 	return request, nil
 }
 
+func decodeSplitIssueRequest(r *http.Request) (splitIssueRequest, error) {
+	defer r.Body.Close()
+
+	decoder := json.NewDecoder(io.LimitReader(r.Body, 1<<20))
+	decoder.DisallowUnknownFields()
+
+	var request splitIssueRequest
+	if err := decoder.Decode(&request); err != nil {
+		return splitIssueRequest{}, errors.New("invalid request body")
+	}
+
+	request.CreatedBy = strings.TrimSpace(request.CreatedBy)
+	request.Note = strings.TrimSpace(request.Note)
+	children := make([]splitIssueChildRequest, 0, len(request.Children))
+	for _, child := range request.Children {
+		child.Raw = strings.TrimSpace(child.Raw)
+		if child.Raw == "" {
+			continue
+		}
+		children = append(children, child)
+	}
+	if len(children) == 0 {
+		return splitIssueRequest{}, errors.New("at least one child issue is required")
+	}
+	request.Children = children
+	return request, nil
+}
+
+func decodeCombineIssuesRequest(r *http.Request) (combineIssuesRequest, error) {
+	defer r.Body.Close()
+
+	decoder := json.NewDecoder(io.LimitReader(r.Body, 1<<20))
+	decoder.DisallowUnknownFields()
+
+	var request combineIssuesRequest
+	if err := decoder.Decode(&request); err != nil {
+		return combineIssuesRequest{}, errors.New("invalid request body")
+	}
+
+	request.CreatedBy = strings.TrimSpace(request.CreatedBy)
+	request.Note = strings.TrimSpace(request.Note)
+	request.IDs = sanitizeIssueIDs(request.IDs)
+	if len(request.IDs) < 2 {
+		return combineIssuesRequest{}, errors.New("at least two issue ids are required")
+	}
+	return request, nil
+}
+
+func decodeLinkIssuesRequest(r *http.Request) (linkIssuesRequest, error) {
+	defer r.Body.Close()
+
+	decoder := json.NewDecoder(io.LimitReader(r.Body, 1<<20))
+	decoder.DisallowUnknownFields()
+
+	var request linkIssuesRequest
+	if err := decoder.Decode(&request); err != nil {
+		return linkIssuesRequest{}, errors.New("invalid request body")
+	}
+
+	request.SourceID = strings.TrimSpace(request.SourceID)
+	request.TargetID = strings.TrimSpace(request.TargetID)
+	request.Type = strings.TrimSpace(request.Type)
+	request.CreatedBy = strings.TrimSpace(request.CreatedBy)
+	request.Note = strings.TrimSpace(request.Note)
+	if request.SourceID == "" || request.TargetID == "" {
+		return linkIssuesRequest{}, errors.New("sourceId and targetId are required")
+	}
+	if issues.IssueLinkType(request.Type) == "" {
+		return linkIssuesRequest{}, errors.New("type is required")
+	}
+	if issues.IssueLinkType(request.Type) != issues.IssueLinkTypeParentOf &&
+		issues.IssueLinkType(request.Type) != issues.IssueLinkTypeChildOf &&
+		issues.IssueLinkType(request.Type) != issues.IssueLinkTypeMergedInto &&
+		issues.IssueLinkType(request.Type) != issues.IssueLinkTypeDerivedFrom &&
+		issues.IssueLinkType(request.Type) != issues.IssueLinkTypeRelatedTo &&
+		issues.IssueLinkType(request.Type) != issues.IssueLinkTypeDuplicateOf {
+		return linkIssuesRequest{}, errors.New("invalid link type")
+	}
+	return request, nil
+}
+
 func issueItemRoute(prefix string) string {
 	return path.Join(prefix, "issues") + "/"
 }
@@ -563,6 +770,23 @@ func toPairwiseIssueSimilarityResponse(items []queries.PairwiseIssueSimilarity) 
 			TargetID:   item.TargetID,
 			Similarity: item.Similarity,
 		}
+	}
+	return out
+}
+
+func sanitizeIssueIDs(ids []string) []string {
+	seen := make(map[string]struct{}, len(ids))
+	out := make([]string, 0, len(ids))
+	for _, id := range ids {
+		id = strings.TrimSpace(id)
+		if id == "" {
+			continue
+		}
+		if _, ok := seen[id]; ok {
+			continue
+		}
+		seen[id] = struct{}{}
+		out = append(out, id)
 	}
 	return out
 }

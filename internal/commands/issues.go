@@ -109,3 +109,100 @@ type AssignIssueHandler struct {
 func (h AssignIssueHandler) Handle(ctx context.Context, input AssignIssue) (issues.Issue, error) {
 	return h.Store.AssignIssue(ctx, input.ID, input.AssignedTo)
 }
+
+type SplitIssueChild struct {
+	Raw  string
+	Tags []string
+}
+
+type SplitIssue struct {
+	SourceID    string
+	Children    []SplitIssueChild
+	CreatedBy   string
+	Note        string
+	CloseSource bool
+}
+
+type SplitIssueHandler struct {
+	Store    issues.Store
+	Enricher *services.IssueEnricher
+}
+
+func (h SplitIssueHandler) Handle(ctx context.Context, input SplitIssue) (issues.IssueOperationResult, error) {
+	children := make([]issues.SplitChildInput, 0, len(input.Children))
+	for _, child := range input.Children {
+		enriched, err := h.Enricher.AnalyzeCreateInput(ctx, issues.CreateInput{
+			Raw:       child.Raw,
+			Tags:      child.Tags,
+			CreatedBy: input.CreatedBy,
+		})
+		if err != nil {
+			return issues.IssueOperationResult{}, err
+		}
+		children = append(children, issues.SplitChildInput{
+			Raw:       enriched.Raw,
+			Tags:      enriched.Tags,
+			TagScores: enriched.TagScores,
+			Embedding: enriched.Embedding,
+		})
+	}
+
+	return h.Store.SplitIssue(ctx, issues.SplitInput{
+		SourceID:    input.SourceID,
+		Children:    children,
+		CreatedBy:   input.CreatedBy,
+		Note:        input.Note,
+		CloseSource: input.CloseSource,
+	})
+}
+
+type CombineIssues struct {
+	SourceIDs []string
+	CreatedBy string
+	Note      string
+}
+
+type CombineIssuesHandler struct {
+	Store    issues.Store
+	Enricher *services.IssueEnricher
+}
+
+func (h CombineIssuesHandler) Handle(ctx context.Context, input CombineIssues) (issues.IssueOperationResult, error) {
+	sourceIssues := make([]issues.Issue, 0, len(input.SourceIDs))
+	for _, id := range input.SourceIDs {
+		issue, err := h.Store.Get(ctx, id)
+		if err != nil {
+			return issues.IssueOperationResult{}, err
+		}
+		sourceIssues = append(sourceIssues, issue)
+	}
+
+	enriched, err := h.Enricher.AnalyzeCombineInput(ctx, sourceIssues, input.CreatedBy, input.Note)
+	if err != nil {
+		return issues.IssueOperationResult{}, err
+	}
+
+	return h.Store.CombineIssues(ctx, enriched)
+}
+
+type LinkIssues struct {
+	SourceID  string
+	TargetID  string
+	Type      issues.IssueLinkType
+	CreatedBy string
+	Note      string
+}
+
+type LinkIssuesHandler struct {
+	Store issues.Store
+}
+
+func (h LinkIssuesHandler) Handle(ctx context.Context, input LinkIssues) (issues.IssueOperationResult, error) {
+	return h.Store.LinkIssues(ctx, issues.LinkInput{
+		SourceID:  input.SourceID,
+		TargetID:  input.TargetID,
+		Type:      input.Type,
+		CreatedBy: input.CreatedBy,
+		Note:      input.Note,
+	})
+}
