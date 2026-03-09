@@ -1,10 +1,8 @@
 package issuemap
 
 import (
-	"fmt"
 	"math"
 	"sort"
-	"sync"
 
 	"splat/internal/issues"
 )
@@ -47,99 +45,6 @@ type mapBaseData struct {
 	positions      map[string]Position
 	candidateEdges []Edge
 	clusters       []Cluster
-}
-
-var (
-	baseMapOnce      sync.Once
-	baseMapDataCache mapBaseData
-	baseMapErr       error
-)
-
-func BuildMap(viewport *Viewport) (MapResponse, error) {
-	base, err := loadBaseMapData()
-	if err != nil {
-		return MapResponse{}, err
-	}
-
-	edges := filterEdgesForViewport(base, normalizeViewport(viewport))
-	if edges == nil {
-		edges = []Edge{}
-	}
-
-	clusters := base.clusters
-	if clusters == nil {
-		clusters = []Cluster{}
-	}
-
-	return MapResponse{
-		Issues:   base.mapIssues,
-		Edges:    edges,
-		Clusters: clusters,
-	}, nil
-}
-
-func BuildEdgeResponse(viewport *Viewport) (EdgeResponse, error) {
-	base, err := loadBaseMapData()
-	if err != nil {
-		return EdgeResponse{}, err
-	}
-
-	edges := filterEdgesForViewport(base, normalizeViewport(viewport))
-	if edges == nil {
-		edges = []Edge{}
-	}
-
-	return EdgeResponse{Edges: edges}, nil
-}
-
-func loadBaseMapData() (mapBaseData, error) {
-	baseMapOnce.Do(func() {
-		baseMapDataCache, baseMapErr = buildBaseMapData()
-	})
-	return baseMapDataCache, baseMapErr
-}
-
-func buildBaseMapData() (mapBaseData, error) {
-	allIssues := AllIssues()
-	tags := AllTags()
-	tagEmbeddings := AllTagEmbeddings()
-
-	positions, err := ComputePositions(allIssues, tags, tagEmbeddings)
-	if err != nil {
-		return mapBaseData{}, err
-	}
-
-	mapIssues := make([]MapIssue, len(allIssues))
-	roundedPositions := make(map[string]Position, len(allIssues))
-	for i, issue := range allIssues {
-		p, ok := positions[issue.ID]
-		if !ok {
-			return mapBaseData{}, fmt.Errorf("missing position for issue %s", issue.ID)
-		}
-
-		rounded := roundPosition(p)
-		roundedPositions[issue.ID] = rounded
-
-		mapIssues[i] = MapIssue{
-			ID:     issue.ID,
-			Raw:    issue.Raw,
-			Status: issues.StatusOpen,
-			Tags:   issue.Tags,
-			X:      rounded.X,
-			Y:      rounded.Y,
-		}
-	}
-
-	edges := ComputeEdges(allIssues, minEdgeSimilarity)
-	sortEdgesBySimilarity(edges)
-	clusters := ComputeFactorClusters(allIssues, positions)
-
-	return mapBaseData{
-		mapIssues:      mapIssues,
-		positions:      roundedPositions,
-		candidateEdges: edges,
-		clusters:       clusters,
-	}, nil
 }
 
 func normalizeViewport(viewport *Viewport) Viewport {

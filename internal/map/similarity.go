@@ -8,10 +8,6 @@ type Edge struct {
 	Similarity float64 `json:"similarity"`
 }
 
-func ComputeEdges(issues []Issue, threshold float64) []Edge {
-	return ComputeEdgesWithEmbeddings(issues, AllEmbeddings(), threshold)
-}
-
 func ComputeEdgesWithEmbeddings(issues []Issue, embeddings map[string][]float64, threshold float64) []Edge {
 	var edges []Edge
 

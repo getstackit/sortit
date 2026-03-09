@@ -93,7 +93,7 @@ func buildBaseMapDataFromIssues(storeIssues []issues.Issue, storeTags []issues.T
 
 	edges := ComputeEdgesWithEmbeddings(mapIssuesInput, issueEmbeddings, edgeThreshold)
 	sortEdgesBySimilarity(edges)
-	clusters := ComputeClusters(mapIssuesInput, positions, 0.18)
+	clusters := ComputeFactorClusters(mapIssuesInput, positions)
 
 	return mapBaseData{
 		mapIssues:      mapIssues,

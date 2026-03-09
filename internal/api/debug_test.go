@@ -10,7 +10,6 @@ import (
 
 	"splat/internal/ai"
 	"splat/internal/issues"
-	issuemap "splat/internal/map"
 )
 
 type fakeTagger struct {
@@ -111,8 +110,8 @@ func TestDebugIssueAnalyzeEndpoint(t *testing.T) {
 	if payload.ComparedIssueCount != 0 {
 		t.Fatalf("expected no compared issues by default, got %d", payload.ComparedIssueCount)
 	}
-	if len(tagger.capturedTags) != len(issuemap.AllTags()) {
-		t.Fatalf("expected %d default tags, got %d", len(issuemap.AllTags()), len(tagger.capturedTags))
+	if len(tagger.capturedTags) != len(issues.DefaultTags()) {
+		t.Fatalf("expected %d default tags, got %d", len(issues.DefaultTags()), len(tagger.capturedTags))
 	}
 	if tagger.capturedTags[0].Description == "" {
 		t.Fatalf("expected default tags to include descriptions")
