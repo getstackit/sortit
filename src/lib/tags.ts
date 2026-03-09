@@ -19,3 +19,7 @@ export async function fetchTags(signal?: AbortSignal): Promise<TagRecord[]> {
   });
   return payload.tags;
 }
+
+export function tagHref(name: string): string {
+  return `/tags/${encodeURIComponent(name)}`;
+}

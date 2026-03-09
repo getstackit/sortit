@@ -236,3 +236,93 @@ export function analyzeBatch(batchIssues: MapIssue[]): BatchAnalysis | null {
     pairwise,
   };
 }
+
+export function computeConvexHull(points: { x: number; y: number }[]) {
+  const sorted = [...points].sort((a, b) => a.x - b.x || a.y - b.y);
+  if (sorted.length <= 1) return sorted;
+
+  function cross(o: { x: number; y: number }, a: { x: number; y: number }, b: { x: number; y: number }) {
+    return (a.x - o.x) * (b.y - o.y) - (a.y - o.y) * (b.x - o.x);
+  }
+
+  const lower: { x: number; y: number }[] = [];
+  for (const p of sorted) {
+    while (lower.length >= 2 && cross(lower[lower.length - 2], lower[lower.length - 1], p) <= 0) {
+      lower.pop();
+    }
+    lower.push(p);
+  }
+
+  const upper: { x: number; y: number }[] = [];
+  for (let i = sorted.length - 1; i >= 0; i--) {
+    const p = sorted[i];
+    while (upper.length >= 2 && cross(upper[upper.length - 2], upper[upper.length - 1], p) <= 0) {
+      upper.pop();
+    }
+    upper.push(p);
+  }
+
+  lower.pop();
+  upper.pop();
+  return lower.concat(upper);
+}
+
+export function computeBlobPath(screenPoints: { x: number; y: number }[], padding: number): string {
+  if (screenPoints.length < 3) return "";
+
+  const hull = computeConvexHull(screenPoints);
+  if (hull.length < 3) return "";
+
+  const cx = hull.reduce((s, p) => s + p.x, 0) / hull.length;
+  const cy = hull.reduce((s, p) => s + p.y, 0) / hull.length;
+
+  const expanded = hull.map((p) => {
+    const dx = p.x - cx;
+    const dy = p.y - cy;
+    const dist = Math.sqrt(dx * dx + dy * dy) || 1;
+    return {
+      x: p.x + (dx / dist) * padding,
+      y: p.y + (dy / dist) * padding,
+    };
+  });
+
+  const n = expanded.length;
+  const parts: string[] = [];
+
+  for (let i = 0; i < n; i++) {
+    const p0 = expanded[(i - 1 + n) % n];
+    const p1 = expanded[i];
+    const p2 = expanded[(i + 1) % n];
+    const p3 = expanded[(i + 2) % n];
+
+    const cp1x = p1.x + (p2.x - p0.x) / 6;
+    const cp1y = p1.y + (p2.y - p0.y) / 6;
+    const cp2x = p2.x - (p3.x - p1.x) / 6;
+    const cp2y = p2.y - (p3.y - p1.y) / 6;
+
+    if (i === 0) {
+      parts.push(`M ${p1.x} ${p1.y}`);
+    }
+
+    parts.push(`C ${cp1x} ${cp1y}, ${cp2x} ${cp2y}, ${p2.x} ${p2.y}`);
+  }
+
+  parts.push("Z");
+  return parts.join(" ");
+}
+
+const BLOB_COLORS = [
+  "#a78bfa",
+  "#60a5fa",
+  "#34d399",
+  "#fbbf24",
+  "#f87171",
+];
+
+export function hashTagColor(tag: string): string {
+  let sum = 0;
+  for (let i = 0; i < tag.length; i++) {
+    sum += tag.charCodeAt(i);
+  }
+  return BLOB_COLORS[sum % BLOB_COLORS.length];
+}

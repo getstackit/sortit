@@ -189,8 +189,8 @@ func (s *Server) Handler() http.Handler {
 		http.NotFound(w, r)
 	})
 
-	handler := corsMiddleware(s.config.CORSOrigins, apiRoutes, root)
-	handler = authMiddleware(s.authService, publicAPIRoutes, handler)
+	handler := authMiddleware(s.authService, publicAPIRoutes, root)
+	handler = corsMiddleware(s.config.CORSOrigins, apiRoutes, handler)
 	return loggingMiddleware(handler)
 }
 

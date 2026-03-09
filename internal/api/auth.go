@@ -113,6 +113,9 @@ func (s *Server) handleAuthTokens(w http.ResponseWriter, r *http.Request) {
 			writeInternalError(w, r, "failed to list api tokens", err)
 			return
 		}
+		if tokens == nil {
+			tokens = []auth.APIToken{}
+		}
 		writeJSON(w, http.StatusOK, apiTokensResponse{Tokens: tokens})
 	case http.MethodPost:
 		token, rawToken, err := s.authService.CreateAPIToken(r.Context(), principal)

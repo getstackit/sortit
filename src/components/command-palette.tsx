@@ -1,10 +1,11 @@
 "use client";
 
-import { useCallback, useDeferredValue, useEffect, useRef, useState } from "react";
+import { useCallback, useDeferredValue, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { Dialog } from "@base-ui/react/dialog";
 import { FileTextIcon, LoaderIcon, SearchIcon, TagIcon } from "lucide-react";
 import { useUnifiedSearch } from "@/hooks/use-search";
+import { tagHref } from "@/lib/tags";
 import { entityStyle } from "@/lib/entity-colors";
 import type { SearchIssueRecord } from "@/lib/issues";
 import type { RelatedTag } from "@/lib/search";
@@ -22,7 +23,6 @@ type ResultItem =
 export function CommandPalette({ open, onOpenChange }: CommandPaletteProps) {
   const router = useRouter();
   const [searchText, setSearchText] = useState("");
-  const inputRef = useRef<HTMLInputElement>(null);
   const [activeIndex, setActiveIndex] = useState(0);
   const listRef = useRef<HTMLDivElement>(null);
 
@@ -31,37 +31,45 @@ export function CommandPalette({ open, onOpenChange }: CommandPaletteProps) {
 
   const { data, isLoading } = useUnifiedSearch(activeQuery);
 
-  const items: ResultItem[] = [];
-  if (data) {
+  const items = useMemo<ResultItem[]>(() => {
+    const next: ResultItem[] = [];
+    if (!data) {
+      return next;
+    }
+
     for (const issue of data.issues) {
-      items.push({ kind: "issue", issue });
+      next.push({ kind: "issue", issue });
     }
     for (const tag of data.relatedTags) {
-      items.push({ kind: "tag", tag });
+      next.push({ kind: "tag", tag });
     }
-  }
 
-  useEffect(() => {
-    setActiveIndex(0);
-  }, [activeQuery]);
+    return next;
+  }, [data]);
 
-  useEffect(() => {
-    if (!open) {
-      setSearchText("");
-      setActiveIndex(0);
-    }
-  }, [open]);
+  const resolvedActiveIndex = items.length === 0 ? 0 : Math.min(activeIndex, items.length - 1);
+
+  const handleOpenChange = useCallback(
+    (nextOpen: boolean) => {
+      if (!nextOpen) {
+        setSearchText("");
+        setActiveIndex(0);
+      }
+      onOpenChange(nextOpen);
+    },
+    [onOpenChange]
+  );
 
   const navigate = useCallback(
     (item: ResultItem) => {
       if (item.kind === "issue") {
         router.push(`/issues/${item.issue.id}`);
       } else {
-        router.push("/tags");
+        router.push(tagHref(item.tag.name));
       }
-      onOpenChange(false);
+      handleOpenChange(false);
     },
-    [router, onOpenChange]
+    [handleOpenChange, router]
   );
 
   const handleKeyDown = useCallback(
@@ -76,13 +84,13 @@ export function CommandPalette({ open, onOpenChange }: CommandPaletteProps) {
         );
       } else if (event.key === "Enter") {
         event.preventDefault();
-        const item = items[activeIndex];
+        const item = items[resolvedActiveIndex];
         if (item) {
           navigate(item);
         }
       }
     },
-    [items, activeIndex, navigate]
+    [items, navigate, resolvedActiveIndex]
   );
 
   useEffect(() => {
@@ -90,10 +98,10 @@ export function CommandPalette({ open, onOpenChange }: CommandPaletteProps) {
     if (activeEl) {
       activeEl.scrollIntoView({ block: "nearest" });
     }
-  }, [activeIndex]);
+  }, [resolvedActiveIndex]);
 
   return (
-    <Dialog.Root open={open} onOpenChange={onOpenChange}>
+    <Dialog.Root open={open} onOpenChange={handleOpenChange}>
       <Dialog.Portal>
         <Dialog.Backdrop className="fixed inset-0 z-50 bg-black/40 transition-opacity data-[ending-style]:opacity-0 data-[starting-style]:opacity-0" />
         <Dialog.Viewport className="fixed inset-0 z-50 flex items-start justify-center pt-[12vh]">
@@ -101,9 +109,11 @@ export function CommandPalette({ open, onOpenChange }: CommandPaletteProps) {
             <div className="flex items-center gap-3 border-b border-border/60 px-4 py-3">
               <SearchIcon className="size-4 shrink-0 text-muted-foreground" />
               <input
-                ref={inputRef}
                 value={searchText}
-                onChange={(e) => setSearchText(e.target.value)}
+                onChange={(e) => {
+                  setSearchText(e.target.value);
+                  setActiveIndex(0);
+                }}
                 onKeyDown={handleKeyDown}
                 placeholder="Search issues and tags..."
                 autoFocus
@@ -138,7 +148,7 @@ export function CommandPalette({ open, onOpenChange }: CommandPaletteProps) {
               {items.length > 0 && (
                 <div className="py-2">
                   {items.map((item, index) => {
-                    const isActive = index === activeIndex;
+                    const isActive = index === resolvedActiveIndex;
 
                     if (item.kind === "issue") {
                       return (

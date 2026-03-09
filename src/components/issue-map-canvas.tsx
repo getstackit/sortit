@@ -34,6 +34,20 @@ export type IssueMapCanvasCluster = {
   labelFillOpacity?: number;
 };
 
+export type IssueMapCanvasBlob = {
+  key: string;
+  path: string;
+  fill: string;
+  fillOpacity?: number;
+  label?: string;
+  labelX?: number;
+  labelY?: number;
+  labelFill?: string;
+  labelFillOpacity?: number;
+  onClick?: MouseEventHandler<SVGGElement>;
+  className?: string;
+};
+
 export type IssueMapCanvasRing = {
   radius: number;
   fill?: string;
@@ -75,7 +89,7 @@ type IssueMapCanvasProps = {
   style?: CSSProperties;
   background?: ReactNode;
   gridLines?: IssueMapCanvasLine[];
-  clusters?: IssueMapCanvasCluster[];
+  blobs?: IssueMapCanvasBlob[];
   edges?: IssueMapCanvasLine[];
   nodes?: IssueMapCanvasNode[];
   children?: ReactNode;
@@ -90,7 +104,7 @@ export const IssueMapCanvas = forwardRef<SVGSVGElement, IssueMapCanvasProps>(
       style,
       background,
       gridLines = [],
-      clusters = [],
+      blobs = [],
       edges = [],
       nodes = [],
       children,
@@ -109,6 +123,12 @@ export const IssueMapCanvas = forwardRef<SVGSVGElement, IssueMapCanvasProps>(
       >
       {background}
 
+      <defs>
+        <filter id="blob-soft" x="-20%" y="-20%" width="140%" height="140%">
+          <feGaussianBlur in="SourceGraphic" stdDeviation="12" />
+        </filter>
+      </defs>
+
       {gridLines.map((line) => (
         <line
           key={line.key}
@@ -123,29 +143,24 @@ export const IssueMapCanvas = forwardRef<SVGSVGElement, IssueMapCanvasProps>(
         />
       ))}
 
-      {clusters.map((cluster) => (
-        <g key={cluster.key}>
-          <circle
-            cx={cluster.cx}
-            cy={cluster.cy}
-            r={cluster.radius}
-            fill={cluster.fill ?? "none"}
-            fillOpacity={cluster.fillOpacity ?? 1}
-            stroke={cluster.stroke}
-            strokeOpacity={cluster.strokeOpacity}
-            strokeWidth={cluster.strokeWidth}
-            strokeDasharray={cluster.strokeDasharray}
+      {blobs.map((blob) => (
+        <g key={blob.key} onClick={blob.onClick} className={blob.className}>
+          <path
+            d={blob.path}
+            fill={blob.fill}
+            fillOpacity={blob.fillOpacity ?? 0.15}
+            filter="url(#blob-soft)"
           />
-          {cluster.label && (
+          {blob.label && (
             <text
-              x={cluster.cx}
-              y={cluster.labelY ?? cluster.cy - cluster.radius - 6}
+              x={blob.labelX}
+              y={blob.labelY}
               textAnchor="middle"
-              className={cn("text-[10px] font-medium", cluster.labelClassName)}
-              fill={cluster.labelFill ?? cluster.stroke ?? cluster.fill ?? "currentColor"}
-              fillOpacity={cluster.labelFillOpacity ?? 1}
+              className="text-[10px] font-medium"
+              fill={blob.labelFill ?? blob.fill}
+              fillOpacity={blob.labelFillOpacity ?? 0.7}
             >
-              {cluster.label}
+              {blob.label}
             </text>
           )}
         </g>

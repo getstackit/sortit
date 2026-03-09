@@ -15,7 +15,7 @@ import { usePathname, useSearchParams } from "next/navigation";
 import { AppShell } from "@/components/app-shell";
 import {
   IssueMapCanvas,
-  type IssueMapCanvasCluster,
+  type IssueMapCanvasBlob,
   type IssueMapCanvasLine,
   type IssueMapCanvasNode,
 } from "@/components/issue-map-canvas";
@@ -32,8 +32,10 @@ import {
   analyzeBatch,
   clamp,
   clusterIntersectsViewport,
+  computeBlobPath,
   dominantTag,
   edgeRenderLimit,
+  hashTagColor,
   issueRadius,
   MAX_RENDERED_SELECTED_EDGES,
   normalizeWheelDelta,
@@ -58,6 +60,7 @@ import {
   parseMapURLState,
   viewportQuery,
 } from "@/features/map/url-state";
+import { tagHref } from "@/lib/tags";
 
 const PADDING = 60;
 const EMPTY_ISSUES: MapIssue[] = [];
@@ -99,6 +102,7 @@ function MapPageContent() {
   const [batchEmbeddingError, setBatchEmbeddingError] = useState<string | null>(null);
   const [batchEmbeddingLoading, setBatchEmbeddingLoading] = useState(false);
   const [dimensions, setDimensions] = useState({ width: 800, height: 600 });
+  const [filteredClusterLabel, setFilteredClusterLabel] = useState<string | null>(null);
 
   const containerRef = useRef<HTMLDivElement>(null);
   const svgRef = useRef<SVGSVGElement>(null);
@@ -455,10 +459,17 @@ function MapPageContent() {
     return TAG_COLORS[dominantTag(selectedIssue?.tags ?? [])] ?? "#94a3b8";
   }, [issueIndex, selectedId]);
 
-  const activeIssue = useMemo(() => {
-    const activeId = selectedId ?? hoveredId;
-    return activeId ? issueIndex.get(activeId) ?? null : null;
-  }, [hoveredId, issueIndex, selectedId]);
+  const sidebarIssue = useMemo(() => {
+    if (selectedId != null) {
+      return issueIndex.get(selectedId) ?? null;
+    }
+
+    if (filteredClusterLabel != null) {
+      return null;
+    }
+
+    return hoveredId ? issueIndex.get(hoveredId) ?? null : null;
+  }, [filteredClusterLabel, hoveredId, issueIndex, selectedId]);
 
   const batchIssues = useMemo(
     () => issues.filter((issue) => selectedBatch.has(issue.id)),
@@ -828,31 +839,149 @@ function MapPageContent() {
     });
   }, [toScreen, dimensions.height, dimensions.width]);
 
-  const canvasClusters = useMemo<IssueMapCanvasCluster[]>(() => {
-    return visibleClusters.map((cluster, index) => {
-      const { sx, sy } = toScreen(cluster.centerX, cluster.centerY);
-      const screenRadius =
-        (cluster.radius / (viewport.xMax - viewport.xMin)) *
-          (dimensions.width - PADDING * 2) +
-        40;
+  const clusterMembers = useMemo(() => {
+    const result = new Map<string, string[]>();
+    for (const cluster of clusters) {
+      if (cluster.issueIds && cluster.issueIds.length > 0) {
+        result.set(cluster.label, cluster.issueIds);
+      } else {
+        const searchRadius = cluster.radius * 1.3 + 0.04;
+        const radiusSq = searchRadius * searchRadius;
+        const members = issues
+          .filter((issue) => {
+            const dx = issue.x - cluster.centerX;
+            const dy = issue.y - cluster.centerY;
+            return dx * dx + dy * dy <= radiusSq;
+          })
+          .map((issue) => issue.id);
+        result.set(cluster.label, members);
+      }
+    }
+    return result;
+  }, [clusters, issues]);
 
-      return {
-        key: `cluster-${index}`,
-        cx: sx,
-        cy: sy,
-        radius: screenRadius,
-        fill: cluster.color,
-        fillOpacity: 0.04,
-        stroke: cluster.color,
-        strokeOpacity: 0.1,
-        strokeWidth: 1,
-        strokeDasharray: "4 4",
-        label: cluster.label,
-        labelFill: cluster.color,
-        labelFillOpacity: 0.5,
-      };
-    });
-  }, [dimensions.width, toScreen, viewport.xMax, viewport.xMin, visibleClusters]);
+  const canvasBlobs = useMemo<IssueMapCanvasBlob[]>(() => {
+    return visibleClusters
+      .filter((cluster) => {
+        const members = clusterMembers.get(cluster.label) ?? [];
+        const minSize = cluster.issueIds ? 5 : 3;
+        return members.length >= minSize;
+      })
+      .map((cluster) => {
+        const memberIds = clusterMembers.get(cluster.label) ?? [];
+        const memberPoints = memberIds
+          .map((id) => issueIndex.get(id))
+          .filter((issue): issue is MapIssue => issue != null)
+          .map((issue) => toScreen(issue.x, issue.y))
+          .map(({ sx, sy }) => ({ x: sx, y: sy }));
+
+        const path = computeBlobPath(memberPoints, 45);
+        if (!path) return null;
+
+        const centroidX = memberPoints.reduce((s, p) => s + p.x, 0) / memberPoints.length;
+        const topY = Math.min(...memberPoints.map((p) => p.y));
+        const topTag = cluster.topTag ?? cluster.label.split(" / ")[0]?.toLowerCase() ?? "feature";
+        const color = hashTagColor(topTag);
+        const isFiltered = filteredClusterLabel != null;
+        const isThisCluster = filteredClusterLabel === cluster.label;
+
+        return {
+          key: `blob-${cluster.label}`,
+          path,
+          fill: color,
+          fillOpacity: isFiltered ? (isThisCluster ? 0.18 : 0.04) : 0.15,
+          label: cluster.label,
+          labelX: centroidX,
+          labelY: topY - 55,
+          labelFill: color,
+          labelFillOpacity: isFiltered ? (isThisCluster ? 0.8 : 0.2) : 0.6,
+          onClick: (e: React.MouseEvent<SVGGElement>) => {
+            e.stopPropagation();
+            setFilteredClusterLabel(
+              filteredClusterLabel === cluster.label ? null : cluster.label
+            );
+          },
+          className: "cursor-pointer",
+        };
+      })
+      .filter(Boolean) as IssueMapCanvasBlob[];
+  }, [visibleClusters, clusterMembers, issueIndex, toScreen, filteredClusterLabel, viewport, dimensions.width]);
+
+  const filteredIssueIds = useMemo(() => {
+    if (!filteredClusterLabel) return null;
+    const members = clusterMembers.get(filteredClusterLabel);
+    if (!members || members.length === 0) return null;
+    return new Set(members);
+  }, [filteredClusterLabel, clusterMembers]);
+
+  const selectedCluster = useMemo(() => {
+    if (!filteredClusterLabel) {
+      return null;
+    }
+
+    return clusters.find((cluster) => cluster.label === filteredClusterLabel) ?? null;
+  }, [clusters, filteredClusterLabel]);
+
+  const selectedClusterIssues = useMemo(() => {
+    if (!filteredClusterLabel) {
+      return [];
+    }
+
+    const memberIds = clusterMembers.get(filteredClusterLabel) ?? [];
+    const focusTag = selectedCluster?.topTag ?? null;
+    return memberIds
+      .map((id) => issueIndex.get(id))
+      .filter((issue): issue is MapIssue => issue != null)
+      .sort((left, right) => {
+        if (left.status !== right.status) {
+          return left.status === "open" ? -1 : 1;
+        }
+
+        const leftRelevance =
+          (focusTag
+            ? left.tags.find((entry) => entry.tag === focusTag)?.relevance
+            : undefined) ??
+          left.tags[0]?.relevance ??
+          0;
+        const rightRelevance =
+          (focusTag
+            ? right.tags.find((entry) => entry.tag === focusTag)?.relevance
+            : undefined) ??
+          right.tags[0]?.relevance ??
+          0;
+
+        return rightRelevance - leftRelevance;
+      });
+  }, [clusterMembers, filteredClusterLabel, issueIndex, selectedCluster]);
+
+  const selectedClusterTagProfile = useMemo(() => {
+    if (selectedClusterIssues.length === 0) {
+      return [];
+    }
+
+    const aggregate = new Map<string, { total: number; count: number }>();
+    for (const issue of selectedClusterIssues) {
+      for (const { tag, relevance } of issue.tags) {
+        const current = aggregate.get(tag) ?? { total: 0, count: 0 };
+        current.total += relevance;
+        current.count += 1;
+        aggregate.set(tag, current);
+      }
+    }
+
+    return Array.from(aggregate.entries())
+      .map(([tag, value]) => ({
+        tag,
+        relevance: value.total / value.count,
+      }))
+      .sort((left, right) => right.relevance - left.relevance)
+      .slice(0, 6);
+  }, [selectedClusterIssues]);
+
+  const selectedClusterOpenCount = useMemo(
+    () => selectedClusterIssues.filter((issue) => issue.status === "open").length,
+    [selectedClusterIssues]
+  );
 
   const canvasEdges = useMemo<IssueMapCanvasLine[]>(() => {
     return renderedEdges.flatMap((edge) => {
@@ -912,7 +1041,8 @@ function MapPageContent() {
       const isActive = issue.id === hoveredId || issue.id === selectedId;
       const isNeighbor = neighborIds.has(issue.id);
       const highlighted = isHighlighted(issue.id);
-      const dimmed = hasSelection && !highlighted;
+      const clusterDimmed = filteredIssueIds != null && !filteredIssueIds.has(issue.id);
+      const dimmed = (hasSelection && !highlighted) || clusterDimmed;
       const isClosed = issue.status === "closed";
       const rings = [];
 
@@ -952,7 +1082,7 @@ function MapPageContent() {
         cy: sy,
         radius,
         fill: color,
-        fillOpacity: dimmed ? 0.15 : isClosed ? (isActive ? 0.42 : 0.22) : isActive ? 0.9 : 0.6,
+        fillOpacity: clusterDimmed ? 0.08 : dimmed ? 0.15 : isClosed ? (isActive ? 0.42 : 0.22) : isActive ? 0.9 : 0.6,
         stroke: color,
         strokeWidth: isActive || isClosed ? 2 : 0,
         strokeOpacity: 0.8,
@@ -983,6 +1113,7 @@ function MapPageContent() {
       };
     });
   }, [
+    filteredIssueIds,
     hasSelection,
     hoveredId,
     neighborIds,
@@ -1080,6 +1211,15 @@ function MapPageContent() {
             >
               Reset View
             </button>
+            {filteredClusterLabel && (
+              <button
+                type="button"
+                onClick={() => setFilteredClusterLabel(null)}
+                className="rounded-md bg-primary/10 px-2 py-0.5 text-[11px] font-medium text-primary hover:bg-primary/20"
+              >
+                ✕ {filteredClusterLabel}
+              </button>
+            )}
             {selectedBatch.size > 0 && (
               <>
                 <span className="rounded-full bg-primary px-2 py-0.5 text-[11px] font-medium text-primary-foreground shadow-sm">
@@ -1126,7 +1266,7 @@ function MapPageContent() {
             onClick={handleCanvasClick}
             onMouseLeave={handleMouseUp}
             gridLines={canvasGridLines}
-            clusters={canvasClusters}
+            blobs={canvasBlobs}
             edges={canvasEdges}
             nodes={canvasNodes}
           >
@@ -1146,36 +1286,37 @@ function MapPageContent() {
 
           <div
             className={`absolute right-0 top-0 h-full w-96 border-l border-border/60 bg-card/88 shadow-lg backdrop-blur-xl transition-transform duration-200 ease-in-out ${
-              activeIssue && selectedBatch.size === 0
+              sidebarIssue && selectedBatch.size === 0
                 ? "translate-x-0"
                 : "translate-x-full"
             }`}
           >
-            {activeIssue && selectedBatch.size === 0 && (
+            {sidebarIssue && selectedBatch.size === 0 && (
               <div className="flex h-full flex-col overflow-y-auto p-5">
                 <div className="flex items-start justify-between gap-3">
                   <div className="space-y-2">
                     <div className="flex flex-wrap items-center gap-2">
                       <span className="app-chip px-2 py-0.5 text-[10px]">
-                        {activeIssue.id}
+                        {sidebarIssue.id}
                       </span>
                       <span
                         className={
-                          activeIssue.status === "closed"
+                          sidebarIssue.status === "closed"
                             ? "rounded-full bg-slate-200 px-2 py-0.5 text-[10px] font-medium text-slate-700"
                             : "rounded-full bg-emerald-100 px-2 py-0.5 text-[10px] font-medium text-emerald-700"
                         }
                       >
-                        {activeIssue.status === "closed" ? "Closed" : "Open"}
+                        {sidebarIssue.status === "closed" ? "Closed" : "Open"}
                       </span>
                     </div>
                     <p className="whitespace-pre-wrap text-[13px] leading-relaxed">
-                      {activeIssue.raw}
+                      {sidebarIssue.raw}
                     </p>
                     <div className="mt-2 flex flex-wrap gap-1.5">
-                      {activeIssue.tags.map(({ tag }) => (
-                        <span
+                      {sidebarIssue.tags.map(({ tag }) => (
+                        <Link
                           key={tag}
+                          href={tagHref(tag)}
                           className="rounded-full px-2 py-0.5 text-[10px] font-medium"
                           style={{
                             backgroundColor: `${TAG_COLORS[tag] ?? "#94a3b8"}20`,
@@ -1183,7 +1324,7 @@ function MapPageContent() {
                           }}
                         >
                           {tag}
-                        </span>
+                        </Link>
                       ))}
                     </div>
                   </div>
@@ -1209,7 +1350,7 @@ function MapPageContent() {
                 </div>
                 <div className="mt-4">
                   <Link
-                    href={`/issues/${activeIssue.id}`}
+                    href={`/issues/${sidebarIssue.id}`}
                     className="inline-flex items-center gap-1.5 rounded-md bg-primary px-3 py-1.5 text-[12px] font-medium text-primary-foreground shadow-sm transition-colors hover:bg-primary/90"
                   >
                     View issue
@@ -1229,10 +1370,10 @@ function MapPageContent() {
                 </div>
                 <div className="mt-5 space-y-2">
                   <TagRelevanceBars
-                    tags={activeIssue.tags}
+                    tags={sidebarIssue.tags}
                     colorFor={(tag) => TAG_COLORS[tag] ?? "#94a3b8"}
                   />
-                  {selectedId === activeIssue.id && selectedNeighbors.length > 0 && (
+                  {selectedId === sidebarIssue.id && selectedNeighbors.length > 0 && (
                     <div className="mt-5 space-y-1.5">
                       <p className="text-[11px] font-medium text-muted-foreground">
                         Semantically Similar
@@ -1266,6 +1407,135 @@ function MapPageContent() {
                       })}
                     </div>
                   )}
+                </div>
+              </div>
+            )}
+          </div>
+
+          <div
+            className={`absolute right-0 top-0 h-full w-96 border-l border-border/60 bg-card/88 shadow-lg backdrop-blur-xl transition-transform duration-200 ease-in-out ${
+              selectedCluster && selectedId == null && selectedBatch.size === 0
+                ? "translate-x-0"
+                : "translate-x-full"
+            }`}
+          >
+            {selectedCluster && selectedId == null && selectedBatch.size === 0 && (
+              <div className="flex h-full flex-col overflow-y-auto p-5">
+                <div className="flex items-start justify-between gap-3">
+                  <div className="space-y-2">
+                    <div className="flex flex-wrap items-center gap-2">
+                      <span className="app-chip px-2 py-0.5 text-[10px]">Cluster</span>
+                      <span className="app-chip px-2 py-0.5 text-[10px]">
+                        {selectedClusterIssues.length} issues
+                      </span>
+                      <span className="rounded-full bg-emerald-100 px-2 py-0.5 text-[10px] font-medium text-emerald-700">
+                        {selectedClusterOpenCount} open
+                      </span>
+                    </div>
+                    <p className="text-[15px] font-semibold leading-snug">
+                      {selectedCluster.label}
+                    </p>
+                    <p className="text-[12px] leading-relaxed text-muted-foreground">
+                      Blob selection is currently also the cluster filter. Use the issue list below to jump into a specific issue without losing the cluster context.
+                    </p>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => setFilteredClusterLabel(null)}
+                    className="shrink-0 rounded-md p-1 text-muted-foreground hover:bg-muted hover:text-foreground"
+                  >
+                    <svg
+                      width="14"
+                      height="14"
+                      viewBox="0 0 14 14"
+                      fill="none"
+                      stroke="currentColor"
+                      strokeWidth="1.5"
+                      strokeLinecap="round"
+                    >
+                      <path d="M11 3L3 11M3 3l8 8" />
+                    </svg>
+                  </button>
+                </div>
+
+                {selectedCluster.topTag && (
+                  <div className="mt-4">
+                    <Link
+                      href={tagHref(selectedCluster.topTag)}
+                      className="inline-flex items-center gap-1.5 rounded-md bg-primary px-3 py-1.5 text-[12px] font-medium text-primary-foreground shadow-sm transition-colors hover:bg-primary/90"
+                    >
+                      View top tag
+                      <svg
+                        width="12"
+                        height="12"
+                        viewBox="0 0 12 12"
+                        fill="none"
+                        stroke="currentColor"
+                        strokeWidth="1.5"
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                      >
+                        <path d="M4.5 2.5L8.5 6L4.5 9.5" />
+                      </svg>
+                    </Link>
+                  </div>
+                )}
+
+                <div className="mt-5 space-y-2">
+                  <TagRelevanceBars
+                    tags={selectedClusterTagProfile}
+                    colorFor={(tag) => TAG_COLORS[tag] ?? "#94a3b8"}
+                  />
+
+                  <div className="mt-5 space-y-1.5">
+                    <p className="text-[11px] font-medium text-muted-foreground">
+                      Cluster members
+                    </p>
+                    {selectedClusterIssues.map((issue) => (
+                      <button
+                        key={issue.id}
+                        type="button"
+                        className="flex w-full items-start gap-2 rounded-md px-1.5 py-1 text-left transition-colors hover:bg-muted/60"
+                        onClick={() => setSelectedId(issue.id)}
+                      >
+                        <div
+                          className="mt-1 h-2 w-2 shrink-0 rounded-full"
+                          style={{
+                            backgroundColor:
+                              TAG_COLORS[dominantTag(issue.tags)] ?? "#94a3b8",
+                          }}
+                        />
+                        <div className="min-w-0 flex-1">
+                          <p className="truncate text-[11px] text-foreground">
+                            {issueLabel(issue.raw, 60)}
+                          </p>
+                          <div className="mt-1 flex flex-wrap gap-1">
+                            {issue.tags.slice(0, 3).map(({ tag }) => (
+                              <span
+                                key={tag}
+                                className="rounded-full px-1.5 py-0.5 text-[9px] font-medium"
+                                style={{
+                                  backgroundColor: `${TAG_COLORS[tag] ?? "#94a3b8"}20`,
+                                  color: TAG_COLORS[tag] ?? "#94a3b8",
+                                }}
+                              >
+                                {tag}
+                              </span>
+                            ))}
+                          </div>
+                        </div>
+                        <span
+                          className={
+                            issue.status === "closed"
+                              ? "shrink-0 rounded-full bg-slate-200 px-1.5 py-0.5 text-[9px] font-medium text-slate-700"
+                              : "shrink-0 rounded-full bg-emerald-100 px-1.5 py-0.5 text-[9px] font-medium text-emerald-700"
+                          }
+                        >
+                          {issue.status === "closed" ? "Closed" : "Open"}
+                        </span>
+                      </button>
+                    ))}
+                  </div>
                 </div>
               </div>
             )}

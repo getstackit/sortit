@@ -1,2 +1,2 @@
-server: sh -c 'exec watchexec -r -e go -w apps/server -w internal -- go run ./apps/server --port "${API_PORT:-8081}"'
+server: sh -c 'exec watchexec -r -e go -w apps/server -w internal -- go run ./apps/server --port "${API_PORT:-8081}" --cors "${SPLAT_SERVER_CORS:-http://localhost:3000,http://127.0.0.1:3000}"'
 web: sh -c 'exec npm run dev -- --hostname 0.0.0.0 --port "${APP_PORT:-3000}"'

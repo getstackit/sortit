@@ -48,6 +48,11 @@ func authMiddleware(service *auth.Service, publicAPIRoutes map[string]struct{}, 
 	}
 
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == http.MethodOptions {
+			next.ServeHTTP(w, r)
+			return
+		}
+
 		path := r.URL.Path
 		if path == "/" || isPublicRoute(path, publicAPIRoutes) {
 			next.ServeHTTP(w, r)

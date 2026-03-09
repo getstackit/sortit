@@ -23,7 +23,6 @@ import {
 import { AppSidebar } from "@/components/app-sidebar";
 import { SiteHeader } from "@/components/site-header";
 import { Button, buttonVariants } from "@/components/ui/button";
-import { dominantTag } from "@/features/map/model";
 import type {
   MapCluster,
   MapEdge,
@@ -43,6 +42,7 @@ import {
 import { cn } from "@/lib/utils";
 import { TagRelevanceBars } from "@/components/tag-relevance-bars";
 import { entityStyle } from "@/lib/entity-colors";
+import { tagHref } from "@/lib/tags";
 
 type SemanticNeighbor = {
   issue: MapIssue;
@@ -1076,13 +1076,14 @@ export function IssueDetailPage({ issueID }: { issueID: string }) {
                       <dd className="flex flex-wrap gap-1.5">
                         {issue.tags.length > 0 ? (
                           issue.tags.map((tag) => (
-                            <span
+                            <Link
                               key={tag}
-                              className="rounded-full border px-2.5 py-1 text-[11px] font-medium"
+                              href={tagHref(tag)}
+                              className="rounded-full border px-2.5 py-1 text-[11px] font-medium transition-colors hover:bg-accent/70"
                               style={entityStyle(tag)}
                             >
                               {tag}
-                            </span>
+                            </Link>
                           ))
                         ) : (
                           <span className="text-sm text-muted-foreground">None</span>

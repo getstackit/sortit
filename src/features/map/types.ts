@@ -24,6 +24,8 @@ export type MapCluster = {
   centerY: number;
   radius: number;
   color: string;
+  issueIds: string[];
+  topTag: string;
 };
 
 export type MapData = {

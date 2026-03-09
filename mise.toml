@@ -4,6 +4,8 @@ experimental = true
 [env]
 PROJECT_ROOT = "{{ config_root }}"
 _.file = ".env"
+NEXT_PUBLIC_API_ORIGIN = "http://localhost:8081"
+SPLAT_WEB_ORIGIN = "http://localhost:3000"
 
 [tools]
 go = "1.26"
@@ -33,7 +35,7 @@ run = "npm run dev -- --hostname 0.0.0.0 --port ${APP_PORT:-3000}"
 
 [tasks."dev:server"]
 description = "Run the Go API server in development mode"
-run = "watchexec -r -e go -w apps/server -w internal -- go run ./apps/server --port ${API_PORT:-8081}"
+run = "watchexec -r -e go -w apps/server -w internal -- go run ./apps/server --port ${API_PORT:-8081} --cors ${SPLAT_SERVER_CORS:-http://localhost:3000,http://127.0.0.1:3000}"
 
 [tasks."dev:stop"]
 description = "Stop local dev processes bound to the app and API ports"

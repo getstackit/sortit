@@ -132,7 +132,7 @@ func buildBaseMapData() (mapBaseData, error) {
 
 	edges := ComputeEdges(allIssues, minEdgeSimilarity)
 	sortEdgesBySimilarity(edges)
-	clusters := ComputeClusters(allIssues, positions, 0.18)
+	clusters := ComputeFactorClusters(allIssues, positions)
 
 	return mapBaseData{
 		mapIssues:      mapIssues,

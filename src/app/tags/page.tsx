@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { Fragment, useEffect, useMemo, useState } from "react";
 import { UMAP } from "umap-js";
 import { AppShell } from "@/components/app-shell";
@@ -7,7 +8,7 @@ import { AppSidebar } from "@/components/app-sidebar";
 import { SiteHeader } from "@/components/site-header";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
-import { fetchTags, type TagRecord } from "@/lib/tags";
+import { fetchTags, tagHref, type TagRecord } from "@/lib/tags";
 
 type ProjectionMethod = "pca" | "umap";
 
@@ -280,12 +281,20 @@ export default function TagsPage() {
                           {selectedPoint.tag.description || "No description"}
                         </p>
                       </div>
-                      <span
-                        className="rounded-full px-2 py-1 text-xs font-medium text-white shadow-sm"
-                        style={{ backgroundColor: tagColor(selectedPoint.tag.name) }}
-                      >
-                        {METHOD_LABELS[method]}
-                      </span>
+                      <div className="flex items-center gap-2">
+                        <span
+                          className="rounded-full px-2 py-1 text-xs font-medium text-white shadow-sm"
+                          style={{ backgroundColor: tagColor(selectedPoint.tag.name) }}
+                        >
+                          {METHOD_LABELS[method]}
+                        </span>
+                        <Link
+                          href={tagHref(selectedPoint.tag.name)}
+                          className="rounded-full border border-border/60 bg-background px-2.5 py-1 text-xs font-medium text-foreground transition-colors hover:bg-muted"
+                        >
+                          View tag
+                        </Link>
+                      </div>
                     </div>
 
                     <div className="mt-4 space-y-2">

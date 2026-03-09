@@ -43,7 +43,7 @@ export function TokenSettingsPage() {
     try {
       const payload = await createAPIToken();
       setCreatedToken(payload.token);
-      setTokens((current) => [payload.metadata, ...current]);
+      setTokens((current) => [payload.metadata, ...(current ?? [])]);
       setError(null);
     } catch (caughtError) {
       setError(caughtError instanceof Error ? caughtError.message : "Failed to create token");
@@ -56,7 +56,7 @@ export function TokenSettingsPage() {
     try {
       await revokeAPIToken(id);
       setTokens((current) =>
-        current.map((token) =>
+        (current ?? []).map((token) =>
           token.id === id
             ? { ...token, revokedAt: new Date().toISOString() }
             : token
@@ -74,6 +74,8 @@ export function TokenSettingsPage() {
     }
     await navigator.clipboard.writeText(createdToken);
   }
+
+  const visibleTokens = tokens ?? [];
 
   return (
     <AppShell sidebar={<AppSidebar showThingsSection={false} />}>
@@ -149,10 +151,10 @@ export function TokenSettingsPage() {
             <div className="mt-5 space-y-3">
               {loading ? (
                 <p className="text-sm text-muted-foreground">Loading tokens...</p>
-              ) : tokens.length === 0 ? (
+              ) : visibleTokens.length === 0 ? (
                 <p className="text-sm text-muted-foreground">No tokens yet.</p>
               ) : (
-                tokens.map((token) => {
+                visibleTokens.map((token) => {
                   const revoked = Boolean(token.revokedAt);
                   return (
                     <div

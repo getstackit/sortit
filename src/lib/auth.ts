@@ -54,7 +54,7 @@ export async function listAPITokens(): Promise<APITokenRecord[]> {
   const payload = await getJSON<APITokensResponse>(apiURL("/api/v1/auth/tokens"), {
     cache: "no-store",
   });
-  return payload.tokens;
+  return payload.tokens ?? [];
 }
 
 export function createAPIToken() {
