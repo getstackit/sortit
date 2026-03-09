@@ -10,7 +10,6 @@ import (
 	"time"
 
 	"splat/internal/ai"
-	"splat/internal/commands"
 	"splat/internal/queries"
 )
 
@@ -19,10 +18,6 @@ const debugAnalyzeTimeout = 45 * time.Second
 type debugIssueAnalyzeRequest struct {
 	Text string   `json:"text"`
 	Tags []string `json:"tags,omitempty"`
-}
-
-type debugIssueStoreResponse struct {
-	IssueCount int `json:"issueCount"`
 }
 
 type debugIssueSimilarity struct {
@@ -80,46 +75,6 @@ func (s *Server) handleDebugIssueAnalyze(w http.ResponseWriter, r *http.Request)
 		AverageIssueSimilarity: analyzed.AverageIssueSimilarity,
 		SimilarIssues:          toDebugIssueSimilarities(analyzed.SimilarIssues),
 	})
-}
-
-func (s *Server) handleDebugIssueSampleLoad(w http.ResponseWriter, r *http.Request) {
-	if r.Method != http.MethodPost {
-		w.Header().Set("Allow", http.MethodPost)
-		http.Error(w, http.StatusText(http.StatusMethodNotAllowed), http.StatusMethodNotAllowed)
-		return
-	}
-
-	count, err := s.loadSampleIssues.Handle(r.Context())
-	if err != nil {
-		if errors.Is(err, commands.ErrNotSupported) {
-			writeError(w, http.StatusNotImplemented, "issue store cannot be reset")
-			return
-		}
-		writeInternalError(w, r, "failed to load sample issues", err)
-		return
-	}
-
-	writeJSON(w, http.StatusOK, debugIssueStoreResponse{IssueCount: count})
-}
-
-func (s *Server) handleDebugIssueReset(w http.ResponseWriter, r *http.Request) {
-	if r.Method != http.MethodPost {
-		w.Header().Set("Allow", http.MethodPost)
-		http.Error(w, http.StatusText(http.StatusMethodNotAllowed), http.StatusMethodNotAllowed)
-		return
-	}
-
-	err := s.resetIssues.Handle(r.Context())
-	if err != nil {
-		if errors.Is(err, commands.ErrNotSupported) {
-			writeError(w, http.StatusNotImplemented, "issue store cannot be reset")
-			return
-		}
-		writeInternalError(w, r, "failed to clear issues", err)
-		return
-	}
-
-	writeJSON(w, http.StatusOK, debugIssueStoreResponse{IssueCount: 0})
 }
 
 func decodeDebugIssueAnalyzeRequest(r *http.Request) (debugIssueAnalyzeRequest, error) {

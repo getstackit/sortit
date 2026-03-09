@@ -17,6 +17,7 @@ import (
 	mcpserver "splat/internal/mcp"
 	"splat/internal/queries"
 	"splat/internal/services"
+
 )
 
 type ServerConfig struct {
@@ -41,8 +42,6 @@ type Server struct {
 	splitIssue        commands.SplitIssueHandler
 	combineIssues     commands.CombineIssuesHandler
 	linkIssues        commands.LinkIssuesHandler
-	loadSampleIssues  commands.LoadSampleIssuesHandler
-	resetIssues       commands.ResetIssuesHandler
 	listIssues        queries.ListIssuesHandler
 	getIssue          queries.GetIssueHandler
 	compareIssues     queries.CompareIssuesHandler
@@ -112,9 +111,6 @@ func (s *Server) Handler() http.Handler {
 		debugAnalyzeRoute := path.Join(prefix, "debug", "issues", "analyze")
 		peopleSubtreeRoute := path.Join(prefix, "people") + "/"
 		peopleCorrelationsRoute := path.Join(prefix, "people", "correlations")
-		debugSampleRoute := path.Join(prefix, "debug", "issues", "sample")
-		debugResetRoute := path.Join(prefix, "debug", "issues", "reset")
-
 		apiRoutes[healthRoute] = struct{}{}
 		apiRoutes[issuesRoute] = struct{}{}
 		apiRoutes[issuesCompareRoute] = struct{}{}
@@ -129,8 +125,6 @@ func (s *Server) Handler() http.Handler {
 		apiRoutes[peopleSubtreeRoute] = struct{}{}
 		apiRoutes[peopleCorrelationsRoute] = struct{}{}
 		apiRoutes[debugAnalyzeRoute] = struct{}{}
-		apiRoutes[debugSampleRoute] = struct{}{}
-		apiRoutes[debugResetRoute] = struct{}{}
 		apiRoutes[authGitHubStartRoute] = struct{}{}
 		apiRoutes[authGitHubCallbackRoute] = struct{}{}
 		apiRoutes[authSessionRoute] = struct{}{}
@@ -163,8 +157,6 @@ func (s *Server) Handler() http.Handler {
 		apiMux.HandleFunc(peopleCorrelationsRoute, s.handleWorkCorrelations)
 		apiMux.HandleFunc(peopleSubtreeRoute, s.handlePersonProfile(peopleSubtreeRoute))
 		apiMux.HandleFunc(debugAnalyzeRoute, s.handleDebugIssueAnalyze)
-		apiMux.HandleFunc(debugSampleRoute, s.handleDebugIssueSampleLoad)
-		apiMux.HandleFunc(debugResetRoute, s.handleDebugIssueReset)
 	}
 
 	mcpHandler := mcpserver.NewHandler(mcpserver.ServerConfig{
@@ -268,10 +260,6 @@ func NewServer(cfg ServerConfig) *Server {
 	catalog := services.NewCatalogService(tagStore, commandAnalyzer)
 	enricher := services.NewIssueEnricher(commandAnalyzer, catalog)
 
-	replaceable, _ := store.(interface {
-		Replace(context.Context, []issues.Issue) error
-	})
-
 	return &Server{
 		config:    cfg,
 		startedAt: time.Now().UTC(),
@@ -301,13 +289,6 @@ func NewServer(cfg ServerConfig) *Server {
 		},
 		linkIssues: commands.LinkIssuesHandler{
 			Store: store,
-		},
-		loadSampleIssues: commands.LoadSampleIssuesHandler{
-			Store:    replaceable,
-			Enricher: enricher,
-		},
-		resetIssues: commands.ResetIssuesHandler{
-			Store: replaceable,
 		},
 		listIssues:    queries.ListIssuesHandler{Store: store},
 		getIssue:      queries.GetIssueHandler{Store: store},

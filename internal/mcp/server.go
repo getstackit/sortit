@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -24,6 +23,15 @@ type authorizationContextKey struct{}
 type ServerConfig struct {
 	// BaseURL is the Splat API base URL, e.g. "http://localhost:8081/api/v1"
 	BaseURL string
+}
+
+type apiError struct {
+	statusCode int
+	message    string
+}
+
+func (e *apiError) Error() string {
+	return fmt.Sprintf("Splat API error (%d): %s", e.statusCode, e.message)
 }
 
 // NewHandler creates a Streamable HTTP handler for the MCP server,
@@ -706,14 +714,14 @@ func (h *handlers) doJSONRequest(ctx context.Context, method, route string, payl
 	if payload != nil {
 		requestBody, err := json.Marshal(payload)
 		if err != nil {
-			return fmt.Errorf("failed to encode request: %v", err)
+			return fmt.Errorf("failed to encode request: %w", err)
 		}
 		body = bytes.NewReader(requestBody)
 	}
 
 	httpReq, err := http.NewRequestWithContext(ctx, method, h.baseURL+route, body)
 	if err != nil {
-		return fmt.Errorf("failed to build request: %v", err)
+		return fmt.Errorf("failed to build request: %w", err)
 	}
 	if payload != nil {
 		httpReq.Header.Set("Content-Type", "application/json")
@@ -724,34 +732,37 @@ func (h *handlers) doJSONRequest(ctx context.Context, method, route string, payl
 
 	resp, err := h.client.Do(httpReq)
 	if err != nil {
-		return fmt.Errorf("failed to reach Splat API: %v", err)
+		return fmt.Errorf("failed to reach Splat API: %w", err)
 	}
 	defer resp.Body.Close()
 
 	respBody, err := io.ReadAll(io.LimitReader(resp.Body, 1<<20))
 	if err != nil {
-		return fmt.Errorf("failed to read response: %v", err)
+		return fmt.Errorf("failed to read response: %w", err)
 	}
 
 	if resp.StatusCode >= 400 {
-		return errors.New(formatAPIError(resp.StatusCode, respBody))
+		return &apiError{
+			statusCode: resp.StatusCode,
+			message:    formatAPIErrorMessage(resp.StatusCode, respBody),
+		}
 	}
 
 	if err := json.Unmarshal(respBody, out); err != nil {
-		return fmt.Errorf("failed to decode response: %v", err)
+		return fmt.Errorf("failed to decode response: %w", err)
 	}
 
 	return nil
 }
 
-func formatAPIError(statusCode int, respBody []byte) string {
+func formatAPIErrorMessage(statusCode int, respBody []byte) string {
 	var payload struct {
 		Error string `json:"error"`
 	}
 	if err := json.Unmarshal(respBody, &payload); err == nil {
 		payload.Error = strings.TrimSpace(payload.Error)
 		if payload.Error != "" {
-			return fmt.Sprintf("Splat API error (%d): %s", statusCode, payload.Error)
+			return payload.Error
 		}
 	}
 
@@ -760,5 +771,5 @@ func formatAPIError(statusCode int, respBody []byte) string {
 		message = http.StatusText(statusCode)
 	}
 
-	return fmt.Sprintf("Splat API error (%d): %s", statusCode, message)
+	return message
 }

@@ -272,7 +272,7 @@ func TestSQLiteStorePersistsIssueRelationshipsAndOperationHistory(t *testing.T) 
 func TestSQLiteStoreReplaceResetsSequenceFromLoadedItems(t *testing.T) {
 	store := newSQLiteTestStore(t)
 
-	if err := store.Replace(context.Background(), SeedIssues()); err != nil {
+	if err := store.Replace(context.Background(), FixtureIssues()); err != nil {
 		t.Fatalf("replace issues with seeds: %v", err)
 	}
 

@@ -293,7 +293,8 @@ func buildOpenAITaggingPrompt(text string, tags []Tag) string {
 	var builder strings.Builder
 	builder.WriteString("Classify the issue against the supplied taxonomy.\n")
 	builder.WriteString("Consider issue type, failure mode, affected surface, platform, and user workflow.\n")
-	builder.WriteString("Reuse supplied tags when they fit. Suggest at most 2 new tags only if an important concept is missing from the taxonomy.\n\n")
+	builder.WriteString("Reuse supplied tags when they fit. Suggest at most 2 new tags only if an important concept is missing from the taxonomy.\n")
+	builder.WriteString("When suggesting a new tag, prefer a concrete application surface, subsystem, or feature area over broad buckets like backend, frontend, or ui.\n\n")
 	builder.WriteString("Issue text:\n")
 	builder.WriteString(text)
 	builder.WriteString("\n\nSupplied taxonomy (reuse these exact labels when applicable):\n")
@@ -316,10 +317,11 @@ func buildOpenAITaggingSystemPrompt() string {
 		"Suggested tags may also include suggested=true and description. " +
 		"Relevance must be between 0 and 1. Omit tags below 0.05 relevance. " +
 		"Prefer supplied taxonomy tags whenever they reasonably fit. " +
+		"Prefer specific application surface tags over broad buckets like backend, frontend, or ui when a sharper reusable label exists. " +
 		"Use multiple existing tags before inventing a new one. " +
 		"Suggest a new tag only when a materially important concept cannot be expressed well by the supplied taxonomy. " +
 		"Do not suggest synonyms, spelling variants, or narrower/broader restatements of existing tags. " +
-		"Suggested tags must be short, lowercase, reusable across many issues, and not product-specific. " +
+		"Suggested tags must be short, lowercase, reusable across related issues, and may be application-specific when they name a concrete subsystem or surface. " +
 		"Return at most 2 suggested tags, and every suggested tag must include a short description."
 }
 

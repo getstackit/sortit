@@ -82,10 +82,10 @@ func filterEdgesForViewport(base mapBaseData, viewport Viewport) []Edge {
 		minVisibleEdgeCount,
 		int(math.Ceil(float64(len(visibleIDs))*maxVisibleEdgeRatio)),
 	)
-	targetEdgeCount = minInt(targetEdgeCount, maxVisibleEdges)
+	targetEdgeCount = min(targetEdgeCount, maxVisibleEdges)
 
-	bothVisible := make([]Edge, 0, minInt(targetEdgeCount, len(base.candidateEdges)))
-	oneVisible := make([]Edge, 0, minInt(targetEdgeCount, len(base.candidateEdges)))
+	bothVisible := make([]Edge, 0, min(targetEdgeCount, len(base.candidateEdges)))
+	oneVisible := make([]Edge, 0, min(targetEdgeCount, len(base.candidateEdges)))
 	for _, edge := range base.candidateEdges {
 		_, sourceVisible := visibleIDs[edge.Source]
 		_, targetVisible := visibleIDs[edge.Target]
@@ -101,7 +101,7 @@ func filterEdgesForViewport(base mapBaseData, viewport Viewport) []Edge {
 		oneVisible = append(oneVisible, edge)
 	}
 
-	candidates := make([]Edge, 0, minInt(targetEdgeCount, len(bothVisible)+len(oneVisible)))
+	candidates := make([]Edge, 0, min(targetEdgeCount, len(bothVisible)+len(oneVisible)))
 	candidates = append(candidates, bothVisible...)
 	if len(candidates) >= targetEdgeCount {
 		return candidates[:targetEdgeCount]
@@ -143,11 +143,4 @@ func sortEdgesBySimilarity(edges []Edge) {
 		}
 		return edges[i].Similarity > edges[j].Similarity
 	})
-}
-
-func minInt(a, b int) int {
-	if a < b {
-		return a
-	}
-	return b
 }

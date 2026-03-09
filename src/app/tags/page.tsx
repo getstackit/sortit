@@ -8,6 +8,13 @@ import { AppSidebar } from "@/components/app-sidebar";
 import { SiteHeader } from "@/components/site-header";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
+import { useIssues } from "@/hooks/use-issues";
+import {
+  buildMergeCandidates,
+  buildSpecificTagSuggestions,
+  cosineSimilarity,
+  isGenericBucketTag,
+} from "@/lib/tag-quality";
 import { fetchTags, tagHref, type TagRecord } from "@/lib/tags";
 
 type ProjectionMethod = "pca" | "umap";
@@ -42,6 +49,11 @@ export default function TagsPage() {
   const [method, setMethod] = useState<ProjectionMethod>("pca");
   const [edgeThreshold, setEdgeThreshold] = useState(0.72);
   const [selectedTagName, setSelectedTagName] = useState<string | null>(null);
+  const {
+    data: issues = [],
+    error: issuesError,
+    isLoading: issuesLoading,
+  } = useIssues("all");
 
   useEffect(() => {
     const controller = new AbortController();
@@ -110,6 +122,17 @@ export default function TagsPage() {
       .sort((left, right) => right.similarity - left.similarity)
       .slice(0, 6);
   }, [embeddedTags, selectedPoint]);
+  const selectedMergeCandidates = useMemo(
+    () => buildMergeCandidates(selectedPoint?.tag ?? null, embeddedTags),
+    [embeddedTags, selectedPoint]
+  );
+  const selectedSpecificSuggestions = useMemo(
+    () =>
+      selectedPoint
+        ? buildSpecificTagSuggestions(selectedPoint.tag.name, tags, issues)
+        : [],
+    [issues, selectedPoint, tags]
+  );
 
   const similarityMatrix = useMemo(
     () => buildSimilarityMatrix(embeddedTags),
@@ -288,6 +311,11 @@ export default function TagsPage() {
                         >
                           {METHOD_LABELS[method]}
                         </span>
+                        <span className="rounded-full border border-border/60 bg-background px-2.5 py-1 text-xs font-medium text-muted-foreground">
+                          {isGenericBucketTag(selectedPoint.tag.name)
+                            ? "Generic bucket"
+                            : "Specific tag"}
+                        </span>
                         <Link
                           href={tagHref(selectedPoint.tag.name)}
                           className="rounded-full border border-border/60 bg-background px-2.5 py-1 text-xs font-medium text-foreground transition-colors hover:bg-muted"
@@ -295,6 +323,84 @@ export default function TagsPage() {
                           View tag
                         </Link>
                       </div>
+                    </div>
+
+                    <div className="mt-4 space-y-2">
+                      <p className="text-[11px] font-medium uppercase tracking-[0.14em] text-muted-foreground">
+                        Specificity
+                      </p>
+                      {isGenericBucketTag(selectedPoint.tag.name) ? (
+                        <>
+                          <p className="text-sm text-muted-foreground">
+                            This tag is a broad bucket. Prefer a concrete subsystem or feature-area tag when one exists.
+                          </p>
+                          {issuesLoading ? (
+                            <p className="text-sm text-muted-foreground">
+                              Loading co-occurring tags...
+                            </p>
+                          ) : issuesError ? (
+                            <p className="text-sm text-muted-foreground">
+                              Could not load issue data for specificity suggestions.
+                            </p>
+                          ) : selectedSpecificSuggestions.length > 0 ? (
+                            selectedSpecificSuggestions.map((suggestion) => (
+                              <Link
+                                key={suggestion.name}
+                                href={tagHref(suggestion.name)}
+                                className="app-subtle-surface flex items-start justify-between gap-3 px-3 py-2 transition-colors hover:bg-muted/40"
+                              >
+                                <div>
+                                  <p className="text-sm font-medium">{suggestion.name}</p>
+                                  <p className="text-xs text-muted-foreground">
+                                    {suggestion.description || "No description"}
+                                  </p>
+                                </div>
+                                <div className="text-right text-xs text-muted-foreground">
+                                  <div>{Math.round(suggestion.relevance * 100)}%</div>
+                                  <div>{suggestion.count} issues</div>
+                                </div>
+                              </Link>
+                            ))
+                          ) : (
+                            <p className="text-sm text-muted-foreground">
+                              No sharper co-occurring tags have surfaced yet.
+                            </p>
+                          )}
+                        </>
+                      ) : (
+                        <p className="text-sm text-muted-foreground">
+                          This already reads like a concrete application surface or subsystem tag.
+                        </p>
+                      )}
+                    </div>
+
+                    <div className="mt-4 space-y-2">
+                      <p className="text-[11px] font-medium uppercase tracking-[0.14em] text-muted-foreground">
+                        Potential merges
+                      </p>
+                      {selectedMergeCandidates.length > 0 ? (
+                        selectedMergeCandidates.map((candidate) => (
+                          <Link
+                            key={candidate.name}
+                            href={tagHref(candidate.name)}
+                            className="app-subtle-surface flex items-start justify-between gap-3 px-3 py-2 transition-colors hover:bg-muted/40"
+                          >
+                            <div>
+                              <p className="text-sm font-medium">{candidate.name}</p>
+                              <p className="text-xs text-muted-foreground">
+                                {candidate.reason}
+                              </p>
+                            </div>
+                            <span className="text-xs font-medium tabular-nums text-muted-foreground">
+                              {Math.round(candidate.similarity * 100)}%
+                            </span>
+                          </Link>
+                        ))
+                      ) : (
+                        <p className="text-sm text-muted-foreground">
+                          No obvious synonym or merge candidates for this tag.
+                        </p>
+                      )}
                     </div>
 
                     <div className="mt-4 space-y-2">
@@ -628,27 +734,6 @@ function fallbackPoints(count: number) {
     const angle = (Math.PI * 2 * index) / count;
     return [Math.cos(angle), Math.sin(angle)];
   });
-}
-
-function cosineSimilarity(left: number[], right: number[]) {
-  if (left.length === 0 || left.length !== right.length) {
-    return 0;
-  }
-
-  let dotProduct = 0;
-  let leftMagnitude = 0;
-  let rightMagnitude = 0;
-  for (let index = 0; index < left.length; index += 1) {
-    dotProduct += left[index] * right[index];
-    leftMagnitude += left[index] * left[index];
-    rightMagnitude += right[index] * right[index];
-  }
-
-  if (leftMagnitude === 0 || rightMagnitude === 0) {
-    return 0;
-  }
-
-  return dotProduct / (Math.sqrt(leftMagnitude) * Math.sqrt(rightMagnitude));
 }
 
 function tagColor(name: string) {

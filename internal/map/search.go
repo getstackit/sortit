@@ -111,11 +111,13 @@ func SearchTags(storeTags []issues.Tag, queryEmbedding []float64, limit int) []R
 	}
 
 	related := make([]RelatedTag, 0, len(storeTags))
+	rankedScores := make(map[string]float64, len(storeTags))
 	for _, tag := range storeTags {
 		if len(tag.Embedding) == 0 || len(queryEmbedding) == 0 {
 			continue
 		}
 		sim := cosineSimilarity(queryEmbedding, tag.Embedding)
+		rankedScores[tag.Name] = sim - genericBucketPenalty(tag.Name)
 		related = append(related, RelatedTag{
 			Name:        tag.Name,
 			Description: tag.Description,
@@ -124,6 +126,9 @@ func SearchTags(storeTags []issues.Tag, queryEmbedding []float64, limit int) []R
 	}
 
 	slices.SortFunc(related, func(a, b RelatedTag) int {
+		if diff := cmp.Compare(rankedScores[b.Name], rankedScores[a.Name]); diff != 0 {
+			return diff
+		}
 		if diff := cmp.Compare(b.Similarity, a.Similarity); diff != 0 {
 			return diff
 		}

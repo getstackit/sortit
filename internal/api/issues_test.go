@@ -69,7 +69,7 @@ func TestIssuesEndpointListsSeededIssues(t *testing.T) {
 	server := NewServer(ServerConfig{
 		CORSOrigins: []string{"http://localhost:3000"},
 		APIPrefixes: []string{"/api"},
-		IssueStore:  newSQLiteIssueStore(t, issues.SeedIssues()),
+		IssueStore:  newSQLiteIssueStore(t, issues.FixtureIssues()),
 	})
 
 	req := httptest.NewRequest(http.MethodGet, "/api/issues", nil)
@@ -89,8 +89,8 @@ func TestIssuesEndpointListsSeededIssues(t *testing.T) {
 		t.Fatalf("failed to decode issue list response: %v", err)
 	}
 
-	if len(payload.Issues) != len(issues.SeedIssues()) {
-		t.Fatalf("expected %d seeded issues, got %d", len(issues.SeedIssues()), len(payload.Issues))
+	if len(payload.Issues) != len(issues.FixtureIssues()) {
+		t.Fatalf("expected %d seeded issues, got %d", len(issues.FixtureIssues()), len(payload.Issues))
 	}
 	if payload.Issues[0].ID != "sample-1" {
 		t.Fatalf("expected newest seeded issue first, got %q", payload.Issues[0].ID)
@@ -126,7 +126,7 @@ func TestIssuesEndpointGetsIssueByID(t *testing.T) {
 	server := NewServer(ServerConfig{
 		CORSOrigins: []string{"http://localhost:3000"},
 		APIPrefixes: []string{"/api"},
-		IssueStore:  newSQLiteIssueStore(t, issues.SeedIssues()),
+		IssueStore:  newSQLiteIssueStore(t, issues.FixtureIssues()),
 	})
 
 	req := httptest.NewRequest(http.MethodGet, "/api/issues/sample-3", nil)
@@ -158,7 +158,7 @@ func TestIssuesEndpointReturnsNotFoundForMissingIssue(t *testing.T) {
 	server := NewServer(ServerConfig{
 		CORSOrigins: []string{"http://localhost:3000"},
 		APIPrefixes: []string{"/api"},
-		IssueStore:  newSQLiteIssueStore(t, issues.SeedIssues()),
+		IssueStore:  newSQLiteIssueStore(t, issues.FixtureIssues()),
 	})
 
 	req := httptest.NewRequest(http.MethodGet, "/api/issues/missing-issue", nil)
@@ -421,9 +421,9 @@ func TestIssuesEndpointReopensIssue(t *testing.T) {
 			ID:        "issue-closed",
 			Raw:       "closed",
 			CreatedBy: "Casey",
-			CreatedAt: issues.SeedIssues()[0].CreatedAt,
+			CreatedAt: issues.FixtureIssues()[0].CreatedAt,
 			Status:    issues.StatusClosed,
-			ClosedAt:  ptrToTime(issues.SeedIssues()[0].CreatedAt.Add(time.Hour)),
+			ClosedAt:  ptrToTime(issues.FixtureIssues()[0].CreatedAt.Add(time.Hour)),
 			ClosedBy:  "Casey",
 		},
 	})
@@ -472,7 +472,7 @@ func TestIssuesEndpointExploresIssue(t *testing.T) {
 			ID:        "issue-target",
 			Raw:       "Safari export crashes on PDF download",
 			CreatedBy: "Casey",
-			CreatedAt: issues.SeedIssues()[0].CreatedAt,
+			CreatedAt: issues.FixtureIssues()[0].CreatedAt,
 			Status:    issues.StatusOpen,
 			TagScores: []issues.TagRelevance{
 				{Tag: "export", Relevance: 0.95},
@@ -485,7 +485,7 @@ func TestIssuesEndpointExploresIssue(t *testing.T) {
 			ID:        "issue-related",
 			Raw:       "PDF export fails in Safari for some users",
 			CreatedBy: "Casey",
-			CreatedAt: issues.SeedIssues()[1].CreatedAt,
+			CreatedAt: issues.FixtureIssues()[1].CreatedAt,
 			Status:    issues.StatusOpen,
 			TagScores: []issues.TagRelevance{
 				{Tag: "export", Relevance: 0.91},
@@ -498,7 +498,7 @@ func TestIssuesEndpointExploresIssue(t *testing.T) {
 			ID:        "issue-other",
 			Raw:       "Feature request for dashboard filters",
 			CreatedBy: "Casey",
-			CreatedAt: issues.SeedIssues()[2].CreatedAt,
+			CreatedAt: issues.FixtureIssues()[2].CreatedAt,
 			Status:    issues.StatusOpen,
 			TagScores: []issues.TagRelevance{
 				{Tag: "feature", Relevance: 0.95},
@@ -509,7 +509,7 @@ func TestIssuesEndpointExploresIssue(t *testing.T) {
 			ID:        "issue-closed",
 			Raw:       "Closed Safari export bug",
 			CreatedBy: "Casey",
-			CreatedAt: issues.SeedIssues()[3].CreatedAt,
+			CreatedAt: issues.FixtureIssues()[3].CreatedAt,
 			Status:    issues.StatusClosed,
 			TagScores: []issues.TagRelevance{
 				{Tag: "export", Relevance: 0.96},
@@ -595,7 +595,7 @@ func TestIssuesEndpointSearchesIssues(t *testing.T) {
 			ID:        "issue-frontend",
 			Raw:       "Frontend polish for the issue detail page",
 			CreatedBy: "Casey",
-			CreatedAt: issues.SeedIssues()[0].CreatedAt,
+			CreatedAt: issues.FixtureIssues()[0].CreatedAt,
 			Status:    issues.StatusOpen,
 			TagScores: []issues.TagRelevance{
 				{Tag: "frontend", Relevance: 0.95},
@@ -607,7 +607,7 @@ func TestIssuesEndpointSearchesIssues(t *testing.T) {
 			ID:        "issue-ui",
 			Raw:       "UI cleanup for issue cards and spacing",
 			CreatedBy: "Casey",
-			CreatedAt: issues.SeedIssues()[1].CreatedAt,
+			CreatedAt: issues.FixtureIssues()[1].CreatedAt,
 			Status:    issues.StatusOpen,
 			TagScores: []issues.TagRelevance{
 				{Tag: "frontend", Relevance: 0.74},
@@ -619,7 +619,7 @@ func TestIssuesEndpointSearchesIssues(t *testing.T) {
 			ID:        "issue-backend",
 			Raw:       "Backend queue for async enrichment",
 			CreatedBy: "Casey",
-			CreatedAt: issues.SeedIssues()[2].CreatedAt,
+			CreatedAt: issues.FixtureIssues()[2].CreatedAt,
 			Status:    issues.StatusOpen,
 			TagScores: []issues.TagRelevance{
 				{Tag: "backend", Relevance: 0.93},
@@ -630,7 +630,7 @@ func TestIssuesEndpointSearchesIssues(t *testing.T) {
 			ID:        "issue-closed",
 			Raw:       "Closed frontend cleanup follow-up",
 			CreatedBy: "Casey",
-			CreatedAt: issues.SeedIssues()[3].CreatedAt,
+			CreatedAt: issues.FixtureIssues()[3].CreatedAt,
 			Status:    issues.StatusClosed,
 			TagScores: []issues.TagRelevance{
 				{Tag: "frontend", Relevance: 0.97},
@@ -726,7 +726,7 @@ func TestIssuesEndpointExploreRejectsInvalidLimit(t *testing.T) {
 	server := NewServer(ServerConfig{
 		CORSOrigins: []string{"http://localhost:3000"},
 		APIPrefixes: []string{"/api"},
-		IssueStore:  newSQLiteIssueStore(t, issues.SeedIssues()),
+		IssueStore:  newSQLiteIssueStore(t, issues.FixtureIssues()),
 	})
 
 	req := httptest.NewRequest(http.MethodGet, "/api/issues/sample-1/explore?limit=0", nil)
@@ -820,14 +820,14 @@ func TestIssuesCompareEndpointReturnsEmbeddingSimilarity(t *testing.T) {
 			ID:        "issue-a",
 			Raw:       "first",
 			CreatedBy: "Casey",
-			CreatedAt: issues.SeedIssues()[0].CreatedAt,
+			CreatedAt: issues.FixtureIssues()[0].CreatedAt,
 			Embedding: []float64{1, 0},
 		},
 		{
 			ID:        "issue-b",
 			Raw:       "second",
 			CreatedBy: "Casey",
-			CreatedAt: issues.SeedIssues()[1].CreatedAt,
+			CreatedAt: issues.FixtureIssues()[1].CreatedAt,
 			Embedding: []float64{0.6, 0.8},
 		},
 	}); err != nil {

@@ -536,13 +536,13 @@ export function IssueDetailPage({ issueID }: { issueID: string }) {
 
   const miniMapClusters = useMemo<IssueMapCanvasCluster[]>(() => {
     return mapClusters.map((cluster) => {
-      const center = projectPoint(cluster.centerX, cluster.centerY, 320, 220);
+      const center = projectPoint(cluster.centerX, cluster.centerY, 640, 360);
 
       return {
         key: `${cluster.label}-${cluster.centerX}-${cluster.centerY}`,
         cx: center.x,
         cy: center.y,
-        radius: Math.max(cluster.radius * (320 - 36), 10),
+        radius: Math.max(cluster.radius * (640 - 36), 10),
         fill: cluster.color,
         fillOpacity: currentClusters.includes(cluster) ? 0.18 : 0.08,
         stroke: cluster.color,
@@ -558,8 +558,8 @@ export function IssueDetailPage({ issueID }: { issueID: string }) {
     }
 
     return semanticNeighbors.map(({ issue: neighbor, similarity }) => {
-      const from = projectPoint(currentMapIssue.x, currentMapIssue.y, 320, 220);
-      const to = projectPoint(neighbor.x, neighbor.y, 320, 220);
+      const from = projectPoint(currentMapIssue.x, currentMapIssue.y, 640, 360);
+      const to = projectPoint(neighbor.x, neighbor.y, 640, 360);
 
       return {
         key: `${currentMapIssue.id}-${neighbor.id}`,
@@ -576,7 +576,7 @@ export function IssueDetailPage({ issueID }: { issueID: string }) {
 
   const miniMapNodes = useMemo<IssueMapCanvasNode[]>(() => {
     return mapIssues.map((entry) => {
-      const point = projectPoint(entry.x, entry.y, 320, 220);
+      const point = projectPoint(entry.x, entry.y, 640, 360);
       const isCurrent = entry.id === currentMapIssue?.id;
       const isSemantic = semanticNeighborIds.has(entry.id);
       const isCluster = clusterNeighborIds.has(entry.id);
@@ -678,23 +678,115 @@ export function IssueDetailPage({ issueID }: { issueID: string }) {
         subtitle={issue ? `${issue.createdBy} · ${formatRelativeTime(issue.createdAt)}` : undefined}
         meta={
           issue ? (
-            <span
-              className={cn(
-                "rounded-full px-2 py-0.5 text-[11px] font-medium",
-                statusClasses(issue.status)
+            <>
+              <span
+                className={cn(
+                  "rounded-full px-2 py-0.5 text-[11px] font-medium",
+                  statusClasses(issue.status)
+                )}
+              >
+                {issue.status === "closed" ? "Closed" : "Open"}
+              </span>
+              <span className="mx-1 text-border">·</span>
+              {assignEditing ? (
+                <span className="inline-flex items-center gap-1.5">
+                  <input
+                    type="text"
+                    value={assignInput}
+                    onChange={(e) => setAssignInput(e.target.value)}
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter") {
+                        e.preventDefault();
+                        void handleAssign(assignInput);
+                      }
+                      if (e.key === "Escape") {
+                        setAssignEditing(false);
+                      }
+                    }}
+                    autoFocus
+                    placeholder="Name..."
+                    disabled={assignPending}
+                    className="min-w-0 w-28 rounded-md border border-input/80 bg-background/70 px-2 py-0.5 text-xs placeholder:text-muted-foreground/50 focus:outline-none focus:ring-2 focus:ring-ring/40"
+                  />
+                  <Button
+                    type="button"
+                    size="xs"
+                    onClick={() => void handleAssign(assignInput)}
+                    disabled={assignPending}
+                  >
+                    {assignPending ? "..." : "Save"}
+                  </Button>
+                  <Button
+                    type="button"
+                    size="xs"
+                    variant="ghost"
+                    onClick={() => setAssignEditing(false)}
+                    disabled={assignPending}
+                  >
+                    Cancel
+                  </Button>
+                </span>
+              ) : (
+                <button
+                  type="button"
+                  onClick={() => {
+                    setAssignInput(issue.assignedTo ?? "");
+                    setAssignEditing(true);
+                  }}
+                  className="group inline-flex items-center gap-1 rounded-md px-1.5 py-0.5 text-xs transition-colors hover:bg-accent/70"
+                >
+                  <UserIcon className="size-3 text-muted-foreground" />
+                  {issue.assignedTo ? (
+                    <span className="font-medium text-violet-700">{issue.assignedTo}</span>
+                  ) : (
+                    <span className="text-muted-foreground">Unassigned</span>
+                  )}
+                </button>
               )}
-            >
-              {issue.status === "closed" ? "Closed" : "Open"}
-            </span>
+              {user && !assignEditing && issue.assignedTo !== user.displayName && (
+                <Button
+                  type="button"
+                  size="xs"
+                  variant="ghost"
+                  onClick={() => void handleAssign(user.displayName)}
+                  disabled={assignPending}
+                  className="text-[11px]"
+                >
+                  {assignPending ? "..." : "Assign to me"}
+                </Button>
+              )}
+            </>
           ) : null
         }
         actions={
-          <Link
-            href="/"
-            className="rounded-md border border-border px-3 py-1 text-xs font-medium text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
-          >
-            All issues
-          </Link>
+          issue ? (
+            <div className="flex flex-wrap items-center gap-2">
+              {issue.tags.length > 0 &&
+                issue.tags.map((tag) => (
+                  <Link
+                    key={tag}
+                    href={tagHref(tag)}
+                    className="rounded-full border px-2.5 py-0.5 text-[11px] font-medium transition-colors hover:bg-accent/70"
+                    style={entityStyle(tag)}
+                  >
+                    {tag}
+                  </Link>
+                ))}
+              <Link
+                href="/"
+                className="rounded-md border border-border px-3 py-1 text-xs font-medium text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+              >
+                All issues
+              </Link>
+            </div>
+          ) : (
+            <Link
+              href="/"
+              className="rounded-md border border-border px-3 py-1 text-xs font-medium text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+            >
+              All issues
+            </Link>
+          )
         }
       />
 
@@ -820,6 +912,166 @@ export function IssueDetailPage({ issueID }: { issueID: string }) {
                     </div>
                   )}
                 </section>
+
+                {!mapError && currentMapIssue && (
+                  <section className="app-surface rounded-[1.75rem] p-6">
+                    <div className="flex flex-wrap items-start justify-between gap-3">
+                      <div>
+                        <p className="text-[11px] font-medium uppercase tracking-[0.18em] text-muted-foreground">
+                          Related context
+                        </p>
+                        <h3 className="mt-1 text-lg font-semibold tracking-tight">
+                          Map context and nearby issues
+                        </h3>
+                        <p className="mt-1 text-sm text-muted-foreground">
+                          Open issues are surfaced ahead of closed ones.
+                        </p>
+                      </div>
+                      <div className="flex flex-wrap gap-1.5">
+                        <span className="app-chip">
+                          {currentClusters.length > 0
+                            ? `${currentClusters.length} cluster${currentClusters.length === 1 ? "" : "s"}`
+                            : "No cluster"}
+                        </span>
+                        {semanticNeighbors.length > 0 && (
+                          <span className="app-chip">
+                            {semanticNeighbors.length} semantic
+                          </span>
+                        )}
+                        {clusterNeighbors.length > 0 && (
+                          <span className="app-chip">
+                            {clusterNeighbors.length} nearby
+                          </span>
+                        )}
+                      </div>
+                    </div>
+
+                    <div className="app-subtle-surface mt-4 rounded-[1.25rem] p-3">
+                      <div className="relative aspect-[16/9] w-full overflow-hidden rounded-[1rem]">
+                        <IssueMapCanvas
+                          width={640}
+                          height={360}
+                          viewBox="0 0 640 360"
+                          preserveAspectRatio="xMidYMid meet"
+                          className="absolute inset-0 h-full w-full"
+                          role="img"
+                          aria-label={`Mini map centered on ${currentMapIssue.id}`}
+                          background={
+                            <rect
+                              x="0"
+                              y="0"
+                              width="640"
+                              height="360"
+                              rx="18"
+                              fill="currentColor"
+                              className="text-background"
+                            />
+                          }
+                          clusters={miniMapClusters}
+                          edges={miniMapEdges}
+                          nodes={miniMapNodes}
+                        />
+                      </div>
+
+                      <div className="mt-3 flex flex-wrap gap-2 text-[11px] text-muted-foreground">
+                        <span className="app-chip inline-flex items-center gap-1">
+                          <span className="size-2 rounded-full bg-slate-900" />
+                          Current
+                        </span>
+                        <span className="app-chip inline-flex items-center gap-1">
+                          <span className="size-2 rounded-full bg-blue-600" />
+                          Cluster
+                        </span>
+                        <span className="app-chip inline-flex items-center gap-1">
+                          <span className="size-2 rounded-full bg-amber-500" />
+                          Semantic
+                        </span>
+                      </div>
+                    </div>
+
+                    <div className="mt-5 grid gap-5 sm:grid-cols-2">
+                      {semanticNeighbors.length > 0 && (
+                        <div>
+                          <p className="text-[11px] font-medium uppercase tracking-[0.14em] text-muted-foreground">
+                            Semantic neighbors
+                          </p>
+                          <div className="mt-2 space-y-1.5">
+                            {semanticNeighbors.map(({ issue: neighbor, similarity }) => (
+                              <Link
+                                key={neighbor.id}
+                                href={`/issues/${neighbor.id}`}
+                                className="group app-subtle-surface flex items-center gap-2 rounded-lg px-2.5 py-1.5 transition-colors hover:bg-accent/70"
+                              >
+                                <span className="size-2 rounded-full bg-amber-500" />
+                                <p className="min-w-0 flex-1 truncate text-xs">
+                                  {formatIssueTitle(neighbor.raw, 52)}
+                                </p>
+                                <span
+                                  className={cn(
+                                    "shrink-0 rounded-full px-1.5 py-0.5 text-[9px] font-medium leading-none",
+                                    statusClasses(neighbor.status)
+                                  )}
+                                >
+                                  {neighbor.status === "closed" ? "Closed" : "Open"}
+                                </span>
+                                <span className="text-[10px] tabular-nums text-muted-foreground">
+                                  {(similarity * 100).toFixed(0)}%
+                                </span>
+                              </Link>
+                            ))}
+                          </div>
+                        </div>
+                      )}
+
+                      {clusterNeighbors.length > 0 && (
+                        <div>
+                          <p className="text-[11px] font-medium uppercase tracking-[0.14em] text-muted-foreground">
+                            Clustered nearby
+                          </p>
+                          <div className="mt-2 space-y-1.5">
+                            {clusterNeighbors.map(({ issue: neighbor }) => (
+                              <Link
+                                key={neighbor.id}
+                                href={`/issues/${neighbor.id}`}
+                                className="group app-subtle-surface flex items-center gap-2 rounded-lg px-2.5 py-1.5 transition-colors hover:bg-accent/70"
+                              >
+                                <span className="size-2 rounded-full bg-blue-600" />
+                                <p className="min-w-0 flex-1 truncate text-xs">
+                                  {formatIssueTitle(neighbor.raw, 52)}
+                                </p>
+                                <span
+                                  className={cn(
+                                    "shrink-0 rounded-full px-1.5 py-0.5 text-[9px] font-medium leading-none",
+                                    statusClasses(neighbor.status)
+                                  )}
+                                >
+                                  {neighbor.status === "closed" ? "Closed" : "Open"}
+                                </span>
+                              </Link>
+                            ))}
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  </section>
+                )}
+
+                {issue.tagScores && issue.tagScores.length > 0 && (
+                  <section className="app-surface rounded-[1.75rem] p-6">
+                    <p className="text-[11px] font-medium uppercase tracking-[0.18em] text-muted-foreground">
+                      Tag relevance
+                    </p>
+                    <h3 className="mt-1 text-lg font-semibold tracking-tight">
+                      Classification confidence
+                    </h3>
+                    <p className="mt-1 text-sm text-muted-foreground">
+                      How strongly each tag applies to this issue.
+                    </p>
+                    <div className="mt-4">
+                      <TagRelevanceBars tags={issue.tagScores} />
+                    </div>
+                  </section>
+                )}
 
                 <section className="app-surface rounded-[1.75rem] p-6">
                   <div className="flex flex-wrap items-center justify-between gap-4">
@@ -983,147 +1235,6 @@ export function IssueDetailPage({ issueID }: { issueID: string }) {
               </div>
 
               <aside className="space-y-4 xl:sticky xl:top-6 xl:self-start">
-                {!mapError && currentMapIssue && (
-                  <section className="app-surface rounded-[1.75rem] p-6">
-                    <div className="flex flex-wrap items-start justify-between gap-3">
-                      <div>
-                        <p className="text-[11px] font-medium uppercase tracking-[0.18em] text-muted-foreground">
-                          Related context
-                        </p>
-                        <h3 className="mt-1 text-base font-semibold tracking-tight">
-                          Map context and nearby issues
-                        </h3>
-                        <p className="mt-1 text-sm text-muted-foreground">
-                          Open issues are surfaced ahead of closed ones.
-                        </p>
-                      </div>
-                      <div className="flex flex-wrap gap-1.5">
-                        <span className="app-chip">
-                          {currentClusters.length > 0
-                            ? `${currentClusters.length} cluster${currentClusters.length === 1 ? "" : "s"}`
-                            : "No cluster"}
-                        </span>
-                        {semanticNeighbors.length > 0 && (
-                          <span className="app-chip">
-                            {semanticNeighbors.length} semantic
-                          </span>
-                        )}
-                        {clusterNeighbors.length > 0 && (
-                          <span className="app-chip">
-                            {clusterNeighbors.length} nearby
-                          </span>
-                        )}
-                      </div>
-                    </div>
-
-                    <div className="app-subtle-surface mt-4 rounded-[1.25rem] p-3">
-                      <div className="relative aspect-[16/11] w-full overflow-hidden rounded-[1rem]">
-                        <IssueMapCanvas
-                          width={320}
-                          height={220}
-                          viewBox="0 0 320 220"
-                          preserveAspectRatio="xMidYMid meet"
-                          className="absolute inset-0 h-full w-full"
-                          role="img"
-                          aria-label={`Mini map centered on ${currentMapIssue.id}`}
-                          background={
-                            <rect
-                              x="0"
-                              y="0"
-                              width="320"
-                              height="220"
-                              rx="18"
-                              fill="currentColor"
-                              className="text-background"
-                            />
-                          }
-                          clusters={miniMapClusters}
-                          edges={miniMapEdges}
-                          nodes={miniMapNodes}
-                        />
-                      </div>
-
-                      <div className="mt-3 flex flex-wrap gap-2 text-[11px] text-muted-foreground">
-                        <span className="app-chip inline-flex items-center gap-1">
-                          <span className="size-2 rounded-full bg-slate-900" />
-                          Current
-                        </span>
-                        <span className="app-chip inline-flex items-center gap-1">
-                          <span className="size-2 rounded-full bg-blue-600" />
-                          Cluster
-                        </span>
-                        <span className="app-chip inline-flex items-center gap-1">
-                          <span className="size-2 rounded-full bg-amber-500" />
-                          Semantic
-                        </span>
-                      </div>
-                    </div>
-
-                    {semanticNeighbors.length > 0 && (
-                      <div className="mt-4">
-                        <p className="text-[11px] font-medium uppercase tracking-[0.14em] text-muted-foreground">
-                          Semantic neighbors
-                        </p>
-                        <div className="mt-2 space-y-1.5">
-                          {semanticNeighbors.map(({ issue: neighbor, similarity }) => (
-                            <Link
-                              key={neighbor.id}
-                              href={`/issues/${neighbor.id}`}
-                              className="group app-subtle-surface flex items-center gap-2 px-2.5 py-1.5 transition-colors hover:bg-accent/70"
-                            >
-                              <span className="size-2 rounded-full bg-amber-500" />
-                              <p className="min-w-0 flex-1 truncate text-xs">
-                                {formatIssueTitle(neighbor.raw, 44)}
-                              </p>
-                              <span
-                                className={cn(
-                                  "shrink-0 rounded-full px-1.5 py-0.5 text-[9px] font-medium leading-none",
-                                  statusClasses(neighbor.status)
-                                )}
-                              >
-                                {neighbor.status === "closed" ? "Closed" : "Open"}
-                              </span>
-                              <span className="text-[10px] tabular-nums text-muted-foreground">
-                                {(similarity * 100).toFixed(0)}%
-                              </span>
-                            </Link>
-                          ))}
-                        </div>
-                      </div>
-                    )}
-
-                    {clusterNeighbors.length > 0 && (
-                      <div className="mt-4">
-                        <p className="text-[11px] font-medium uppercase tracking-[0.14em] text-muted-foreground">
-                          Clustered nearby
-                        </p>
-                        <div className="mt-2 space-y-1.5">
-                          {clusterNeighbors.map(({ issue: neighbor }) => (
-                            <Link
-                              key={neighbor.id}
-                              href={`/issues/${neighbor.id}`}
-                              className="group app-subtle-surface flex items-center gap-2 px-2.5 py-1.5 transition-colors hover:bg-accent/70"
-                            >
-                              <span className="size-2 rounded-full bg-blue-600" />
-                              <p className="min-w-0 flex-1 truncate text-xs">
-                                {formatIssueTitle(neighbor.raw, 44)}
-                              </p>
-                              <span
-                                className={cn(
-                                  "shrink-0 rounded-full px-1.5 py-0.5 text-[9px] font-medium leading-none",
-                                  statusClasses(neighbor.status)
-                                )}
-                              >
-                                {neighbor.status === "closed" ? "Closed" : "Open"}
-                              </span>
-                            </Link>
-                          ))}
-                        </div>
-                      </div>
-                    )}
-                  </section>
-                )}
-
                 <section className="app-surface rounded-[1.5rem] p-5">
                   <div className="flex items-center gap-2">
                     <HashIcon className="size-4 text-muted-foreground" />
@@ -1131,124 +1242,6 @@ export function IssueDetailPage({ issueID }: { issueID: string }) {
                   </div>
 
                   <dl className="mt-4 space-y-4 text-sm">
-                    <div className="space-y-1">
-                      <dt className="text-[11px] font-medium uppercase tracking-[0.14em] text-muted-foreground">
-                        Status
-                      </dt>
-                      <dd>
-                        <span
-                          className={cn(
-                            "inline-flex rounded-full px-2.5 py-1 text-xs font-medium",
-                            statusClasses(issue.status)
-                          )}
-                        >
-                          {issue.status === "closed" ? "Closed" : "Open"}
-                        </span>
-                      </dd>
-                    </div>
-
-                    <div className="space-y-1">
-                      <dt className="text-[11px] font-medium uppercase tracking-[0.14em] text-muted-foreground">
-                        Assigned to
-                      </dt>
-                      <dd>
-                        {assignEditing ? (
-                          <div className="flex items-center gap-1.5">
-                            <input
-                              type="text"
-                              value={assignInput}
-                              onChange={(e) => setAssignInput(e.target.value)}
-                              onKeyDown={(e) => {
-                                if (e.key === "Enter") {
-                                  e.preventDefault();
-                                  void handleAssign(assignInput);
-                                }
-                                if (e.key === "Escape") {
-                                  setAssignEditing(false);
-                                }
-                              }}
-                              autoFocus
-                              placeholder="Name..."
-                              disabled={assignPending}
-                              className="min-w-0 flex-1 rounded-lg border border-input/80 bg-background/70 px-2 py-1 text-sm placeholder:text-muted-foreground/50 focus:outline-none focus:ring-2 focus:ring-ring/40"
-                            />
-                            <Button
-                              type="button"
-                              size="xs"
-                              onClick={() => void handleAssign(assignInput)}
-                              disabled={assignPending}
-                            >
-                              {assignPending ? "..." : "Save"}
-                            </Button>
-                            <Button
-                              type="button"
-                              size="xs"
-                              variant="ghost"
-                              onClick={() => setAssignEditing(false)}
-                              disabled={assignPending}
-                            >
-                              Cancel
-                            </Button>
-                          </div>
-                        ) : (
-                          <div className="flex items-center gap-1.5">
-                            <button
-                              type="button"
-                              onClick={() => {
-                                setAssignInput(issue.assignedTo ?? "");
-                                setAssignEditing(true);
-                              }}
-                              className="group flex items-center gap-1.5 rounded-lg px-1 py-0.5 text-sm transition-colors hover:bg-accent/70"
-                            >
-                              <UserIcon className="size-3.5 text-muted-foreground" />
-                              {issue.assignedTo ? (
-                                <span className="font-medium text-violet-700">{issue.assignedTo}</span>
-                              ) : (
-                                <span className="text-muted-foreground">Unassigned</span>
-                              )}
-                            </button>
-                            {user && issue.assignedTo !== user.displayName && (
-                              <Button
-                                type="button"
-                                size="xs"
-                                variant="ghost"
-                                onClick={() => void handleAssign(user.displayName)}
-                                disabled={assignPending}
-                              >
-                                {assignPending ? "..." : "Assign to me"}
-                              </Button>
-                            )}
-                          </div>
-                        )}
-                      </dd>
-                    </div>
-
-                    <div className="space-y-1">
-                      <dt className="text-[11px] font-medium uppercase tracking-[0.14em] text-muted-foreground">
-                        Tags
-                      </dt>
-                      <dd className="flex flex-wrap gap-1.5">
-                        {issue.tags.length > 0 ? (
-                          issue.tags.map((tag) => (
-                            <Link
-                              key={tag}
-                              href={tagHref(tag)}
-                              className="rounded-full border px-2.5 py-1 text-[11px] font-medium transition-colors hover:bg-accent/70"
-                              style={entityStyle(tag)}
-                            >
-                              {tag}
-                            </Link>
-                          ))
-                        ) : (
-                          <span className="text-sm text-muted-foreground">None</span>
-                        )}
-                      </dd>
-                    </div>
-
-                    {issue.tagScores && issue.tagScores.length > 0 && (
-                      <TagRelevanceBars tags={issue.tagScores} />
-                    )}
-
                     <div className="space-y-1">
                       <dt className="text-[11px] font-medium uppercase tracking-[0.14em] text-muted-foreground">
                         Discussion

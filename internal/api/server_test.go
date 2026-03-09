@@ -244,7 +244,7 @@ func TestMapEdgesEndpointReturnsEdgeResponse(t *testing.T) {
 	server := NewServer(ServerConfig{
 		CORSOrigins: []string{"http://localhost:3000"},
 		APIPrefixes: []string{"/api"},
-		IssueStore:  issues.NewInMemoryStore(issues.SeedIssues()),
+		IssueStore:  issues.NewInMemoryStore(issues.FixtureIssues()),
 	})
 	handler := server.Handler()
 
@@ -269,7 +269,7 @@ func TestMapEdgesEndpointReturnsEdgeResponse(t *testing.T) {
 		t.Fatalf("failed to decode edge response: %v", err)
 	}
 
-	expected, err := issuemap.BuildEdgeResponseFromIssues(issues.SeedIssues(), &issuemap.Viewport{
+	expected, err := issuemap.BuildEdgeResponseFromIssues(issues.FixtureIssues(), &issuemap.Viewport{
 		XMin: 0.15,
 		XMax: 0.45,
 		YMin: 0.15,
@@ -293,7 +293,7 @@ func TestMapEdgesEndpointUsesDefaultViewport(t *testing.T) {
 	server := NewServer(ServerConfig{
 		CORSOrigins: []string{"http://localhost:3000"},
 		APIPrefixes: []string{"/api"},
-		IssueStore:  issues.NewInMemoryStore(issues.SeedIssues()),
+		IssueStore:  issues.NewInMemoryStore(issues.FixtureIssues()),
 	})
 	handler := server.Handler()
 
@@ -311,7 +311,7 @@ func TestMapEdgesEndpointUsesDefaultViewport(t *testing.T) {
 		t.Fatalf("failed to decode edge response: %v", err)
 	}
 
-	expected, err := issuemap.BuildEdgeResponseFromIssues(issues.SeedIssues(), nil)
+	expected, err := issuemap.BuildEdgeResponseFromIssues(issues.FixtureIssues(), nil)
 	if err != nil {
 		t.Fatalf("BuildEdgeResponse returned error: %v", err)
 	}
@@ -325,7 +325,7 @@ func TestMapEdgesEndpointHonorsEdgeThreshold(t *testing.T) {
 	server := NewServer(ServerConfig{
 		CORSOrigins: []string{"http://localhost:3000"},
 		APIPrefixes: []string{"/api"},
-		IssueStore:  issues.NewInMemoryStore(issues.SeedIssues()),
+		IssueStore:  issues.NewInMemoryStore(issues.FixtureIssues()),
 	})
 	handler := server.Handler()
 
@@ -344,7 +344,7 @@ func TestMapEdgesEndpointHonorsEdgeThreshold(t *testing.T) {
 	}
 
 	expected, err := issuemap.BuildEdgeResponseFromIssuesWithTagsAndThreshold(
-		issues.SeedIssues(),
+		issues.FixtureIssues(),
 		nil,
 		nil,
 		0.70,
@@ -359,7 +359,7 @@ func TestMapEdgesEndpointHonorsEdgeThreshold(t *testing.T) {
 }
 
 func TestMapEdgesEndpointZoomedInViewport(t *testing.T) {
-	seed := issues.SeedIssues()
+	seed := issues.FixtureIssues()
 	server := NewServer(ServerConfig{
 		CORSOrigins: []string{"http://localhost:3000"},
 		APIPrefixes: []string{"/api"},
@@ -436,7 +436,7 @@ func TestMapEdgesEndpointZoomedInViewport(t *testing.T) {
 }
 
 func TestMapEdgesEndpointVeryTightViewport(t *testing.T) {
-	seed := issues.SeedIssues()
+	seed := issues.FixtureIssues()
 	server := NewServer(ServerConfig{
 		CORSOrigins: []string{"http://localhost:3000"},
 		APIPrefixes: []string{"/api"},
@@ -484,7 +484,7 @@ func TestMapEdgesEndpointVeryTightViewport(t *testing.T) {
 }
 
 func TestMapEdgesEndpointExactPointViewport(t *testing.T) {
-	seed := issues.SeedIssues()
+	seed := issues.FixtureIssues()
 	server := NewServer(ServerConfig{
 		CORSOrigins: []string{"http://localhost:3000"},
 		APIPrefixes: []string{"/api"},

@@ -3,6 +3,8 @@ package mcp
 import (
 	"context"
 	"encoding/json"
+	"errors"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -203,6 +205,94 @@ func TestHandleGetIssueNotFound(t *testing.T) {
 	}
 }
 
+func TestDoJSONRequestWrapsTransportErrors(t *testing.T) {
+	t.Parallel()
+
+	sentinel := errors.New("dial failed")
+	handler := &handlers{
+		baseURL: "http://example.com",
+		client: &http.Client{
+			Transport: roundTripFunc(func(*http.Request) (*http.Response, error) {
+				return nil, sentinel
+			}),
+		},
+	}
+
+	var payload map[string]string
+	err := handler.doJSONRequest(context.Background(), http.MethodGet, "/status", nil, &payload)
+	if err == nil {
+		t.Fatal("expected transport error")
+	}
+	if !errors.Is(err, sentinel) {
+		t.Fatalf("expected wrapped sentinel error, got %v", err)
+	}
+}
+
+func TestDoJSONRequestReturnsTypedAPIError(t *testing.T) {
+	t.Parallel()
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusUnauthorized)
+		if err := json.NewEncoder(w).Encode(map[string]string{"error": "unauthorized"}); err != nil {
+			t.Fatalf("encode response: %v", err)
+		}
+	}))
+	defer server.Close()
+
+	handler := &handlers{
+		baseURL: server.URL,
+		client:  server.Client(),
+	}
+
+	var payload map[string]string
+	err := handler.doJSONRequest(context.Background(), http.MethodGet, "/status", nil, &payload)
+	if err == nil {
+		t.Fatal("expected API error")
+	}
+
+	var apiErr *apiError
+	if !errors.As(err, &apiErr) {
+		t.Fatalf("expected typed apiError, got %T", err)
+	}
+	if apiErr.statusCode != http.StatusUnauthorized {
+		t.Fatalf("expected status %d, got %d", http.StatusUnauthorized, apiErr.statusCode)
+	}
+	if apiErr.message != "unauthorized" {
+		t.Fatalf("expected message %q, got %q", "unauthorized", apiErr.message)
+	}
+	if got := err.Error(); got != "Splat API error (401): unauthorized" {
+		t.Fatalf("unexpected error string %q", got)
+	}
+}
+
+func TestDoJSONRequestWrapsDecodeErrors(t *testing.T) {
+	t.Parallel()
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		if _, err := io.WriteString(w, "{"); err != nil {
+			t.Fatalf("write response: %v", err)
+		}
+	}))
+	defer server.Close()
+
+	handler := &handlers{
+		baseURL: server.URL,
+		client:  server.Client(),
+	}
+
+	var payload map[string]string
+	err := handler.doJSONRequest(context.Background(), http.MethodGet, "/status", nil, &payload)
+	if err == nil {
+		t.Fatal("expected decode error")
+	}
+
+	var syntaxErr *json.SyntaxError
+	if !errors.As(err, &syntaxErr) {
+		t.Fatalf("expected wrapped json syntax error, got %T", err)
+	}
+}
+
 func TestHandleSearchIssues(t *testing.T) {
 	t.Parallel()
 
@@ -277,6 +367,12 @@ func TestHandleSearchIssues(t *testing.T) {
 	if firstText(result) == "" {
 		t.Fatal("expected text fallback in MCP result")
 	}
+}
+
+type roundTripFunc func(*http.Request) (*http.Response, error)
+
+func (fn roundTripFunc) RoundTrip(req *http.Request) (*http.Response, error) {
+	return fn(req)
 }
 
 func TestHandleSearchIssuesRejectsInvalidStatus(t *testing.T) {

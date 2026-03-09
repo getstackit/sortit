@@ -146,33 +146,6 @@ func (s *IssueEnricher) AnalyzeCombineInput(
 	}, nil
 }
 
-func (s *IssueEnricher) AnalyzeSeedIssues(ctx context.Context, seeds []issues.Issue) ([]issues.Issue, error) {
-	enriched := make([]issues.Issue, len(seeds))
-	for i, seed := range seeds {
-		analyzed, err := s.AnalyzeCreateInput(ctx, issues.CreateInput{
-			Raw:  seed.Raw,
-			Tags: seed.Tags,
-		})
-		if err != nil {
-			return nil, err
-		}
-
-		enriched[i] = issues.Issue{
-			ID:        seed.ID,
-			Raw:       seed.Raw,
-			Tags:      append([]string(nil), seed.Tags...),
-			CreatedBy: seed.CreatedBy,
-			CreatedAt: seed.CreatedAt,
-			TagScores: analyzed.TagScores,
-			Embedding: analyzed.Embedding,
-			Status:    seed.Status,
-			ClosedAt:  seed.ClosedAt,
-			ClosedBy:  seed.ClosedBy,
-		}
-	}
-	return enriched, nil
-}
-
 func IssueTagScoresFromAnalysis(scores []ai.TagScore) []issues.TagRelevance {
 	if len(scores) == 0 {
 		return nil

@@ -57,6 +57,10 @@ vi.mock("@/components/site-header", () => ({
   ),
 }));
 
+vi.mock("@/components/auth-provider", () => ({
+  useAuth: () => ({ user: { displayName: "TestUser" }, loading: false }),
+}));
+
 vi.mock("@/features/map/api", () => ({
   fetchMapData: vi.fn(),
 }));

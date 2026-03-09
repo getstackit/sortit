@@ -799,7 +799,7 @@ func displayTags(explicitTags []string, scores []TagRelevance) []string {
 		return 0
 	})
 
-	out := make([]string, 0, minInt(3, len(normalized)))
+	out := make([]string, 0, min(3, len(normalized)))
 	for _, score := range normalized {
 		if score.Tag == "" {
 			continue
@@ -976,13 +976,6 @@ func defaultActor(value string) string {
 		return "You"
 	}
 	return value
-}
-
-func minInt(a, b int) int {
-	if a < b {
-		return a
-	}
-	return b
 }
 
 func initialDiscussion(issue Issue) []IssuePost {

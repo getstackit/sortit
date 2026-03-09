@@ -2,7 +2,8 @@ package issues
 
 import "time"
 
-func SeedIssues() []Issue {
+// FixtureIssues returns a set of sample issues for use in tests.
+func FixtureIssues() []Issue {
 	return []Issue{
 		{
 			ID:        "sample-1",

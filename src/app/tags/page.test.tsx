@@ -1,6 +1,7 @@
 import type { ReactNode } from "react";
 import { render, screen, waitFor } from "@testing-library/react";
 import TagsPage from "@/app/tags/page";
+import { useIssues } from "@/hooks/use-issues";
 import { fetchTags, type TagRecord } from "@/lib/tags";
 
 vi.mock("@/components/app-shell", () => ({
@@ -44,6 +45,10 @@ vi.mock("@/components/ui/skeleton", () => ({
   Skeleton: () => <div>Loading</div>,
 }));
 
+vi.mock("@/hooks/use-issues", () => ({
+  useIssues: vi.fn(),
+}));
+
 vi.mock("@/lib/tags", async () => {
   const actual = await vi.importActual<typeof import("@/lib/tags")>("@/lib/tags");
   return {
@@ -64,6 +69,11 @@ function makeTag(overrides: Partial<TagRecord>): TagRecord {
 describe("TagsPage", () => {
   beforeEach(() => {
     vi.mocked(fetchTags).mockReset();
+    vi.mocked(useIssues).mockReturnValue({
+      data: [],
+      error: undefined,
+      isLoading: false,
+    } as ReturnType<typeof useIssues>);
   });
 
   it("defaults the inspector to the first embedded tag and avoids key warnings", async () => {
@@ -97,5 +107,40 @@ describe("TagsPage", () => {
     });
 
     consoleError.mockRestore();
+  });
+
+  it("shows specificity and merge insights for generic bucket tags", async () => {
+    vi.mocked(fetchTags).mockResolvedValue([
+      makeTag({ name: "backend", description: "Generic backend surface", embedding: [1, 0] }),
+      makeTag({ name: "billing", description: "Invoices and account charges", embedding: [0.98, 0.02] }),
+      makeTag({ name: "payments", description: "Payment processing", embedding: [0.97, 0.03] }),
+      makeTag({ name: "back end", description: "Spacing variant", embedding: [1, 0] }),
+    ]);
+    vi.mocked(useIssues).mockReturnValue({
+      data: [
+        {
+          id: "issue-1",
+          raw: "Billing bug",
+          tags: ["backend", "billing"],
+          tagScores: [
+            { tag: "backend", relevance: 0.9 },
+            { tag: "billing", relevance: 0.8 },
+          ],
+          createdBy: "Jonathan Goldman",
+          createdAt: new Date("2026-03-08T12:00:00Z").toISOString(),
+          status: "open",
+        },
+      ],
+      error: undefined,
+      isLoading: false,
+    } as ReturnType<typeof useIssues>);
+
+    render(<TagsPage />);
+
+    expect(await screen.findByText("Specificity")).toBeInTheDocument();
+    expect(screen.getByText("Generic bucket")).toBeInTheDocument();
+    expect(screen.getAllByText("Invoices and account charges").length).toBeGreaterThan(0);
+    expect(screen.getByText("Potential merges")).toBeInTheDocument();
+    expect(screen.getByText("Name variant")).toBeInTheDocument();
   });
 });
