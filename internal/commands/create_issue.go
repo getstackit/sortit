@@ -20,20 +20,17 @@ type CreateIssueHandler struct {
 }
 
 func (h CreateIssueHandler) Handle(ctx context.Context, input CreateIssue) (issues.Issue, error) {
+	if _, err := issues.ValidateRaw(input.Raw, "raw"); err != nil {
+		return issues.Issue{}, err
+	}
+
+	id := issues.NewIssueID()
+
 	enriched, err := h.Enricher.AnalyzeCreateInput(ctx, issues.CreateInput{
 		Raw:       input.Raw,
 		Tags:      input.Tags,
 		CreatedBy: input.CreatedBy,
 	})
-	if err != nil {
-		return issues.Issue{}, err
-	}
-
-	if _, err := issues.ValidateRaw(enriched.Raw, "raw"); err != nil {
-		return issues.Issue{}, err
-	}
-
-	id, err := h.Store.NextIssueID(ctx)
 	if err != nil {
 		return issues.Issue{}, err
 	}

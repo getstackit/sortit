@@ -105,14 +105,6 @@ func (s *ObservedStore) SaveLink(ctx context.Context, link IssueLink) error {
 	return nil
 }
 
-func (s *ObservedStore) NextIssueID(ctx context.Context) (string, error) {
-	return s.base.NextIssueID(ctx)
-}
-
-func (s *ObservedStore) NextOperationID(ctx context.Context) (string, error) {
-	return s.base.NextOperationID(ctx)
-}
-
 type observedTagStore interface {
 	ListTags(context.Context) ([]Tag, error)
 	UpsertTags(context.Context, []Tag) error

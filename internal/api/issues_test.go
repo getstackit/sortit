@@ -35,9 +35,7 @@ func (s failingIssueStore) UpdateIssueFields(context.Context, string, issues.Iss
 	return nil
 }
 func (s failingIssueStore) SaveOperation(context.Context, issues.IssueOperation) error { return nil }
-func (s failingIssueStore) SaveLink(context.Context, issues.IssueLink) error           { return nil }
-func (s failingIssueStore) NextIssueID(context.Context) (string, error)                { return "", nil }
-func (s failingIssueStore) NextOperationID(context.Context) (string, error)            { return "", nil }
+func (s failingIssueStore) SaveLink(context.Context, issues.IssueLink) error { return nil }
 
 func TestIssuesEndpointListsSeededIssues(t *testing.T) {
 	server := NewServer(ServerConfig{

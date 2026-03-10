@@ -2,6 +2,7 @@ package issues
 
 import (
 	"context"
+	"encoding/json"
 	"sync"
 	"testing"
 	"time"
@@ -18,10 +19,7 @@ var issuesPostgresHarness struct {
 func TestPostgresStoreCreateListAndGet(t *testing.T) {
 	store := newPostgresTestStore(t)
 
-	id, err := store.NextIssueID(context.Background())
-	if err != nil {
-		t.Fatalf("next issue id: %v", err)
-	}
+	id := NewIssueID()
 
 	issue := BuildNewIssue(id, CreateInput{
 		Raw:       "  add postgres storage  ",
@@ -34,8 +32,8 @@ func TestPostgresStoreCreateListAndGet(t *testing.T) {
 		t.Fatalf("save issue: %v", err)
 	}
 
-	if issue.ID != "issue-000001" {
-		t.Fatalf("expected first generated ID, got %q", issue.ID)
+	if issue.ID == "" {
+		t.Fatal("expected non-empty generated ID")
 	}
 	if issue.Raw != "add postgres storage" {
 		t.Fatalf("expected trimmed raw value, got %q", issue.Raw)
@@ -85,10 +83,7 @@ func TestPostgresStoreCreateListAndGet(t *testing.T) {
 func TestPostgresStoreRefineAppendsDiscussionAndUpdatesCanonicalIssue(t *testing.T) {
 	store := newPostgresTestStore(t)
 
-	id, err := store.NextIssueID(context.Background())
-	if err != nil {
-		t.Fatalf("next issue id: %v", err)
-	}
+	id := NewIssueID()
 
 	issue := BuildNewIssue(id, CreateInput{
 		Raw:       "export fails on ipad",
@@ -161,10 +156,7 @@ func TestPostgresStoreRefineAppendsDiscussionAndUpdatesCanonicalIssue(t *testing
 func TestPostgresStoreCloseAndReopenIssue(t *testing.T) {
 	store := newPostgresTestStore(t)
 
-	id, err := store.NextIssueID(context.Background())
-	if err != nil {
-		t.Fatalf("next issue id: %v", err)
-	}
+	id := NewIssueID()
 
 	issue := BuildNewIssue(id, CreateInput{Raw: "close me"})
 	if err := store.SaveIssue(context.Background(), issue); err != nil {
@@ -304,15 +296,38 @@ func TestPostgresStoreListFiltered(t *testing.T) {
 	}
 }
 
+func TestPostgresStoreDerivedCorpusProjectionRoundTrip(t *testing.T) {
+	store := newPostgresTestStore(t)
+	ctx := context.Background()
+
+	payload := []byte(`{"issues":[],"tags":[]}`)
+	if err := store.SaveDerivedCorpusProjection(ctx, 7, payload); err != nil {
+		t.Fatalf("save derived corpus projection: %v", err)
+	}
+
+	loaded, err := store.GetDerivedCorpusProjection(ctx, 7)
+	if err != nil {
+		t.Fatalf("get derived corpus projection: %v", err)
+	}
+
+	var decoded map[string]any
+	if err := json.Unmarshal(loaded, &decoded); err != nil {
+		t.Fatalf("decode loaded projection: %v", err)
+	}
+	if tags, ok := decoded["tags"].([]any); !ok || len(tags) != 0 {
+		t.Fatalf("expected empty tags, got %#v", decoded["tags"])
+	}
+	if issuesPayload, ok := decoded["issues"].([]any); !ok || len(issuesPayload) != 0 {
+		t.Fatalf("expected empty issues, got %#v", decoded["issues"])
+	}
+}
+
 func TestPostgresStorePersistsIssueRelationshipsAndOperationHistory(t *testing.T) {
 	store := newPostgresTestStore(t)
 	ctx := context.Background()
 
 	// Create parent issue
-	parentID, err := store.NextIssueID(ctx)
-	if err != nil {
-		t.Fatalf("next issue id: %v", err)
-	}
+	parentID := NewIssueID()
 	parent := BuildNewIssue(parentID, CreateInput{
 		Raw:       "Large onboarding redesign",
 		CreatedBy: "Casey",
@@ -324,10 +339,7 @@ func TestPostgresStorePersistsIssueRelationshipsAndOperationHistory(t *testing.T
 	}
 
 	// Create child issues (simulating split)
-	child1ID, err := store.NextIssueID(ctx)
-	if err != nil {
-		t.Fatalf("next issue id: %v", err)
-	}
+	child1ID := NewIssueID()
 	child1 := BuildNewIssue(child1ID, CreateInput{
 		Raw:       "Add onboarding checklist",
 		CreatedBy: "Casey",
@@ -337,10 +349,7 @@ func TestPostgresStorePersistsIssueRelationshipsAndOperationHistory(t *testing.T
 		t.Fatalf("save child1: %v", err)
 	}
 
-	child2ID, err := store.NextIssueID(ctx)
-	if err != nil {
-		t.Fatalf("next issue id: %v", err)
-	}
+	child2ID := NewIssueID()
 	child2 := BuildNewIssue(child2ID, CreateInput{
 		Raw:       "Improve invite acceptance copy",
 		CreatedBy: "Casey",
@@ -351,10 +360,7 @@ func TestPostgresStorePersistsIssueRelationshipsAndOperationHistory(t *testing.T
 	}
 
 	// Create split operation
-	splitOpID, err := store.NextOperationID(ctx)
-	if err != nil {
-		t.Fatalf("next op id: %v", err)
-	}
+	splitOpID := NewOperationID()
 	splitOp := IssueOperation{
 		ID:        splitOpID,
 		Kind:      IssueOperationKindSplit,
@@ -397,10 +403,7 @@ func TestPostgresStorePersistsIssueRelationshipsAndOperationHistory(t *testing.T
 	}
 
 	// Create link between children
-	linkOpID, err := store.NextOperationID(ctx)
-	if err != nil {
-		t.Fatalf("next op id: %v", err)
-	}
+	linkOpID := NewOperationID()
 	linkOp := IssueOperation{
 		ID:        linkOpID,
 		Kind:      IssueOperationKindLink,
@@ -425,10 +428,7 @@ func TestPostgresStorePersistsIssueRelationshipsAndOperationHistory(t *testing.T
 	}
 
 	// Combine children into new issue
-	combinedID, err := store.NextIssueID(ctx)
-	if err != nil {
-		t.Fatalf("next issue id: %v", err)
-	}
+	combinedID := NewIssueID()
 	combined := BuildNewIssue(combinedID, CreateInput{
 		Raw:       "Deliver a tighter onboarding flow with checklist and invite improvements.",
 		CreatedBy: "Taylor",
@@ -439,10 +439,7 @@ func TestPostgresStorePersistsIssueRelationshipsAndOperationHistory(t *testing.T
 		t.Fatalf("save combined issue: %v", err)
 	}
 
-	combineOpID, err := store.NextOperationID(ctx)
-	if err != nil {
-		t.Fatalf("next op id: %v", err)
-	}
+	combineOpID := NewOperationID()
 	combineOp := IssueOperation{
 		ID:        combineOpID,
 		Kind:      IssueOperationKindCombine,
@@ -527,39 +524,33 @@ func TestPostgresStorePersistsIssueRelationshipsAndOperationHistory(t *testing.T
 	}
 }
 
-func TestPostgresStoreReplaceResetsSequenceFromLoadedItems(t *testing.T) {
+func TestPostgresStoreReplaceAndCreateWithULID(t *testing.T) {
 	store := newPostgresTestStore(t)
 
 	if err := store.Replace(context.Background(), FixtureIssues()); err != nil {
 		t.Fatalf("replace issues with seeds: %v", err)
 	}
 
-	id, err := store.NextIssueID(context.Background())
-	if err != nil {
-		t.Fatalf("next issue id: %v", err)
-	}
+	id := NewIssueID()
 	issue := BuildNewIssue(id, CreateInput{Raw: "created after sample load"})
 	if err := store.SaveIssue(context.Background(), issue); err != nil {
 		t.Fatalf("save issue after replace: %v", err)
 	}
-	if issue.ID != "issue-000007" {
-		t.Fatalf("expected sequence to continue after seeded items, got %q", issue.ID)
+	if len(issue.ID) != 26 {
+		t.Fatalf("expected ULID (26 chars), got %q", issue.ID)
 	}
 
 	if err := store.Replace(context.Background(), nil); err != nil {
 		t.Fatalf("clear store: %v", err)
 	}
 
-	resetID, err := store.NextIssueID(context.Background())
-	if err != nil {
-		t.Fatalf("next issue id: %v", err)
-	}
+	resetID := NewIssueID()
 	resetIssue := BuildNewIssue(resetID, CreateInput{Raw: "created after reset"})
 	if err := store.SaveIssue(context.Background(), resetIssue); err != nil {
 		t.Fatalf("save issue after reset: %v", err)
 	}
-	if resetIssue.ID != "issue-000001" {
-		t.Fatalf("expected sequence reset after clearing store, got %q", resetIssue.ID)
+	if len(resetIssue.ID) != 26 {
+		t.Fatalf("expected ULID (26 chars), got %q", resetIssue.ID)
 	}
 }
 

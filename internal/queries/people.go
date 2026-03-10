@@ -20,8 +20,7 @@ type PersonTagProfile struct {
 }
 
 type GetPersonProfileHandler struct {
-	Store     issues.Store
-	ReadModel *ReadModelLoader
+	Store issues.Store
 }
 
 func (h GetPersonProfileHandler) Handle(ctx context.Context, person string, filter IssueStatusFilter) (PersonTagProfile, error) {
@@ -49,14 +48,6 @@ func (h GetPersonProfileHandler) Handle(ctx context.Context, person string, filt
 		return buildPersonTagProfile(allIssues, person, filter), nil
 	}
 
-	if h.ReadModel != nil {
-		model, err := h.ReadModel.Current(ctx)
-		if err != nil {
-			return PersonTagProfile{}, err
-		}
-		return buildPersonTagProfile(model.Corpus.Issues, person, filter), nil
-	}
-
 	return PersonTagProfile{}, nil
 }
 
@@ -78,8 +69,7 @@ type WorkCorrelationsResult struct {
 }
 
 type WorkCorrelationsHandler struct {
-	Store     issues.Store
-	ReadModel *ReadModelLoader
+	Store issues.Store
 }
 
 func (h WorkCorrelationsHandler) Handle(ctx context.Context, filter IssueStatusFilter) (WorkCorrelationsResult, error) {
@@ -99,14 +89,6 @@ func (h WorkCorrelationsHandler) Handle(ctx context.Context, filter IssueStatusF
 			return WorkCorrelationsResult{}, err
 		}
 		return buildWorkCorrelations(allIssues, filter), nil
-	}
-
-	if h.ReadModel != nil {
-		model, err := h.ReadModel.Current(ctx)
-		if err != nil {
-			return WorkCorrelationsResult{}, err
-		}
-		return buildWorkCorrelations(model.Corpus.Issues, filter), nil
 	}
 
 	return WorkCorrelationsResult{Correlations: []PersonCorrelation{}}, nil

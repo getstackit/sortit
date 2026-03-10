@@ -742,28 +742,6 @@ func (q *Queries) ListTags(ctx context.Context) ([]Tag, error) {
 	return items, nil
 }
 
-const nextIssueOperationSeq = `-- name: NextIssueOperationSeq :one
-SELECT nextval('issue_operation_seq')
-`
-
-func (q *Queries) NextIssueOperationSeq(ctx context.Context) (int64, error) {
-	row := q.db.QueryRowContext(ctx, nextIssueOperationSeq)
-	var nextval int64
-	err := row.Scan(&nextval)
-	return nextval, err
-}
-
-const nextIssueSeq = `-- name: NextIssueSeq :one
-SELECT nextval('issue_seq')
-`
-
-func (q *Queries) NextIssueSeq(ctx context.Context) (int64, error) {
-	row := q.db.QueryRowContext(ctx, nextIssueSeq)
-	var nextval int64
-	err := row.Scan(&nextval)
-	return nextval, err
-}
-
 const reopenIssue = `-- name: ReopenIssue :exec
 UPDATE issues
 SET status = 'open',
@@ -774,33 +752,6 @@ WHERE id = $1
 
 func (q *Queries) ReopenIssue(ctx context.Context, id string) error {
 	_, err := q.db.ExecContext(ctx, reopenIssue, id)
-	return err
-}
-
-const resetIssueOperationSeq = `-- name: ResetIssueOperationSeq :exec
-SELECT setval('issue_operation_seq', 1, false)
-`
-
-func (q *Queries) ResetIssueOperationSeq(ctx context.Context) error {
-	_, err := q.db.ExecContext(ctx, resetIssueOperationSeq)
-	return err
-}
-
-const resetIssueSeq = `-- name: ResetIssueSeq :exec
-SELECT setval('issue_seq', 1, false)
-`
-
-func (q *Queries) ResetIssueSeq(ctx context.Context) error {
-	_, err := q.db.ExecContext(ctx, resetIssueSeq)
-	return err
-}
-
-const setIssueSeq = `-- name: SetIssueSeq :exec
-SELECT setval('issue_seq', $1, true)
-`
-
-func (q *Queries) SetIssueSeq(ctx context.Context, setval int64) error {
-	_, err := q.db.ExecContext(ctx, setIssueSeq, setval)
 	return err
 }
 

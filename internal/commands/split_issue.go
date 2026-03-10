@@ -47,10 +47,7 @@ func (h SplitIssueHandler) Handle(ctx context.Context, input SplitIssue) (issues
 	note := strings.TrimSpace(input.Note)
 	createdAt := time.Now().UTC()
 
-	opID, err := h.Store.NextOperationID(ctx)
-	if err != nil {
-		return issues.IssueOperationResult{}, err
-	}
+	opID := issues.NewOperationID()
 
 	operation := issues.IssueOperation{
 		ID:        opID,
@@ -83,10 +80,7 @@ func (h SplitIssueHandler) Handle(ctx context.Context, input SplitIssue) (issues
 			return issues.IssueOperationResult{}, fmt.Errorf("child raw is required")
 		}
 
-		childID, err := h.Store.NextIssueID(ctx)
-		if err != nil {
-			return issues.IssueOperationResult{}, err
-		}
+		childID := issues.NewIssueID()
 
 		childIssue := issues.BuildNewIssue(childID, enriched)
 		childIssue.CreatedAt = createdAt

@@ -7,7 +7,6 @@ import (
 	"slices"
 	"strings"
 	"sync"
-	"sync/atomic"
 	"time"
 
 	"splat/internal/domain"
@@ -15,6 +14,7 @@ import (
 
 var ErrNotFound = errors.New("issue not found")
 var ErrIssueClosed = errors.New("issue is closed")
+var ErrDerivedCorpusNotFound = errors.New("derived corpus not found")
 
 type IssueStatus string
 
@@ -194,10 +194,11 @@ type Store interface {
 	UpdateIssueFields(ctx context.Context, id string, fields IssueFieldUpdate) error
 	SaveOperation(ctx context.Context, op IssueOperation) error
 	SaveLink(ctx context.Context, link IssueLink) error
+}
 
-	// ID generation
-	NextIssueID(ctx context.Context) (string, error)
-	NextOperationID(ctx context.Context) (string, error)
+type DerivedCorpusProjectionStore interface {
+	GetDerivedCorpusProjection(context.Context, uint64) ([]byte, error)
+	SaveDerivedCorpusProjection(context.Context, uint64, []byte) error
 }
 
 // IssueFieldUpdate describes which fields to update on an issue.
@@ -234,8 +235,6 @@ type InMemoryStore struct {
 	mu         sync.RWMutex
 	issues     []Issue
 	discussion map[string][]IssuePost
-	nextSeq    atomic.Uint64
-	nextOpSeq  atomic.Uint64
 	links      []IssueLink
 	operations []IssueOperation
 	events     []Event
@@ -252,7 +251,6 @@ func NewInMemoryStore(seed []Issue) *InMemoryStore {
 	}
 
 	slices.SortStableFunc(store.issues, compareIssueOrder)
-	store.nextSeq.Store(uint64(len(seed)))
 	return store
 }
 
@@ -296,7 +294,6 @@ func (s *InMemoryStore) Replace(_ context.Context, next []Issue) error {
 	s.links = nil
 	s.operations = nil
 	s.events = nil
-	s.nextOpSeq.Store(0)
 	for _, issue := range items {
 		s.discussion[issue.ID] = initialDiscussion(issue)
 	}

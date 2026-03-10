@@ -189,18 +189,3 @@ LIMIT $4;
 
 -- name: DeleteAllEvents :exec
 DELETE FROM events;
-
--- name: NextIssueSeq :one
-SELECT nextval('issue_seq');
-
--- name: NextIssueOperationSeq :one
-SELECT nextval('issue_operation_seq');
-
--- name: SetIssueSeq :exec
-SELECT setval('issue_seq', $1, true);
-
--- name: ResetIssueSeq :exec
-SELECT setval('issue_seq', 1, false);
-
--- name: ResetIssueOperationSeq :exec
-SELECT setval('issue_operation_seq', 1, false);

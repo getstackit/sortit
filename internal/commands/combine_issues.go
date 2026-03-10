@@ -51,10 +51,7 @@ func (h CombineIssuesHandler) Handle(ctx context.Context, input CombineIssues) (
 	note := strings.TrimSpace(enriched.Note)
 	createdAt := time.Now().UTC()
 
-	combinedID, err := h.Store.NextIssueID(ctx)
-	if err != nil {
-		return issues.IssueOperationResult{}, err
-	}
+	combinedID := issues.NewIssueID()
 
 	combinedIssue := issues.BuildNewIssue(combinedID, issues.CreateInput{
 		Raw:       raw,
@@ -69,10 +66,7 @@ func (h CombineIssuesHandler) Handle(ctx context.Context, input CombineIssues) (
 		return issues.IssueOperationResult{}, err
 	}
 
-	opID, err := h.Store.NextOperationID(ctx)
-	if err != nil {
-		return issues.IssueOperationResult{}, err
-	}
+	opID := issues.NewOperationID()
 
 	operation := issues.IssueOperation{
 		ID:        opID,

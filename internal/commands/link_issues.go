@@ -46,10 +46,7 @@ func (h LinkIssuesHandler) Handle(ctx context.Context, input LinkIssues) (issues
 	note := strings.TrimSpace(input.Note)
 	createdAt := time.Now().UTC()
 
-	opID, err := h.Store.NextOperationID(ctx)
-	if err != nil {
-		return issues.IssueOperationResult{}, err
-	}
+	opID := issues.NewOperationID()
 
 	operation := issues.IssueOperation{
 		ID:        opID,

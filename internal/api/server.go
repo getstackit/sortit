@@ -33,7 +33,7 @@ type Server struct {
 	httpServer        *http.Server
 	startedAt         time.Time
 	revisions         *issues.RevisionTracker
-	readModel         *queries.ReadModelLoader
+	corpusLoader      *queries.DerivedCorpusLoader
 	createIssue       commands.CreateIssueHandler
 	refineIssue       commands.RefineIssueHandler
 	progressIssue     commands.ProgressIssueHandler
@@ -63,6 +63,13 @@ type Server struct {
 type issueTagStore interface {
 	ListTags(context.Context) ([]issues.Tag, error)
 	UpsertTags(context.Context, []issues.Tag) error
+}
+
+func derivedCorpusProjectionStoreFromIssueStore(store issues.Store) issues.DerivedCorpusProjectionStore {
+	if projectionStore, ok := store.(issues.DerivedCorpusProjectionStore); ok {
+		return projectionStore
+	}
+	return nil
 }
 
 type healthResponse struct {
@@ -302,17 +309,18 @@ func NewServer(cfg ServerConfig) *Server {
 	commandAnalyzer := services.FallbackAnalyzer(cfg.Analyzer)
 	catalog := services.NewCatalogService(tagStore, commandAnalyzer)
 	enricher := services.NewIssueEnricher(commandAnalyzer, catalog)
-	readModel := &queries.ReadModelLoader{
-		Store:     store,
-		Catalog:   catalog,
-		Revisions: revisions,
+	corpusLoader := &queries.DerivedCorpusLoader{
+		Store:       store,
+		Catalog:     catalog,
+		Revisions:   revisions,
+		Projections: derivedCorpusProjectionStoreFromIssueStore(cfg.IssueStore),
 	}
 
 	return &Server{
-		config:    cfg,
-		startedAt: time.Now().UTC(),
-		revisions: revisions,
-		readModel: readModel,
+		config:       cfg,
+		startedAt:    time.Now().UTC(),
+		revisions:    revisions,
+		corpusLoader: corpusLoader,
 		createIssue: commands.CreateIssueHandler{
 			Store:    store,
 			Enricher: enricher,
@@ -348,28 +356,28 @@ func NewServer(cfg ServerConfig) *Server {
 			Events: events,
 		},
 		listIssues:    queries.ListIssuesHandler{Store: store},
-		listActivity:  queries.ListActivityHandler{Events: events, ReadModel: readModel},
+		listActivity:  queries.ListActivityHandler{Events: events},
 		getIssue:      queries.GetIssueHandler{Store: store},
-		compareIssues: queries.CompareIssuesHandler{Store: store, ReadModel: readModel},
+		compareIssues: queries.CompareIssuesHandler{Store: store},
 		searchIssues: queries.SearchIssuesHandler{
-			Analyzer:  commandAnalyzer,
-			Catalog:   catalog,
-			Store:     store,
-			ReadModel: readModel,
+			Analyzer: commandAnalyzer,
+			Catalog:  catalog,
+			Store:    store,
+			Corpus:   corpusLoader,
 		},
 		searchUnified: queries.SearchUnifiedHandler{
-			Analyzer:  commandAnalyzer,
-			Catalog:   catalog,
-			Store:     store,
-			ReadModel: readModel,
+			Analyzer: commandAnalyzer,
+			Catalog:  catalog,
+			Store:    store,
+			Corpus:   corpusLoader,
 		},
-		exploreIssue:      queries.ExploreIssueHandler{Store: store, Catalog: catalog, ReadModel: readModel},
+		exploreIssue:      queries.ExploreIssueHandler{Store: store, Catalog: catalog, Corpus: corpusLoader},
 		listTags:          queries.ListTagsHandler{Catalog: catalog},
-		getMap:            queries.MapHandler{IssueStore: store, Catalog: catalog, ReadModel: readModel},
-		getMapEdges:       queries.EdgeHandler{IssueStore: store, Catalog: catalog, ReadModel: readModel},
-		debugAnalyzeIssue: queries.DebugAnalyzeIssueHandler{Analyzer: cfg.Analyzer, Catalog: catalog, Store: store, ReadModel: readModel},
-		getPersonProfile:  queries.GetPersonProfileHandler{Store: store, ReadModel: readModel},
-		workCorrelations:  queries.WorkCorrelationsHandler{Store: store, ReadModel: readModel},
+		getMap:            queries.MapHandler{IssueStore: store, Catalog: catalog, Corpus: corpusLoader},
+		getMapEdges:       queries.EdgeHandler{IssueStore: store, Catalog: catalog, Corpus: corpusLoader},
+		debugAnalyzeIssue: queries.DebugAnalyzeIssueHandler{Analyzer: cfg.Analyzer, Catalog: catalog, Store: store},
+		getPersonProfile:  queries.GetPersonProfileHandler{Store: store},
+		workCorrelations:  queries.WorkCorrelationsHandler{Store: store},
 		authService:       cfg.Auth,
 		catalog:           catalog,
 	}

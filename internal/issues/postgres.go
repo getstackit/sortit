@@ -135,6 +135,41 @@ func (s *PostgresStore) Get(ctx context.Context, id string) (Issue, error) {
 	return s.getIssueWithDiscussion(ctx, s.queries, id)
 }
 
+func (s *PostgresStore) GetDerivedCorpusProjection(ctx context.Context, revision uint64) ([]byte, error) {
+	row := s.db.QueryRowContext(
+		ctx,
+		`SELECT payload_json FROM derived_corpus_projections WHERE revision = $1`,
+		int64(revision),
+	)
+
+	var payload []byte
+	if err := row.Scan(&payload); err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return nil, ErrDerivedCorpusNotFound
+		}
+		return nil, fmt.Errorf("get derived corpus projection: %w", err)
+	}
+	return payload, nil
+}
+
+func (s *PostgresStore) SaveDerivedCorpusProjection(ctx context.Context, revision uint64, payload []byte) error {
+	_, err := s.db.ExecContext(
+		ctx,
+		`INSERT INTO derived_corpus_projections (revision, payload_json, created_at_unix_nano)
+		 VALUES ($1, $2, $3)
+		 ON CONFLICT (revision) DO UPDATE
+		 SET payload_json = excluded.payload_json,
+		     created_at_unix_nano = excluded.created_at_unix_nano`,
+		int64(revision),
+		payload,
+		time.Now().UTC().UnixNano(),
+	)
+	if err != nil {
+		return fmt.Errorf("save derived corpus projection: %w", err)
+	}
+	return nil
+}
+
 func buildListIssuesFilteredQuery(opts ListOptions) (string, []any) {
 	var query strings.Builder
 	query.WriteString(`SELECT id, raw, tags_json, created_by, created_at_unix_nano, status, closed_at_unix_nano, closed_by, tag_scores_json, embedding_json, assigned_to
@@ -276,20 +311,6 @@ func (s *PostgresStore) Replace(ctx context.Context, next []Issue) error {
 		if err := insertIssuePosts(ctx, qtx, initialDiscussion(issue)); err != nil {
 			return err
 		}
-	}
-
-	seqBase := int64(nextSequenceBase(items))
-	if seqBase > 0 {
-		if err := qtx.SetIssueSeq(ctx, seqBase); err != nil {
-			return fmt.Errorf("set issue sequence: %w", err)
-		}
-	} else {
-		if err := qtx.ResetIssueSeq(ctx); err != nil {
-			return fmt.Errorf("reset issue sequence: %w", err)
-		}
-	}
-	if err := qtx.ResetIssueOperationSeq(ctx); err != nil {
-		return fmt.Errorf("reset issue operation sequence: %w", err)
 	}
 
 	if err := tx.Commit(); err != nil {
@@ -760,32 +781,6 @@ func insertIssueLink(ctx context.Context, q *issuesdb.Queries, link IssueLink) e
 	return nil
 }
 
-func nextSequenceBase(items []Issue) uint64 {
-	var maxSeq uint64
-	if length := uint64(len(items)); length > maxSeq {
-		maxSeq = length
-	}
-
-	for _, issue := range items {
-		seq, ok := issueSequence(issue.ID)
-		if ok && seq > maxSeq {
-			maxSeq = seq
-		}
-	}
-
-	return maxSeq
-}
-
-func issueSequence(id string) (uint64, bool) {
-	if !strings.HasPrefix(id, "issue-") {
-		return 0, false
-	}
-	seq, err := strconv.ParseUint(strings.TrimPrefix(id, "issue-"), 10, 64)
-	if err != nil {
-		return 0, false
-	}
-	return seq, true
-}
 
 func marshalJSONB[T any](value T, empty T) (json.RawMessage, error) {
 	v := any(value)

@@ -2,7 +2,6 @@ package issues
 
 import (
 	"context"
-	"fmt"
 	"strings"
 )
 
@@ -103,10 +102,3 @@ func (s *InMemoryStore) SaveLink(_ context.Context, link IssueLink) error {
 	return nil
 }
 
-func (s *InMemoryStore) NextIssueID(_ context.Context) (string, error) {
-	return fmt.Sprintf("issue-%06d", s.nextSeq.Add(1)), nil
-}
-
-func (s *InMemoryStore) NextOperationID(_ context.Context) (string, error) {
-	return fmt.Sprintf("issue-op-%06d", s.nextOpSeq.Add(1)), nil
-}

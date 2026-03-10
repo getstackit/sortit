@@ -17,17 +17,17 @@ type MapQuery struct {
 type MapHandler struct {
 	IssueStore issues.Store
 	Catalog    *services.CatalogService
-	ReadModel  *ReadModelLoader
+	Corpus     *DerivedCorpusLoader
 }
 
 func (h MapHandler) Handle(ctx context.Context, input MapQuery) (issuemap.MapResponse, error) {
-	if h.ReadModel != nil {
-		model, err := h.ReadModel.Current(ctx)
+	if h.Corpus != nil {
+		corpus, err := h.Corpus.Current(ctx)
 		if err != nil {
 			return issuemap.MapResponse{}, err
 		}
-		filtered := FilterIssuesByStatus(model.Corpus.Issues, input.StatusFilter)
-		corpus := subsetCorpusByIssues(model.Corpus, filtered)
+		filtered := FilterIssuesByStatus(corpus.Issues, input.StatusFilter)
+		corpus = subsetCorpusByIssues(corpus, filtered)
 		threshold := issuemapDefaultThreshold(input.EdgeThreshold)
 		return issuemap.BuildMapFromCorpus(corpus, input.Viewport, threshold)
 	}
@@ -51,17 +51,17 @@ func (h MapHandler) Handle(ctx context.Context, input MapQuery) (issuemap.MapRes
 type EdgeHandler struct {
 	IssueStore issues.Store
 	Catalog    *services.CatalogService
-	ReadModel  *ReadModelLoader
+	Corpus     *DerivedCorpusLoader
 }
 
 func (h EdgeHandler) Handle(ctx context.Context, input MapQuery) (issuemap.EdgeResponse, error) {
-	if h.ReadModel != nil {
-		model, err := h.ReadModel.Current(ctx)
+	if h.Corpus != nil {
+		corpus, err := h.Corpus.Current(ctx)
 		if err != nil {
 			return issuemap.EdgeResponse{}, err
 		}
-		filtered := FilterIssuesByStatus(model.Corpus.Issues, input.StatusFilter)
-		corpus := subsetCorpusByIssues(model.Corpus, filtered)
+		filtered := FilterIssuesByStatus(corpus.Issues, input.StatusFilter)
+		corpus = subsetCorpusByIssues(corpus, filtered)
 		threshold := issuemapDefaultThreshold(input.EdgeThreshold)
 		return issuemap.BuildEdgeResponseFromCorpus(corpus, input.Viewport, threshold)
 	}

@@ -144,18 +144,3 @@ func (s *PostgresStore) SaveLink(ctx context.Context, link IssueLink) error {
 	return insertIssueLink(ctx, s.queries, link)
 }
 
-func (s *PostgresStore) NextIssueID(ctx context.Context) (string, error) {
-	seq, err := s.queries.NextIssueSeq(ctx)
-	if err != nil {
-		return "", fmt.Errorf("next issue sequence: %w", err)
-	}
-	return fmt.Sprintf("issue-%06d", seq), nil
-}
-
-func (s *PostgresStore) NextOperationID(ctx context.Context) (string, error) {
-	seq, err := s.queries.NextIssueOperationSeq(ctx)
-	if err != nil {
-		return "", fmt.Errorf("next operation sequence: %w", err)
-	}
-	return fmt.Sprintf("issue-op-%06d", seq), nil
-}
