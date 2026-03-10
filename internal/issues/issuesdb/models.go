@@ -46,6 +46,7 @@ type Issue struct {
 	ClosedBy          string
 	TagScoresJson     json.RawMessage
 	EmbeddingJson     json.RawMessage
+	EmbeddingVector   interface{}
 	AssignedTo        string
 }
 

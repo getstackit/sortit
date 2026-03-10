@@ -3,6 +3,7 @@ package issues
 import (
 	"context"
 	"encoding/json"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -78,6 +79,7 @@ func TestPostgresStoreCreateListAndGet(t *testing.T) {
 	if loaded.Discussion[0].Raw != issue.Raw {
 		t.Fatalf("expected discussion to preserve original raw, got %q", loaded.Discussion[0].Raw)
 	}
+	assertIssueEmbeddingVectorText(t, store, issue.ID, "[0.25,0.5]")
 }
 
 func TestPostgresStoreRefineAppendsDiscussionAndUpdatesCanonicalIssue(t *testing.T) {
@@ -151,6 +153,7 @@ func TestPostgresStoreRefineAppendsDiscussionAndUpdatesCanonicalIssue(t *testing
 	if len(refined.Tags) != 2 || refined.Tags[0] != "export" || refined.Tags[1] != "safari" {
 		t.Fatalf("unexpected refined tags: %#v", refined.Tags)
 	}
+	assertIssueEmbeddingVectorText(t, store, issue.ID, "[0.7,0.2]")
 }
 
 func TestPostgresStoreCloseAndReopenIssue(t *testing.T) {
@@ -293,6 +296,99 @@ func TestPostgresStoreListFiltered(t *testing.T) {
 	}
 	if len(paged) != 1 {
 		t.Fatalf("expected 1 paged issue, got %d", len(paged))
+	}
+}
+
+func TestPostgresStoreInitializesPgvectorIssueEmbeddingSchema(t *testing.T) {
+	store := newPostgresTestStore(t)
+	ctx := context.Background()
+
+	var extensionName string
+	if err := store.DB().QueryRowContext(
+		ctx,
+		`SELECT extname FROM pg_extension WHERE extname = 'vector'`,
+	).Scan(&extensionName); err != nil {
+		t.Fatalf("query vector extension: %v", err)
+	}
+	if extensionName != "vector" {
+		t.Fatalf("expected vector extension, got %q", extensionName)
+	}
+
+	var dataType, udtName string
+	if err := store.DB().QueryRowContext(
+		ctx,
+		`SELECT data_type, udt_name
+		 FROM information_schema.columns
+		 WHERE table_name = 'issues' AND column_name = 'embedding_vector'`,
+	).Scan(&dataType, &udtName); err != nil {
+		t.Fatalf("query embedding_vector column: %v", err)
+	}
+	if udtName != "vector" {
+		t.Fatalf("expected embedding_vector udt_name vector, got %q (data_type=%q)", udtName, dataType)
+	}
+
+	var definition string
+	if err := store.DB().QueryRowContext(
+		ctx,
+		`SELECT pg_get_indexdef(indexrelid)
+		 FROM pg_stat_user_indexes
+		 WHERE indexrelname = 'issues_embedding_vector_cosine_hnsw_idx'`,
+	).Scan(&definition); err != nil {
+		t.Fatalf("query embedding_vector index: %v", err)
+	}
+	if !strings.Contains(definition, "USING hnsw") {
+		t.Fatalf("expected hnsw index definition, got %q", definition)
+	}
+	if !strings.Contains(definition, "vector_cosine_ops") {
+		t.Fatalf("expected cosine operator class in index definition, got %q", definition)
+	}
+}
+
+func TestPostgresStoreBackfillsIssueEmbeddingVectorFromJSON(t *testing.T) {
+	store := newPostgresTestStore(t)
+	ctx := context.Background()
+
+	id := "issue-backfill-vector"
+	embedding := `[0.11,0.22,0.33]`
+	if _, err := store.DB().ExecContext(
+		ctx,
+		`INSERT INTO issues (
+			id, raw, tags_json, created_by, created_at_unix_nano, status, closed_at_unix_nano, closed_by,
+			tag_scores_json, embedding_json, embedding_vector, assigned_to
+		) VALUES (
+			$1, 'legacy issue', '[]'::jsonb, 'Casey', 1, 'open', 0, '',
+			'[]'::jsonb, $2::jsonb, NULL, ''
+		)`,
+		id,
+		embedding,
+	); err != nil {
+		t.Fatalf("insert legacy issue row: %v", err)
+	}
+
+	if _, err := store.DB().ExecContext(ctx, "UPDATE schema_migrations SET version = 6, dirty = false"); err != nil {
+		t.Fatalf("set schema migration version to 6: %v", err)
+	}
+
+	if err := store.runMigrations(ctx); err != nil {
+		t.Fatalf("rerun migrations for backfill: %v", err)
+	}
+
+	assertIssueEmbeddingVectorText(t, store, id, "[0.11,0.22,0.33]")
+}
+
+func assertIssueEmbeddingVectorText(t *testing.T, store *PostgresStore, id string, want string) {
+	t.Helper()
+
+	var got string
+	if err := store.DB().QueryRowContext(
+		context.Background(),
+		`SELECT COALESCE(embedding_vector::text, '') FROM issues WHERE id = $1`,
+		id,
+	).Scan(&got); err != nil {
+		t.Fatalf("query embedding_vector for %s: %v", id, err)
+	}
+	if got != want {
+		t.Fatalf("unexpected embedding_vector for %s: got %q want %q", id, got, want)
 	}
 }
 

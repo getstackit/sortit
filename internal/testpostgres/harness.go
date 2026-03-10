@@ -13,7 +13,7 @@ import (
 	"github.com/testcontainers/testcontainers-go/modules/postgres"
 )
 
-const image = "postgres:17"
+const image = "pgvector/pgvector:pg17"
 
 type Harness struct {
 	container *postgres.PostgresContainer

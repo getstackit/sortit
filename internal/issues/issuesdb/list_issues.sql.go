@@ -7,6 +7,7 @@ package issuesdb
 
 import (
 	"context"
+	"encoding/json"
 )
 
 const listIssues = `-- name: ListIssues :many
@@ -15,15 +16,29 @@ FROM issues
 ORDER BY created_at_unix_nano DESC, id ASC
 `
 
-func (q *Queries) ListIssues(ctx context.Context) ([]Issue, error) {
+type ListIssuesRow struct {
+	ID                string
+	Raw               string
+	TagsJson          json.RawMessage
+	CreatedBy         string
+	CreatedAtUnixNano int64
+	Status            string
+	ClosedAtUnixNano  int64
+	ClosedBy          string
+	TagScoresJson     json.RawMessage
+	EmbeddingJson     json.RawMessage
+	AssignedTo        string
+}
+
+func (q *Queries) ListIssues(ctx context.Context) ([]ListIssuesRow, error) {
 	rows, err := q.db.QueryContext(ctx, listIssues)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
-	var items []Issue
+	var items []ListIssuesRow
 	for rows.Next() {
-		var i Issue
+		var i ListIssuesRow
 		if err := rows.Scan(
 			&i.ID,
 			&i.Raw,

@@ -76,7 +76,7 @@ func (s *PostgresStore) List(ctx context.Context) ([]Issue, error) {
 
 	items := make([]Issue, 0, len(rows))
 	for _, row := range rows {
-		issue, err := issueFromQuery(row)
+		issue, err := issueFromQuery(issueModelFromListIssuesRow(row))
 		if err != nil {
 			return nil, err
 		}
@@ -307,6 +307,9 @@ func (s *PostgresStore) Replace(ctx context.Context, next []Issue) error {
 		}); err != nil {
 			return fmt.Errorf("replace issue %q: %w", issue.ID, err)
 		}
+		if err := syncIssueEmbeddingVector(ctx, tx, record.ID, issue.Embedding); err != nil {
+			return err
+		}
 
 		if err := insertIssuePosts(ctx, qtx, initialDiscussion(issue)); err != nil {
 			return err
@@ -438,8 +441,8 @@ type tagRecord struct {
 }
 
 type issueQuerier interface {
-	GetIssue(context.Context, string) (issuesdb.Issue, error)
-	ListIssues(context.Context) ([]issuesdb.Issue, error)
+	GetIssue(context.Context, string) (issuesdb.GetIssueRow, error)
+	ListIssues(context.Context) ([]issuesdb.ListIssuesRow, error)
 	ListIssuePosts(context.Context, string) ([]issuesdb.IssuePost, error)
 	ListIssueLinksForIssue(context.Context, issuesdb.ListIssueLinksForIssueParams) ([]issuesdb.IssueLink, error)
 	ListIssueOperationsForIssue(context.Context, string) ([]issuesdb.IssueOperation, error)
@@ -510,6 +513,38 @@ func issueFromQuery(row issuesdb.Issue) (Issue, error) {
 		TagScores:  tagScores,
 		Embedding:  embedding,
 	}, nil
+}
+
+func issueModelFromGetIssueRow(row issuesdb.GetIssueRow) issuesdb.Issue {
+	return issuesdb.Issue{
+		ID:                row.ID,
+		Raw:               row.Raw,
+		TagsJson:          row.TagsJson,
+		CreatedBy:         row.CreatedBy,
+		CreatedAtUnixNano: row.CreatedAtUnixNano,
+		Status:            row.Status,
+		ClosedAtUnixNano:  row.ClosedAtUnixNano,
+		ClosedBy:          row.ClosedBy,
+		TagScoresJson:     row.TagScoresJson,
+		EmbeddingJson:     row.EmbeddingJson,
+		AssignedTo:        row.AssignedTo,
+	}
+}
+
+func issueModelFromListIssuesRow(row issuesdb.ListIssuesRow) issuesdb.Issue {
+	return issuesdb.Issue{
+		ID:                row.ID,
+		Raw:               row.Raw,
+		TagsJson:          row.TagsJson,
+		CreatedBy:         row.CreatedBy,
+		CreatedAtUnixNano: row.CreatedAtUnixNano,
+		Status:            row.Status,
+		ClosedAtUnixNano:  row.ClosedAtUnixNano,
+		ClosedBy:          row.ClosedBy,
+		TagScoresJson:     row.TagScoresJson,
+		EmbeddingJson:     row.EmbeddingJson,
+		AssignedTo:        row.AssignedTo,
+	}
 }
 
 func issuePostFromQuery(row issuesdb.IssuePost) IssuePost {
@@ -627,7 +662,7 @@ func (s *PostgresStore) getIssueWithDiscussion(ctx context.Context, q issueQueri
 
 	issuesByID := make(map[string]Issue, len(allIssueRows))
 	for _, row := range allIssueRows {
-		issue, err := issueFromQuery(row)
+		issue, err := issueFromQuery(issueModelFromListIssuesRow(row))
 		if err != nil {
 			return Issue{}, err
 		}
@@ -658,13 +693,13 @@ func (s *PostgresStore) getIssueWithDiscussion(ctx context.Context, q issueQueri
 }
 
 func hydrateIssueWithDiscussion(
-	issueRow issuesdb.Issue,
+	issueRow issuesdb.GetIssueRow,
 	discussion []IssuePost,
 	links []IssueLink,
 	operations []IssueOperation,
 	issuesByID map[string]Issue,
 ) (Issue, error) {
-	issue, err := issueFromQuery(issueRow)
+	issue, err := issueFromQuery(issueModelFromGetIssueRow(issueRow))
 	if err != nil {
 		return Issue{}, err
 	}
@@ -780,7 +815,6 @@ func insertIssueLink(ctx context.Context, q *issuesdb.Queries, link IssueLink) e
 	}
 	return nil
 }
-
 
 func marshalJSONB[T any](value T, empty T) (json.RawMessage, error) {
 	v := any(value)

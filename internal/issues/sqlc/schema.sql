@@ -1,3 +1,5 @@
+CREATE EXTENSION IF NOT EXISTS vector;
+
 CREATE SEQUENCE IF NOT EXISTS issue_seq START 1;
 CREATE SEQUENCE IF NOT EXISTS issue_operation_seq START 1;
 
@@ -12,11 +14,16 @@ CREATE TABLE issues (
     closed_by TEXT NOT NULL,
     tag_scores_json JSONB NOT NULL DEFAULT '[]',
     embedding_json JSONB NOT NULL DEFAULT '[]',
+    embedding_vector vector,
     assigned_to TEXT NOT NULL DEFAULT ''
 );
 
 CREATE INDEX issues_status_idx ON issues(status);
 CREATE INDEX issues_assigned_to_idx ON issues(assigned_to);
+CREATE INDEX issues_embedding_vector_cosine_hnsw_idx
+ON issues
+USING hnsw ((embedding_vector::vector(1536)) vector_cosine_ops)
+WHERE embedding_vector IS NOT NULL AND vector_dims(embedding_vector) = 1536;
 
 CREATE TABLE issue_posts (
     id TEXT PRIMARY KEY,

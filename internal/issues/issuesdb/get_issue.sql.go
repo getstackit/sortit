@@ -7,6 +7,7 @@ package issuesdb
 
 import (
 	"context"
+	"encoding/json"
 )
 
 const getIssue = `-- name: GetIssue :one
@@ -15,9 +16,23 @@ FROM issues
 WHERE id = $1
 `
 
-func (q *Queries) GetIssue(ctx context.Context, id string) (Issue, error) {
+type GetIssueRow struct {
+	ID                string
+	Raw               string
+	TagsJson          json.RawMessage
+	CreatedBy         string
+	CreatedAtUnixNano int64
+	Status            string
+	ClosedAtUnixNano  int64
+	ClosedBy          string
+	TagScoresJson     json.RawMessage
+	EmbeddingJson     json.RawMessage
+	AssignedTo        string
+}
+
+func (q *Queries) GetIssue(ctx context.Context, id string) (GetIssueRow, error) {
 	row := q.db.QueryRowContext(ctx, getIssue, id)
-	var i Issue
+	var i GetIssueRow
 	err := row.Scan(
 		&i.ID,
 		&i.Raw,

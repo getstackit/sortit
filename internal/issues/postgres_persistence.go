@@ -3,6 +3,8 @@ package issues
 import (
 	"context"
 	"fmt"
+	"math"
+	"strconv"
 	"strings"
 
 	"splat/internal/issues/issuesdb"
@@ -28,6 +30,9 @@ func (s *PostgresStore) SaveIssue(ctx context.Context, issue Issue) error {
 		AssignedTo:        record.AssignedTo,
 	}); err != nil {
 		return fmt.Errorf("save issue: %w", err)
+	}
+	if err := syncIssueEmbeddingVector(ctx, s.db, record.ID, issue.Embedding); err != nil {
+		return err
 	}
 
 	if err := insertIssuePosts(ctx, s.queries, issue.Discussion); err != nil {
@@ -88,6 +93,9 @@ func (s *PostgresStore) UpdateIssueFields(ctx context.Context, id string, fields
 		if err := s.queries.UpdateIssueRefinement(ctx, record); err != nil {
 			return fmt.Errorf("update issue refinement fields: %w", err)
 		}
+		if err := syncIssueEmbeddingVector(ctx, s.db, id, fields.Embedding); err != nil {
+			return err
+		}
 	}
 
 	return nil
@@ -128,6 +136,43 @@ func buildRefinementRecord(id string, fields IssueFieldUpdate) (issuesdb.UpdateI
 	}, nil
 }
 
+func syncIssueEmbeddingVector(ctx context.Context, db issuesdb.DBTX, issueID string, embedding []float64) error {
+	vectorLiteral, err := formatVectorLiteral(embedding)
+	if err != nil {
+		return fmt.Errorf("format embedding vector for issue %q: %w", issueID, err)
+	}
+	if _, err := db.ExecContext(
+		ctx,
+		`UPDATE issues SET embedding_vector = $1::vector WHERE id = $2`,
+		vectorLiteral,
+		issueID,
+	); err != nil {
+		return fmt.Errorf("sync embedding vector for issue %q: %w", issueID, err)
+	}
+	return nil
+}
+
+func formatVectorLiteral(values []float64) (any, error) {
+	if len(values) == 0 {
+		return nil, nil
+	}
+
+	var builder strings.Builder
+	builder.Grow(len(values) * 12)
+	builder.WriteByte('[')
+	for i, value := range values {
+		if math.IsNaN(value) || math.IsInf(value, 0) {
+			return nil, fmt.Errorf("non-finite value at index %d", i)
+		}
+		if i > 0 {
+			builder.WriteByte(',')
+		}
+		builder.WriteString(strconv.FormatFloat(value, 'g', -1, 64))
+	}
+	builder.WriteByte(']')
+	return builder.String(), nil
+}
+
 func (s *PostgresStore) SaveOperation(ctx context.Context, op IssueOperation) error {
 	if err := insertIssueOperation(ctx, s.queries, op); err != nil {
 		return err
@@ -143,4 +188,3 @@ func (s *PostgresStore) SaveOperation(ctx context.Context, op IssueOperation) er
 func (s *PostgresStore) SaveLink(ctx context.Context, link IssueLink) error {
 	return insertIssueLink(ctx, s.queries, link)
 }
-
