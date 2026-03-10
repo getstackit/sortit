@@ -2,7 +2,7 @@ version: "2"
 sql:
   - engine: "postgresql"
     schema: "internal/issues/sqlc/schema.sql"
-    queries: "internal/issues/sqlc/queries.sql"
+    queries: "internal/issues/sqlc/queries/"
     gen:
       go:
         package: "issuesdb"
