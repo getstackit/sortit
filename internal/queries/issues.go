@@ -335,7 +335,7 @@ func compareIssueEmbeddings(items []issues.Issue) ([]PairwiseIssueSimilarity, fl
 	pairs := make([]PairwiseIssueSimilarity, 0, len(items)*(len(items)-1)/2)
 	total := 0.0
 
-	for i := 0; i < len(items); i++ {
+	for i := range items {
 		for j := i + 1; j < len(items); j++ {
 			similarity := CosineSimilarity(items[i].Embedding, items[j].Embedding)
 			total += similarity

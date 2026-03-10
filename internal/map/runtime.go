@@ -84,8 +84,8 @@ func buildBaseMapDataFromIssues(storeIssues []issues.Issue, storeTags []issues.T
 		mapIssues[i] = MapIssue{
 			ID:     issue.ID,
 			Raw:    issue.Raw,
-			Status: storeIssues[i].Status,
-			Tags:   issue.Tags,
+			Status: issue.Status,
+			Tags:   issue.TagScores,
 			X:      rounded.X,
 			Y:      rounded.Y,
 		}
@@ -103,27 +103,28 @@ func buildBaseMapDataFromIssues(storeIssues []issues.Issue, storeTags []issues.T
 	}, nil
 }
 
-func runtimeMapInputs(storeIssues []issues.Issue, storeTags []issues.Tag) ([]Issue, []string, map[string][]float64, map[string][]float64) {
+func runtimeMapInputs(storeIssues []issues.Issue, storeTags []issues.Tag) ([]issues.Issue, []string, map[string][]float64, map[string][]float64) {
 	tagNames := runtimeTagNames(storeIssues, storeTags)
 	tagEmbeddings := runtimeTagEmbeddings(tagNames, storeTags)
 
-	mapIssues := make([]Issue, len(storeIssues))
+	prepared := make([]issues.Issue, len(storeIssues))
 	embeddings := make(map[string][]float64, len(storeIssues))
 	for i, storeIssue := range storeIssues {
 		tagScores := runtimeStoredTagRelevances(storeIssue)
-		mapIssue := Issue{
-			ID:   storeIssue.ID,
-			Raw:  storeIssue.Raw,
-			Tags: tagScores,
+		prepared[i] = issues.Issue{
+			ID:        storeIssue.ID,
+			Raw:       storeIssue.Raw,
+			Status:    storeIssue.Status,
+			TagScores: tagScores,
+			Embedding: storeIssue.Embedding,
 		}
-		mapIssues[i] = mapIssue
-		embeddings[storeIssue.ID] = runtimeStoredEmbedding(storeIssue, mapIssue, tagEmbeddings)
+		embeddings[storeIssue.ID] = runtimeStoredEmbedding(storeIssue, prepared[i], tagEmbeddings)
 	}
 
 	// If every issue is effectively untagged, fall back to circular layout.
 	hasTagSignal := false
-	for _, issue := range mapIssues {
-		if len(issue.Tags) > 0 {
+	for _, issue := range prepared {
+		if len(issue.TagScores) > 0 {
 			hasTagSignal = true
 			break
 		}
@@ -133,7 +134,7 @@ func runtimeMapInputs(storeIssues []issues.Issue, storeTags []issues.Tag) ([]Iss
 		tagEmbeddings = nil
 	}
 
-	return mapIssues, tagNames, embeddings, tagEmbeddings
+	return prepared, tagNames, embeddings, tagEmbeddings
 }
 
 func runtimeTagNames(storeIssues []issues.Issue, storeTags []issues.Tag) []string {
@@ -288,7 +289,7 @@ func runtimeTagRelevances(tags []string) []TagRelevance {
 	return relevances
 }
 
-func runtimeStoredEmbedding(storeIssue issues.Issue, issue Issue, tagEmbeddings map[string][]float64) []float64 {
+func runtimeStoredEmbedding(storeIssue issues.Issue, prepared issues.Issue, tagEmbeddings map[string][]float64) []float64 {
 	if len(storeIssue.Embedding) > 0 {
 		embedding := append([]float64(nil), storeIssue.Embedding...)
 		if !isZeroVector(embedding) {
@@ -297,15 +298,15 @@ func runtimeStoredEmbedding(storeIssue issues.Issue, issue Issue, tagEmbeddings 
 		}
 	}
 
-	return runtimeIssueEmbedding(issue, tagEmbeddings)
+	return runtimeIssueEmbedding(prepared, tagEmbeddings)
 }
 
-func runtimeIssueEmbedding(issue Issue, tagEmbeddings map[string][]float64) []float64 {
+func runtimeIssueEmbedding(issue issues.Issue, tagEmbeddings map[string][]float64) []float64 {
 	vector := make([]float64, embeddingDimensions)
 	textVector := embeddingFromText(issue.Raw)
 	addScaled(vector, textVector, 0.7)
 
-	for _, tag := range issue.Tags {
+	for _, tag := range issue.TagScores {
 		addScaled(vector, tagEmbeddings[tag.Tag], 0.9*tag.Relevance)
 	}
 
@@ -330,7 +331,7 @@ func embeddingFromText(text string) []float64 {
 		}
 
 		weight := 1.0
-		for axis := 0; axis < 3; axis++ {
+		for axis := range 3 {
 			hash := fnvHash(token, axis)
 			index := int(hash % embeddingDimensions)
 			sign := 1.0

@@ -1,6 +1,8 @@
 package issuemap
 
-import "strings"
+import (
+	"splat/internal/domain"
+)
 
 var genericBucketTags = map[string]struct{}{
 	"api":       {},
@@ -21,5 +23,5 @@ func genericBucketPenalty(name string) float64 {
 }
 
 func normalizeTagName(name string) string {
-	return strings.ToLower(strings.Join(strings.Fields(strings.TrimSpace(name)), " "))
+	return domain.NormalizeTagName(name)
 }

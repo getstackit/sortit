@@ -6,13 +6,12 @@ import (
 	"sort"
 	"strings"
 
+	"splat/internal/domain"
 	"splat/internal/issues"
 )
 
-type TagRelevance struct {
-	Tag       string  `json:"tag"`
-	Relevance float64 `json:"relevance"`
-}
+// TagRelevance is an alias for domain.TagRelevance.
+type TagRelevance = domain.TagRelevance
 
 type PersonTagProfile struct {
 	Person     string         `json:"person"`

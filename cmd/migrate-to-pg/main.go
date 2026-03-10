@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"log"
 	"os"
+	"strings"
 
 	_ "github.com/jackc/pgx/v5/stdlib"
 	_ "modernc.org/sqlite"
@@ -105,14 +106,14 @@ func copyTable(ctx context.Context, src, dst *sql.DB, table, columns string) (in
 		return 0, err
 	}
 
-	placeholders := ""
+	var placeholders strings.Builder
 	for i := range cols {
 		if i > 0 {
-			placeholders += ", "
+			placeholders.WriteString(", ")
 		}
-		placeholders += fmt.Sprintf("$%d", i+1)
+		placeholders.WriteString(fmt.Sprintf("$%d", i+1))
 	}
-	insertSQL := fmt.Sprintf("INSERT INTO %s (%s) VALUES (%s)", table, columns, placeholders)
+	insertSQL := fmt.Sprintf("INSERT INTO %s (%s) VALUES (%s)", table, columns, placeholders.String())
 
 	tx, err := dst.BeginTx(ctx, nil)
 	if err != nil {
@@ -128,8 +129,8 @@ func copyTable(ctx context.Context, src, dst *sql.DB, table, columns string) (in
 
 	count := 0
 	for rows.Next() {
-		values := make([]interface{}, len(cols))
-		ptrs := make([]interface{}, len(cols))
+		values := make([]any, len(cols))
+		ptrs := make([]any, len(cols))
 		for i := range values {
 			ptrs[i] = &values[i]
 		}

@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"splat/internal/ai"
+	"splat/internal/domain"
 	"splat/internal/issues"
 )
 
@@ -231,5 +232,5 @@ func CatalogTagsFromAnalysis(taxonomy []ai.Tag, explicit []string, scores []ai.T
 }
 
 func normalizeCatalogTagName(name string) string {
-	return strings.ToLower(strings.Join(strings.Fields(strings.TrimSpace(name)), " "))
+	return domain.NormalizeTagName(name)
 }

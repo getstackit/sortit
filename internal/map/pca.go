@@ -5,6 +5,8 @@ import (
 	"math"
 
 	"gonum.org/v1/gonum/mat"
+
+	"splat/internal/issues"
 )
 
 type Position struct {
@@ -12,7 +14,7 @@ type Position struct {
 	Y float64
 }
 
-func ComputePositions(issues []Issue, tags []string, tagEmbeddings map[string][]float64) (map[string]Position, error) {
+func ComputePositions(issues []issues.Issue, tags []string, tagEmbeddings map[string][]float64) (map[string]Position, error) {
 	n := len(issues)
 	t := len(tags)
 	if n == 0 {
@@ -30,7 +32,7 @@ func ComputePositions(issues []Issue, tags []string, tagEmbeddings map[string][]
 	// Build N×T relevance matrix
 	data := make([]float64, n*t)
 	for i, issue := range issues {
-		for _, tr := range issue.Tags {
+		for _, tr := range issue.TagScores {
 			if j, ok := tagIndex[tr.Tag]; ok {
 				data[i*t+j] = tr.Relevance
 			}
@@ -46,14 +48,14 @@ func ComputePositions(issues []Issue, tags []string, tagEmbeddings map[string][]
 	Xprime.Mul(X, tagCov)
 
 	// Mean-center each column
-	for j := 0; j < t; j++ {
+	for j := range t {
 		col := mat.Col(nil, j, &Xprime)
 		mean := 0.0
 		for _, v := range col {
 			mean += v
 		}
 		mean /= float64(n)
-		for i := 0; i < n; i++ {
+		for i := range n {
 			Xprime.Set(i, j, Xprime.At(i, j)-mean)
 		}
 	}
@@ -65,7 +67,7 @@ func ComputePositions(issues []Issue, tags []string, tagEmbeddings map[string][]
 
 	// Convert to SymDense for EigenSym
 	covSym := mat.NewSymDense(t, nil)
-	for i := 0; i < t; i++ {
+	for i := range t {
 		for j := i; j < t; j++ {
 			covSym.SetSym(i, j, covRaw.At(i, j))
 		}
@@ -83,7 +85,7 @@ func ComputePositions(issues []Issue, tags []string, tagEmbeddings map[string][]
 
 	// Top 2 eigenvectors (last 2 columns — gonum returns ascending order)
 	v2Data := make([]float64, t*2)
-	for i := 0; i < t; i++ {
+	for i := range t {
 		v2Data[i*2] = eigVecs.At(i, t-1)
 		v2Data[i*2+1] = eigVecs.At(i, t-2)
 	}
@@ -97,7 +99,7 @@ func ComputePositions(issues []Issue, tags []string, tagEmbeddings map[string][]
 	positions := make(map[string]Position, n)
 	xs := make([]float64, n)
 	ys := make([]float64, n)
-	for i := 0; i < n; i++ {
+	for i := range n {
 		xs[i] = P.At(i, 0)
 		ys[i] = P.At(i, 1)
 	}
@@ -152,7 +154,7 @@ func buildTagCovariance(tags []string, tagEmbeddings map[string][]float64) *mat.
 	data := make([]float64, t*t)
 
 	hasEmbeddings := len(tagEmbeddings) > 0
-	for i := 0; i < t; i++ {
+	for i := range t {
 		for j := i; j < t; j++ {
 			value := 0.0
 			if hasEmbeddings {
@@ -168,7 +170,7 @@ func buildTagCovariance(tags []string, tagEmbeddings map[string][]float64) *mat.
 	return mat.NewDense(t, t, data)
 }
 
-func fallbackPositions(issues []Issue) map[string]Position {
+func fallbackPositions(issues []issues.Issue) map[string]Position {
 	positions := make(map[string]Position, len(issues))
 	if len(issues) == 1 {
 		positions[issues[0].ID] = Position{X: 0.5, Y: 0.5}

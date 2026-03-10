@@ -11,7 +11,7 @@ import (
 type DerivedCorpus struct {
 	Issues             []issues.Issue
 	Tags               []issues.Tag
-	RuntimeIssues      []Issue
+	RuntimeIssues      []issues.Issue
 	TagNames           []string
 	IssueEmbeddings    map[string][]float64
 	TagEmbeddings      map[string][]float64
@@ -54,7 +54,7 @@ func BuildDerivedCorpus(storeIssues []issues.Issue, storeTags []issues.Tag) (Der
 				ID:     item.ID,
 				Raw:    storeIssues[i].Raw,
 				Status: storeIssues[i].Status,
-				Tags:   item.Tags,
+				Tags:   item.TagScores,
 				X:      position.X,
 				Y:      position.Y,
 			}
@@ -144,17 +144,17 @@ func SearchFromCorpus(
 
 	queryVector := append([]float64(nil), queryEmbedding...)
 	if isZeroVector(queryVector) {
-		queryVector = runtimeIssueEmbedding(Issue{
-			ID:   "query",
-			Raw:  queryRaw,
-			Tags: querySummary.Tags,
+		queryVector = runtimeIssueEmbedding(issues.Issue{
+			ID:        "query",
+			Raw:       queryRaw,
+			TagScores: querySummary.Tags,
 		}, corpus.TagEmbeddings)
 	}
 
-	queryFactor := runtimeFactorVectors([]Issue{{
-		ID:   "query",
-		Raw:  queryRaw,
-		Tags: querySummary.Tags,
+	queryFactor := runtimeFactorVectors([]issues.Issue{{
+		ID:        "query",
+		Raw:       queryRaw,
+		TagScores: querySummary.Tags,
 	}}, corpus.TagNames, corpus.TagEmbeddings)["query"]
 
 	related := make([]RelatedIssue, 0, len(corpus.Issues))
@@ -477,16 +477,18 @@ func cloneStoreTags(items []issues.Tag) []issues.Tag {
 	return cloned
 }
 
-func cloneRuntimeIssues(items []Issue) []Issue {
+func cloneRuntimeIssues(items []issues.Issue) []issues.Issue {
 	if len(items) == 0 {
 		return nil
 	}
-	cloned := make([]Issue, len(items))
+	cloned := make([]issues.Issue, len(items))
 	for i, item := range items {
-		cloned[i] = Issue{
-			ID:   item.ID,
-			Raw:  item.Raw,
-			Tags: append([]TagRelevance(nil), item.Tags...),
+		cloned[i] = issues.Issue{
+			ID:        item.ID,
+			Raw:       item.Raw,
+			Status:    item.Status,
+			TagScores: append([]TagRelevance(nil), item.TagScores...),
+			Embedding: append([]float64(nil), item.Embedding...),
 		}
 	}
 	return cloned

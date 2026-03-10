@@ -158,7 +158,7 @@ func exploreIssueSummary(item issues.Issue) ExploreIssue {
 	}
 }
 
-func runtimeFactorVectors(items []Issue, tags []string, tagEmbeddings map[string][]float64) map[string][]float64 {
+func runtimeFactorVectors(items []issues.Issue, tags []string, tagEmbeddings map[string][]float64) map[string][]float64 {
 	vectors := make(map[string][]float64, len(items))
 	if len(items) == 0 || len(tags) == 0 {
 		return vectors
@@ -172,7 +172,7 @@ func runtimeFactorVectors(items []Issue, tags []string, tagEmbeddings map[string
 	tagCov := buildTagCovariance(tags, tagEmbeddings)
 	for _, item := range items {
 		base := make([]float64, len(tags))
-		for _, tag := range item.Tags {
+		for _, tag := range item.TagScores {
 			if index, ok := tagIndex[tag.Tag]; ok {
 				base[index] = tag.Relevance
 			}

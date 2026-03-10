@@ -43,17 +43,17 @@ func SearchFromQueryWithTags(
 
 	queryVector := append([]float64(nil), queryEmbedding...)
 	if isZeroVector(queryVector) {
-		queryVector = runtimeIssueEmbedding(Issue{
-			ID:   "query",
-			Raw:  queryRaw,
-			Tags: querySummary.Tags,
+		queryVector = runtimeIssueEmbedding(issues.Issue{
+			ID:        "query",
+			Raw:       queryRaw,
+			TagScores: querySummary.Tags,
 		}, tagEmbeddings)
 	}
 
-	queryFactor := runtimeFactorVectors([]Issue{{
-		ID:   "query",
-		Raw:  queryRaw,
-		Tags: querySummary.Tags,
+	queryFactor := runtimeFactorVectors([]issues.Issue{{
+		ID:        "query",
+		Raw:       queryRaw,
+		TagScores: querySummary.Tags,
 	}}, tagNames, tagEmbeddings)["query"]
 
 	related := make([]RelatedIssue, 0, len(storeIssues))

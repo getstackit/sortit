@@ -1,12 +1,6 @@
 package issuemap
 
-type TagRelevance struct {
-	Tag       string  `json:"tag"`
-	Relevance float64 `json:"relevance"`
-}
+import "splat/internal/domain"
 
-type Issue struct {
-	ID   string
-	Raw  string
-	Tags []TagRelevance
-}
+// TagRelevance is an alias for domain.TagRelevance.
+type TagRelevance = domain.TagRelevance

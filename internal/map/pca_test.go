@@ -1,12 +1,16 @@
 package issuemap
 
-import "testing"
+import (
+	"testing"
+
+	"splat/internal/issues"
+)
 
 func TestComputePositionsSingleIssueFallsBackToCenter(t *testing.T) {
-	positions, err := ComputePositions([]Issue{
+	positions, err := ComputePositions([]issues.Issue{
 		{
 			ID: "1",
-			Tags: []TagRelevance{
+			TagScores: []TagRelevance{
 				{Tag: "bug", Relevance: 1},
 			},
 		},
@@ -25,23 +29,23 @@ func TestComputePositionsSingleIssueFallsBackToCenter(t *testing.T) {
 }
 
 func TestComputePositionsSingleTagUsesFallbackLayout(t *testing.T) {
-	issues := []Issue{
-		{ID: "1", Tags: []TagRelevance{{Tag: "bug", Relevance: 0.9}}},
-		{ID: "2", Tags: []TagRelevance{{Tag: "bug", Relevance: 0.7}}},
-		{ID: "3", Tags: []TagRelevance{{Tag: "bug", Relevance: 0.5}}},
+	items := []issues.Issue{
+		{ID: "1", TagScores: []TagRelevance{{Tag: "bug", Relevance: 0.9}}},
+		{ID: "2", TagScores: []TagRelevance{{Tag: "bug", Relevance: 0.7}}},
+		{ID: "3", TagScores: []TagRelevance{{Tag: "bug", Relevance: 0.5}}},
 	}
 
-	positions, err := ComputePositions(issues, []string{"bug"}, nil)
+	positions, err := ComputePositions(items, []string{"bug"}, nil)
 	if err != nil {
 		t.Fatalf("ComputePositions returned error: %v", err)
 	}
 
-	if len(positions) != len(issues) {
-		t.Fatalf("expected %d positions, got %d", len(issues), len(positions))
+	if len(positions) != len(items) {
+		t.Fatalf("expected %d positions, got %d", len(items), len(positions))
 	}
 
 	seen := map[Position]struct{}{}
-	for _, issue := range issues {
+	for _, issue := range items {
 		pos, ok := positions[issue.ID]
 		if !ok {
 			t.Fatalf("missing position for issue %s", issue.ID)
@@ -52,7 +56,7 @@ func TestComputePositionsSingleTagUsesFallbackLayout(t *testing.T) {
 		seen[pos] = struct{}{}
 	}
 
-	if len(seen) != len(issues) {
+	if len(seen) != len(items) {
 		t.Fatalf("expected distinct fallback positions, got %d unique positions", len(seen))
 	}
 }

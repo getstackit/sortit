@@ -423,7 +423,7 @@ func TestIssuesEndpointReopensIssue(t *testing.T) {
 			CreatedBy: "Casey",
 			CreatedAt: issues.FixtureIssues()[0].CreatedAt,
 			Status:    issues.StatusClosed,
-			ClosedAt:  ptrToTime(issues.FixtureIssues()[0].CreatedAt.Add(time.Hour)),
+			ClosedAt:  new(issues.FixtureIssues()[0].CreatedAt.Add(time.Hour)),
 			ClosedBy:  "Casey",
 		},
 	})
@@ -746,8 +746,9 @@ func TestIssuesEndpointExploreRejectsInvalidLimit(t *testing.T) {
 	}
 }
 
+//go:fix inline
 func ptrToTime(value time.Time) *time.Time {
-	return &value
+	return new(value)
 }
 
 func TestIssuesEndpointRejectsInvalidBody(t *testing.T) {

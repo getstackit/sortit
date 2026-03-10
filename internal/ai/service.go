@@ -7,6 +7,8 @@ import (
 	"math"
 	"sort"
 	"strings"
+
+	"splat/internal/domain"
 )
 
 var ErrNotConfigured = errors.New("ai analyzer not configured")
@@ -144,8 +146,7 @@ func normalizeScores(scores []TagScore, taxonomy []Tag) []TagScore {
 }
 
 func normalizeTagName(tag string) string {
-	tag = strings.ToLower(strings.Join(strings.Fields(strings.TrimSpace(tag)), " "))
-	return tag
+	return domain.NormalizeTagName(tag)
 }
 
 func maxFloat(a, b float64) float64 {

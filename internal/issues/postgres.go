@@ -95,14 +95,8 @@ func (s *PostgresStore) Get(ctx context.Context, id string) (Issue, error) {
 }
 
 func (s *PostgresStore) Create(ctx context.Context, input CreateInput) (Issue, error) {
-	raw := strings.TrimSpace(input.Raw)
-	if raw == "" {
-		return Issue{}, fmt.Errorf("raw is required")
-	}
-
-	createdBy := strings.TrimSpace(input.CreatedBy)
-	if createdBy == "" {
-		createdBy = "You"
+	if _, err := ValidateRaw(input.Raw, "raw"); err != nil {
+		return Issue{}, err
 	}
 
 	tx, err := s.db.BeginTx(ctx, nil)
@@ -117,17 +111,7 @@ func (s *PostgresStore) Create(ctx context.Context, input CreateInput) (Issue, e
 		return Issue{}, fmt.Errorf("next issue sequence: %w", err)
 	}
 
-	issue := Issue{
-		ID:        fmt.Sprintf("issue-%06d", seq),
-		Raw:       raw,
-		Tags:      displayTags(input.Tags, input.TagScores),
-		CreatedBy: createdBy,
-		CreatedAt: time.Now().UTC(),
-		Status:    StatusOpen,
-		TagScores: copyTagScores(input.TagScores),
-		Embedding: copyEmbedding(input.Embedding),
-	}
-	issue.Discussion = initialDiscussion(issue)
+	issue := BuildNewIssue(fmt.Sprintf("issue-%06d", seq), input)
 
 	record, err := recordFromIssue(issue)
 	if err != nil {
@@ -161,19 +145,13 @@ func (s *PostgresStore) Create(ctx context.Context, input CreateInput) (Issue, e
 }
 
 func (s *PostgresStore) Refine(ctx context.Context, id string, input RefineInput) (Issue, error) {
-	id = strings.TrimSpace(id)
-	if id == "" {
-		return Issue{}, ErrNotFound
+	id, err := ValidateID(id)
+	if err != nil {
+		return Issue{}, err
 	}
-
-	postRaw := strings.TrimSpace(input.PostRaw)
-	if postRaw == "" {
-		return Issue{}, fmt.Errorf("post raw is required")
-	}
-
-	canonicalRaw := strings.TrimSpace(input.CanonicalRaw)
-	if canonicalRaw == "" {
-		return Issue{}, fmt.Errorf("canonical raw is required")
+	postRaw, canonicalRaw, err := ValidateRefineInput(input)
+	if err != nil {
+		return Issue{}, err
 	}
 
 	tx, err := s.db.BeginTx(ctx, nil)
@@ -188,25 +166,14 @@ func (s *PostgresStore) Refine(ctx context.Context, id string, input RefineInput
 		return Issue{}, err
 	}
 
-	if current.Status == StatusClosed {
-		return Issue{}, ErrIssueClosed
+	if err := EnsureMutable(current); err != nil {
+		return Issue{}, err
 	}
 
-	post := IssuePost{
-		ID:        issuePostID(id, len(current.Discussion)+1),
-		IssueID:   id,
-		Raw:       postRaw,
-		CreatedBy: defaultActor(input.CreatedBy),
-		CreatedAt: time.Now().UTC(),
-		Sequence:  len(current.Discussion) + 1,
-		Kind:      "refinement",
-	}
+	post := NewDiscussionPost(id, current.Discussion, postRaw, input.CreatedBy, "refinement")
 
 	updated := current
-	updated.Raw = canonicalRaw
-	updated.Tags = displayTags(input.Tags, input.TagScores)
-	updated.TagScores = copyTagScores(input.TagScores)
-	updated.Embedding = copyEmbedding(input.Embedding)
+	ApplyRefinement(&updated, canonicalRaw, input)
 	updated.Discussion = append(cloneIssuePosts(current.Discussion), post)
 
 	record, err := recordFromIssue(updated)
@@ -243,14 +210,13 @@ func (s *PostgresStore) Refine(ctx context.Context, id string, input RefineInput
 }
 
 func (s *PostgresStore) ProgressPost(ctx context.Context, id string, input ProgressInput) (Issue, error) {
-	id = strings.TrimSpace(id)
-	if id == "" {
-		return Issue{}, ErrNotFound
+	id, err := ValidateID(id)
+	if err != nil {
+		return Issue{}, err
 	}
-
-	raw := strings.TrimSpace(input.Raw)
-	if raw == "" {
-		return Issue{}, fmt.Errorf("raw is required")
+	raw, err := ValidateRaw(input.Raw, "raw")
+	if err != nil {
+		return Issue{}, err
 	}
 
 	tx, err := s.db.BeginTx(ctx, nil)
@@ -265,19 +231,11 @@ func (s *PostgresStore) ProgressPost(ctx context.Context, id string, input Progr
 		return Issue{}, err
 	}
 
-	if current.Status == StatusClosed {
-		return Issue{}, ErrIssueClosed
+	if err := EnsureMutable(current); err != nil {
+		return Issue{}, err
 	}
 
-	post := IssuePost{
-		ID:        issuePostID(id, len(current.Discussion)+1),
-		IssueID:   id,
-		Raw:       raw,
-		CreatedBy: defaultActor(input.CreatedBy),
-		CreatedAt: time.Now().UTC(),
-		Sequence:  len(current.Discussion) + 1,
-		Kind:      "progress",
-	}
+	post := NewDiscussionPost(id, current.Discussion, raw, input.CreatedBy, "progress")
 
 	if err := qtx.InsertIssuePost(ctx, issuesdb.InsertIssuePostParams{
 		ID:                post.ID,
@@ -301,9 +259,9 @@ func (s *PostgresStore) ProgressPost(ctx context.Context, id string, input Progr
 }
 
 func (s *PostgresStore) CloseIssue(ctx context.Context, id string, closedBy string) (Issue, error) {
-	id = strings.TrimSpace(id)
-	if id == "" {
-		return Issue{}, ErrNotFound
+	id, err := ValidateID(id)
+	if err != nil {
+		return Issue{}, err
 	}
 
 	tx, err := s.db.BeginTx(ctx, nil)
@@ -358,9 +316,9 @@ func (s *PostgresStore) CloseIssue(ctx context.Context, id string, closedBy stri
 }
 
 func (s *PostgresStore) ReopenIssue(ctx context.Context, id string) (Issue, error) {
-	id = strings.TrimSpace(id)
-	if id == "" {
-		return Issue{}, ErrNotFound
+	id, err := ValidateID(id)
+	if err != nil {
+		return Issue{}, err
 	}
 
 	tx, err := s.db.BeginTx(ctx, nil)
@@ -409,9 +367,9 @@ func (s *PostgresStore) ReopenIssue(ctx context.Context, id string) (Issue, erro
 }
 
 func (s *PostgresStore) AssignIssue(ctx context.Context, id, assignee string) (Issue, error) {
-	id = strings.TrimSpace(id)
-	if id == "" {
-		return Issue{}, ErrNotFound
+	id, err := ValidateID(id)
+	if err != nil {
+		return Issue{}, err
 	}
 
 	assignee = strings.TrimSpace(assignee)

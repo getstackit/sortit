@@ -9,6 +9,8 @@ import (
 	"sync"
 	"sync/atomic"
 	"time"
+
+	"splat/internal/domain"
 )
 
 var ErrNotFound = errors.New("issue not found")
@@ -55,10 +57,9 @@ type Tag struct {
 	Embedding   []float64 `json:"-"`
 }
 
-type TagRelevance struct {
-	Tag       string  `json:"tag"`
-	Relevance float64 `json:"relevance"`
-}
+// TagRelevance is an alias for domain.TagRelevance.
+// All packages should migrate to using domain.TagRelevance directly.
+type TagRelevance = domain.TagRelevance
 
 type IssueLinkType string
 
@@ -260,27 +261,11 @@ func (s *InMemoryStore) Get(_ context.Context, id string) (Issue, error) {
 }
 
 func (s *InMemoryStore) Create(_ context.Context, input CreateInput) (Issue, error) {
-	raw := strings.TrimSpace(input.Raw)
-	if raw == "" {
-		return Issue{}, fmt.Errorf("raw is required")
+	if _, err := ValidateRaw(input.Raw, "raw"); err != nil {
+		return Issue{}, err
 	}
 
-	createdBy := strings.TrimSpace(input.CreatedBy)
-	if createdBy == "" {
-		createdBy = "You"
-	}
-
-	issue := Issue{
-		ID:        fmt.Sprintf("issue-%06d", s.nextSeq.Add(1)),
-		Raw:       raw,
-		Tags:      displayTags(input.Tags, input.TagScores),
-		CreatedBy: createdBy,
-		CreatedAt: time.Now().UTC(),
-		Status:    StatusOpen,
-		TagScores: copyTagScores(input.TagScores),
-		Embedding: copyEmbedding(input.Embedding),
-	}
-	issue.Discussion = initialDiscussion(issue)
+	issue := BuildNewIssue(fmt.Sprintf("issue-%06d", s.nextSeq.Add(1)), input)
 
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -291,19 +276,13 @@ func (s *InMemoryStore) Create(_ context.Context, input CreateInput) (Issue, err
 }
 
 func (s *InMemoryStore) Refine(_ context.Context, id string, input RefineInput) (Issue, error) {
-	id = strings.TrimSpace(id)
-	if id == "" {
-		return Issue{}, ErrNotFound
+	id, err := ValidateID(id)
+	if err != nil {
+		return Issue{}, err
 	}
-
-	postRaw := strings.TrimSpace(input.PostRaw)
-	if postRaw == "" {
-		return Issue{}, fmt.Errorf("post raw is required")
-	}
-
-	canonicalRaw := strings.TrimSpace(input.CanonicalRaw)
-	if canonicalRaw == "" {
-		return Issue{}, fmt.Errorf("canonical raw is required")
+	postRaw, canonicalRaw, err := ValidateRefineInput(input)
+	if err != nil {
+		return Issue{}, err
 	}
 
 	s.mu.Lock()
@@ -314,26 +293,15 @@ func (s *InMemoryStore) Refine(_ context.Context, id string, input RefineInput) 
 			continue
 		}
 
-		if issue.Status == StatusClosed {
-			return Issue{}, ErrIssueClosed
+		if err := EnsureMutable(issue); err != nil {
+			return Issue{}, err
 		}
 
 		discussion := cloneIssuePosts(s.discussion[id])
-		post := IssuePost{
-			ID:        issuePostID(id, len(discussion)+1),
-			IssueID:   id,
-			Raw:       postRaw,
-			CreatedBy: defaultActor(input.CreatedBy),
-			CreatedAt: time.Now().UTC(),
-			Sequence:  len(discussion) + 1,
-			Kind:      "refinement",
-		}
+		post := NewDiscussionPost(id, discussion, postRaw, input.CreatedBy, "refinement")
 		discussion = append(discussion, post)
 
-		issue.Raw = canonicalRaw
-		issue.Tags = displayTags(input.Tags, input.TagScores)
-		issue.TagScores = copyTagScores(input.TagScores)
-		issue.Embedding = copyEmbedding(input.Embedding)
+		ApplyRefinement(&issue, canonicalRaw, input)
 		issue.Discussion = cloneIssuePosts(discussion)
 
 		s.issues[index] = issue
@@ -346,14 +314,13 @@ func (s *InMemoryStore) Refine(_ context.Context, id string, input RefineInput) 
 }
 
 func (s *InMemoryStore) ProgressPost(_ context.Context, id string, input ProgressInput) (Issue, error) {
-	id = strings.TrimSpace(id)
-	if id == "" {
-		return Issue{}, ErrNotFound
+	id, err := ValidateID(id)
+	if err != nil {
+		return Issue{}, err
 	}
-
-	raw := strings.TrimSpace(input.Raw)
-	if raw == "" {
-		return Issue{}, fmt.Errorf("raw is required")
+	raw, err := ValidateRaw(input.Raw, "raw")
+	if err != nil {
+		return Issue{}, err
 	}
 
 	s.mu.Lock()
@@ -364,20 +331,12 @@ func (s *InMemoryStore) ProgressPost(_ context.Context, id string, input Progres
 			continue
 		}
 
-		if issue.Status == StatusClosed {
-			return Issue{}, ErrIssueClosed
+		if err := EnsureMutable(issue); err != nil {
+			return Issue{}, err
 		}
 
 		discussion := cloneIssuePosts(s.discussion[id])
-		post := IssuePost{
-			ID:        issuePostID(id, len(discussion)+1),
-			IssueID:   id,
-			Raw:       raw,
-			CreatedBy: defaultActor(input.CreatedBy),
-			CreatedAt: time.Now().UTC(),
-			Sequence:  len(discussion) + 1,
-			Kind:      "progress",
-		}
+		post := NewDiscussionPost(id, discussion, raw, input.CreatedBy, "progress")
 		discussion = append(discussion, post)
 
 		issue.Discussion = cloneIssuePosts(discussion)
@@ -965,7 +924,7 @@ func cloneTags(input []Tag) []Tag {
 }
 
 func sanitizeTagName(name string) string {
-	return strings.ToLower(strings.Join(strings.Fields(strings.TrimSpace(name)), " "))
+	return domain.NormalizeTagName(name)
 }
 
 func copyTagScores(input []TagRelevance) []TagRelevance {

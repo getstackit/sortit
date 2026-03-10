@@ -5,6 +5,8 @@ import (
 	"math/rand"
 	"sort"
 	"strings"
+
+	"splat/internal/issues"
 )
 
 type Cluster struct {
@@ -36,16 +38,16 @@ var tagColors = map[string]string{
 // ComputeFactorClusters uses k-means clustering on 2D PCA positions.
 // It tries k=3,4,5 and picks the best k by silhouette score.
 // Clusters with fewer than 5 items are dissolved.
-func ComputeFactorClusters(issues []Issue, positions map[string]Position) []Cluster {
-	if len(issues) < 5 {
+func ComputeFactorClusters(items []issues.Issue, positions map[string]Position) []Cluster {
+	if len(items) < 5 {
 		return nil
 	}
 
 	// Build ordered point list
-	n := len(issues)
+	n := len(items)
 	xs := make([]float64, n)
 	ys := make([]float64, n)
-	for i, issue := range issues {
+	for i, issue := range items {
 		p := positions[issue.ID]
 		xs[i] = p.X
 		ys[i] = p.Y
@@ -76,8 +78,8 @@ func ComputeFactorClusters(issues []Issue, positions map[string]Position) []Clus
 	}
 
 	// Group issues by cluster assignment
-	groups := make(map[int][]Issue)
-	for i, issue := range issues {
+	groups := make(map[int][]issues.Issue)
+	for i, issue := range items {
 		c := bestAssign[i]
 		groups[c] = append(groups[c], issue)
 	}
@@ -128,20 +130,20 @@ func runKMeans(xs, ys []float64, k, maxIter int, rng *rand.Rand) ([]int, [][2]fl
 	// Random initialization: pick k distinct random indices as initial centroids
 	perm := rng.Perm(n)
 	centroids := make([][2]float64, k)
-	for i := 0; i < k; i++ {
+	for i := range k {
 		centroids[i] = [2]float64{xs[perm[i]], ys[perm[i]]}
 	}
 
 	assign := make([]int, n)
 
-	for iter := 0; iter < maxIter; iter++ {
+	for iter := range maxIter {
 		changed := false
 
 		// Assignment step
-		for i := 0; i < n; i++ {
+		for i := range n {
 			bestC := 0
 			bestDist := math.MaxFloat64
-			for c := 0; c < k; c++ {
+			for c := range k {
 				dx := xs[i] - centroids[c][0]
 				dy := ys[i] - centroids[c][1]
 				d := dx*dx + dy*dy
@@ -161,10 +163,10 @@ func runKMeans(xs, ys []float64, k, maxIter int, rng *rand.Rand) ([]int, [][2]fl
 		}
 
 		// Update step
-		for c := 0; c < k; c++ {
+		for c := range k {
 			sumX, sumY := 0.0, 0.0
 			count := 0
-			for i := 0; i < n; i++ {
+			for i := range n {
 				if assign[i] == c {
 					sumX += xs[i]
 					sumY += ys[i]
@@ -196,7 +198,7 @@ func silhouetteScore(xs, ys []float64, assign []int, k int) float64 {
 	totalSil := 0.0
 	validCount := 0
 
-	for i := 0; i < n; i++ {
+	for i := range n {
 		ci := assign[i]
 		if counts[ci] <= 1 {
 			// Singleton cluster: silhouette is 0
@@ -205,7 +207,7 @@ func silhouetteScore(xs, ys []float64, assign []int, k int) float64 {
 
 		// a = mean distance to same-cluster points
 		a := 0.0
-		for j := 0; j < n; j++ {
+		for j := range n {
 			if j != i && assign[j] == ci {
 				a += math.Hypot(xs[i]-xs[j], ys[i]-ys[j])
 			}
@@ -214,12 +216,12 @@ func silhouetteScore(xs, ys []float64, assign []int, k int) float64 {
 
 		// b = min mean distance to other-cluster points
 		b := math.MaxFloat64
-		for c := 0; c < k; c++ {
+		for c := range k {
 			if c == ci || counts[c] == 0 {
 				continue
 			}
 			sum := 0.0
-			for j := 0; j < n; j++ {
+			for j := range n {
 				if assign[j] == c {
 					sum += math.Hypot(xs[i]-xs[j], ys[i]-ys[j])
 				}
@@ -244,10 +246,10 @@ func silhouetteScore(xs, ys []float64, assign []int, k int) float64 {
 }
 
 // clusterTopTag returns the single top tag name for a group of issues.
-func clusterTopTag(group []Issue) string {
+func clusterTopTag(group []issues.Issue) string {
 	scores := map[string]float64{}
 	for _, issue := range group {
-		for _, t := range issue.Tags {
+		for _, t := range issue.TagScores {
 			scores[t.Tag] += t.Relevance
 		}
 	}
@@ -263,10 +265,10 @@ func clusterTopTag(group []Issue) string {
 	return topTag
 }
 
-func clusterLabel(group []Issue) string {
+func clusterLabel(group []issues.Issue) string {
 	scores := map[string]float64{}
 	for _, issue := range group {
-		for _, t := range issue.Tags {
+		for _, t := range issue.TagScores {
 			scores[t.Tag] += t.Relevance
 		}
 	}
@@ -298,10 +300,10 @@ func clusterLabel(group []Issue) string {
 	return strings.Join(parts, " / ")
 }
 
-func clusterColor(group []Issue) string {
+func clusterColor(group []issues.Issue) string {
 	scores := map[string]float64{}
 	for _, issue := range group {
-		for _, t := range issue.Tags {
+		for _, t := range issue.TagScores {
 			scores[t.Tag] += t.Relevance
 		}
 	}

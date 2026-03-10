@@ -107,10 +107,7 @@ func filterEdgesForViewport(base mapBaseData, viewport Viewport) []Edge {
 		return candidates[:targetEdgeCount]
 	}
 
-	remaining := targetEdgeCount - len(candidates)
-	if remaining > len(oneVisible) {
-		remaining = len(oneVisible)
-	}
+	remaining := min(targetEdgeCount-len(candidates), len(oneVisible))
 	candidates = append(candidates, oneVisible[:remaining]...)
 	return candidates
 }
