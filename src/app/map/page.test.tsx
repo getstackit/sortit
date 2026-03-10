@@ -135,14 +135,14 @@ describe("MapPage", () => {
     });
   });
 
-  it("renders the SVG canvas with blob filter", async () => {
+  it("renders the SVG canvas with blob paths", async () => {
     const { container } = render(<MapPage />);
     await waitFor(() => {
       expect(container.querySelector("svg")).toBeInTheDocument();
     });
 
-    const filter = container.querySelector("#blob-soft");
-    expect(filter).toBeInTheDocument();
+    const blobPaths = container.querySelectorAll("path[stroke-linejoin='round']");
+    expect(blobPaths.length).toBeGreaterThan(0);
   });
 
   it("renders blob paths for clusters with 5+ items", async () => {
@@ -151,7 +151,7 @@ describe("MapPage", () => {
       expect(container.querySelector("svg")).toBeInTheDocument();
     });
 
-    const paths = container.querySelectorAll("path[filter='url(#blob-soft)']");
+    const paths = container.querySelectorAll("path[stroke-linejoin='round']");
     expect(paths.length).toBe(2);
   });
 
@@ -189,7 +189,7 @@ describe("MapPage", () => {
       expect(container.querySelector("svg")).toBeInTheDocument();
     });
 
-    const paths = container.querySelectorAll("path[filter='url(#blob-soft)']");
+    const paths = container.querySelectorAll("path[stroke-linejoin='round']");
     expect(paths.length).toBe(0);
   });
 
@@ -215,7 +215,7 @@ describe("MapPage", () => {
     });
 
     // Should render without crashing, no blobs since issueIds is null
-    const paths = container.querySelectorAll("path[filter='url(#blob-soft)']");
+    const paths = container.querySelectorAll("path[stroke-linejoin='round']");
     expect(paths.length).toBe(0);
   });
 
@@ -239,7 +239,7 @@ describe("MapPage", () => {
       expect(container.querySelector("svg")).toBeInTheDocument();
     });
 
-    const paths = container.querySelectorAll("path[filter='url(#blob-soft)']");
+    const paths = container.querySelectorAll("path[stroke-linejoin='round']");
     expect(paths.length).toBe(0);
   });
 
@@ -263,7 +263,7 @@ describe("MapPage", () => {
     });
 
     // Should not crash — legacy clusters simply won't produce blobs
-    const paths = container.querySelectorAll("path[filter='url(#blob-soft)']");
+    const paths = container.querySelectorAll("path[stroke-linejoin='round']");
     expect(paths.length).toBe(0);
   });
 
@@ -275,7 +275,7 @@ describe("MapPage", () => {
       expect(container.querySelector("svg")).toBeInTheDocument();
     });
 
-    const blobGroup = container.querySelector("path[filter='url(#blob-soft)']")?.parentElement;
+    const blobGroup = container.querySelector("path[stroke-linejoin='round']")?.parentElement;
     expect(blobGroup).toBeInTheDocument();
 
     await user.click(blobGroup!);
@@ -293,7 +293,7 @@ describe("MapPage", () => {
       expect(container.querySelector("svg")).toBeInTheDocument();
     });
 
-    const blobGroup = container.querySelector("path[filter='url(#blob-soft)']")?.parentElement;
+    const blobGroup = container.querySelector("path[stroke-linejoin='round']")?.parentElement;
     expect(blobGroup).toBeInTheDocument();
 
     await user.click(blobGroup!);
@@ -317,7 +317,7 @@ describe("MapPage", () => {
       expect(container.querySelector("svg")).toBeInTheDocument();
     });
 
-    const blobGroup = container.querySelector("path[filter='url(#blob-soft)']")?.parentElement;
+    const blobGroup = container.querySelector("path[stroke-linejoin='round']")?.parentElement;
     expect(blobGroup).toBeInTheDocument();
 
     await user.click(blobGroup!);
@@ -351,7 +351,7 @@ describe("MapPage", () => {
       expect(container.querySelector("svg")).toBeInTheDocument();
     });
 
-    const paths = container.querySelectorAll("path[filter='url(#blob-soft)']");
+    const paths = container.querySelectorAll("path[stroke-linejoin='round']");
     expect(paths.length).toBe(0);
   });
 
@@ -390,7 +390,7 @@ describe("MapPage", () => {
 
     // 6 issues are near (0.15, 0.15): issue-001 through issue-006
     // That's >= 5, so a blob should render
-    const paths = container.querySelectorAll("path[filter='url(#blob-soft)']");
+    const paths = container.querySelectorAll("path[stroke-linejoin='round']");
     expect(paths.length).toBe(1);
   });
 
@@ -414,7 +414,7 @@ describe("MapPage", () => {
       expect(container.querySelector("svg")).toBeInTheDocument();
     });
 
-    const blobGroup = container.querySelector("path[filter='url(#blob-soft)']")?.parentElement;
+    const blobGroup = container.querySelector("path[stroke-linejoin='round']")?.parentElement;
     expect(blobGroup).toBeInTheDocument();
 
     await user.click(blobGroup!);

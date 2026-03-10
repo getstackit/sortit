@@ -77,9 +77,6 @@ export type IssueMapCanvasNode = {
   labelFillOpacity?: number;
   className?: string;
   dataIssue?: string;
-  onClick?: MouseEventHandler<SVGGElement>;
-  onMouseEnter?: MouseEventHandler<SVGGElement>;
-  onMouseLeave?: MouseEventHandler<SVGGElement>;
 };
 
 type IssueMapCanvasProps = {
@@ -125,12 +122,6 @@ export const IssueMapCanvas = forwardRef<SVGSVGElement, IssueMapCanvasProps>(
       >
       {background}
 
-      <defs>
-        <filter id="blob-soft" x="-20%" y="-20%" width="140%" height="140%">
-          <feGaussianBlur in="SourceGraphic" stdDeviation="12" />
-        </filter>
-      </defs>
-
       {gridLines.map((line) => (
         <line
           key={line.key}
@@ -151,7 +142,7 @@ export const IssueMapCanvas = forwardRef<SVGSVGElement, IssueMapCanvasProps>(
             d={blob.path}
             fill={blob.fill}
             fillOpacity={blob.fillOpacity ?? 0.15}
-            filter="url(#blob-soft)"
+            strokeLinejoin="round"
           />
           {blob.label && (
             <text
@@ -214,9 +205,6 @@ export const IssueMapCanvas = forwardRef<SVGSVGElement, IssueMapCanvasProps>(
         <g
           key={node.key}
           data-issue={node.dataIssue}
-          onClick={node.onClick}
-          onMouseEnter={node.onMouseEnter}
-          onMouseLeave={node.onMouseLeave}
           className={node.className}
         >
           {node.rings?.map((ring, index) => (

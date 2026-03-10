@@ -4,6 +4,7 @@ import {
   Suspense,
   startTransition,
   useCallback,
+  useDeferredValue,
   useEffect,
   useMemo,
   useRef,
@@ -18,6 +19,7 @@ import {
   type IssueMapCanvasBlob,
   type IssueMapCanvasLine,
   type IssueMapCanvasNode,
+  type IssueMapCanvasRing,
 } from "@/components/issue-map-canvas";
 import { AppSidebar } from "@/components/app-sidebar";
 import { SiteHeader } from "@/components/site-header";
@@ -82,6 +84,7 @@ function MapPageContent() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [viewport, setViewport] = useState<Viewport>(initialURLState.viewport);
+  const deferredViewport = useDeferredValue(viewport);
   const [edgeThreshold, setEdgeThreshold] = useState(initialURLState.edgeThreshold);
   const [showClosed, setShowClosed] = useState(initialURLState.showClosed);
   const [loadedEdgeKey, setLoadedEdgeKey] = useState("");
@@ -145,20 +148,24 @@ function MapPageContent() {
   }, []);
 
   useEffect(() => {
-    const initialViewportQuery = initialViewportKeyRef.current;
+    const controller = new AbortController();
+    const query = initialViewportKeyRef.current;
 
-    fetchMapData(initialViewportQuery)
+    fetchMapData(query, controller.signal)
       .then((data) => {
         setMapData(data);
-        setLoadedEdgeKey(initialViewportQuery);
+        setLoadedEdgeKey(query);
         setLoading(false);
       })
-      .catch((caughtError) => {
+      .catch((caughtError: Error & { name?: string }) => {
+        if (caughtError.name === "AbortError") return;
         const message =
           caughtError instanceof Error ? caughtError.message : "Unknown error";
         setError(message);
         setLoading(false);
       });
+
+    return () => controller.abort();
   }, []);
 
   useEffect(() => {
@@ -349,17 +356,17 @@ function MapPageContent() {
 
     for (const issue of issues) {
       if (
-        issue.x >= viewport.xMin &&
-        issue.x <= viewport.xMax &&
-        issue.y >= viewport.yMin &&
-        issue.y <= viewport.yMax
+        issue.x >= deferredViewport.xMin &&
+        issue.x <= deferredViewport.xMax &&
+        issue.y >= deferredViewport.yMin &&
+        issue.y <= deferredViewport.yMax
       ) {
         visible.add(issue.id);
       }
     }
 
     return visible;
-  }, [issues, viewport.xMax, viewport.xMin, viewport.yMax, viewport.yMin]);
+  }, [issues, deferredViewport.xMax, deferredViewport.xMin, deferredViewport.yMax, deferredViewport.yMin]);
 
   const visibleIssues = useMemo(
     () => issues.filter((issue) => visibleIssueIds.has(issue.id)),
@@ -400,54 +407,52 @@ function MapPageContent() {
     [selectedNeighbors]
   );
 
-  const visibleEdges = useMemo(
-    () =>
-      currentEdges.filter(
-        (edge) =>
-          visibleIssueIds.has(edge.source) || visibleIssueIds.has(edge.target)
-      ),
-    [currentEdges, visibleIssueIds]
-  );
-
-  const rankedVisibleEdges = useMemo(() => {
-    const ranked = [...visibleEdges];
-
-    ranked.sort((a, b) => {
-      const aBothVisible =
-        visibleIssueIds.has(a.source) && visibleIssueIds.has(a.target);
-      const bBothVisible =
-        visibleIssueIds.has(b.source) && visibleIssueIds.has(b.target);
-
-      if (aBothVisible !== bBothVisible) {
-        return aBothVisible ? -1 : 1;
-      }
-
-      if (a.similarity !== b.similarity) {
-        return b.similarity - a.similarity;
-      }
-
+  const sortedEdges = useMemo(() => {
+    const sorted = [...currentEdges];
+    sorted.sort((a, b) => {
+      if (a.similarity !== b.similarity) return b.similarity - a.similarity;
       return `${a.source}-${a.target}`.localeCompare(`${b.source}-${b.target}`);
     });
-
-    return ranked;
-  }, [visibleEdges, visibleIssueIds]);
+    return sorted;
+  }, [currentEdges]);
 
   const renderedEdges = useMemo(() => {
     if (selectedId != null) {
-      return rankedVisibleEdges
-        .filter(
-          (edge) => edge.source === selectedId || edge.target === selectedId
-        )
-        .slice(0, MAX_RENDERED_SELECTED_EDGES);
+      const selected: typeof sortedEdges = [];
+      for (const edge of sortedEdges) {
+        if (edge.source === selectedId || edge.target === selectedId) {
+          selected.push(edge);
+          if (selected.length >= MAX_RENDERED_SELECTED_EDGES) break;
+        }
+      }
+      return selected;
     }
 
-    return rankedVisibleEdges.slice(0, ambientEdgeLimit);
-  }, [ambientEdgeLimit, rankedVisibleEdges, selectedId]);
+    const bothVisible: typeof sortedEdges = [];
+    const oneVisible: typeof sortedEdges = [];
+
+    for (const edge of sortedEdges) {
+      const srcIn = visibleIssueIds.has(edge.source);
+      const tgtIn = visibleIssueIds.has(edge.target);
+      if (!srcIn && !tgtIn) continue;
+
+      if (srcIn && tgtIn) {
+        bothVisible.push(edge);
+      } else {
+        oneVisible.push(edge);
+      }
+
+      if (bothVisible.length + oneVisible.length >= ambientEdgeLimit) break;
+    }
+
+    const result = bothVisible.concat(oneVisible);
+    return result.slice(0, ambientEdgeLimit);
+  }, [ambientEdgeLimit, sortedEdges, selectedId, visibleIssueIds]);
 
   const visibleClusters = useMemo(
     () =>
-      clusters.filter((cluster) => clusterIntersectsViewport(cluster, viewport)),
-    [clusters, viewport]
+      clusters.filter((cluster) => clusterIntersectsViewport(cluster, deferredViewport)),
+    [clusters, deferredViewport]
   );
 
   const selectedIssueColor = useMemo(() => {
@@ -798,8 +803,18 @@ function MapPageContent() {
   }
 
   function handleCanvasClick(event: ReactMouseEvent<SVGSVGElement>) {
-    if ((event.target as SVGElement).closest("[data-issue]")) {
+    const issueEl = (event.target as SVGElement).closest("[data-issue]");
+    if (issueEl) {
+      const issueId = issueEl.getAttribute("data-issue");
+      if (!issueId) return;
       blankClickCandidateRef.current = false;
+
+      if (event.shiftKey) {
+        toggleBatchIssue(issueId);
+      } else {
+        clearSelection();
+        setSelectedId(selectedId === issueId ? null : issueId);
+      }
       return;
     }
 
@@ -810,6 +825,22 @@ function MapPageContent() {
     blankClickCandidateRef.current = false;
     clearAllSelections();
   }
+
+  const handleMouseOver = useCallback((event: ReactMouseEvent<SVGSVGElement>) => {
+    const issueEl = (event.target as SVGElement).closest("[data-issue]");
+    if (issueEl) {
+      const issueId = issueEl.getAttribute("data-issue");
+      if (issueId) setHoveredId(issueId);
+    }
+  }, []);
+
+  const handleMouseOut = useCallback((event: ReactMouseEvent<SVGSVGElement>) => {
+    const issueEl = (event.target as SVGElement).closest("[data-issue]");
+    if (!issueEl) return;
+    const related = event.relatedTarget as SVGElement | null;
+    if (related && issueEl.contains(related)) return;
+    setHoveredId(null);
+  }, []);
 
   const hasSelection = selectedId != null || selectedBatch.size > 0;
 
@@ -867,7 +898,7 @@ function MapPageContent() {
         const minSize = cluster.issueIds ? 5 : 3;
         return members.length >= minSize;
       })
-      .map((cluster) => {
+      .map((cluster, clusterIndex) => {
         const memberIds = clusterMembers.get(cluster.label) ?? [];
         const memberPoints = memberIds
           .map((id) => issueIndex.get(id))
@@ -886,7 +917,7 @@ function MapPageContent() {
         const isThisCluster = filteredClusterLabel === cluster.label;
 
         return {
-          key: `blob-${cluster.label}`,
+          key: `blob-${clusterIndex}-${cluster.label}`,
           path,
           fill: color,
           fillOpacity: isFiltered ? (isThisCluster ? 0.18 : 0.04) : 0.15,
@@ -983,7 +1014,7 @@ function MapPageContent() {
     [selectedClusterIssues]
   );
 
-  const canvasEdges = useMemo<IssueMapCanvasLine[]>(() => {
+  const staticEdgeData = useMemo(() => {
     return renderedEdges.flatMap((edge) => {
       const issueA = issueIndex.get(edge.source);
       const issueB = issueIndex.get(edge.target);
@@ -991,8 +1022,6 @@ function MapPageContent() {
         return [];
       }
 
-      const { sx: x1, sy: y1 } = toScreen(issueA.x, issueA.y);
-      const { sx: x2, sy: y2 } = toScreen(issueB.x, issueB.y);
       const isNeighborLink =
         selectedId != null &&
         ((edge.source === selectedId && neighborIds.has(edge.target)) ||
@@ -1004,10 +1033,10 @@ function MapPageContent() {
       return [
         {
           key: `${edge.source}-${edge.target}`,
-          x1,
-          y1,
-          x2,
-          y2,
+          ax: issueA.x,
+          ay: issueA.y,
+          bx: issueB.x,
+          by: issueB.y,
           stroke: isNeighborLink ? selectedIssueColor : "currentColor",
           strokeOpacity: isNeighborLink
             ? 0.5 + edge.similarity * 0.35
@@ -1030,12 +1059,27 @@ function MapPageContent() {
     selectedId,
     selectedIssueColor,
     isHighlighted,
-    toScreen,
   ]);
 
-  const canvasNodes = useMemo<IssueMapCanvasNode[]>(() => {
+  const canvasEdges = useMemo<IssueMapCanvasLine[]>(() => {
+    return staticEdgeData.map((edge) => {
+      const { sx: x1, sy: y1 } = toScreen(edge.ax, edge.ay);
+      const { sx: x2, sy: y2 } = toScreen(edge.bx, edge.by);
+      return {
+        key: edge.key,
+        x1,
+        y1,
+        x2,
+        y2,
+        stroke: edge.stroke,
+        strokeOpacity: edge.strokeOpacity,
+        strokeWidth: edge.strokeWidth,
+      };
+    });
+  }, [staticEdgeData, toScreen]);
+
+  const staticNodeData = useMemo(() => {
     return visibleIssues.map((issue) => {
-      const { sx, sy } = toScreen(issue.x, issue.y);
       const color = TAG_COLORS[dominantTag(issue.tags)] ?? "#94a3b8";
       const radius = issueRadius(issue.tags);
       const isActive = issue.id === hoveredId || issue.id === selectedId;
@@ -1044,7 +1088,7 @@ function MapPageContent() {
       const clusterDimmed = filteredIssueIds != null && !filteredIssueIds.has(issue.id);
       const dimmed = (hasSelection && !highlighted) || clusterDimmed;
       const isClosed = issue.status === "closed";
-      const rings = [];
+      const rings: IssueMapCanvasRing[] = [];
 
       if (isNeighbor && selectedId != null) {
         rings.push({
@@ -1076,10 +1120,9 @@ function MapPageContent() {
       }
 
       return {
-        key: issue.id,
-        dataIssue: issue.id,
-        cx: sx,
-        cy: sy,
+        id: issue.id,
+        x: issue.x,
+        y: issue.y,
         radius,
         fill: color,
         fillOpacity: clusterDimmed ? 0.08 : dimmed ? 0.15 : isClosed ? (isActive ? 0.42 : 0.22) : isActive ? 0.9 : 0.6,
@@ -1094,22 +1137,8 @@ function MapPageContent() {
               ? `${issue.raw.slice(0, 40)}...`
               : issue.raw
             : undefined,
-        labelY: sy - radius - (isNeighbor && !isActive ? 10 : 8),
+        labelYOffset: radius + (isNeighbor && !isActive ? 10 : 8),
         labelFillOpacity: isNeighbor && !isActive ? 0.6 : 1,
-        className: "cursor-pointer",
-        onMouseEnter: () => setHoveredId(issue.id),
-        onMouseLeave: () => setHoveredId(null),
-        onClick: (event) => {
-          event.stopPropagation();
-
-          if (event.shiftKey) {
-            toggleBatchIssue(issue.id);
-            return;
-          }
-
-          clearSelection();
-          setSelectedId(selectedId === issue.id ? null : issue.id);
-        },
       };
     });
   }, [
@@ -1119,12 +1148,33 @@ function MapPageContent() {
     neighborIds,
     selectedBatch,
     selectedId,
-    clearSelection,
     isHighlighted,
-    toScreen,
-    toggleBatchIssue,
     visibleIssues,
   ]);
+
+  const canvasNodes = useMemo<IssueMapCanvasNode[]>(() => {
+    return staticNodeData.map((node) => {
+      const { sx, sy } = toScreen(node.x, node.y);
+      return {
+        key: node.id,
+        dataIssue: node.id,
+        cx: sx,
+        cy: sy,
+        radius: node.radius,
+        fill: node.fill,
+        fillOpacity: node.fillOpacity,
+        stroke: node.stroke,
+        strokeWidth: node.strokeWidth,
+        strokeOpacity: node.strokeOpacity,
+        strokeDasharray: node.strokeDasharray,
+        rings: node.rings,
+        label: node.label,
+        labelY: sy - node.labelYOffset,
+        labelFillOpacity: node.labelFillOpacity,
+        className: "cursor-pointer",
+      };
+    });
+  }, [staticNodeData, toScreen]);
 
   if (loading) {
     return (
@@ -1264,6 +1314,8 @@ function MapPageContent() {
             onMouseMove={handleMouseMove}
             onMouseUp={handleMouseUp}
             onClick={handleCanvasClick}
+            onMouseOver={handleMouseOver}
+            onMouseOut={handleMouseOut}
             onMouseLeave={handleMouseUp}
             gridLines={canvasGridLines}
             blobs={canvasBlobs}
