@@ -100,7 +100,7 @@ func integrationVector(text string) []float32 {
 }
 
 func TestAPIIntegrationCreateLookupMapAndTagsWithMockAIBackend(t *testing.T) {
-	store := newSQLiteIssueStore(t, nil)
+	store := newPostgresIssueStore(t, nil)
 	server := NewServer(ServerConfig{
 		CORSOrigins: []string{"http://localhost:3000"},
 		APIPrefixes: []string{"/api"},
@@ -206,7 +206,7 @@ func TestAPIIntegrationCreateLookupMapAndTagsWithMockAIBackend(t *testing.T) {
 }
 
 func TestAPIIntegrationCreateAndCloseIssue(t *testing.T) {
-	store := newSQLiteIssueStore(t, nil)
+	store := newPostgresIssueStore(t, nil)
 	server := NewServer(ServerConfig{
 		CORSOrigins: []string{"http://localhost:3000"},
 		APIPrefixes: []string{"/api"},
@@ -312,7 +312,7 @@ func TestAPIIntegrationCreateAndCloseIssue(t *testing.T) {
 }
 
 func TestAPIIntegrationRefineIssueUpdatesCanonicalTagsAndDiscussion(t *testing.T) {
-	store := newSQLiteIssueStore(t, nil)
+	store := newPostgresIssueStore(t, nil)
 	server := NewServer(ServerConfig{
 		CORSOrigins: []string{"http://localhost:3000"},
 		APIPrefixes: []string{"/api"},

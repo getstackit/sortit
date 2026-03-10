@@ -88,6 +88,8 @@ npm run dev
 
 Open [http://localhost:3000](http://localhost:3000).
 
+This repo pins npm to the `linked` install strategy via `.npmrc` so frontend dependencies live under `node_modules/.store` instead of a fully hoisted tree. That keeps `go list ./...` and `go test ./...` scoped to first-party Go packages instead of traversing incidental Go files from frontend dependencies. If you already have an older hoisted `node_modules` tree, rerun `npm install` once to migrate it.
+
 In local development, browser API requests default to `http://127.0.0.1:8081` to avoid proxying through Next.js. Set `NEXT_PUBLIC_API_ORIGIN` if you need a different backend origin.
 
 The Go API now persists issues, tags, and tag embeddings in SQLite at `data/splat.sqlite` by default. Override the location with `SPLAT_DB_PATH` or `go run ./apps/server --db /path/to/issues.sqlite`.

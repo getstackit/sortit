@@ -69,7 +69,7 @@ func TestIssuesEndpointListsSeededIssues(t *testing.T) {
 	server := NewServer(ServerConfig{
 		CORSOrigins: []string{"http://localhost:3000"},
 		APIPrefixes: []string{"/api"},
-		IssueStore:  newSQLiteIssueStore(t, issues.FixtureIssues()),
+		IssueStore:  newPostgresIssueStore(t, issues.FixtureIssues()),
 	})
 
 	req := httptest.NewRequest(http.MethodGet, "/api/issues", nil)
@@ -126,7 +126,7 @@ func TestIssuesEndpointGetsIssueByID(t *testing.T) {
 	server := NewServer(ServerConfig{
 		CORSOrigins: []string{"http://localhost:3000"},
 		APIPrefixes: []string{"/api"},
-		IssueStore:  newSQLiteIssueStore(t, issues.FixtureIssues()),
+		IssueStore:  newPostgresIssueStore(t, issues.FixtureIssues()),
 	})
 
 	req := httptest.NewRequest(http.MethodGet, "/api/issues/sample-3", nil)
@@ -158,7 +158,7 @@ func TestIssuesEndpointReturnsNotFoundForMissingIssue(t *testing.T) {
 	server := NewServer(ServerConfig{
 		CORSOrigins: []string{"http://localhost:3000"},
 		APIPrefixes: []string{"/api"},
-		IssueStore:  newSQLiteIssueStore(t, issues.FixtureIssues()),
+		IssueStore:  newPostgresIssueStore(t, issues.FixtureIssues()),
 	})
 
 	req := httptest.NewRequest(http.MethodGet, "/api/issues/missing-issue", nil)
@@ -180,7 +180,7 @@ func TestIssuesEndpointReturnsNotFoundForMissingIssue(t *testing.T) {
 }
 
 func TestIssuesEndpointCreatesIssue(t *testing.T) {
-	store := newSQLiteIssueStore(t, nil)
+	store := newPostgresIssueStore(t, nil)
 	server := NewServer(ServerConfig{
 		CORSOrigins: []string{"http://localhost:3000"},
 		APIPrefixes: []string{"/api"},
@@ -262,7 +262,7 @@ func TestIssuesEndpointCreatesIssue(t *testing.T) {
 }
 
 func TestIssuesEndpointRefinesIssue(t *testing.T) {
-	store := newSQLiteIssueStore(t, nil)
+	store := newPostgresIssueStore(t, nil)
 	server := NewServer(ServerConfig{
 		CORSOrigins: []string{"http://localhost:3000"},
 		APIPrefixes: []string{"/api"},
@@ -337,7 +337,7 @@ func TestIssuesEndpointRefinesIssue(t *testing.T) {
 }
 
 func TestIssuesEndpointFiltersByStatusAndClosesIssue(t *testing.T) {
-	store := newSQLiteIssueStore(t, nil)
+	store := newPostgresIssueStore(t, nil)
 	server := NewServer(ServerConfig{
 		CORSOrigins: []string{"http://localhost:3000"},
 		APIPrefixes: []string{"/api"},
@@ -416,7 +416,7 @@ func TestIssuesEndpointFiltersByStatusAndClosesIssue(t *testing.T) {
 }
 
 func TestIssuesEndpointReopensIssue(t *testing.T) {
-	store := newSQLiteIssueStore(t, []issues.Issue{
+	store := newPostgresIssueStore(t, []issues.Issue{
 		{
 			ID:        "issue-closed",
 			Raw:       "closed",
@@ -457,7 +457,7 @@ func TestIssuesEndpointReopensIssue(t *testing.T) {
 }
 
 func TestIssuesEndpointExploresIssue(t *testing.T) {
-	store := newSQLiteIssueStore(t, nil)
+	store := newPostgresIssueStore(t, nil)
 	if err := store.UpsertTags(context.Background(), []issues.Tag{
 		{Name: "export", Embedding: []float64{1, 0, 0}},
 		{Name: "safari", Embedding: []float64{0.9, 0.1, 0}},
@@ -581,7 +581,7 @@ func TestIssuesEndpointExploresIssue(t *testing.T) {
 }
 
 func TestIssuesEndpointSearchesIssues(t *testing.T) {
-	store := newSQLiteIssueStore(t, nil)
+	store := newPostgresIssueStore(t, nil)
 	if err := store.UpsertTags(context.Background(), []issues.Tag{
 		{Name: "frontend", Embedding: []float64{1, 0, 0}},
 		{Name: "improvement", Embedding: []float64{0.8, 0.2, 0}},
@@ -726,7 +726,7 @@ func TestIssuesEndpointExploreRejectsInvalidLimit(t *testing.T) {
 	server := NewServer(ServerConfig{
 		CORSOrigins: []string{"http://localhost:3000"},
 		APIPrefixes: []string{"/api"},
-		IssueStore:  newSQLiteIssueStore(t, issues.FixtureIssues()),
+		IssueStore:  newPostgresIssueStore(t, issues.FixtureIssues()),
 	})
 
 	req := httptest.NewRequest(http.MethodGet, "/api/issues/sample-1/explore?limit=0", nil)
@@ -814,7 +814,7 @@ func TestIssuesEndpointLogsInternalServerErrors(t *testing.T) {
 }
 
 func TestIssuesCompareEndpointReturnsEmbeddingSimilarity(t *testing.T) {
-	store := newSQLiteIssueStore(t, nil)
+	store := newPostgresIssueStore(t, nil)
 	if err := store.Replace(context.Background(), []issues.Issue{
 		{
 			ID:        "issue-a",

@@ -27,7 +27,7 @@ func run() error {
 	var (
 		port          = flag.Int("port", 8081, "Port to listen on")
 		corsOrigins   = flag.String("cors", "http://localhost:3000,http://127.0.0.1:3000", "Comma-separated allowed CORS origins")
-		dbPath        = flag.String("db", envOrDefault("SPLAT_DB_PATH", "data/splat.sqlite"), "SQLite database path")
+		databaseURL   = flag.String("database-url", envOrDefault("SPLAT_DATABASE_URL", ""), "PostgreSQL connection string")
 		shutdownGrace = flag.Duration("shutdown-timeout", 10*time.Second, "Graceful shutdown timeout")
 	)
 	flag.Parse()
@@ -37,7 +37,7 @@ func run() error {
 		return err
 	}
 
-	issueStore, err := issues.OpenSQLiteStore(context.Background(), *dbPath)
+	issueStore, err := issues.OpenPostgresStore(context.Background(), *databaseURL)
 	if err != nil {
 		return err
 	}
@@ -53,7 +53,7 @@ func run() error {
 
 	webOrigin := envOrDefault("SPLAT_WEB_ORIGIN", firstNonEmpty(api.ParseCSV(*corsOrigins)))
 	authService, err := auth.NewService(auth.ServiceConfig{
-		Store:      auth.NewSQLiteStore(issueStore.DB()),
+		Store:      auth.NewStore(issueStore.DB()),
 		Provider:   githubProvider,
 		WebOrigin:  webOrigin,
 		SessionTTL: 30 * 24 * time.Hour,

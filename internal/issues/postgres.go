@@ -7,68 +7,50 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"os"
-	"path/filepath"
 	"slices"
 	"strconv"
 	"strings"
 	"time"
 
 	"github.com/golang-migrate/migrate/v4"
-	migratedatabase "github.com/golang-migrate/migrate/v4/database"
-	migratesqlite "github.com/golang-migrate/migrate/v4/database/sqlite"
+	migratepostgres "github.com/golang-migrate/migrate/v4/database/postgres"
 	"github.com/golang-migrate/migrate/v4/source/iofs"
-	_ "modernc.org/sqlite"
+	_ "github.com/jackc/pgx/v5/stdlib"
 
 	"splat/internal/issues/issuesdb"
 )
 
 const (
-	sqliteDriverName          = "sqlite"
-	issueSeqKey               = "next_issue_seq"
-	issueOperationSeqKey      = "next_issue_operation_seq"
-	currentMigrationVersion   = 8
-	schemaMigrationsTableName = "schema_migrations"
+	pgDriverName          = "pgx"
+	schemaMigrationsTable = "schema_migrations"
 )
 
-//go:embed migrations/*.sql
-var sqliteMigrationsFS embed.FS
+//go:embed pgmigrations/*.sql
+var pgMigrationsFS embed.FS
 
-type SQLiteStore struct {
+type PostgresStore struct {
 	db      *sql.DB
 	queries *issuesdb.Queries
 }
 
-type sqliteTagStore interface {
-	ListTags(context.Context) ([]Tag, error)
-	UpsertTags(context.Context, []Tag) error
-}
-
-func OpenSQLiteStore(ctx context.Context, path string) (*SQLiteStore, error) {
-	path = strings.TrimSpace(path)
-	if path == "" {
-		return nil, fmt.Errorf("sqlite database path is required")
+func OpenPostgresStore(ctx context.Context, connString string) (*PostgresStore, error) {
+	connString = strings.TrimSpace(connString)
+	if connString == "" {
+		return nil, fmt.Errorf("postgres connection string is required")
 	}
 
-	if path != ":memory:" {
-		dir := filepath.Dir(path)
-		if dir != "." && dir != "" {
-			if err := ensureDir(dir); err != nil {
-				return nil, err
-			}
-		}
-	}
-
-	db, err := sql.Open(sqliteDriverName, path)
+	db, err := sql.Open(pgDriverName, connString)
 	if err != nil {
-		return nil, fmt.Errorf("open sqlite database: %w", err)
+		return nil, fmt.Errorf("open postgres database: %w", err)
 	}
 
-	store := &SQLiteStore{
+	db.SetMaxOpenConns(25)
+	db.SetMaxIdleConns(5)
+
+	store := &PostgresStore{
 		db:      db,
 		queries: issuesdb.New(db),
 	}
-	store.db.SetMaxOpenConns(1)
 
 	if err := store.init(ctx); err != nil {
 		_ = db.Close()
@@ -78,15 +60,15 @@ func OpenSQLiteStore(ctx context.Context, path string) (*SQLiteStore, error) {
 	return store, nil
 }
 
-func (s *SQLiteStore) Close() error {
+func (s *PostgresStore) Close() error {
 	return s.db.Close()
 }
 
-func (s *SQLiteStore) DB() *sql.DB {
+func (s *PostgresStore) DB() *sql.DB {
 	return s.db
 }
 
-func (s *SQLiteStore) List(ctx context.Context) ([]Issue, error) {
+func (s *PostgresStore) List(ctx context.Context) ([]Issue, error) {
 	rows, err := s.queries.ListIssues(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("list issues: %w", err)
@@ -103,7 +85,7 @@ func (s *SQLiteStore) List(ctx context.Context) ([]Issue, error) {
 	return cloneIssues(items), nil
 }
 
-func (s *SQLiteStore) Get(ctx context.Context, id string) (Issue, error) {
+func (s *PostgresStore) Get(ctx context.Context, id string) (Issue, error) {
 	id = strings.TrimSpace(id)
 	if id == "" {
 		return Issue{}, ErrNotFound
@@ -112,7 +94,7 @@ func (s *SQLiteStore) Get(ctx context.Context, id string) (Issue, error) {
 	return s.getIssueWithDiscussion(ctx, s.queries, id)
 }
 
-func (s *SQLiteStore) Create(ctx context.Context, input CreateInput) (Issue, error) {
+func (s *PostgresStore) Create(ctx context.Context, input CreateInput) (Issue, error) {
 	raw := strings.TrimSpace(input.Raw)
 	if raw == "" {
 		return Issue{}, fmt.Errorf("raw is required")
@@ -130,9 +112,9 @@ func (s *SQLiteStore) Create(ctx context.Context, input CreateInput) (Issue, err
 	defer tx.Rollback()
 
 	qtx := s.queries.WithTx(tx)
-	seq, err := nextSequence(ctx, qtx)
+	seq, err := qtx.NextIssueSeq(ctx)
 	if err != nil {
-		return Issue{}, err
+		return Issue{}, fmt.Errorf("next issue sequence: %w", err)
 	}
 
 	issue := Issue{
@@ -178,7 +160,7 @@ func (s *SQLiteStore) Create(ctx context.Context, input CreateInput) (Issue, err
 	return cloneIssues([]Issue{issue})[0], nil
 }
 
-func (s *SQLiteStore) Refine(ctx context.Context, id string, input RefineInput) (Issue, error) {
+func (s *PostgresStore) Refine(ctx context.Context, id string, input RefineInput) (Issue, error) {
 	id = strings.TrimSpace(id)
 	if id == "" {
 		return Issue{}, ErrNotFound
@@ -260,7 +242,7 @@ func (s *SQLiteStore) Refine(ctx context.Context, id string, input RefineInput) 
 	return cloneIssues([]Issue{updated})[0], nil
 }
 
-func (s *SQLiteStore) ProgressPost(ctx context.Context, id string, input ProgressInput) (Issue, error) {
+func (s *PostgresStore) ProgressPost(ctx context.Context, id string, input ProgressInput) (Issue, error) {
 	id = strings.TrimSpace(id)
 	if id == "" {
 		return Issue{}, ErrNotFound
@@ -318,7 +300,7 @@ func (s *SQLiteStore) ProgressPost(ctx context.Context, id string, input Progres
 	return cloneIssues([]Issue{updated})[0], nil
 }
 
-func (s *SQLiteStore) CloseIssue(ctx context.Context, id string, closedBy string) (Issue, error) {
+func (s *PostgresStore) CloseIssue(ctx context.Context, id string, closedBy string) (Issue, error) {
 	id = strings.TrimSpace(id)
 	if id == "" {
 		return Issue{}, ErrNotFound
@@ -361,7 +343,7 @@ func (s *SQLiteStore) CloseIssue(ctx context.Context, id string, closedBy string
 	return updated, nil
 }
 
-func (s *SQLiteStore) ReopenIssue(ctx context.Context, id string) (Issue, error) {
+func (s *PostgresStore) ReopenIssue(ctx context.Context, id string) (Issue, error) {
 	id = strings.TrimSpace(id)
 	if id == "" {
 		return Issue{}, ErrNotFound
@@ -399,7 +381,7 @@ func (s *SQLiteStore) ReopenIssue(ctx context.Context, id string) (Issue, error)
 	return updated, nil
 }
 
-func (s *SQLiteStore) AssignIssue(ctx context.Context, id, assignee string) (Issue, error) {
+func (s *PostgresStore) AssignIssue(ctx context.Context, id, assignee string) (Issue, error) {
 	id = strings.TrimSpace(id)
 	if id == "" {
 		return Issue{}, ErrNotFound
@@ -434,7 +416,7 @@ func (s *SQLiteStore) AssignIssue(ctx context.Context, id, assignee string) (Iss
 	return issue, nil
 }
 
-func (s *SQLiteStore) SplitIssue(ctx context.Context, input SplitInput) (IssueOperationResult, error) {
+func (s *PostgresStore) SplitIssue(ctx context.Context, input SplitInput) (IssueOperationResult, error) {
 	sourceID := strings.TrimSpace(input.SourceID)
 	if sourceID == "" {
 		return IssueOperationResult{}, ErrNotFound
@@ -488,9 +470,9 @@ func (s *SQLiteStore) SplitIssue(ctx context.Context, input SplitInput) (IssueOp
 		if raw == "" {
 			return IssueOperationResult{}, fmt.Errorf("child raw is required")
 		}
-		issueSeq, err := nextSequence(ctx, qtx)
+		issueSeq, err := qtx.NextIssueSeq(ctx)
 		if err != nil {
-			return IssueOperationResult{}, err
+			return IssueOperationResult{}, fmt.Errorf("next issue sequence: %w", err)
 		}
 		issue := Issue{
 			ID:        fmt.Sprintf("issue-%06d", issueSeq),
@@ -585,7 +567,7 @@ func (s *SQLiteStore) SplitIssue(ctx context.Context, input SplitInput) (IssueOp
 	return result, nil
 }
 
-func (s *SQLiteStore) CombineIssues(ctx context.Context, input CombineInput) (IssueOperationResult, error) {
+func (s *PostgresStore) CombineIssues(ctx context.Context, input CombineInput) (IssueOperationResult, error) {
 	sourceIDs := sanitizeIssueIDs(input.SourceIDs)
 	if len(sourceIDs) < 2 {
 		return IssueOperationResult{}, fmt.Errorf("at least two source issues are required")
@@ -614,9 +596,9 @@ func (s *SQLiteStore) CombineIssues(ctx context.Context, input CombineInput) (Is
 		touched = append(touched, issueReference(source))
 	}
 
-	issueSeq, err := nextSequence(ctx, qtx)
+	issueSeq, err := qtx.NextIssueSeq(ctx)
 	if err != nil {
-		return IssueOperationResult{}, err
+		return IssueOperationResult{}, fmt.Errorf("next issue sequence: %w", err)
 	}
 	createdIssue := Issue{
 		ID:        fmt.Sprintf("issue-%06d", issueSeq),
@@ -714,7 +696,7 @@ func (s *SQLiteStore) CombineIssues(ctx context.Context, input CombineInput) (Is
 	return result, nil
 }
 
-func (s *SQLiteStore) LinkIssues(ctx context.Context, input LinkInput) (IssueOperationResult, error) {
+func (s *PostgresStore) LinkIssues(ctx context.Context, input LinkInput) (IssueOperationResult, error) {
 	sourceID := strings.TrimSpace(input.SourceID)
 	targetID := strings.TrimSpace(input.TargetID)
 	if sourceID == "" || targetID == "" {
@@ -793,7 +775,7 @@ func (s *SQLiteStore) LinkIssues(ctx context.Context, input LinkInput) (IssueOpe
 	return result, nil
 }
 
-func (s *SQLiteStore) Replace(ctx context.Context, next []Issue) error {
+func (s *PostgresStore) Replace(ctx context.Context, next []Issue) error {
 	items := cloneIssues(next)
 	slices.SortStableFunc(items, compareIssueOrder)
 
@@ -847,11 +829,18 @@ func (s *SQLiteStore) Replace(ctx context.Context, next []Issue) error {
 		}
 	}
 
-	if err := setSequence(ctx, qtx, nextSequenceBase(items)); err != nil {
-		return err
+	seqBase := int64(nextSequenceBase(items))
+	if seqBase > 0 {
+		if err := qtx.SetIssueSeq(ctx, seqBase); err != nil {
+			return fmt.Errorf("set issue sequence: %w", err)
+		}
+	} else {
+		if err := qtx.ResetIssueSeq(ctx); err != nil {
+			return fmt.Errorf("reset issue sequence: %w", err)
+		}
 	}
-	if err := setIssueOperationSequence(ctx, qtx, 0); err != nil {
-		return err
+	if err := qtx.ResetIssueOperationSeq(ctx); err != nil {
+		return fmt.Errorf("reset issue operation sequence: %w", err)
 	}
 
 	if err := tx.Commit(); err != nil {
@@ -861,7 +850,7 @@ func (s *SQLiteStore) Replace(ctx context.Context, next []Issue) error {
 	return nil
 }
 
-func (s *SQLiteStore) ListTags(ctx context.Context) ([]Tag, error) {
+func (s *PostgresStore) ListTags(ctx context.Context) ([]Tag, error) {
 	rows, err := s.queries.ListTags(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("list tags: %w", err)
@@ -878,7 +867,7 @@ func (s *SQLiteStore) ListTags(ctx context.Context) ([]Tag, error) {
 	return cloneTags(tags), nil
 }
 
-func (s *SQLiteStore) UpsertTags(ctx context.Context, tags []Tag) error {
+func (s *PostgresStore) UpsertTags(ctx context.Context, tags []Tag) error {
 	normalized := normalizeCatalogTags(tags)
 	if len(normalized) == 0 {
 		return nil
@@ -914,244 +903,46 @@ func (s *SQLiteStore) UpsertTags(ctx context.Context, tags []Tag) error {
 	return nil
 }
 
-func (s *SQLiteStore) init(ctx context.Context) error {
-	if _, err := s.db.ExecContext(ctx, `PRAGMA busy_timeout = 5000`); err != nil {
-		return fmt.Errorf("configure sqlite busy timeout: %w", err)
-	}
-	if _, err := s.db.ExecContext(ctx, `PRAGMA journal_mode = WAL`); err != nil {
-		return fmt.Errorf("configure sqlite journal mode: %w", err)
-	}
-	if err := s.runMigrations(ctx); err != nil {
-		return err
-	}
-	return nil
+func (s *PostgresStore) init(ctx context.Context) error {
+	return s.runMigrations(ctx)
 }
 
-func (s *SQLiteStore) runMigrations(ctx context.Context) error {
-	dbDriver, err := migratesqlite.WithInstance(s.db, &migratesqlite.Config{
-		MigrationsTable: schemaMigrationsTableName,
+func (s *PostgresStore) runMigrations(ctx context.Context) error {
+	_ = ctx
+	dbDriver, err := migratepostgres.WithInstance(s.db, &migratepostgres.Config{
+		MigrationsTable: schemaMigrationsTable,
 	})
 	if err != nil {
-		return fmt.Errorf("create sqlite migrate driver: %w", err)
+		return fmt.Errorf("create postgres migrate driver: %w", err)
 	}
 
-	if err := s.bootstrapMigrationVersion(ctx, dbDriver); err != nil {
-		return err
-	}
-
-	sourceDriver, err := iofs.New(sqliteMigrationsFS, "migrations")
+	sourceDriver, err := iofs.New(pgMigrationsFS, "pgmigrations")
 	if err != nil {
-		return fmt.Errorf("open sqlite migrations: %w", err)
+		return fmt.Errorf("open postgres migrations: %w", err)
 	}
 
-	migrator, err := migrate.NewWithInstance("iofs", sourceDriver, sqliteDriverName, dbDriver)
+	migrator, err := migrate.NewWithInstance("iofs", sourceDriver, "postgres", dbDriver)
 	if err != nil {
-		return fmt.Errorf("construct sqlite migrator: %w", err)
+		return fmt.Errorf("construct postgres migrator: %w", err)
 	}
 
 	if err := migrator.Up(); err != nil && !errors.Is(err, migrate.ErrNoChange) {
-		return fmt.Errorf("run sqlite migrations: %w", err)
+		return fmt.Errorf("run postgres migrations: %w", err)
 	}
 	return nil
-}
-
-func (s *SQLiteStore) bootstrapMigrationVersion(ctx context.Context, dbDriver migratedatabase.Driver) error {
-	version, dirty, err := dbDriver.Version()
-	if err != nil {
-		return fmt.Errorf("read sqlite migration version: %w", err)
-	}
-	if dirty {
-		return nil
-	}
-	if version != migratedatabase.NilVersion {
-		return nil
-	}
-
-	state, err := s.detectSchemaState(ctx)
-	if err != nil {
-		return err
-	}
-	if state == sqliteSchemaCurrent {
-		if err := dbDriver.SetVersion(currentMigrationVersion, false); err != nil {
-			return fmt.Errorf("baseline sqlite migration version: %w", err)
-		}
-	}
-	if state == sqliteSchemaV2 {
-		if err := dbDriver.SetVersion(2, false); err != nil {
-			return fmt.Errorf("baseline sqlite migration version: %w", err)
-		}
-	}
-	if state == sqliteSchemaV3 {
-		if err := dbDriver.SetVersion(3, false); err != nil {
-			return fmt.Errorf("baseline sqlite migration version: %w", err)
-		}
-	}
-	if state == sqliteSchemaV5 {
-		if err := dbDriver.SetVersion(5, false); err != nil {
-			return fmt.Errorf("baseline sqlite migration version: %w", err)
-		}
-	}
-	if state == sqliteSchemaV6 {
-		if err := dbDriver.SetVersion(6, false); err != nil {
-			return fmt.Errorf("baseline sqlite migration version: %w", err)
-		}
-	}
-	if state == sqliteSchemaV7 {
-		if err := dbDriver.SetVersion(7, false); err != nil {
-			return fmt.Errorf("baseline sqlite migration version: %w", err)
-		}
-	}
-	if state == sqliteSchemaLegacy {
-		if err := dbDriver.SetVersion(1, false); err != nil {
-			return fmt.Errorf("baseline sqlite migration version: %w", err)
-		}
-	}
-	if state == sqliteSchemaUnknown {
-		return fmt.Errorf("unsupported sqlite schema state")
-	}
-	return nil
-}
-
-type sqliteSchemaState int
-
-const (
-	sqliteSchemaEmpty sqliteSchemaState = iota
-	sqliteSchemaLegacy
-	sqliteSchemaV2
-	sqliteSchemaV3
-	sqliteSchemaV5
-	sqliteSchemaV6
-	sqliteSchemaV7
-	sqliteSchemaCurrent
-	sqliteSchemaUnknown
-)
-
-func (s *SQLiteStore) detectSchemaState(ctx context.Context) (sqliteSchemaState, error) {
-	issueColumns, err := tableColumns(ctx, s.db, "issues")
-	if err != nil {
-		return sqliteSchemaUnknown, err
-	}
-	if len(issueColumns) == 0 {
-		return sqliteSchemaEmpty, nil
-	}
-
-	if hasColumns(issueColumns, "id", "raw", "tags_json", "created_by", "created_at", "tag_scores_json", "embedding_json") {
-		return sqliteSchemaLegacy, nil
-	}
-	if hasColumns(issueColumns, "id", "raw", "tags_json", "created_by", "created_at_unix_nano", "tag_scores_json", "embedding_json") &&
-		!hasColumns(issueColumns, "status", "closed_at_unix_nano", "closed_by") {
-		return sqliteSchemaV2, nil
-	}
-	if hasColumns(issueColumns, "id", "raw", "tags_json", "created_by", "created_at_unix_nano", "status", "closed_at_unix_nano", "closed_by", "tag_scores_json", "embedding_json") {
-		postColumns, err := tableColumns(ctx, s.db, "issue_posts")
-		if err != nil {
-			return sqliteSchemaUnknown, err
-		}
-		if hasColumns(postColumns, "id", "issue_id", "raw", "created_by", "created_at_unix_nano", "sequence") {
-			if hasColumns(issueColumns, "assigned_to") {
-				hasUsers, err := tableExists(ctx, s.db, "users")
-				if err != nil {
-					return sqliteSchemaUnknown, err
-				}
-				hasAuthAccounts, err := tableExists(ctx, s.db, "auth_accounts")
-				if err != nil {
-					return sqliteSchemaUnknown, err
-				}
-				hasSessions, err := tableExists(ctx, s.db, "sessions")
-				if err != nil {
-					return sqliteSchemaUnknown, err
-				}
-				hasAPITokens, err := tableExists(ctx, s.db, "api_tokens")
-				if err != nil {
-					return sqliteSchemaUnknown, err
-				}
-				if hasUsers && hasAuthAccounts && hasSessions && hasAPITokens {
-					hasIssueOperations, err := tableExists(ctx, s.db, "issue_operations")
-					if err != nil {
-						return sqliteSchemaUnknown, err
-					}
-					hasIssueOperationParticipants, err := tableExists(ctx, s.db, "issue_operation_participants")
-					if err != nil {
-						return sqliteSchemaUnknown, err
-					}
-					hasIssueLinks, err := tableExists(ctx, s.db, "issue_links")
-					if err != nil {
-						return sqliteSchemaUnknown, err
-					}
-					if hasIssueOperations && hasIssueOperationParticipants && hasIssueLinks {
-						return sqliteSchemaCurrent, nil
-					}
-					return sqliteSchemaV7, nil
-				}
-				return sqliteSchemaV6, nil
-			}
-			return sqliteSchemaV5, nil
-		}
-		return sqliteSchemaV3, nil
-	}
-	return sqliteSchemaUnknown, nil
-}
-
-func hasColumns(columns map[string]struct{}, required ...string) bool {
-	for _, requiredColumn := range required {
-		if _, ok := columns[requiredColumn]; !ok {
-			return false
-		}
-	}
-	return true
-}
-
-func tableColumns(ctx context.Context, db *sql.DB, table string) (map[string]struct{}, error) {
-	rows, err := db.QueryContext(ctx, fmt.Sprintf(`PRAGMA table_info(%s)`, table))
-	if err != nil {
-		return nil, fmt.Errorf("load columns for %s: %w", table, err)
-	}
-	defer rows.Close()
-
-	columns := make(map[string]struct{})
-	for rows.Next() {
-		var (
-			cid        int
-			name       string
-			columnType string
-			notNull    int
-			defaultVal sql.NullString
-			primaryKey int
-		)
-		if err := rows.Scan(&cid, &name, &columnType, &notNull, &defaultVal, &primaryKey); err != nil {
-			return nil, fmt.Errorf("scan column for %s: %w", table, err)
-		}
-		columns[name] = struct{}{}
-	}
-	if err := rows.Err(); err != nil {
-		return nil, fmt.Errorf("iterate columns for %s: %w", table, err)
-	}
-	return columns, nil
-}
-
-func tableExists(ctx context.Context, db *sql.DB, table string) (bool, error) {
-	var count int
-	if err := db.QueryRowContext(
-		ctx,
-		`SELECT COUNT(*) FROM sqlite_master WHERE type = 'table' AND name = ?`,
-		table,
-	).Scan(&count); err != nil {
-		return false, fmt.Errorf("check table %s: %w", table, err)
-	}
-	return count > 0, nil
 }
 
 type issueRecord struct {
 	ID                string
 	Raw               string
-	TagsJSON          string
+	TagsJSON          json.RawMessage
 	CreatedBy         string
 	CreatedAtUnixNano int64
 	Status            string
 	ClosedAtUnixNano  int64
 	ClosedBy          string
-	TagScoresJSON     string
-	EmbeddingJSON     string
+	TagScoresJSON     json.RawMessage
+	EmbeddingJSON     json.RawMessage
 	AssignedTo        string
 }
 
@@ -1159,7 +950,7 @@ type tagRecord struct {
 	Name              string
 	Description       string
 	CreatedAtUnixNano int64
-	EmbeddingJSON     string
+	EmbeddingJSON     json.RawMessage
 }
 
 type issueQuerier interface {
@@ -1172,15 +963,15 @@ type issueQuerier interface {
 }
 
 func recordFromIssue(issue Issue) (issueRecord, error) {
-	tagsJSON, err := marshalStringSlice(issue.Tags)
+	tagsJSON, err := marshalJSONB(issue.Tags, []string{})
 	if err != nil {
 		return issueRecord{}, fmt.Errorf("marshal issue tags: %w", err)
 	}
-	tagScoresJSON, err := marshalTagScores(issue.TagScores)
+	tagScoresJSON, err := marshalJSONB(issue.TagScores, []TagRelevance{})
 	if err != nil {
 		return issueRecord{}, fmt.Errorf("marshal issue tag scores: %w", err)
 	}
-	embeddingJSON, err := marshalEmbedding(issue.Embedding)
+	embeddingJSON, err := marshalJSONB(issue.Embedding, []float64{})
 	if err != nil {
 		return issueRecord{}, fmt.Errorf("marshal issue embedding: %w", err)
 	}
@@ -1201,15 +992,15 @@ func recordFromIssue(issue Issue) (issueRecord, error) {
 }
 
 func issueFromQuery(row issuesdb.Issue) (Issue, error) {
-	tags, err := unmarshalStringSlice(row.TagsJson)
+	tags, err := unmarshalJSONB[[]string](row.TagsJson)
 	if err != nil {
 		return Issue{}, fmt.Errorf("decode tags for %q: %w", row.ID, err)
 	}
-	tagScores, err := unmarshalTagScores(row.TagScoresJson)
+	tagScores, err := unmarshalJSONB[[]TagRelevance](row.TagScoresJson)
 	if err != nil {
 		return Issue{}, fmt.Errorf("decode tag scores for %q: %w", row.ID, err)
 	}
-	embedding, err := unmarshalEmbedding(row.EmbeddingJson)
+	embedding, err := unmarshalJSONB[[]float64](row.EmbeddingJson)
 	if err != nil {
 		return Issue{}, fmt.Errorf("decode embedding for %q: %w", row.ID, err)
 	}
@@ -1280,7 +1071,7 @@ func issueOperationParticipantFromQuery(row issuesdb.IssueOperationParticipant) 
 }
 
 func recordFromTag(tag Tag) (tagRecord, error) {
-	embeddingJSON, err := marshalEmbedding(tag.Embedding)
+	embeddingJSON, err := marshalJSONB(tag.Embedding, []float64{})
 	if err != nil {
 		return tagRecord{}, fmt.Errorf("marshal tag embedding: %w", err)
 	}
@@ -1299,7 +1090,7 @@ func recordFromTag(tag Tag) (tagRecord, error) {
 }
 
 func tagFromQuery(row issuesdb.Tag) (Tag, error) {
-	embedding, err := unmarshalEmbedding(row.EmbeddingJson)
+	embedding, err := unmarshalJSONB[[]float64](row.EmbeddingJson)
 	if err != nil {
 		return Tag{}, fmt.Errorf("decode embedding for tag %q: %w", row.Name, err)
 	}
@@ -1312,7 +1103,7 @@ func tagFromQuery(row issuesdb.Tag) (Tag, error) {
 	}, nil
 }
 
-func (s *SQLiteStore) getIssueWithDiscussion(ctx context.Context, q issueQuerier, id string) (Issue, error) {
+func (s *PostgresStore) getIssueWithDiscussion(ctx context.Context, q issueQuerier, id string) (Issue, error) {
 	issueRow, err := q.GetIssue(ctx, id)
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
@@ -1379,11 +1170,10 @@ func (s *SQLiteStore) getIssueWithDiscussion(ctx context.Context, q issueQuerier
 		operations = append(operations, operation)
 	}
 
-	return s.hydrateIssueWithDiscussion(ctx, issueRow, discussion, links, operations, issuesByID)
+	return hydrateIssueWithDiscussion(issueRow, discussion, links, operations, issuesByID)
 }
 
-func (s *SQLiteStore) hydrateIssueWithDiscussion(
-	_ context.Context,
+func hydrateIssueWithDiscussion(
 	issueRow issuesdb.Issue,
 	discussion []IssuePost,
 	links []IssueLink,
@@ -1460,73 +1250,14 @@ func closedAtFromUnixNano(value int64) *time.Time {
 	return &closedAt
 }
 
-func nextSequence(ctx context.Context, q *issuesdb.Queries) (uint64, error) {
-	raw, err := q.GetMetadataValue(ctx, issueSeqKey)
-	if err != nil {
-		return 0, fmt.Errorf("load issue sequence: %w", err)
-	}
-
-	current, err := strconv.ParseUint(raw, 10, 64)
-	if err != nil {
-		return 0, fmt.Errorf("parse issue sequence: %w", err)
-	}
-
-	next := current + 1
-	if err := setSequence(ctx, q, next); err != nil {
-		return 0, err
-	}
-	return next, nil
-}
-
-func setSequence(ctx context.Context, q *issuesdb.Queries, seq uint64) error {
-	if err := q.UpdateMetadataValue(ctx, issuesdb.UpdateMetadataValueParams{
-		Value: strconv.FormatUint(seq, 10),
-		Key:   issueSeqKey,
-	}); err != nil {
-		return fmt.Errorf("update issue sequence: %w", err)
-	}
-	return nil
-}
-
 func nextIssueOperation(ctx context.Context, q *issuesdb.Queries, operation IssueOperation) (IssueOperation, error) {
-	seq, err := nextMetadataSequence(ctx, q, issueOperationSeqKey, "issue operation")
+	seq, err := q.NextIssueOperationSeq(ctx)
 	if err != nil {
-		return IssueOperation{}, err
+		return IssueOperation{}, fmt.Errorf("next issue operation sequence: %w", err)
 	}
 	operation.ID = fmt.Sprintf("issue-op-%06d", seq)
 	operation.Kind = IssueOperationKind(strings.TrimSpace(string(operation.Kind)))
 	return operation, nil
-}
-
-func setIssueOperationSequence(ctx context.Context, q *issuesdb.Queries, seq uint64) error {
-	if err := q.UpdateMetadataValue(ctx, issuesdb.UpdateMetadataValueParams{
-		Value: strconv.FormatUint(seq, 10),
-		Key:   issueOperationSeqKey,
-	}); err != nil {
-		return fmt.Errorf("update issue operation sequence: %w", err)
-	}
-	return nil
-}
-
-func nextMetadataSequence(ctx context.Context, q *issuesdb.Queries, key string, label string) (uint64, error) {
-	raw, err := q.GetMetadataValue(ctx, key)
-	if err != nil {
-		return 0, fmt.Errorf("load %s sequence: %w", label, err)
-	}
-
-	current, err := strconv.ParseUint(raw, 10, 64)
-	if err != nil {
-		return 0, fmt.Errorf("parse %s sequence: %w", label, err)
-	}
-
-	next := current + 1
-	if err := q.UpdateMetadataValue(ctx, issuesdb.UpdateMetadataValueParams{
-		Value: strconv.FormatUint(next, 10),
-		Key:   key,
-	}); err != nil {
-		return 0, fmt.Errorf("update %s sequence: %w", label, err)
-	}
-	return next, nil
 }
 
 func insertIssueOperation(ctx context.Context, q *issuesdb.Queries, operation IssueOperation) error {
@@ -1654,57 +1385,27 @@ func issueSequence(id string) (uint64, bool) {
 	return seq, true
 }
 
-func marshalStringSlice(tags []string) (string, error) {
-	if len(tags) == 0 {
-		tags = []string{}
+func marshalJSONB[T any](value T, empty T) (json.RawMessage, error) {
+	v := any(value)
+	if v == nil {
+		v = empty
 	}
-	return marshalJSON(tags)
-}
-
-func marshalTagScores(scores []TagRelevance) (string, error) {
-	if len(scores) == 0 {
-		scores = []TagRelevance{}
-	}
-	return marshalJSON(scores)
-}
-
-func marshalEmbedding(values []float64) (string, error) {
-	if len(values) == 0 {
-		values = []float64{}
-	}
-	return marshalJSON(values)
-}
-
-func marshalJSON(value any) (string, error) {
-	encoded, err := json.Marshal(value)
+	encoded, err := json.Marshal(v)
 	if err != nil {
-		return "", err
-	}
-	return string(encoded), nil
-}
-
-func unmarshalStringSlice(raw string) ([]string, error) {
-	var tags []string
-	if err := json.Unmarshal([]byte(raw), &tags); err != nil {
 		return nil, err
 	}
-	return tags, nil
+	return json.RawMessage(encoded), nil
 }
 
-func unmarshalTagScores(raw string) ([]TagRelevance, error) {
-	var scores []TagRelevance
-	if err := json.Unmarshal([]byte(raw), &scores); err != nil {
-		return nil, err
+func unmarshalJSONB[T any](raw json.RawMessage) (T, error) {
+	var result T
+	if len(raw) == 0 {
+		return result, nil
 	}
-	return scores, nil
-}
-
-func unmarshalEmbedding(raw string) ([]float64, error) {
-	var values []float64
-	if err := json.Unmarshal([]byte(raw), &values); err != nil {
-		return nil, err
+	if err := json.Unmarshal(raw, &result); err != nil {
+		return result, err
 	}
-	return values, nil
+	return result, nil
 }
 
 func normalizeCatalogTags(tags []Tag) []Tag {
@@ -1762,11 +1463,4 @@ func normalizeCatalogTags(tags []Tag) []Tag {
 		return 0
 	})
 	return out
-}
-
-func ensureDir(path string) error {
-	if err := os.MkdirAll(path, 0o755); err != nil {
-		return fmt.Errorf("create sqlite directory %q: %w", path, err)
-	}
-	return nil
 }

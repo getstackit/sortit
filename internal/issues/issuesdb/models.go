@@ -4,17 +4,38 @@
 
 package issuesdb
 
+import (
+	"encoding/json"
+)
+
+type ApiToken struct {
+	ID                string
+	UserID            string
+	TokenHash         string
+	TokenPrefix       string
+	CreatedAtUnixNano int64
+	RevokedAtUnixNano int64
+}
+
+type AuthAccount struct {
+	ID                string
+	UserID            string
+	Provider          string
+	ProviderUserID    string
+	CreatedAtUnixNano int64
+}
+
 type Issue struct {
 	ID                string
 	Raw               string
-	TagsJson          string
+	TagsJson          json.RawMessage
 	CreatedBy         string
 	CreatedAtUnixNano int64
 	Status            string
 	ClosedAtUnixNano  int64
 	ClosedBy          string
-	TagScoresJson     string
-	EmbeddingJson     string
+	TagScoresJson     json.RawMessage
+	EmbeddingJson     json.RawMessage
 	AssignedTo        string
 }
 
@@ -54,14 +75,27 @@ type IssuePost struct {
 	Kind              string
 }
 
-type Metadata struct {
-	Key   string
-	Value string
+type Session struct {
+	ID                string
+	UserID            string
+	TokenHash         string
+	ExpiresAtUnixNano int64
+	CreatedAtUnixNano int64
 }
 
 type Tag struct {
 	Name              string
 	Description       string
 	CreatedAtUnixNano int64
-	EmbeddingJson     string
+	EmbeddingJson     json.RawMessage
+}
+
+type User struct {
+	ID                string
+	Login             string
+	DisplayName       string
+	AvatarUrl         string
+	Email             string
+	CreatedAtUnixNano int64
+	UpdatedAtUnixNano int64
 }

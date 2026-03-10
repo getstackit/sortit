@@ -2,17 +2,15 @@ package issues
 
 import (
 	"context"
-	"database/sql"
-	"path/filepath"
+	"os"
 	"testing"
-	"time"
 )
 
-func TestSQLiteStoreCreateListAndGet(t *testing.T) {
-	store := newSQLiteTestStore(t)
+func TestPostgresStoreCreateListAndGet(t *testing.T) {
+	store := newPostgresTestStore(t)
 
 	created, err := store.Create(context.Background(), CreateInput{
-		Raw:       "  add sqlite storage  ",
+		Raw:       "  add postgres storage  ",
 		CreatedBy: "  Casey ",
 		Tags:      []string{"backend", " backend ", ""},
 		TagScores: []TagRelevance{{Tag: "backend", Relevance: 0.9}},
@@ -25,7 +23,7 @@ func TestSQLiteStoreCreateListAndGet(t *testing.T) {
 	if created.ID != "issue-000001" {
 		t.Fatalf("expected first generated ID, got %q", created.ID)
 	}
-	if created.Raw != "add sqlite storage" {
+	if created.Raw != "add postgres storage" {
 		t.Fatalf("expected trimmed raw value, got %q", created.Raw)
 	}
 	if created.CreatedBy != "Casey" {
@@ -70,8 +68,8 @@ func TestSQLiteStoreCreateListAndGet(t *testing.T) {
 	}
 }
 
-func TestSQLiteStoreRefineAppendsDiscussionAndUpdatesCanonicalIssue(t *testing.T) {
-	store := newSQLiteTestStore(t)
+func TestPostgresStoreRefineAppendsDiscussionAndUpdatesCanonicalIssue(t *testing.T) {
+	store := newPostgresTestStore(t)
 
 	created, err := store.Create(context.Background(), CreateInput{
 		Raw:       "export fails on ipad",
@@ -125,8 +123,8 @@ func TestSQLiteStoreRefineAppendsDiscussionAndUpdatesCanonicalIssue(t *testing.T
 	}
 }
 
-func TestSQLiteStoreCloseAndReopenIssue(t *testing.T) {
-	store := newSQLiteTestStore(t)
+func TestPostgresStoreCloseAndReopenIssue(t *testing.T) {
+	store := newPostgresTestStore(t)
 
 	created, err := store.Create(context.Background(), CreateInput{
 		Raw: "close me",
@@ -164,8 +162,8 @@ func TestSQLiteStoreCloseAndReopenIssue(t *testing.T) {
 	}
 }
 
-func TestSQLiteStorePersistsIssueRelationshipsAndOperationHistory(t *testing.T) {
-	store := newSQLiteTestStore(t)
+func TestPostgresStorePersistsIssueRelationshipsAndOperationHistory(t *testing.T) {
+	store := newPostgresTestStore(t)
 
 	parent, err := store.Create(context.Background(), CreateInput{
 		Raw:       "Large onboarding redesign",
@@ -269,8 +267,8 @@ func TestSQLiteStorePersistsIssueRelationshipsAndOperationHistory(t *testing.T) 
 	}
 }
 
-func TestSQLiteStoreReplaceResetsSequenceFromLoadedItems(t *testing.T) {
-	store := newSQLiteTestStore(t)
+func TestPostgresStoreReplaceResetsSequenceFromLoadedItems(t *testing.T) {
+	store := newPostgresTestStore(t)
 
 	if err := store.Replace(context.Background(), FixtureIssues()); err != nil {
 		t.Fatalf("replace issues with seeds: %v", err)
@@ -301,8 +299,8 @@ func TestSQLiteStoreReplaceResetsSequenceFromLoadedItems(t *testing.T) {
 	}
 }
 
-func TestSQLiteStoreUpsertAndListTags(t *testing.T) {
-	store := newSQLiteTestStore(t)
+func TestPostgresStoreUpsertAndListTags(t *testing.T) {
+	store := newPostgresTestStore(t)
 
 	if err := store.UpsertTags(context.Background(), []Tag{
 		{Name: "bug", Description: "software defect", Embedding: []float64{0.2, 0.8}},
@@ -327,193 +325,28 @@ func TestSQLiteStoreUpsertAndListTags(t *testing.T) {
 	}
 }
 
-func TestSQLiteStoreMigratesLegacyCreatedAtColumn(t *testing.T) {
-	dbPath := filepath.Join(t.TempDir(), "legacy.sqlite")
-
-	db, err := sql.Open(sqliteDriverName, dbPath)
-	if err != nil {
-		t.Fatalf("open legacy sqlite db: %v", err)
-	}
-
-	legacyCreatedAt := time.Date(2026, time.March, 7, 23, 33, 16, 673615000, time.UTC)
-	if _, err := db.ExecContext(context.Background(), `
-		CREATE TABLE issues (
-			id TEXT PRIMARY KEY,
-			raw TEXT NOT NULL,
-			tags_json TEXT NOT NULL,
-			created_by TEXT NOT NULL,
-			created_at TEXT NOT NULL,
-			tag_scores_json TEXT NOT NULL,
-			embedding_json TEXT NOT NULL
-		)
-	`); err != nil {
-		t.Fatalf("create legacy issues table: %v", err)
-	}
-	if _, err := db.ExecContext(context.Background(), `
-		CREATE TABLE metadata (
-			key TEXT PRIMARY KEY,
-			value TEXT NOT NULL
-		)
-	`); err != nil {
-		t.Fatalf("create metadata table: %v", err)
-	}
-	if _, err := db.ExecContext(context.Background(), `
-		CREATE TABLE tags (
-			name TEXT PRIMARY KEY,
-			description TEXT NOT NULL,
-			created_at_unix_nano INTEGER NOT NULL,
-			embedding_json TEXT NOT NULL
-		)
-	`); err != nil {
-		t.Fatalf("create tags table: %v", err)
-	}
-	if _, err := db.ExecContext(context.Background(), `
-		INSERT INTO metadata (key, value) VALUES (?, '1')
-	`, issueSeqKey); err != nil {
-		t.Fatalf("seed metadata: %v", err)
-	}
-	if _, err := db.ExecContext(context.Background(), `
-		INSERT INTO issues (id, raw, tags_json, created_by, created_at, tag_scores_json, embedding_json)
-		VALUES (?, ?, ?, ?, ?, ?, ?)
-	`, "issue-000001", "legacy issue", `["bug"]`, "Casey", legacyCreatedAt.Format(time.RFC3339Nano), `[]`, `[0.1,0.2]`); err != nil {
-		t.Fatalf("seed legacy issue: %v", err)
-	}
-	if err := db.Close(); err != nil {
-		t.Fatalf("close legacy sqlite db: %v", err)
-	}
-
-	store, err := OpenSQLiteStore(context.Background(), dbPath)
-	if err != nil {
-		t.Fatalf("open migrated sqlite store: %v", err)
-	}
-	t.Cleanup(func() {
-		if err := store.Close(); err != nil {
-			t.Fatalf("close migrated sqlite store: %v", err)
-		}
-	})
-
-	items, err := store.List(context.Background())
-	if err != nil {
-		t.Fatalf("list migrated issues: %v", err)
-	}
-	if len(items) != 1 {
-		t.Fatalf("expected 1 migrated issue, got %d", len(items))
-	}
-	if !items[0].CreatedAt.Equal(legacyCreatedAt) {
-		t.Fatalf("expected created_at %s, got %s", legacyCreatedAt, items[0].CreatedAt)
-	}
-	if items[0].Status != StatusOpen {
-		t.Fatalf("expected migrated issue to default to open, got %q", items[0].Status)
-	}
-
-	created, err := store.Create(context.Background(), CreateInput{Raw: "new issue after migration"})
-	if err != nil {
-		t.Fatalf("create issue after migration: %v", err)
-	}
-	if created.ID != "issue-000002" {
-		t.Fatalf("expected issue-000002 after migration, got %q", created.ID)
-	}
-}
-
-func TestSQLiteStoreBaselinesCurrentSchemaWithoutReapplyingLegacyMigration(t *testing.T) {
-	dbPath := filepath.Join(t.TempDir(), "current.sqlite")
-
-	db, err := sql.Open(sqliteDriverName, dbPath)
-	if err != nil {
-		t.Fatalf("open current sqlite db: %v", err)
-	}
-
-	currentCreatedAt := time.Date(2026, time.March, 8, 0, 1, 2, 345678000, time.UTC)
-	if _, err := db.ExecContext(context.Background(), `
-		CREATE TABLE issues (
-			id TEXT PRIMARY KEY,
-			raw TEXT NOT NULL,
-			tags_json TEXT NOT NULL,
-			created_by TEXT NOT NULL,
-			created_at_unix_nano INTEGER NOT NULL,
-			tag_scores_json TEXT NOT NULL,
-			embedding_json TEXT NOT NULL
-		)
-	`); err != nil {
-		t.Fatalf("create current issues table: %v", err)
-	}
-	if _, err := db.ExecContext(context.Background(), `
-		CREATE TABLE metadata (
-			key TEXT PRIMARY KEY,
-			value TEXT NOT NULL
-		)
-	`); err != nil {
-		t.Fatalf("create current metadata table: %v", err)
-	}
-	if _, err := db.ExecContext(context.Background(), `
-		CREATE TABLE tags (
-			name TEXT PRIMARY KEY,
-			description TEXT NOT NULL,
-			created_at_unix_nano INTEGER NOT NULL,
-			embedding_json TEXT NOT NULL
-		)
-	`); err != nil {
-		t.Fatalf("create current tags table: %v", err)
-	}
-	if _, err := db.ExecContext(context.Background(), `
-		INSERT INTO metadata (key, value) VALUES (?, '1')
-	`, issueSeqKey); err != nil {
-		t.Fatalf("seed current metadata: %v", err)
-	}
-	if _, err := db.ExecContext(context.Background(), `
-		INSERT INTO issues (id, raw, tags_json, created_by, created_at_unix_nano, tag_scores_json, embedding_json)
-		VALUES (?, ?, ?, ?, ?, ?, ?)
-	`, "issue-000001", "current issue", `["bug"]`, "Casey", currentCreatedAt.UnixNano(), `[]`, `[0.1,0.2]`); err != nil {
-		t.Fatalf("seed current issue: %v", err)
-	}
-	if err := db.Close(); err != nil {
-		t.Fatalf("close current sqlite db: %v", err)
-	}
-
-	store, err := OpenSQLiteStore(context.Background(), dbPath)
-	if err != nil {
-		t.Fatalf("open current sqlite store: %v", err)
-	}
-	t.Cleanup(func() {
-		if err := store.Close(); err != nil {
-			t.Fatalf("close current sqlite store: %v", err)
-		}
-	})
-
-	items, err := store.List(context.Background())
-	if err != nil {
-		t.Fatalf("list current issues: %v", err)
-	}
-	if len(items) != 1 {
-		t.Fatalf("expected 1 current issue, got %d", len(items))
-	}
-	if !items[0].CreatedAt.Equal(currentCreatedAt) {
-		t.Fatalf("expected created_at %s, got %s", currentCreatedAt, items[0].CreatedAt)
-	}
-	if items[0].Status != StatusOpen {
-		t.Fatalf("expected current issue to default to open after migration, got %q", items[0].Status)
-	}
-
-	created, err := store.Create(context.Background(), CreateInput{Raw: "new issue after baseline"})
-	if err != nil {
-		t.Fatalf("create issue after baseline: %v", err)
-	}
-	if created.ID != "issue-000002" {
-		t.Fatalf("expected issue-000002 after baseline, got %q", created.ID)
-	}
-}
-
-func newSQLiteTestStore(t *testing.T) *SQLiteStore {
+func newPostgresTestStore(t *testing.T) *PostgresStore {
 	t.Helper()
 
-	store, err := OpenSQLiteStore(context.Background(), filepath.Join(t.TempDir(), "issues.sqlite"))
+	databaseURL := os.Getenv("SPLAT_TEST_DATABASE_URL")
+	if databaseURL == "" {
+		t.Skip("SPLAT_TEST_DATABASE_URL not set")
+	}
+
+	store, err := OpenPostgresStore(context.Background(), databaseURL)
 	if err != nil {
-		t.Fatalf("open sqlite store: %v", err)
+		t.Fatalf("open postgres store: %v", err)
 	}
 	t.Cleanup(func() {
 		if err := store.Close(); err != nil {
-			t.Fatalf("close sqlite store: %v", err)
+			t.Fatalf("close postgres store: %v", err)
 		}
 	})
+
+	// Clean all data for a fresh test
+	if err := store.Replace(context.Background(), nil); err != nil {
+		t.Fatalf("reset postgres store: %v", err)
+	}
+
 	return store
 }

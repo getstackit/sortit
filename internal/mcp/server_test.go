@@ -2,68 +2,28 @@ package mcp
 
 import (
 	"context"
-	"encoding/json"
-	"errors"
-	"io"
-	"net/http"
-	"net/http/httptest"
 	"strings"
 	"testing"
-	"time"
 
 	mcptypes "github.com/mark3labs/mcp-go/mcp"
 
+	"splat/internal/ai"
+	"splat/internal/auth"
+	"splat/internal/commands"
 	"splat/internal/issues"
 	issuemap "splat/internal/map"
+	"splat/internal/queries"
+	"splat/internal/services"
 )
 
 func TestHandleCreateIssue(t *testing.T) {
 	t.Parallel()
 
-	createdAt := time.Date(2026, time.March, 7, 12, 0, 0, 0, time.UTC)
-	expected := issues.Issue{
-		ID:        "issue-000003",
-		Raw:       "Safari crashes when exporting a PDF",
-		Tags:      []string{"bug", "safari", "export"},
-		CreatedBy: "Casey",
-		CreatedAt: createdAt,
-		Status:    issues.StatusOpen,
-	}
-
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.Method != http.MethodPost {
-			t.Fatalf("expected POST, got %s", r.Method)
-		}
-		if r.URL.Path != "/issues" {
-			t.Fatalf("expected /issues path, got %s", r.URL.Path)
-		}
-
-		var payload map[string]string
-		if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
-			t.Fatalf("decode request body: %v", err)
-		}
-		if payload["raw"] != expected.Raw {
-			t.Fatalf("expected raw %q, got %q", expected.Raw, payload["raw"])
-		}
-		if payload["createdBy"] != expected.CreatedBy {
-			t.Fatalf("expected createdBy %q, got %q", expected.CreatedBy, payload["createdBy"])
-		}
-
-		w.Header().Set("Content-Type", "application/json")
-		if err := json.NewEncoder(w).Encode(expected); err != nil {
-			t.Fatalf("encode response: %v", err)
-		}
-	}))
-	defer server.Close()
-
-	handler := &handlers{
-		baseURL: server.URL,
-		client:  server.Client(),
-	}
+	handler := newTestHandlers()
 
 	result, err := handler.handleCreateIssue(context.Background(), toolRequest(map[string]any{
-		"raw":        expected.Raw,
-		"created_by": expected.CreatedBy,
+		"raw":        "Safari crashes when exporting a PDF",
+		"created_by": "Casey",
 	}))
 	if err != nil {
 		t.Fatalf("handleCreateIssue returned error: %v", err)
@@ -76,49 +36,52 @@ func TestHandleCreateIssue(t *testing.T) {
 	if !ok {
 		t.Fatalf("expected issues.Issue structured content, got %T", result.StructuredContent)
 	}
-	if created.ID != expected.ID {
-		t.Fatalf("expected ID %q, got %q", expected.ID, created.ID)
+	if created.ID == "" {
+		t.Fatal("expected created issue ID")
+	}
+	if created.CreatedBy != "Casey" {
+		t.Fatalf("expected CreatedBy Casey, got %q", created.CreatedBy)
 	}
 	if firstText(result) == "" {
 		t.Fatal("expected text fallback in MCP result")
 	}
 }
 
+func TestHandleCreateIssueUsesAuthenticatedPrincipal(t *testing.T) {
+	t.Parallel()
+
+	handler := newTestHandlers()
+	ctx := auth.WithPrincipal(context.Background(), auth.Principal{
+		UserID:      "user-123",
+		Login:       "casey",
+		DisplayName: "Casey Authenticated",
+	})
+
+	result, err := handler.handleCreateIssue(ctx, toolRequest(map[string]any{
+		"raw":        "Safari crashes when exporting a PDF",
+		"created_by": "Ignored",
+	}))
+	if err != nil {
+		t.Fatalf("handleCreateIssue returned error: %v", err)
+	}
+	if result.IsError {
+		t.Fatalf("expected success result, got error: %s", firstText(result))
+	}
+
+	created := result.StructuredContent.(issues.Issue)
+	if created.CreatedBy != "Casey Authenticated" {
+		t.Fatalf("expected authenticated actor, got %q", created.CreatedBy)
+	}
+}
+
 func TestHandleGetIssue(t *testing.T) {
 	t.Parallel()
 
-	createdAt := time.Date(2026, time.March, 7, 12, 0, 0, 0, time.UTC)
-	expected := issues.Issue{
-		ID:        "issue-000003",
-		Raw:       "Safari crashes when exporting a PDF",
-		Tags:      []string{"bug", "safari", "export"},
-		CreatedBy: "Casey",
-		CreatedAt: createdAt,
-		Status:    issues.StatusOpen,
-	}
-
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.Method != http.MethodGet {
-			t.Fatalf("expected GET, got %s", r.Method)
-		}
-		if r.URL.Path != "/issues/issue-000003" {
-			t.Fatalf("expected /issues/issue-000003 path, got %s", r.URL.Path)
-		}
-
-		w.Header().Set("Content-Type", "application/json")
-		if err := json.NewEncoder(w).Encode(expected); err != nil {
-			t.Fatalf("encode response: %v", err)
-		}
-	}))
-	defer server.Close()
-
-	handler := &handlers{
-		baseURL: server.URL,
-		client:  server.Client(),
-	}
+	handler := newTestHandlers()
+	created := createTestIssue(t, handler, "Safari crashes when exporting a PDF", "Casey")
 
 	result, err := handler.handleGetIssue(context.Background(), toolRequest(map[string]any{
-		"id": " issue-000003 ",
+		"id": " " + created.ID + " ",
 	}))
 	if err != nil {
 		t.Fatalf("handleGetIssue returned error: %v", err)
@@ -131,65 +94,15 @@ func TestHandleGetIssue(t *testing.T) {
 	if !ok {
 		t.Fatalf("expected issues.Issue structured content, got %T", result.StructuredContent)
 	}
-	if issue.ID != expected.ID {
-		t.Fatalf("expected ID %q, got %q", expected.ID, issue.ID)
-	}
-	if firstText(result) == "" {
-		t.Fatal("expected text fallback in MCP result")
-	}
-}
-
-func TestDoJSONRequestForwardsAuthorizationHeaderFromContext(t *testing.T) {
-	t.Parallel()
-
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if got := r.Header.Get("Authorization"); got != "Bearer secret-token" {
-			t.Fatalf("expected forwarded authorization header, got %q", got)
-		}
-		w.Header().Set("Content-Type", "application/json")
-		if err := json.NewEncoder(w).Encode(map[string]string{"status": "ok"}); err != nil {
-			t.Fatalf("encode response: %v", err)
-		}
-	}))
-	defer server.Close()
-
-	handler := &handlers{
-		baseURL: server.URL,
-		client:  server.Client(),
-	}
-
-	ctx := context.WithValue(context.Background(), authorizationContextKey{}, "Bearer secret-token")
-	var payload map[string]string
-	if err := handler.doJSONRequest(ctx, http.MethodGet, "/status", nil, &payload); err != nil {
-		t.Fatalf("doJSONRequest returned error: %v", err)
-	}
-	if payload["status"] != "ok" {
-		t.Fatalf("expected ok status payload, got %#v", payload)
+	if issue.ID != created.ID {
+		t.Fatalf("expected ID %q, got %q", created.ID, issue.ID)
 	}
 }
 
 func TestHandleGetIssueNotFound(t *testing.T) {
 	t.Parallel()
 
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.Method != http.MethodGet {
-			t.Fatalf("expected GET, got %s", r.Method)
-		}
-		if r.URL.Path != "/issues/issue-000999" {
-			t.Fatalf("expected /issues/issue-000999 path, got %s", r.URL.Path)
-		}
-
-		w.WriteHeader(http.StatusNotFound)
-		if err := json.NewEncoder(w).Encode(map[string]string{"error": "issue not found"}); err != nil {
-			t.Fatalf("encode response: %v", err)
-		}
-	}))
-	defer server.Close()
-
-	handler := &handlers{
-		baseURL: server.URL,
-		client:  server.Client(),
-	}
+	handler := newTestHandlers()
 
 	result, err := handler.handleGetIssue(context.Background(), toolRequest(map[string]any{
 		"id": "issue-000999",
@@ -205,148 +118,15 @@ func TestHandleGetIssueNotFound(t *testing.T) {
 	}
 }
 
-func TestDoJSONRequestWrapsTransportErrors(t *testing.T) {
-	t.Parallel()
-
-	sentinel := errors.New("dial failed")
-	handler := &handlers{
-		baseURL: "http://example.com",
-		client: &http.Client{
-			Transport: roundTripFunc(func(*http.Request) (*http.Response, error) {
-				return nil, sentinel
-			}),
-		},
-	}
-
-	var payload map[string]string
-	err := handler.doJSONRequest(context.Background(), http.MethodGet, "/status", nil, &payload)
-	if err == nil {
-		t.Fatal("expected transport error")
-	}
-	if !errors.Is(err, sentinel) {
-		t.Fatalf("expected wrapped sentinel error, got %v", err)
-	}
-}
-
-func TestDoJSONRequestReturnsTypedAPIError(t *testing.T) {
-	t.Parallel()
-
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.WriteHeader(http.StatusUnauthorized)
-		if err := json.NewEncoder(w).Encode(map[string]string{"error": "unauthorized"}); err != nil {
-			t.Fatalf("encode response: %v", err)
-		}
-	}))
-	defer server.Close()
-
-	handler := &handlers{
-		baseURL: server.URL,
-		client:  server.Client(),
-	}
-
-	var payload map[string]string
-	err := handler.doJSONRequest(context.Background(), http.MethodGet, "/status", nil, &payload)
-	if err == nil {
-		t.Fatal("expected API error")
-	}
-
-	var apiErr *apiError
-	if !errors.As(err, &apiErr) {
-		t.Fatalf("expected typed apiError, got %T", err)
-	}
-	if apiErr.statusCode != http.StatusUnauthorized {
-		t.Fatalf("expected status %d, got %d", http.StatusUnauthorized, apiErr.statusCode)
-	}
-	if apiErr.message != "unauthorized" {
-		t.Fatalf("expected message %q, got %q", "unauthorized", apiErr.message)
-	}
-	if got := err.Error(); got != "Splat API error (401): unauthorized" {
-		t.Fatalf("unexpected error string %q", got)
-	}
-}
-
-func TestDoJSONRequestWrapsDecodeErrors(t *testing.T) {
-	t.Parallel()
-
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("Content-Type", "application/json")
-		if _, err := io.WriteString(w, "{"); err != nil {
-			t.Fatalf("write response: %v", err)
-		}
-	}))
-	defer server.Close()
-
-	handler := &handlers{
-		baseURL: server.URL,
-		client:  server.Client(),
-	}
-
-	var payload map[string]string
-	err := handler.doJSONRequest(context.Background(), http.MethodGet, "/status", nil, &payload)
-	if err == nil {
-		t.Fatal("expected decode error")
-	}
-
-	var syntaxErr *json.SyntaxError
-	if !errors.As(err, &syntaxErr) {
-		t.Fatalf("expected wrapped json syntax error, got %T", err)
-	}
-}
-
 func TestHandleSearchIssues(t *testing.T) {
 	t.Parallel()
 
-	expected := issuemap.SearchResponse{
-		Query: issuemap.SearchQuery{
-			Raw: "front end changes",
-			Tags: []issuemap.TagRelevance{
-				{Tag: "frontend", Relevance: 0.96},
-			},
-		},
-		RelatedIssues: []issuemap.RelatedIssue{
-			{
-				ID:                 "issue-000011",
-				Raw:                "Make related issues and map context more prominent",
-				Status:             issues.StatusOpen,
-				SemanticSimilarity: 0.81,
-				FactorSimilarity:   0.74,
-				CombinedSimilarity: 0.78,
-				Reason:             "Shared factor relevance in frontend",
-			},
-		},
-	}
-
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.Method != http.MethodGet {
-			t.Fatalf("expected GET, got %s", r.Method)
-		}
-		if r.URL.Path != "/issues/search" {
-			t.Fatalf("expected /issues/search path, got %s", r.URL.Path)
-		}
-		if got := r.URL.Query().Get("q"); got != expected.Query.Raw {
-			t.Fatalf("expected q %q, got %q", expected.Query.Raw, got)
-		}
-		if got := r.URL.Query().Get("limit"); got != "3" {
-			t.Fatalf("expected limit 3, got %q", got)
-		}
-		if got := r.URL.Query().Get("status"); got != "all" {
-			t.Fatalf("expected status all, got %q", got)
-		}
-
-		w.Header().Set("Content-Type", "application/json")
-		if err := json.NewEncoder(w).Encode(expected); err != nil {
-			t.Fatalf("encode response: %v", err)
-		}
-	}))
-	defer server.Close()
-
-	handler := &handlers{
-		baseURL: server.URL,
-		client:  server.Client(),
-	}
+	handler := newTestHandlers()
+	createTestIssue(t, handler, "Safari crashes when exporting a PDF", "Casey")
+	createTestIssue(t, handler, "PDF export fails in Safari after tapping share twice", "Jordan")
 
 	result, err := handler.handleSearchIssues(context.Background(), toolRequest(map[string]any{
-		"query":  expected.Query.Raw,
+		"query":  "safari pdf export",
 		"limit":  3,
 		"status": "all",
 	}))
@@ -361,24 +141,18 @@ func TestHandleSearchIssues(t *testing.T) {
 	if !ok {
 		t.Fatalf("expected issuemap.SearchResponse structured content, got %T", result.StructuredContent)
 	}
-	if len(response.RelatedIssues) != 1 || response.RelatedIssues[0].ID != "issue-000011" {
-		t.Fatalf("unexpected related issues: %+v", response.RelatedIssues)
+	if len(response.RelatedIssues) == 0 {
+		t.Fatal("expected related issues in search response")
 	}
 	if firstText(result) == "" {
 		t.Fatal("expected text fallback in MCP result")
 	}
 }
 
-type roundTripFunc func(*http.Request) (*http.Response, error)
-
-func (fn roundTripFunc) RoundTrip(req *http.Request) (*http.Response, error) {
-	return fn(req)
-}
-
 func TestHandleSearchIssuesRejectsInvalidStatus(t *testing.T) {
 	t.Parallel()
 
-	handler := &handlers{}
+	handler := newTestHandlers()
 	result, err := handler.handleSearchIssues(context.Background(), toolRequest(map[string]any{
 		"query":  "front end changes",
 		"status": "recent",
@@ -397,70 +171,13 @@ func TestHandleSearchIssuesRejectsInvalidStatus(t *testing.T) {
 func TestHandleRefineIssue(t *testing.T) {
 	t.Parallel()
 
-	createdAt := time.Date(2026, time.March, 7, 12, 0, 0, 0, time.UTC)
-	refinedAt := createdAt.Add(15 * time.Minute)
-	expected := issues.Issue{
-		ID:        "issue-000003",
-		Raw:       "Safari crashes when exporting a PDF after tapping share twice.",
-		Tags:      []string{"bug", "safari", "export"},
-		CreatedBy: "Casey",
-		CreatedAt: createdAt,
-		Status:    issues.StatusOpen,
-		Discussion: []issues.IssuePost{
-			{
-				ID:        "issue-000003-post-000001",
-				IssueID:   "issue-000003",
-				Raw:       "Safari crashes when exporting a PDF",
-				CreatedBy: "Casey",
-				CreatedAt: createdAt,
-				Sequence:  1,
-			},
-			{
-				ID:        "issue-000003-post-000002",
-				IssueID:   "issue-000003",
-				Raw:       "Happens after tapping share twice on iPad.",
-				CreatedBy: "Jordan",
-				CreatedAt: refinedAt,
-				Sequence:  2,
-			},
-		},
-	}
-
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.Method != http.MethodPost {
-			t.Fatalf("expected POST, got %s", r.Method)
-		}
-		if r.URL.Path != "/issues/issue-000003/refine" {
-			t.Fatalf("expected /issues/issue-000003/refine path, got %s", r.URL.Path)
-		}
-
-		var payload map[string]string
-		if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
-			t.Fatalf("decode request body: %v", err)
-		}
-		if payload["raw"] != expected.Discussion[1].Raw {
-			t.Fatalf("expected raw %q, got %q", expected.Discussion[1].Raw, payload["raw"])
-		}
-		if payload["createdBy"] != expected.Discussion[1].CreatedBy {
-			t.Fatalf("expected createdBy %q, got %q", expected.Discussion[1].CreatedBy, payload["createdBy"])
-		}
-
-		w.Header().Set("Content-Type", "application/json")
-		if err := json.NewEncoder(w).Encode(expected); err != nil {
-			t.Fatalf("encode response: %v", err)
-		}
-	}))
-	defer server.Close()
-
-	handler := &handlers{
-		baseURL: server.URL,
-		client:  server.Client(),
-	}
+	handler := newTestHandlers()
+	created := createTestIssue(t, handler, "Safari crashes when exporting a PDF", "Casey")
 
 	result, err := handler.handleRefineIssue(context.Background(), toolRequest(map[string]any{
-		"id":         " issue-000003 ",
-		"raw":        expected.Discussion[1].Raw,
-		"created_by": expected.Discussion[1].CreatedBy,
+		"id":         " " + created.ID + " ",
+		"raw":        "Happens after tapping share twice on iPad.",
+		"created_by": "Jordan",
 	}))
 	if err != nil {
 		t.Fatalf("handleRefineIssue returned error: %v", err)
@@ -476,75 +193,21 @@ func TestHandleRefineIssue(t *testing.T) {
 	if len(issue.Discussion) != 2 {
 		t.Fatalf("expected discussion in refined issue, got %#v", issue.Discussion)
 	}
+	if issue.Discussion[1].CreatedBy != "Jordan" {
+		t.Fatalf("expected refinement author Jordan, got %q", issue.Discussion[1].CreatedBy)
+	}
 }
 
 func TestHandleProgressIssue(t *testing.T) {
 	t.Parallel()
 
-	createdAt := time.Date(2026, time.March, 7, 12, 0, 0, 0, time.UTC)
-	progressAt := createdAt.Add(30 * time.Minute)
-	expected := issues.Issue{
-		ID:        "issue-000003",
-		Raw:       "Safari crashes when exporting a PDF",
-		Tags:      []string{"bug", "safari", "export"},
-		CreatedBy: "Casey",
-		CreatedAt: createdAt,
-		Status:    issues.StatusOpen,
-		Discussion: []issues.IssuePost{
-			{
-				ID:        "issue-000003-post-000001",
-				IssueID:   "issue-000003",
-				Raw:       "Safari crashes when exporting a PDF",
-				CreatedBy: "Casey",
-				CreatedAt: createdAt,
-				Sequence:  1,
-			},
-			{
-				ID:        "issue-000003-post-000002",
-				IssueID:   "issue-000003",
-				Raw:       "Identified the root cause in the share handler.",
-				CreatedBy: "Jordan",
-				CreatedAt: progressAt,
-				Sequence:  2,
-			},
-		},
-	}
-
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.Method != http.MethodPost {
-			t.Fatalf("expected POST, got %s", r.Method)
-		}
-		if r.URL.Path != "/issues/issue-000003/progress" {
-			t.Fatalf("expected /issues/issue-000003/progress path, got %s", r.URL.Path)
-		}
-
-		var payload map[string]string
-		if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
-			t.Fatalf("decode request body: %v", err)
-		}
-		if payload["raw"] != expected.Discussion[1].Raw {
-			t.Fatalf("expected raw %q, got %q", expected.Discussion[1].Raw, payload["raw"])
-		}
-		if payload["createdBy"] != expected.Discussion[1].CreatedBy {
-			t.Fatalf("expected createdBy %q, got %q", expected.Discussion[1].CreatedBy, payload["createdBy"])
-		}
-
-		w.Header().Set("Content-Type", "application/json")
-		if err := json.NewEncoder(w).Encode(expected); err != nil {
-			t.Fatalf("encode response: %v", err)
-		}
-	}))
-	defer server.Close()
-
-	handler := &handlers{
-		baseURL: server.URL,
-		client:  server.Client(),
-	}
+	handler := newTestHandlers()
+	created := createTestIssue(t, handler, "Safari crashes when exporting a PDF", "Casey")
 
 	result, err := handler.handleProgressIssue(context.Background(), toolRequest(map[string]any{
-		"id":         " issue-000003 ",
-		"raw":        expected.Discussion[1].Raw,
-		"created_by": expected.Discussion[1].CreatedBy,
+		"id":         " " + created.ID + " ",
+		"raw":        "Identified the root cause in the share handler.",
+		"created_by": "Jordan",
 	}))
 	if err != nil {
 		t.Fatalf("handleProgressIssue returned error: %v", err)
@@ -560,55 +223,20 @@ func TestHandleProgressIssue(t *testing.T) {
 	if len(issue.Discussion) != 2 {
 		t.Fatalf("expected discussion in progress issue, got %#v", issue.Discussion)
 	}
+	if issue.Discussion[1].Kind != "progress" {
+		t.Fatalf("expected progress post kind, got %q", issue.Discussion[1].Kind)
+	}
 }
 
 func TestHandleCloseIssue(t *testing.T) {
 	t.Parallel()
 
-	createdAt := time.Date(2026, time.March, 7, 12, 0, 0, 0, time.UTC)
-	closedAt := createdAt.Add(2 * time.Hour)
-	expected := issues.Issue{
-		ID:        "issue-000003",
-		Raw:       "Safari crashes when exporting a PDF",
-		Tags:      []string{"bug", "safari", "export"},
-		CreatedBy: "Casey",
-		CreatedAt: createdAt,
-		Status:    issues.StatusClosed,
-		ClosedAt:  &closedAt,
-		ClosedBy:  "Jordan",
-	}
-
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.Method != http.MethodPost {
-			t.Fatalf("expected POST, got %s", r.Method)
-		}
-		if r.URL.Path != "/issues/issue-000003/close" {
-			t.Fatalf("expected /issues/issue-000003/close path, got %s", r.URL.Path)
-		}
-
-		var payload map[string]string
-		if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
-			t.Fatalf("decode request body: %v", err)
-		}
-		if payload["closedBy"] != expected.ClosedBy {
-			t.Fatalf("expected closedBy %q, got %q", expected.ClosedBy, payload["closedBy"])
-		}
-
-		w.Header().Set("Content-Type", "application/json")
-		if err := json.NewEncoder(w).Encode(expected); err != nil {
-			t.Fatalf("encode response: %v", err)
-		}
-	}))
-	defer server.Close()
-
-	handler := &handlers{
-		baseURL: server.URL,
-		client:  server.Client(),
-	}
+	handler := newTestHandlers()
+	created := createTestIssue(t, handler, "Safari crashes when exporting a PDF", "Casey")
 
 	result, err := handler.handleCloseIssue(context.Background(), toolRequest(map[string]any{
-		"id":        " issue-000003 ",
-		"closed_by": expected.ClosedBy,
+		"id":        " " + created.ID + " ",
+		"closed_by": "Jordan",
 	}))
 	if err != nil {
 		t.Fatalf("handleCloseIssue returned error: %v", err)
@@ -624,33 +252,15 @@ func TestHandleCloseIssue(t *testing.T) {
 	if issue.Status != issues.StatusClosed {
 		t.Fatalf("expected closed issue, got %q", issue.Status)
 	}
-	if issue.ClosedBy != expected.ClosedBy {
-		t.Fatalf("expected ClosedBy %q, got %q", expected.ClosedBy, issue.ClosedBy)
+	if issue.ClosedBy != "Jordan" {
+		t.Fatalf("expected ClosedBy Jordan, got %q", issue.ClosedBy)
 	}
 }
 
 func TestHandleCloseIssueNotFound(t *testing.T) {
 	t.Parallel()
 
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.Method != http.MethodPost {
-			t.Fatalf("expected POST, got %s", r.Method)
-		}
-		if r.URL.Path != "/issues/issue-000999/close" {
-			t.Fatalf("expected /issues/issue-000999/close path, got %s", r.URL.Path)
-		}
-
-		w.WriteHeader(http.StatusNotFound)
-		if err := json.NewEncoder(w).Encode(map[string]string{"error": "issue not found"}); err != nil {
-			t.Fatalf("encode response: %v", err)
-		}
-	}))
-	defer server.Close()
-
-	handler := &handlers{
-		baseURL: server.URL,
-		client:  server.Client(),
-	}
+	handler := newTestHandlers()
 
 	result, err := handler.handleCloseIssue(context.Background(), toolRequest(map[string]any{
 		"id": "issue-000999",
@@ -669,78 +279,12 @@ func TestHandleCloseIssueNotFound(t *testing.T) {
 func TestHandleExploreIssue(t *testing.T) {
 	t.Parallel()
 
-	expected := issuemap.ExploreResponse{
-		Issue: issuemap.ExploreIssue{
-			ID:     "issue-000003",
-			Raw:    "Safari crashes when exporting a PDF",
-			Status: issues.StatusOpen,
-			Tags: []issuemap.TagRelevance{
-				{Tag: "export", Relevance: 0.92},
-				{Tag: "safari", Relevance: 0.9},
-			},
-		},
-		RelatedIssues: []issuemap.RelatedIssue{
-			{
-				ID:                 "issue-000004",
-				Raw:                "PDF export fails in Safari",
-				Status:             issues.StatusOpen,
-				Tags:               []issuemap.TagRelevance{{Tag: "export", Relevance: 0.9}},
-				SemanticSimilarity: 0.94,
-				FactorSimilarity:   0.89,
-				CombinedSimilarity: 0.92,
-				Reason:             "Shared factor relevance in export, safari",
-			},
-		},
-		Opportunities: []issuemap.Opportunity{
-			{
-				Title:    "Solve export + safari issues together",
-				Summary:  "A single fix may address issue-000003 and issue-000004.",
-				Theme:    "export + safari",
-				IssueIDs: []string{"issue-000003", "issue-000004"},
-				Issues: []issuemap.OpportunityIssue{
-					{
-						ID:          "issue-000003",
-						Description: "Safari crashes when exporting a PDF",
-						Status:      issues.StatusOpen,
-					},
-					{
-						ID:          "issue-000004",
-						Description: "PDF export fails in Safari",
-						Status:      issues.StatusOpen,
-					},
-				},
-				SharedTags: []string{"export", "safari"},
-				Confidence: 0.92,
-				Reason:     "These issues share strong factor relevance in export, safari.",
-			},
-		},
-	}
-
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.Method != http.MethodGet {
-			t.Fatalf("expected GET, got %s", r.Method)
-		}
-		if r.URL.Path != "/issues/issue-000003/explore" {
-			t.Fatalf("expected /issues/issue-000003/explore path, got %s", r.URL.Path)
-		}
-		if r.URL.Query().Get("limit") != "5" {
-			t.Fatalf("expected limit query 5, got %q", r.URL.Query().Get("limit"))
-		}
-
-		w.Header().Set("Content-Type", "application/json")
-		if err := json.NewEncoder(w).Encode(expected); err != nil {
-			t.Fatalf("encode response: %v", err)
-		}
-	}))
-	defer server.Close()
-
-	handler := &handlers{
-		baseURL: server.URL,
-		client:  server.Client(),
-	}
+	handler := newTestHandlers()
+	target := createTestIssue(t, handler, "Safari crashes when exporting a PDF", "Casey")
+	createTestIssue(t, handler, "PDF export fails in Safari after tapping share twice", "Jordan")
 
 	result, err := handler.handleExploreIssue(context.Background(), toolRequest(map[string]any{
-		"id":    " issue-000003 ",
+		"id":    " " + target.ID + " ",
 		"limit": 5,
 	}))
 	if err != nil {
@@ -754,17 +298,14 @@ func TestHandleExploreIssue(t *testing.T) {
 	if !ok {
 		t.Fatalf("expected ExploreResponse structured content, got %T", result.StructuredContent)
 	}
-	if response.Issue.ID != expected.Issue.ID {
-		t.Fatalf("expected target ID %q, got %q", expected.Issue.ID, response.Issue.ID)
+	if response.Issue.ID != target.ID {
+		t.Fatalf("expected target ID %q, got %q", target.ID, response.Issue.ID)
 	}
-	if len(response.RelatedIssues) != 1 {
-		t.Fatalf("expected 1 related issue, got %d", len(response.RelatedIssues))
+	if len(response.RelatedIssues) == 0 {
+		t.Fatal("expected related issues in explore response")
 	}
-	if len(response.Opportunities) != 1 || len(response.Opportunities[0].Issues) != 2 {
-		t.Fatalf("expected opportunity issues descriptions, got %+v", response.Opportunities)
-	}
-	if response.Opportunities[0].Issues[0].Description != expected.Issue.Raw {
-		t.Fatalf("expected target description %q, got %q", expected.Issue.Raw, response.Opportunities[0].Issues[0].Description)
+	if len(response.Opportunities) == 0 {
+		t.Fatal("expected explore opportunities")
 	}
 	if firstText(result) == "" {
 		t.Fatal("expected text fallback in MCP result")
@@ -774,7 +315,7 @@ func TestHandleExploreIssue(t *testing.T) {
 func TestHandleExploreIssueRejectsInvalidLimit(t *testing.T) {
 	t.Parallel()
 
-	handler := &handlers{}
+	handler := newTestHandlers()
 
 	result, err := handler.handleExploreIssue(context.Background(), toolRequest(map[string]any{
 		"id":    "issue-000003",
@@ -789,6 +330,46 @@ func TestHandleExploreIssueRejectsInvalidLimit(t *testing.T) {
 	if !strings.Contains(firstText(result), "limit must be greater than 0") {
 		t.Fatalf("expected invalid limit error, got %q", firstText(result))
 	}
+}
+
+func newTestHandlers() *handlers {
+	analyzer := ai.NewAnalyzerWithCanonicalizer(
+		ai.NewStubTagger(),
+		ai.NewStubEmbedder(),
+		ai.NewStubCanonicalizer(),
+	)
+	store := issues.NewInMemoryStore(nil)
+	catalog := services.NewCatalogService(nil, analyzer)
+	enricher := services.NewIssueEnricher(analyzer, catalog)
+
+	return &handlers{
+		createIssue:      commands.CreateIssueHandler{Store: store, Enricher: enricher},
+		refineIssue:      commands.RefineIssueHandler{Store: store, Enricher: enricher},
+		progressIssue:    commands.ProgressIssueHandler{Store: store},
+		closeIssue:       commands.CloseIssueHandler{Store: store},
+		assignIssue:      commands.AssignIssueHandler{Store: store},
+		splitIssue:       commands.SplitIssueHandler{Store: store, Enricher: enricher},
+		combineIssues:    commands.CombineIssuesHandler{Store: store, Enricher: enricher},
+		linkIssues:       commands.LinkIssuesHandler{Store: store},
+		getIssue:         queries.GetIssueHandler{Store: store},
+		searchIssues:     queries.SearchIssuesHandler{Analyzer: analyzer, Catalog: catalog, Store: store},
+		exploreIssue:     queries.ExploreIssueHandler{Store: store, Catalog: catalog},
+		getPersonProfile: queries.GetPersonProfileHandler{Store: store},
+		workCorrelations: queries.WorkCorrelationsHandler{Store: store},
+	}
+}
+
+func createTestIssue(t *testing.T, handler *handlers, raw string, createdBy string) issues.Issue {
+	t.Helper()
+
+	issue, err := handler.createIssue.Handle(context.Background(), commands.CreateIssue{
+		Raw:       raw,
+		CreatedBy: createdBy,
+	})
+	if err != nil {
+		t.Fatalf("create issue: %v", err)
+	}
+	return issue
 }
 
 func toolRequest(arguments map[string]any) mcptypes.CallToolRequest {

@@ -1,37 +1,35 @@
 package mcp
 
 import (
-	"bytes"
 	"context"
-	"encoding/json"
+	"errors"
 	"fmt"
-	"io"
 	"net/http"
-	"net/url"
-	"strconv"
 	"strings"
 
 	"github.com/mark3labs/mcp-go/mcp"
 	"github.com/mark3labs/mcp-go/server"
 
+	"splat/internal/auth"
+	"splat/internal/commands"
 	"splat/internal/issues"
-	issuemap "splat/internal/map"
+	"splat/internal/queries"
 )
 
-type authorizationContextKey struct{}
-
 type ServerConfig struct {
-	// BaseURL is the Splat API base URL, e.g. "http://localhost:8081/api/v1"
-	BaseURL string
-}
-
-type apiError struct {
-	statusCode int
-	message    string
-}
-
-func (e *apiError) Error() string {
-	return fmt.Sprintf("Splat API error (%d): %s", e.statusCode, e.message)
+	CreateIssue      commands.CreateIssueHandler
+	RefineIssue      commands.RefineIssueHandler
+	ProgressIssue    commands.ProgressIssueHandler
+	CloseIssue       commands.CloseIssueHandler
+	AssignIssue      commands.AssignIssueHandler
+	SplitIssue       commands.SplitIssueHandler
+	CombineIssues    commands.CombineIssuesHandler
+	LinkIssues       commands.LinkIssuesHandler
+	GetIssue         queries.GetIssueHandler
+	SearchIssues     queries.SearchIssuesHandler
+	ExploreIssue     queries.ExploreIssueHandler
+	GetPersonProfile queries.GetPersonProfileHandler
+	WorkCorrelations queries.WorkCorrelationsHandler
 }
 
 // NewHandler creates a Streamable HTTP handler for the MCP server,
@@ -44,8 +42,19 @@ func NewHandler(cfg ServerConfig) http.Handler {
 	)
 
 	h := &handlers{
-		baseURL: cfg.BaseURL,
-		client:  &http.Client{},
+		createIssue:      cfg.CreateIssue,
+		refineIssue:      cfg.RefineIssue,
+		progressIssue:    cfg.ProgressIssue,
+		closeIssue:       cfg.CloseIssue,
+		assignIssue:      cfg.AssignIssue,
+		splitIssue:       cfg.SplitIssue,
+		combineIssues:    cfg.CombineIssues,
+		linkIssues:       cfg.LinkIssues,
+		getIssue:         cfg.GetIssue,
+		searchIssues:     cfg.SearchIssues,
+		exploreIssue:     cfg.ExploreIssue,
+		getPersonProfile: cfg.GetPersonProfile,
+		workCorrelations: cfg.WorkCorrelations,
 	}
 
 	s.AddTool(
@@ -261,16 +270,23 @@ func NewHandler(cfg ServerConfig) http.Handler {
 		h.handleWorkCorrelations,
 	)
 
-	httpServer := server.NewStreamableHTTPServer(s)
-	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		ctx := context.WithValue(r.Context(), authorizationContextKey{}, strings.TrimSpace(r.Header.Get("Authorization")))
-		httpServer.ServeHTTP(w, r.WithContext(ctx))
-	})
+	return server.NewStreamableHTTPServer(s)
 }
 
 type handlers struct {
-	baseURL string
-	client  *http.Client
+	createIssue      commands.CreateIssueHandler
+	refineIssue      commands.RefineIssueHandler
+	progressIssue    commands.ProgressIssueHandler
+	closeIssue       commands.CloseIssueHandler
+	assignIssue      commands.AssignIssueHandler
+	splitIssue       commands.SplitIssueHandler
+	combineIssues    commands.CombineIssuesHandler
+	linkIssues       commands.LinkIssuesHandler
+	getIssue         queries.GetIssueHandler
+	searchIssues     queries.SearchIssuesHandler
+	exploreIssue     queries.ExploreIssueHandler
+	getPersonProfile queries.GetPersonProfileHandler
+	workCorrelations queries.WorkCorrelationsHandler
 }
 
 func (h *handlers) handleCreateIssue(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
@@ -279,22 +295,15 @@ func (h *handlers) handleCreateIssue(ctx context.Context, req mcp.CallToolReques
 		return mcp.NewToolResultError("raw is required"), nil
 	}
 
-	createdBy := req.GetString("created_by", "Claude")
-
-	var issue issues.Issue
-	err = h.doJSONRequest(ctx, http.MethodPost, "/issues", map[string]string{
-		"raw":       raw,
-		"createdBy": createdBy,
-	}, &issue)
+	issue, err := h.createIssue.Handle(ctx, commands.CreateIssue{
+		Raw:       strings.TrimSpace(raw),
+		CreatedBy: actorForContext(ctx, req.GetString("created_by", "Claude")),
+	})
 	if err != nil {
-		return mcp.NewToolResultError(err.Error()), nil
+		return toolResultError(err), nil
 	}
 
-	result, err := mcp.NewToolResultJSON(issue)
-	if err != nil {
-		return mcp.NewToolResultError(fmt.Sprintf("failed to encode response: %v", err)), nil
-	}
-	return result, nil
+	return jsonResult(issue)
 }
 
 func (h *handlers) handleGetIssue(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
@@ -308,17 +317,12 @@ func (h *handlers) handleGetIssue(ctx context.Context, req mcp.CallToolRequest) 
 		return mcp.NewToolResultError("id is required"), nil
 	}
 
-	var issue issues.Issue
-	err = h.doJSONRequest(ctx, http.MethodGet, "/issues/"+url.PathEscape(id), nil, &issue)
+	issue, err := h.getIssue.Handle(ctx, id)
 	if err != nil {
-		return mcp.NewToolResultError(err.Error()), nil
+		return toolResultError(err), nil
 	}
 
-	result, err := mcp.NewToolResultJSON(issue)
-	if err != nil {
-		return mcp.NewToolResultError(fmt.Sprintf("failed to encode response: %v", err)), nil
-	}
-	return result, nil
+	return jsonResult(issue)
 }
 
 func (h *handlers) handleSearchIssues(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
@@ -337,35 +341,21 @@ func (h *handlers) handleSearchIssues(ctx context.Context, req mcp.CallToolReque
 		return mcp.NewToolResultError("limit must be greater than 0"), nil
 	}
 
-	status := strings.ToLower(strings.TrimSpace(req.GetString("status", "open")))
-	switch status {
-	case "", "open":
-		status = "open"
-	case "closed", "all":
-	default:
+	status, ok := parseStatusFilter(req.GetString("status", "open"), true)
+	if !ok {
 		return mcp.NewToolResultError("status must be one of: open, closed, all"), nil
 	}
 
-	queryString := url.Values{}
-	queryString.Set("q", query)
-	if limit != 8 {
-		queryString.Set("limit", strconv.Itoa(limit))
-	}
-	if status != "open" {
-		queryString.Set("status", status)
+	response, err := h.searchIssues.Handle(ctx, queries.SearchIssues{
+		Query:  query,
+		Limit:  limit,
+		Status: status,
+	})
+	if err != nil {
+		return toolResultError(err), nil
 	}
 
-	var response issuemap.SearchResponse
-	err = h.doJSONRequest(ctx, http.MethodGet, "/issues/search?"+queryString.Encode(), nil, &response)
-	if err != nil {
-		return mcp.NewToolResultError(err.Error()), nil
-	}
-
-	result, err := mcp.NewToolResultJSON(response)
-	if err != nil {
-		return mcp.NewToolResultError(fmt.Sprintf("failed to encode response: %v", err)), nil
-	}
-	return result, nil
+	return jsonResult(response)
 }
 
 func (h *handlers) handleRefineIssue(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
@@ -388,22 +378,16 @@ func (h *handlers) handleRefineIssue(ctx context.Context, req mcp.CallToolReques
 		return mcp.NewToolResultError("raw is required"), nil
 	}
 
-	createdBy := req.GetString("created_by", "Claude")
-
-	var issue issues.Issue
-	err = h.doJSONRequest(ctx, http.MethodPost, "/issues/"+url.PathEscape(id)+"/refine", map[string]string{
-		"raw":       raw,
-		"createdBy": createdBy,
-	}, &issue)
+	issue, err := h.refineIssue.Handle(ctx, commands.RefineIssue{
+		ID:        id,
+		Raw:       raw,
+		CreatedBy: actorForContext(ctx, req.GetString("created_by", "Claude")),
+	})
 	if err != nil {
-		return mcp.NewToolResultError(err.Error()), nil
+		return toolResultError(err), nil
 	}
 
-	result, err := mcp.NewToolResultJSON(issue)
-	if err != nil {
-		return mcp.NewToolResultError(fmt.Sprintf("failed to encode response: %v", err)), nil
-	}
-	return result, nil
+	return jsonResult(issue)
 }
 
 func (h *handlers) handleProgressIssue(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
@@ -426,22 +410,16 @@ func (h *handlers) handleProgressIssue(ctx context.Context, req mcp.CallToolRequ
 		return mcp.NewToolResultError("raw is required"), nil
 	}
 
-	createdBy := req.GetString("created_by", "Claude")
-
-	var issue issues.Issue
-	err = h.doJSONRequest(ctx, http.MethodPost, "/issues/"+url.PathEscape(id)+"/progress", map[string]string{
-		"raw":       raw,
-		"createdBy": createdBy,
-	}, &issue)
+	issue, err := h.progressIssue.Handle(ctx, commands.ProgressIssue{
+		ID:        id,
+		Raw:       raw,
+		CreatedBy: actorForContext(ctx, req.GetString("created_by", "Claude")),
+	})
 	if err != nil {
-		return mcp.NewToolResultError(err.Error()), nil
+		return toolResultError(err), nil
 	}
 
-	result, err := mcp.NewToolResultJSON(issue)
-	if err != nil {
-		return mcp.NewToolResultError(fmt.Sprintf("failed to encode response: %v", err)), nil
-	}
-	return result, nil
+	return jsonResult(issue)
 }
 
 func (h *handlers) handleCloseIssue(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
@@ -455,21 +433,15 @@ func (h *handlers) handleCloseIssue(ctx context.Context, req mcp.CallToolRequest
 		return mcp.NewToolResultError("id is required"), nil
 	}
 
-	closedBy := req.GetString("closed_by", "Claude")
-
-	var issue issues.Issue
-	err = h.doJSONRequest(ctx, http.MethodPost, "/issues/"+url.PathEscape(id)+"/close", map[string]string{
-		"closedBy": closedBy,
-	}, &issue)
+	issue, err := h.closeIssue.Handle(ctx, commands.CloseIssue{
+		ID:       id,
+		ClosedBy: actorForContext(ctx, req.GetString("closed_by", "Claude")),
+	})
 	if err != nil {
-		return mcp.NewToolResultError(err.Error()), nil
+		return toolResultError(err), nil
 	}
 
-	result, err := mcp.NewToolResultJSON(issue)
-	if err != nil {
-		return mcp.NewToolResultError(fmt.Sprintf("failed to encode response: %v", err)), nil
-	}
-	return result, nil
+	return jsonResult(issue)
 }
 
 func (h *handlers) handleExploreIssue(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
@@ -488,22 +460,15 @@ func (h *handlers) handleExploreIssue(ctx context.Context, req mcp.CallToolReque
 		return mcp.NewToolResultError("limit must be greater than 0"), nil
 	}
 
-	var query string
-	if limit != 8 {
-		query = "?limit=" + strconv.Itoa(limit)
+	response, err := h.exploreIssue.Handle(ctx, queries.ExploreIssue{
+		ID:    id,
+		Limit: limit,
+	})
+	if err != nil {
+		return toolResultError(err), nil
 	}
 
-	var response issuemap.ExploreResponse
-	err = h.doJSONRequest(ctx, http.MethodGet, "/issues/"+url.PathEscape(id)+"/explore"+query, nil, &response)
-	if err != nil {
-		return mcp.NewToolResultError(err.Error()), nil
-	}
-
-	result, err := mcp.NewToolResultJSON(response)
-	if err != nil {
-		return mcp.NewToolResultError(fmt.Sprintf("failed to encode response: %v", err)), nil
-	}
-	return result, nil
+	return jsonResult(response)
 }
 
 func (h *handlers) handleAssignIssue(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
@@ -522,19 +487,15 @@ func (h *handlers) handleAssignIssue(ctx context.Context, req mcp.CallToolReques
 		return mcp.NewToolResultError("id is required"), nil
 	}
 
-	var issue issues.Issue
-	err = h.doJSONRequest(ctx, http.MethodPost, "/issues/"+url.PathEscape(id)+"/assign", map[string]string{
-		"assignedTo": assignedTo,
-	}, &issue)
+	issue, err := h.assignIssue.Handle(ctx, commands.AssignIssue{
+		ID:         id,
+		AssignedTo: strings.TrimSpace(assignedTo),
+	})
 	if err != nil {
-		return mcp.NewToolResultError(err.Error()), nil
+		return toolResultError(err), nil
 	}
 
-	result, err := mcp.NewToolResultJSON(issue)
-	if err != nil {
-		return mcp.NewToolResultError(fmt.Sprintf("failed to encode response: %v", err)), nil
-	}
-	return result, nil
+	return jsonResult(issue)
 }
 
 func (h *handlers) handleSplitIssue(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
@@ -552,34 +513,30 @@ func (h *handlers) handleSplitIssue(ctx context.Context, req mcp.CallToolRequest
 		return mcp.NewToolResultError("id is required"), nil
 	}
 
-	normalizedChildren := make([]map[string]any, 0, len(children))
+	normalizedChildren := make([]commands.SplitIssueChild, 0, len(children))
 	for _, child := range children {
 		child = strings.TrimSpace(child)
 		if child == "" {
 			continue
 		}
-		normalizedChildren = append(normalizedChildren, map[string]any{"raw": child})
+		normalizedChildren = append(normalizedChildren, commands.SplitIssueChild{Raw: child})
 	}
 	if len(normalizedChildren) == 0 {
 		return mcp.NewToolResultError("children_raw must include at least one non-empty child"), nil
 	}
 
-	var resultPayload issues.IssueOperationResult
-	err = h.doJSONRequest(ctx, http.MethodPost, "/issues/"+url.PathEscape(id)+"/split", map[string]any{
-		"children":    normalizedChildren,
-		"closeSource": req.GetBool("close_source", false),
-		"note":        req.GetString("note", ""),
-		"createdBy":   req.GetString("created_by", "Claude"),
-	}, &resultPayload)
+	resultPayload, err := h.splitIssue.Handle(ctx, commands.SplitIssue{
+		SourceID:    id,
+		Children:    normalizedChildren,
+		CloseSource: req.GetBool("close_source", false),
+		Note:        strings.TrimSpace(req.GetString("note", "")),
+		CreatedBy:   actorForContext(ctx, req.GetString("created_by", "Claude")),
+	})
 	if err != nil {
-		return mcp.NewToolResultError(err.Error()), nil
+		return toolResultError(err), nil
 	}
 
-	result, err := mcp.NewToolResultJSON(resultPayload)
-	if err != nil {
-		return mcp.NewToolResultError(fmt.Sprintf("failed to encode response: %v", err)), nil
-	}
-	return result, nil
+	return jsonResult(resultPayload)
 }
 
 func (h *handlers) handleCombineIssues(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
@@ -587,25 +544,21 @@ func (h *handlers) handleCombineIssues(ctx context.Context, req mcp.CallToolRequ
 	if err != nil {
 		return mcp.NewToolResultError("ids is required"), nil
 	}
+	ids = sanitizeIssueIDs(ids)
 	if len(ids) < 2 {
 		return mcp.NewToolResultError("at least two issue ids are required"), nil
 	}
 
-	var resultPayload issues.IssueOperationResult
-	err = h.doJSONRequest(ctx, http.MethodPost, "/issues/combine", map[string]any{
-		"ids":       ids,
-		"note":      req.GetString("note", ""),
-		"createdBy": req.GetString("created_by", "Claude"),
-	}, &resultPayload)
+	resultPayload, err := h.combineIssues.Handle(ctx, commands.CombineIssues{
+		SourceIDs: ids,
+		Note:      strings.TrimSpace(req.GetString("note", "")),
+		CreatedBy: actorForContext(ctx, req.GetString("created_by", "Claude")),
+	})
 	if err != nil {
-		return mcp.NewToolResultError(err.Error()), nil
+		return toolResultError(err), nil
 	}
 
-	result, err := mcp.NewToolResultJSON(resultPayload)
-	if err != nil {
-		return mcp.NewToolResultError(fmt.Sprintf("failed to encode response: %v", err)), nil
-	}
-	return result, nil
+	return jsonResult(resultPayload)
 }
 
 func (h *handlers) handleLinkIssues(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
@@ -617,28 +570,34 @@ func (h *handlers) handleLinkIssues(ctx context.Context, req mcp.CallToolRequest
 	if err != nil {
 		return mcp.NewToolResultError("target_id is required"), nil
 	}
-	linkType, err := req.RequireString("type")
+	linkTypeRaw, err := req.RequireString("type")
 	if err != nil {
 		return mcp.NewToolResultError("type is required"), nil
 	}
 
-	var resultPayload issues.IssueOperationResult
-	err = h.doJSONRequest(ctx, http.MethodPost, "/issues/link", map[string]any{
-		"sourceId":  sourceID,
-		"targetId":  targetID,
-		"type":      linkType,
-		"note":      req.GetString("note", ""),
-		"createdBy": req.GetString("created_by", "Claude"),
-	}, &resultPayload)
-	if err != nil {
-		return mcp.NewToolResultError(err.Error()), nil
+	sourceID = strings.TrimSpace(sourceID)
+	targetID = strings.TrimSpace(targetID)
+	if sourceID == "" || targetID == "" {
+		return mcp.NewToolResultError("source_id and target_id are required"), nil
 	}
 
-	result, err := mcp.NewToolResultJSON(resultPayload)
-	if err != nil {
-		return mcp.NewToolResultError(fmt.Sprintf("failed to encode response: %v", err)), nil
+	linkType, ok := parseLinkType(linkTypeRaw)
+	if !ok {
+		return mcp.NewToolResultError("invalid link type"), nil
 	}
-	return result, nil
+
+	resultPayload, err := h.linkIssues.Handle(ctx, commands.LinkIssues{
+		SourceID:  sourceID,
+		TargetID:  targetID,
+		Type:      linkType,
+		Note:      strings.TrimSpace(req.GetString("note", "")),
+		CreatedBy: actorForContext(ctx, req.GetString("created_by", "Claude")),
+	})
+	if err != nil {
+		return toolResultError(err), nil
+	}
+
+	return jsonResult(resultPayload)
 }
 
 func (h *handlers) handleGetPersonProfile(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
@@ -652,124 +611,114 @@ func (h *handlers) handleGetPersonProfile(ctx context.Context, req mcp.CallToolR
 		return mcp.NewToolResultError("person is required"), nil
 	}
 
-	status := strings.ToLower(strings.TrimSpace(req.GetString("status", "all")))
-	switch status {
-	case "", "all":
-		status = "all"
-	case "open", "closed":
-	default:
+	status, ok := parseStatusFilter(req.GetString("status", "all"), false)
+	if !ok {
 		return mcp.NewToolResultError("status must be one of: open, closed, all"), nil
 	}
 
-	queryString := url.Values{}
-	if status != "all" {
-		queryString.Set("status", status)
-	}
-
-	query := ""
-	if len(queryString) > 0 {
-		query = "?" + queryString.Encode()
-	}
-
-	var response json.RawMessage
-	err = h.doJSONRequest(ctx, http.MethodGet, "/people/"+url.PathEscape(person)+"/profile"+query, nil, &response)
+	response, err := h.getPersonProfile.Handle(ctx, person, status)
 	if err != nil {
-		return mcp.NewToolResultError(err.Error()), nil
+		return toolResultError(err), nil
 	}
 
-	return mcp.NewToolResultText(string(response)), nil
+	return jsonResult(response)
 }
 
 func (h *handlers) handleWorkCorrelations(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
-	status := strings.ToLower(strings.TrimSpace(req.GetString("status", "all")))
-	switch status {
-	case "", "all":
-		status = "all"
-	case "open", "closed":
-	default:
+	status, ok := parseStatusFilter(req.GetString("status", "all"), false)
+	if !ok {
 		return mcp.NewToolResultError("status must be one of: open, closed, all"), nil
 	}
 
-	queryString := url.Values{}
-	if status != "all" {
-		queryString.Set("status", status)
-	}
-
-	query := ""
-	if len(queryString) > 0 {
-		query = "?" + queryString.Encode()
-	}
-
-	var response json.RawMessage
-	err := h.doJSONRequest(ctx, http.MethodGet, "/people/correlations"+query, nil, &response)
+	response, err := h.workCorrelations.Handle(ctx, status)
 	if err != nil {
-		return mcp.NewToolResultError(err.Error()), nil
+		return toolResultError(err), nil
 	}
 
-	return mcp.NewToolResultText(string(response)), nil
+	return jsonResult(response)
 }
 
-func (h *handlers) doJSONRequest(ctx context.Context, method, route string, payload any, out any) error {
-	var body io.Reader
-	if payload != nil {
-		requestBody, err := json.Marshal(payload)
-		if err != nil {
-			return fmt.Errorf("failed to encode request: %w", err)
-		}
-		body = bytes.NewReader(requestBody)
+func actorForContext(ctx context.Context, fallback string) string {
+	if principal, ok := auth.PrincipalFromContext(ctx); ok {
+		return principal.ActorName()
 	}
 
-	httpReq, err := http.NewRequestWithContext(ctx, method, h.baseURL+route, body)
-	if err != nil {
-		return fmt.Errorf("failed to build request: %w", err)
+	fallback = strings.TrimSpace(fallback)
+	if fallback == "" {
+		return "Claude"
 	}
-	if payload != nil {
-		httpReq.Header.Set("Content-Type", "application/json")
-	}
-	if authHeader, ok := ctx.Value(authorizationContextKey{}).(string); ok && authHeader != "" {
-		httpReq.Header.Set("Authorization", authHeader)
-	}
-
-	resp, err := h.client.Do(httpReq)
-	if err != nil {
-		return fmt.Errorf("failed to reach Splat API: %w", err)
-	}
-	defer resp.Body.Close()
-
-	respBody, err := io.ReadAll(io.LimitReader(resp.Body, 1<<20))
-	if err != nil {
-		return fmt.Errorf("failed to read response: %w", err)
-	}
-
-	if resp.StatusCode >= 400 {
-		return &apiError{
-			statusCode: resp.StatusCode,
-			message:    formatAPIErrorMessage(resp.StatusCode, respBody),
-		}
-	}
-
-	if err := json.Unmarshal(respBody, out); err != nil {
-		return fmt.Errorf("failed to decode response: %w", err)
-	}
-
-	return nil
+	return fallback
 }
 
-func formatAPIErrorMessage(statusCode int, respBody []byte) string {
-	var payload struct {
-		Error string `json:"error"`
-	}
-	if err := json.Unmarshal(respBody, &payload); err == nil {
-		payload.Error = strings.TrimSpace(payload.Error)
-		if payload.Error != "" {
-			return payload.Error
+func parseStatusFilter(raw string, defaultOpen bool) (queries.IssueStatusFilter, bool) {
+	switch strings.ToLower(strings.TrimSpace(raw)) {
+	case "":
+		if defaultOpen {
+			return queries.IssueStatusFilterOpen, true
 		}
+		return queries.IssueStatusFilterAll, true
+	case "open":
+		return queries.IssueStatusFilterOpen, true
+	case "closed":
+		return queries.IssueStatusFilterClosed, true
+	case "all":
+		return queries.IssueStatusFilterAll, true
+	default:
+		return "", false
 	}
+}
 
-	message := strings.TrimSpace(string(respBody))
-	if message == "" {
-		message = http.StatusText(statusCode)
+func parseLinkType(raw string) (issues.IssueLinkType, bool) {
+	linkType := issues.IssueLinkType(strings.TrimSpace(raw))
+	switch linkType {
+	case issues.IssueLinkTypeParentOf,
+		issues.IssueLinkTypeChildOf,
+		issues.IssueLinkTypeMergedInto,
+		issues.IssueLinkTypeDerivedFrom,
+		issues.IssueLinkTypeRelatedTo,
+		issues.IssueLinkTypeDuplicateOf:
+		return linkType, true
+	default:
+		return "", false
 	}
+}
 
-	return message
+func sanitizeIssueIDs(ids []string) []string {
+	seen := make(map[string]struct{}, len(ids))
+	normalized := make([]string, 0, len(ids))
+	for _, id := range ids {
+		id = strings.TrimSpace(id)
+		if id == "" {
+			continue
+		}
+		if _, ok := seen[id]; ok {
+			continue
+		}
+		seen[id] = struct{}{}
+		normalized = append(normalized, id)
+	}
+	return normalized
+}
+
+func jsonResult[T any](payload T) (*mcp.CallToolResult, error) {
+	result, err := mcp.NewToolResultJSON(payload)
+	if err != nil {
+		return mcp.NewToolResultError(fmt.Sprintf("failed to encode response: %v", err)), nil
+	}
+	return result, nil
+}
+
+func toolResultError(err error) *mcp.CallToolResult {
+	return mcp.NewToolResultError(toolErrorMessage(err))
+}
+
+func toolErrorMessage(err error) string {
+	switch {
+	case errors.Is(err, issues.ErrNotFound):
+		return "issue not found"
+	case errors.Is(err, issues.ErrIssueClosed):
+		return "issue is closed"
+	default:
+		return err.Error()
+	}
 }

@@ -1,1 +1,0 @@
-ALTER TABLE issues ADD COLUMN assigned_to TEXT NOT NULL DEFAULT '';

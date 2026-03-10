@@ -6,12 +6,12 @@ ORDER BY created_at_unix_nano DESC, id ASC;
 -- name: GetIssue :one
 SELECT id, raw, tags_json, created_by, created_at_unix_nano, status, closed_at_unix_nano, closed_by, tag_scores_json, embedding_json, assigned_to
 FROM issues
-WHERE id = ?;
+WHERE id = $1;
 
 -- name: ListIssuePosts :many
 SELECT id, issue_id, raw, created_by, created_at_unix_nano, sequence, kind
 FROM issue_posts
-WHERE issue_id = ?
+WHERE issue_id = $1
 ORDER BY sequence ASC, created_at_unix_nano ASC, id ASC;
 
 -- name: InsertIssue :exec
@@ -27,10 +27,10 @@ INSERT INTO issues (
     tag_scores_json,
     embedding_json,
     assigned_to
-) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?);
+) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11);
 
 -- name: AssignIssue :exec
-UPDATE issues SET assigned_to = ? WHERE id = ?;
+UPDATE issues SET assigned_to = $1 WHERE id = $2;
 
 -- name: InsertIssuePost :exec
 INSERT INTO issue_posts (
@@ -41,34 +41,34 @@ INSERT INTO issue_posts (
     created_at_unix_nano,
     sequence,
     kind
-) VALUES (?, ?, ?, ?, ?, ?, ?);
+) VALUES ($1, $2, $3, $4, $5, $6, $7);
 
 -- name: UpdateIssueRefinement :exec
 UPDATE issues
-SET raw = ?,
-    tags_json = ?,
-    tag_scores_json = ?,
-    embedding_json = ?
-WHERE id = ?;
+SET raw = $1,
+    tags_json = $2,
+    tag_scores_json = $3,
+    embedding_json = $4
+WHERE id = $5;
 
 -- name: CloseIssue :exec
 UPDATE issues
 SET status = 'closed',
-    closed_at_unix_nano = ?,
-    closed_by = ?
-WHERE id = ?;
+    closed_at_unix_nano = $1,
+    closed_by = $2
+WHERE id = $3;
 
 -- name: ReopenIssue :exec
 UPDATE issues
 SET status = 'open',
     closed_at_unix_nano = 0,
     closed_by = ''
-WHERE id = ?;
+WHERE id = $1;
 
 -- name: ListIssueLinksForIssue :many
 SELECT id, source_issue_id, target_issue_id, type, created_by, created_at_unix_nano, note, operation_id
 FROM issue_links
-WHERE source_issue_id = ? OR target_issue_id = ?
+WHERE source_issue_id = $1 OR target_issue_id = $2
 ORDER BY created_at_unix_nano DESC, id DESC;
 
 -- name: InsertIssueLink :exec
@@ -81,7 +81,7 @@ INSERT INTO issue_links (
     created_at_unix_nano,
     note,
     operation_id
-) VALUES (?, ?, ?, ?, ?, ?, ?, ?);
+) VALUES ($1, $2, $3, $4, $5, $6, $7, $8);
 
 -- name: DeleteAllIssueLinks :exec
 DELETE FROM issue_links;
@@ -90,7 +90,7 @@ DELETE FROM issue_links;
 SELECT DISTINCT o.id, o.kind, o.created_by, o.created_at_unix_nano, o.note
 FROM issue_operations o
 JOIN issue_operation_participants p ON p.operation_id = o.id
-WHERE p.issue_id = ?
+WHERE p.issue_id = $1
 ORDER BY o.created_at_unix_nano DESC, o.id DESC;
 
 -- name: InsertIssueOperation :exec
@@ -100,7 +100,7 @@ INSERT INTO issue_operations (
     created_by,
     created_at_unix_nano,
     note
-) VALUES (?, ?, ?, ?, ?);
+) VALUES ($1, $2, $3, $4, $5);
 
 -- name: DeleteAllIssueOperations :exec
 DELETE FROM issue_operations;
@@ -108,7 +108,7 @@ DELETE FROM issue_operations;
 -- name: ListIssueOperationParticipants :many
 SELECT operation_id, issue_id, role, sequence
 FROM issue_operation_participants
-WHERE operation_id = ?
+WHERE operation_id = $1
 ORDER BY sequence ASC, issue_id ASC;
 
 -- name: InsertIssueOperationParticipant :exec
@@ -117,7 +117,7 @@ INSERT INTO issue_operation_participants (
     issue_id,
     role,
     sequence
-) VALUES (?, ?, ?, ?);
+) VALUES ($1, $2, $3, $4);
 
 -- name: DeleteAllIssueOperationParticipants :exec
 DELETE FROM issue_operation_participants;
@@ -135,7 +135,7 @@ ORDER BY name ASC;
 
 -- name: UpsertTag :exec
 INSERT INTO tags (name, description, created_at_unix_nano, embedding_json)
-VALUES (?, ?, ?, ?)
+VALUES ($1, $2, $3, $4)
 ON CONFLICT(name) DO UPDATE SET
     description = CASE
         WHEN excluded.description <> '' THEN excluded.description
@@ -146,12 +146,17 @@ ON CONFLICT(name) DO UPDATE SET
         ELSE tags.embedding_json
     END;
 
--- name: GetMetadataValue :one
-SELECT value
-FROM metadata
-WHERE key = ?;
+-- name: NextIssueSeq :one
+SELECT nextval('issue_seq');
 
--- name: UpdateMetadataValue :exec
-UPDATE metadata
-SET value = ?
-WHERE key = ?;
+-- name: NextIssueOperationSeq :one
+SELECT nextval('issue_operation_seq');
+
+-- name: SetIssueSeq :exec
+SELECT setval('issue_seq', $1, true);
+
+-- name: ResetIssueSeq :exec
+SELECT setval('issue_seq', 1, false);
+
+-- name: ResetIssueOperationSeq :exec
+SELECT setval('issue_operation_seq', 1, false);

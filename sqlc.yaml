@@ -1,6 +1,6 @@
 version: "2"
 sql:
-  - engine: "sqlite"
+  - engine: "postgresql"
     schema: "internal/issues/sqlc/schema.sql"
     queries: "internal/issues/sqlc/queries.sql"
     gen:

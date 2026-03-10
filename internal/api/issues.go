@@ -11,7 +11,6 @@ import (
 	"splat/internal/auth"
 	"splat/internal/commands"
 	"splat/internal/issues"
-	issuemap "splat/internal/map"
 	"splat/internal/queries"
 )
 
@@ -354,24 +353,15 @@ func (s *Server) handleIssueByID(route string) http.HandlerFunc {
 				return
 			}
 
-			storeIssues, err := s.listIssues.Handle(r.Context(), queries.IssueStatusFilterAll)
-			if err != nil {
-				writeInternalError(w, r, "failed to list issues", err)
-				return
-			}
-
-			storeTags, err := s.catalog.StoredTags(r.Context())
-			if err != nil {
-				writeInternalError(w, r, "failed to list tags", err)
-				return
-			}
-
 			exploreLimit := 0
 			if limit != nil {
 				exploreLimit = *limit
 			}
 
-			result, err := issuemap.ExploreFromIssuesWithTags(storeIssues, storeTags, id, exploreLimit)
+			result, err := s.exploreIssue.Handle(r.Context(), queries.ExploreIssue{
+				ID:    id,
+				Limit: exploreLimit,
+			})
 			if err != nil {
 				if errors.Is(err, issues.ErrNotFound) {
 					writeError(w, http.StatusNotFound, "issue not found")

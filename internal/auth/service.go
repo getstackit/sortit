@@ -14,14 +14,14 @@ const (
 )
 
 type ServiceConfig struct {
-	Store      *SQLiteStore
+	Store      *Store
 	Provider   OAuthProvider
 	WebOrigin  string
 	SessionTTL time.Duration
 }
 
 type Service struct {
-	store      *SQLiteStore
+	store      *Store
 	provider   OAuthProvider
 	webOrigin  string
 	sessionTTL time.Duration

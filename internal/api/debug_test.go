@@ -119,7 +119,7 @@ func TestDebugIssueAnalyzeEndpoint(t *testing.T) {
 }
 
 func TestDebugIssueAnalyzeEndpointReturnsEmbeddingSimilarities(t *testing.T) {
-	store := newSQLiteIssueStore(t, nil)
+	store := newPostgresIssueStore(t, nil)
 	if err := store.Replace(context.Background(), []issues.Issue{
 		{
 			ID:        "issue-1",

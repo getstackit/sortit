@@ -152,6 +152,30 @@ type SearchUnifiedResponse struct {
 	RelatedTags []issuemap.RelatedTag   `json:"relatedTags"`
 }
 
+type ExploreIssue struct {
+	ID    string
+	Limit int
+}
+
+type ExploreIssueHandler struct {
+	Store   issues.Store
+	Catalog *services.CatalogService
+}
+
+func (h ExploreIssueHandler) Handle(ctx context.Context, input ExploreIssue) (issuemap.ExploreResponse, error) {
+	storeIssues, err := h.Store.List(ctx)
+	if err != nil {
+		return issuemap.ExploreResponse{}, err
+	}
+
+	storeTags, err := h.Catalog.StoredTags(ctx)
+	if err != nil {
+		return issuemap.ExploreResponse{}, err
+	}
+
+	return issuemap.ExploreFromIssuesWithTags(storeIssues, storeTags, input.ID, input.Limit)
+}
+
 type SearchUnifiedHandler struct {
 	Analyzer *ai.Analyzer
 	Catalog  *services.CatalogService

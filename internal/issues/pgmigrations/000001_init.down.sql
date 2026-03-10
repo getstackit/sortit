@@ -1,0 +1,12 @@
+DROP TABLE IF EXISTS api_tokens;
+DROP TABLE IF EXISTS sessions;
+DROP TABLE IF EXISTS auth_accounts;
+DROP TABLE IF EXISTS users;
+DROP TABLE IF EXISTS issue_links;
+DROP TABLE IF EXISTS issue_operation_participants;
+DROP TABLE IF EXISTS issue_operations;
+DROP TABLE IF EXISTS issue_posts;
+DROP TABLE IF EXISTS issues;
+DROP TABLE IF EXISTS tags;
+DROP SEQUENCE IF EXISTS issue_operation_seq;
+DROP SEQUENCE IF EXISTS issue_seq;

@@ -17,7 +17,6 @@ import (
 	mcpserver "splat/internal/mcp"
 	"splat/internal/queries"
 	"splat/internal/services"
-
 )
 
 type ServerConfig struct {
@@ -51,6 +50,7 @@ type Server struct {
 	getMap            queries.MapHandler
 	getMapEdges       queries.EdgeHandler
 	debugAnalyzeIssue queries.DebugAnalyzeIssueHandler
+	exploreIssue      queries.ExploreIssueHandler
 	getPersonProfile  queries.GetPersonProfileHandler
 	workCorrelations  queries.WorkCorrelationsHandler
 	authService       *auth.Service
@@ -160,7 +160,19 @@ func (s *Server) Handler() http.Handler {
 	}
 
 	mcpHandler := mcpserver.NewHandler(mcpserver.ServerConfig{
-		BaseURL: fmt.Sprintf("http://127.0.0.1:%d%s", s.config.Port, normalizeAPIPrefixes(s.config.APIPrefixes)[0]),
+		CreateIssue:      s.createIssue,
+		RefineIssue:      s.refineIssue,
+		ProgressIssue:    s.progressIssue,
+		CloseIssue:       s.closeIssue,
+		AssignIssue:      s.assignIssue,
+		SplitIssue:       s.splitIssue,
+		CombineIssues:    s.combineIssues,
+		LinkIssues:       s.linkIssues,
+		GetIssue:         s.getIssue,
+		SearchIssues:     s.searchIssues,
+		ExploreIssue:     s.exploreIssue,
+		GetPersonProfile: s.getPersonProfile,
+		WorkCorrelations: s.workCorrelations,
 	})
 
 	root := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -303,6 +315,7 @@ func NewServer(cfg ServerConfig) *Server {
 			Catalog:  catalog,
 			Store:    store,
 		},
+		exploreIssue:      queries.ExploreIssueHandler{Store: store, Catalog: catalog},
 		listTags:          queries.ListTagsHandler{Catalog: catalog},
 		getMap:            queries.MapHandler{IssueStore: store, Catalog: catalog},
 		getMapEdges:       queries.EdgeHandler{IssueStore: store, Catalog: catalog},

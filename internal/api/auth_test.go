@@ -33,9 +33,9 @@ func (p fakeOAuthProvider) Exchange(_ context.Context, code, redirectURL string)
 func newAuthenticatedServer(t *testing.T) (*Server, http.Handler) {
 	t.Helper()
 
-	store := newSQLiteIssueStore(t, nil)
+	store := newPostgresIssueStore(t, nil)
 	authService, err := auth.NewService(auth.ServiceConfig{
-		Store: auth.NewSQLiteStore(store.DB()),
+		Store: auth.NewStore(store.DB()),
 		Provider: fakeOAuthProvider{
 			user: auth.OAuthUser{
 				Provider:       "github",

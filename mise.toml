@@ -6,6 +6,8 @@ PROJECT_ROOT = "{{ config_root }}"
 _.file = ".env"
 NEXT_PUBLIC_API_ORIGIN = "http://localhost:8081"
 SPLAT_WEB_ORIGIN = "http://localhost:3000"
+SPLAT_DATABASE_URL = "postgres://splat:splat@localhost:5432/splat?sslmode=disable"
+SPLAT_TEST_DATABASE_URL = "postgres://splat:splat@localhost:5432/splat?sslmode=disable"
 
 [tools]
 go = "1.26"
@@ -51,6 +53,7 @@ run = """
       fi
     fi
   done
+  docker compose down 2>/dev/null || true
   rm -f /tmp/splat-overmind.sock
 """
 

@@ -7,10 +7,11 @@ package issuesdb
 
 import (
 	"context"
+	"encoding/json"
 )
 
 const assignIssue = `-- name: AssignIssue :exec
-UPDATE issues SET assigned_to = ? WHERE id = ?
+UPDATE issues SET assigned_to = $1 WHERE id = $2
 `
 
 type AssignIssueParams struct {
@@ -26,9 +27,9 @@ func (q *Queries) AssignIssue(ctx context.Context, arg AssignIssueParams) error 
 const closeIssue = `-- name: CloseIssue :exec
 UPDATE issues
 SET status = 'closed',
-    closed_at_unix_nano = ?,
-    closed_by = ?
-WHERE id = ?
+    closed_at_unix_nano = $1,
+    closed_by = $2
+WHERE id = $3
 `
 
 type CloseIssueParams struct {
@@ -90,7 +91,7 @@ func (q *Queries) DeleteAllIssues(ctx context.Context) error {
 const getIssue = `-- name: GetIssue :one
 SELECT id, raw, tags_json, created_by, created_at_unix_nano, status, closed_at_unix_nano, closed_by, tag_scores_json, embedding_json, assigned_to
 FROM issues
-WHERE id = ?
+WHERE id = $1
 `
 
 func (q *Queries) GetIssue(ctx context.Context, id string) (Issue, error) {
@@ -112,19 +113,6 @@ func (q *Queries) GetIssue(ctx context.Context, id string) (Issue, error) {
 	return i, err
 }
 
-const getMetadataValue = `-- name: GetMetadataValue :one
-SELECT value
-FROM metadata
-WHERE key = ?
-`
-
-func (q *Queries) GetMetadataValue(ctx context.Context, key string) (string, error) {
-	row := q.db.QueryRowContext(ctx, getMetadataValue, key)
-	var value string
-	err := row.Scan(&value)
-	return value, err
-}
-
 const insertIssue = `-- name: InsertIssue :exec
 INSERT INTO issues (
     id,
@@ -138,20 +126,20 @@ INSERT INTO issues (
     tag_scores_json,
     embedding_json,
     assigned_to
-) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
 `
 
 type InsertIssueParams struct {
 	ID                string
 	Raw               string
-	TagsJson          string
+	TagsJson          json.RawMessage
 	CreatedBy         string
 	CreatedAtUnixNano int64
 	Status            string
 	ClosedAtUnixNano  int64
 	ClosedBy          string
-	TagScoresJson     string
-	EmbeddingJson     string
+	TagScoresJson     json.RawMessage
+	EmbeddingJson     json.RawMessage
 	AssignedTo        string
 }
 
@@ -182,7 +170,7 @@ INSERT INTO issue_links (
     created_at_unix_nano,
     note,
     operation_id
-) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+) VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
 `
 
 type InsertIssueLinkParams struct {
@@ -217,7 +205,7 @@ INSERT INTO issue_operations (
     created_by,
     created_at_unix_nano,
     note
-) VALUES (?, ?, ?, ?, ?)
+) VALUES ($1, $2, $3, $4, $5)
 `
 
 type InsertIssueOperationParams struct {
@@ -245,7 +233,7 @@ INSERT INTO issue_operation_participants (
     issue_id,
     role,
     sequence
-) VALUES (?, ?, ?, ?)
+) VALUES ($1, $2, $3, $4)
 `
 
 type InsertIssueOperationParticipantParams struct {
@@ -274,7 +262,7 @@ INSERT INTO issue_posts (
     created_at_unix_nano,
     sequence,
     kind
-) VALUES (?, ?, ?, ?, ?, ?, ?)
+) VALUES ($1, $2, $3, $4, $5, $6, $7)
 `
 
 type InsertIssuePostParams struct {
@@ -303,7 +291,7 @@ func (q *Queries) InsertIssuePost(ctx context.Context, arg InsertIssuePostParams
 const listIssueLinksForIssue = `-- name: ListIssueLinksForIssue :many
 SELECT id, source_issue_id, target_issue_id, type, created_by, created_at_unix_nano, note, operation_id
 FROM issue_links
-WHERE source_issue_id = ? OR target_issue_id = ?
+WHERE source_issue_id = $1 OR target_issue_id = $2
 ORDER BY created_at_unix_nano DESC, id DESC
 `
 
@@ -347,7 +335,7 @@ func (q *Queries) ListIssueLinksForIssue(ctx context.Context, arg ListIssueLinks
 const listIssueOperationParticipants = `-- name: ListIssueOperationParticipants :many
 SELECT operation_id, issue_id, role, sequence
 FROM issue_operation_participants
-WHERE operation_id = ?
+WHERE operation_id = $1
 ORDER BY sequence ASC, issue_id ASC
 `
 
@@ -383,7 +371,7 @@ const listIssueOperationsForIssue = `-- name: ListIssueOperationsForIssue :many
 SELECT DISTINCT o.id, o.kind, o.created_by, o.created_at_unix_nano, o.note
 FROM issue_operations o
 JOIN issue_operation_participants p ON p.operation_id = o.id
-WHERE p.issue_id = ?
+WHERE p.issue_id = $1
 ORDER BY o.created_at_unix_nano DESC, o.id DESC
 `
 
@@ -419,7 +407,7 @@ func (q *Queries) ListIssueOperationsForIssue(ctx context.Context, issueID strin
 const listIssuePosts = `-- name: ListIssuePosts :many
 SELECT id, issue_id, raw, created_by, created_at_unix_nano, sequence, kind
 FROM issue_posts
-WHERE issue_id = ?
+WHERE issue_id = $1
 ORDER BY sequence ASC, created_at_unix_nano ASC, id ASC
 `
 
@@ -529,12 +517,34 @@ func (q *Queries) ListTags(ctx context.Context) ([]Tag, error) {
 	return items, nil
 }
 
+const nextIssueOperationSeq = `-- name: NextIssueOperationSeq :one
+SELECT nextval('issue_operation_seq')
+`
+
+func (q *Queries) NextIssueOperationSeq(ctx context.Context) (int64, error) {
+	row := q.db.QueryRowContext(ctx, nextIssueOperationSeq)
+	var nextval int64
+	err := row.Scan(&nextval)
+	return nextval, err
+}
+
+const nextIssueSeq = `-- name: NextIssueSeq :one
+SELECT nextval('issue_seq')
+`
+
+func (q *Queries) NextIssueSeq(ctx context.Context) (int64, error) {
+	row := q.db.QueryRowContext(ctx, nextIssueSeq)
+	var nextval int64
+	err := row.Scan(&nextval)
+	return nextval, err
+}
+
 const reopenIssue = `-- name: ReopenIssue :exec
 UPDATE issues
 SET status = 'open',
     closed_at_unix_nano = 0,
     closed_by = ''
-WHERE id = ?
+WHERE id = $1
 `
 
 func (q *Queries) ReopenIssue(ctx context.Context, id string) error {
@@ -542,20 +552,47 @@ func (q *Queries) ReopenIssue(ctx context.Context, id string) error {
 	return err
 }
 
+const resetIssueOperationSeq = `-- name: ResetIssueOperationSeq :exec
+SELECT setval('issue_operation_seq', 1, false)
+`
+
+func (q *Queries) ResetIssueOperationSeq(ctx context.Context) error {
+	_, err := q.db.ExecContext(ctx, resetIssueOperationSeq)
+	return err
+}
+
+const resetIssueSeq = `-- name: ResetIssueSeq :exec
+SELECT setval('issue_seq', 1, false)
+`
+
+func (q *Queries) ResetIssueSeq(ctx context.Context) error {
+	_, err := q.db.ExecContext(ctx, resetIssueSeq)
+	return err
+}
+
+const setIssueSeq = `-- name: SetIssueSeq :exec
+SELECT setval('issue_seq', $1, true)
+`
+
+func (q *Queries) SetIssueSeq(ctx context.Context, setval int64) error {
+	_, err := q.db.ExecContext(ctx, setIssueSeq, setval)
+	return err
+}
+
 const updateIssueRefinement = `-- name: UpdateIssueRefinement :exec
 UPDATE issues
-SET raw = ?,
-    tags_json = ?,
-    tag_scores_json = ?,
-    embedding_json = ?
-WHERE id = ?
+SET raw = $1,
+    tags_json = $2,
+    tag_scores_json = $3,
+    embedding_json = $4
+WHERE id = $5
 `
 
 type UpdateIssueRefinementParams struct {
 	Raw           string
-	TagsJson      string
-	TagScoresJson string
-	EmbeddingJson string
+	TagsJson      json.RawMessage
+	TagScoresJson json.RawMessage
+	EmbeddingJson json.RawMessage
 	ID            string
 }
 
@@ -570,25 +607,9 @@ func (q *Queries) UpdateIssueRefinement(ctx context.Context, arg UpdateIssueRefi
 	return err
 }
 
-const updateMetadataValue = `-- name: UpdateMetadataValue :exec
-UPDATE metadata
-SET value = ?
-WHERE key = ?
-`
-
-type UpdateMetadataValueParams struct {
-	Value string
-	Key   string
-}
-
-func (q *Queries) UpdateMetadataValue(ctx context.Context, arg UpdateMetadataValueParams) error {
-	_, err := q.db.ExecContext(ctx, updateMetadataValue, arg.Value, arg.Key)
-	return err
-}
-
 const upsertTag = `-- name: UpsertTag :exec
 INSERT INTO tags (name, description, created_at_unix_nano, embedding_json)
-VALUES (?, ?, ?, ?)
+VALUES ($1, $2, $3, $4)
 ON CONFLICT(name) DO UPDATE SET
     description = CASE
         WHEN excluded.description <> '' THEN excluded.description
@@ -604,7 +625,7 @@ type UpsertTagParams struct {
 	Name              string
 	Description       string
 	CreatedAtUnixNano int64
-	EmbeddingJson     string
+	EmbeddingJson     json.RawMessage
 }
 
 func (q *Queries) UpsertTag(ctx context.Context, arg UpsertTagParams) error {
