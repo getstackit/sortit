@@ -1,9 +1,10 @@
 package issuemap
 
 import (
+	"cmp"
 	"math"
 	"math/rand"
-	"sort"
+	"slices"
 	"strings"
 
 	"splat/internal/issues"
@@ -281,11 +282,11 @@ func clusterLabel(group []issues.Issue) string {
 	for k, v := range scores {
 		sorted = append(sorted, kv{k, v})
 	}
-	sort.Slice(sorted, func(i, j int) bool {
-		if sorted[i].v == sorted[j].v {
-			return sorted[i].k < sorted[j].k
+	slices.SortStableFunc(sorted, func(a, b kv) int {
+		if c := cmp.Compare(b.v, a.v); c != 0 {
+			return c
 		}
-		return sorted[i].v > sorted[j].v
+		return cmp.Compare(a.k, b.k)
 	})
 
 	top := sorted

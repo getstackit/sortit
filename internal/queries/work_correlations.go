@@ -1,12 +1,14 @@
 package queries
 
 import (
+	"cmp"
 	"context"
 	"math"
-	"sort"
+	"slices"
 	"strings"
 
 	"splat/internal/issues"
+	"splat/internal/vectors"
 )
 
 type PersonCorrelation struct {
@@ -87,8 +89,8 @@ func buildWorkCorrelations(allIssues []issues.Issue, filter IssueStatusFilter) W
 		people = append(people, pd)
 	}
 
-	sort.Slice(people, func(i, j int) bool {
-		return strings.ToLower(people[i].name) < strings.ToLower(people[j].name)
+	slices.SortStableFunc(people, func(a, b personData) int {
+		return cmp.Compare(strings.ToLower(a.name), strings.ToLower(b.name))
 	})
 
 	var correlations []PersonCorrelation
@@ -96,7 +98,7 @@ func buildWorkCorrelations(allIssues []issues.Issue, filter IssueStatusFilter) W
 		for j := i + 1; j < len(people); j++ {
 			a, b := people[i], people[j]
 
-			semanticScore := CosineSimilarity(a.embedding, b.embedding)
+			semanticScore := vectors.CosineSimilarity(a.embedding, b.embedding)
 			factorScore := tagProfileSimilarity(a.tagProfile, b.tagProfile)
 			combined := 0.6*semanticScore + 0.4*factorScore
 
@@ -115,8 +117,8 @@ func buildWorkCorrelations(allIssues []issues.Issue, filter IssueStatusFilter) W
 		}
 	}
 
-	sort.Slice(correlations, func(i, j int) bool {
-		return correlations[i].CombinedScore > correlations[j].CombinedScore
+	slices.SortStableFunc(correlations, func(a, b PersonCorrelation) int {
+		return cmp.Compare(b.CombinedScore, a.CombinedScore)
 	})
 
 	return WorkCorrelationsResult{Correlations: correlations}
@@ -144,11 +146,11 @@ func meanTagProfile(matched []issues.Issue) []TagRelevance {
 		})
 	}
 
-	sort.Slice(profile, func(i, j int) bool {
-		if profile[i].Relevance != profile[j].Relevance {
-			return profile[i].Relevance > profile[j].Relevance
+	slices.SortStableFunc(profile, func(a, b TagRelevance) int {
+		if c := cmp.Compare(b.Relevance, a.Relevance); c != 0 {
+			return c
 		}
-		return profile[i].Tag < profile[j].Tag
+		return cmp.Compare(a.Tag, b.Tag)
 	})
 
 	return profile

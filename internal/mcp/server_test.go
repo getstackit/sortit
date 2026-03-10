@@ -343,7 +343,10 @@ func newTestHandlers() *handlers {
 	enricher := services.NewIssueEnricher(analyzer, catalog)
 
 	return &handlers{
-		createIssue:      commands.CreateIssueHandler{Store: store, Enricher: enricher},
+		createIssue: commands.CreateIssueHandler{
+			Runner:   &commands.CommandRunner{DB: store},
+			Enricher: enricher,
+		},
 		refineIssue:      commands.RefineIssueHandler{Store: store, Enricher: enricher},
 		progressIssue:    commands.ProgressIssueHandler{Store: store},
 		closeIssue:       commands.CloseIssueHandler{Store: store},

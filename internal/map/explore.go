@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	"splat/internal/issues"
+	"splat/internal/vectors"
 )
 
 const defaultExploreLimit = 8
@@ -67,6 +68,7 @@ func ExploreFromIssuesWithTags(storeIssues []issues.Issue, storeTags []issues.Ta
 		limit = defaultExploreLimit
 	}
 
+	canonical, visible, boosts := deriveRelationshipSemantics(candidateSet)
 	mapIssues, _, issueEmbeddings, tagEmbeddings := runtimeMapInputs(candidateSet, storeTags)
 	factorVectors := runtimeFactorVectors(mapIssues, runtimeTagNames(candidateSet, storeTags), tagEmbeddings)
 
@@ -77,10 +79,14 @@ func ExploreFromIssuesWithTags(storeIssues []issues.Issue, storeTags []issues.Ta
 	related := make([]RelatedIssue, 0, len(candidateSet)-1)
 	for i := 1; i < len(candidateSet); i++ {
 		candidate := candidateSet[i]
+		if _, ok := visible[candidate.ID]; !ok {
+			continue
+		}
 		candidateSummary := exploreIssueSummary(candidate)
-		semantic := unitCosineSimilarity(targetEmbedding, issueEmbeddings[candidate.ID])
-		factor := unitCosineSimilarity(targetFactor, factorVectors[candidate.ID])
-		combined := 0.6*semantic + 0.4*factor
+		semantic := vectors.UnitCosineSimilarity(targetEmbedding, issueEmbeddings[candidate.ID])
+		factor := vectors.UnitCosineSimilarity(targetFactor, factorVectors[candidate.ID])
+		boost := relationshipBoost(boosts, target.ID, candidate.ID)
+		combined := minFloat(1, 0.6*semantic+0.4*factor+boost)
 		sharedTags := sharedRelevantTags(targetSummary.Tags, candidateSummary.Tags, 3)
 
 		related = append(related, RelatedIssue{
@@ -91,22 +97,11 @@ func ExploreFromIssuesWithTags(storeIssues []issues.Issue, storeTags []issues.Ta
 			SemanticSimilarity: round(semantic, 2),
 			FactorSimilarity:   round(factor, 2),
 			CombinedSimilarity: round(combined, 2),
-			Reason:             relatedIssueReason(sharedTags, semantic, factor),
+			Reason:             relatedIssueReasonWithBoost(sharedTags, semantic, factor, boost, canonical[candidate.ID]),
 		})
 	}
 
-	slices.SortFunc(related, func(a, b RelatedIssue) int {
-		if diff := cmp.Compare(b.CombinedSimilarity, a.CombinedSimilarity); diff != 0 {
-			return diff
-		}
-		if diff := cmp.Compare(b.SemanticSimilarity, a.SemanticSimilarity); diff != 0 {
-			return diff
-		}
-		if diff := cmp.Compare(b.FactorSimilarity, a.FactorSimilarity); diff != 0 {
-			return diff
-		}
-		return cmp.Compare(a.ID, b.ID)
-	})
+	sortRelatedIssues(related)
 
 	if len(related) > limit {
 		related = related[:limit]

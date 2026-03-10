@@ -46,6 +46,39 @@ func (h SearchUnifiedHandler) Handle(ctx context.Context, input SearchUnified) (
 	if err != nil {
 		return SearchUnifiedResponse{}, err
 	}
+	queryEmbedding := services.Float32VectorToFloat64(analyzed.Embedding.Vector)
+	queryTags := services.IssueTagScoresFromAnalysis(analyzed.Tags)
+
+	if searcher, ok := semanticSearchStore(h.Store); ok {
+		storeTags, err := h.Catalog.StoredTags(ctx)
+		if err != nil {
+			return SearchUnifiedResponse{}, err
+		}
+		candidates, err := semanticSearchCandidateIssues(ctx, searcher, issues.SemanticSearchOptions{
+			QueryEmbedding: queryEmbedding,
+			Status:         issues.StatusOpen,
+			Limit:          semanticSearchCandidateLimit(limit, 0),
+		})
+		if err != nil {
+			return SearchUnifiedResponse{}, err
+		}
+
+		issueResult := issuemap.SearchFromQueryWithTags(
+			candidates,
+			storeTags,
+			query,
+			queryTags,
+			queryEmbedding,
+			limit,
+		)
+		relatedTags := issuemap.SearchTags(storeTags, queryEmbedding, limit)
+
+		return SearchUnifiedResponse{
+			Query:       issueResult.Query,
+			Issues:      issueResult.RelatedIssues,
+			RelatedTags: relatedTags,
+		}, nil
+	}
 
 	if h.Corpus != nil {
 		corpus, err := h.Corpus.Current(ctx)
@@ -54,11 +87,10 @@ func (h SearchUnifiedHandler) Handle(ctx context.Context, input SearchUnified) (
 		}
 		filtered := FilterIssuesByStatus(corpus.Issues, IssueStatusFilterOpen)
 		corpus = subsetCorpusByIssues(corpus, filtered)
-		queryEmbedding := services.Float32VectorToFloat64(analyzed.Embedding.Vector)
 		issueResult := issuemap.SearchFromCorpus(
 			corpus,
 			query,
-			services.IssueTagScoresFromAnalysis(analyzed.Tags),
+			queryTags,
 			queryEmbedding,
 			limit,
 		)
@@ -82,13 +114,11 @@ func (h SearchUnifiedHandler) Handle(ctx context.Context, input SearchUnified) (
 		return SearchUnifiedResponse{}, err
 	}
 
-	queryEmbedding := services.Float32VectorToFloat64(analyzed.Embedding.Vector)
-
 	issueResult := issuemap.SearchFromQueryWithTags(
 		storeIssues,
 		storeTags,
 		query,
-		services.IssueTagScoresFromAnalysis(analyzed.Tags),
+		queryTags,
 		queryEmbedding,
 		limit,
 	)

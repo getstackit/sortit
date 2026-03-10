@@ -6,6 +6,7 @@ import (
 	"strings"
 
 	"splat/internal/issues"
+	"splat/internal/vectors"
 )
 
 type DerivedCorpus struct {
@@ -220,8 +221,8 @@ func SearchFromCorpus(
 		}
 
 		candidateSummary := exploreIssueSummary(candidate)
-		semantic := cosineSimilarity(queryVector, corpus.IssueEmbeddings[candidate.ID])
-		factor := cosineSimilarity(queryFactor, corpus.FactorVectors[candidate.ID])
+		semantic := vectors.CosineSimilarity(queryVector, corpus.IssueEmbeddings[candidate.ID])
+		factor := vectors.CosineSimilarity(queryFactor, corpus.FactorVectors[candidate.ID])
 		textMatch := textMatchScore(queryLower, candidate.Raw)
 		combined := blendScores(semantic, factor, textMatch, tagCorrelationBoost)
 		combined -= issueSpecificityPenalty(candidateSummary.Tags)
@@ -285,8 +286,8 @@ func ExploreFromCorpus(corpus DerivedCorpus, targetID string, limit int) (Explor
 		}
 
 		candidateSummary := exploreIssueSummary(candidate)
-		semantic := unitCosineSimilarity(targetEmbedding, corpus.IssueEmbeddings[candidate.ID])
-		factor := unitCosineSimilarity(targetFactor, corpus.FactorVectors[candidate.ID])
+		semantic := vectors.UnitCosineSimilarity(targetEmbedding, corpus.IssueEmbeddings[candidate.ID])
+		factor := vectors.UnitCosineSimilarity(targetFactor, corpus.FactorVectors[candidate.ID])
 		boost := relationshipBoost(corpus.RelationshipBoosts, target.ID, candidate.ID)
 		combined := minFloat(1, 0.6*semantic+0.4*factor+boost)
 		sharedTags := sharedRelevantTags(targetSummary.Tags, candidateSummary.Tags, 3)

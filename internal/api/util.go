@@ -1,7 +1,11 @@
 package api
 
 import (
+	"encoding/json"
+	"errors"
+	"io"
 	"math"
+	"net/http"
 	"net/url"
 	"strconv"
 	"strings"
@@ -9,6 +13,25 @@ import (
 	issuemap "splat/internal/map"
 	"splat/internal/queries"
 )
+
+// decodeJSON reads the JSON body of an HTTP request into a value of type T.
+// It limits the body size to 1 MB, disallows unknown fields, and closes the body.
+func decodeJSON[T any](r *http.Request) (T, error) {
+	defer r.Body.Close()
+
+	decoder := json.NewDecoder(io.LimitReader(r.Body, 1<<20))
+	decoder.DisallowUnknownFields()
+
+	var v T
+	if err := decoder.Decode(&v); err != nil {
+		var zero T
+		if errors.Is(err, io.EOF) {
+			return zero, io.EOF
+		}
+		return zero, errors.New("invalid request body")
+	}
+	return v, nil
+}
 
 func ParseCSV(raw string) []string {
 	parts := strings.Split(raw, ",")

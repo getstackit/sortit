@@ -56,6 +56,35 @@ func (h SearchIssuesHandler) Handle(ctx context.Context, input SearchIssues) (is
 		SortBy:     input.SortBy,
 	}
 
+	if searcher, ok := semanticSearchStore(h.Store); ok {
+		storeTags, err := h.Catalog.StoredTags(ctx)
+		if err != nil {
+			return issuemap.SearchResponse{}, err
+		}
+		candidates, err := semanticSearchCandidateIssues(ctx, searcher, issues.SemanticSearchOptions{
+			QueryEmbedding: searchOpts.QueryEmbed,
+			Status:         issueStatusFromFilter(input.Status),
+			AssignedTo:     input.AssignedTo,
+			Tags:           input.Tags,
+			Limit:          semanticSearchCandidateLimit(searchOpts.Limit, searchOpts.Offset),
+			SortBy:         searchOpts.SortBy,
+		})
+		if err != nil {
+			return issuemap.SearchResponse{}, err
+		}
+
+		return issuemap.SearchFromQueryWithTags(
+			candidates,
+			storeTags,
+			searchOpts.Query,
+			searchOpts.QueryTags,
+			searchOpts.QueryEmbed,
+			searchOpts.Limit,
+			issuemap.WithOffset(searchOpts.Offset),
+			issuemap.WithSortBy(searchOpts.SortBy),
+		), nil
+	}
+
 	if h.Corpus != nil {
 		corpus, err := h.Corpus.Current(ctx)
 		if err != nil {

@@ -1,11 +1,13 @@
 package queries
 
 import (
+	"cmp"
 	"context"
 	"math"
-	"sort"
+	"slices"
 
 	"splat/internal/issues"
+	"splat/internal/vectors"
 )
 
 type CompareIssues struct {
@@ -56,7 +58,7 @@ func compareIssueEmbeddings(items []issues.Issue) ([]PairwiseIssueSimilarity, fl
 
 	for i := range items {
 		for j := i + 1; j < len(items); j++ {
-			similarity := CosineSimilarity(items[i].Embedding, items[j].Embedding)
+			similarity := vectors.CosineSimilarity(items[i].Embedding, items[j].Embedding)
 			total += similarity
 			pairs = append(pairs, PairwiseIssueSimilarity{
 				SourceID:   items[i].ID,
@@ -66,14 +68,14 @@ func compareIssueEmbeddings(items []issues.Issue) ([]PairwiseIssueSimilarity, fl
 		}
 	}
 
-	sort.Slice(pairs, func(i, j int) bool {
-		if pairs[i].Similarity == pairs[j].Similarity {
-			if pairs[i].SourceID == pairs[j].SourceID {
-				return pairs[i].TargetID < pairs[j].TargetID
-			}
-			return pairs[i].SourceID < pairs[j].SourceID
+	slices.SortStableFunc(pairs, func(a, b PairwiseIssueSimilarity) int {
+		if c := cmp.Compare(b.Similarity, a.Similarity); c != 0 {
+			return c
 		}
-		return pairs[i].Similarity > pairs[j].Similarity
+		if c := cmp.Compare(a.SourceID, b.SourceID); c != 0 {
+			return c
+		}
+		return cmp.Compare(a.TargetID, b.TargetID)
 	})
 
 	average := 0.0

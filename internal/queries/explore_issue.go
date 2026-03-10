@@ -2,6 +2,8 @@ package queries
 
 import (
 	"context"
+	"errors"
+	"strings"
 
 	"splat/internal/issues"
 	issuemap "splat/internal/map"
@@ -20,6 +22,10 @@ type ExploreIssueHandler struct {
 }
 
 func (h ExploreIssueHandler) Handle(ctx context.Context, input ExploreIssue) (issuemap.ExploreResponse, error) {
+	if searcher, ok := semanticSearchStore(h.Store); ok {
+		return h.handleSemanticExplore(ctx, input, searcher)
+	}
+
 	if h.Corpus != nil {
 		corpus, err := h.Corpus.Current(ctx)
 		if err != nil {
@@ -38,4 +44,156 @@ func (h ExploreIssueHandler) Handle(ctx context.Context, input ExploreIssue) (is
 	}
 
 	return issuemap.ExploreFromIssuesWithTags(storeIssues, storeTags, input.ID, input.Limit)
+}
+
+func (h ExploreIssueHandler) handleSemanticExplore(
+	ctx context.Context,
+	input ExploreIssue,
+	searcher semanticIssueSearcher,
+) (issuemap.ExploreResponse, error) {
+	target, err := h.Store.Get(ctx, input.ID)
+	if err != nil {
+		return issuemap.ExploreResponse{}, err
+	}
+
+	storeTags, err := h.Catalog.StoredTags(ctx)
+	if err != nil {
+		return issuemap.ExploreResponse{}, err
+	}
+
+	candidateSet, err := exploreSemanticCandidateSet(ctx, h.Store, searcher, target, input.Limit)
+	if err != nil {
+		return issuemap.ExploreResponse{}, err
+	}
+
+	return issuemap.ExploreFromIssuesWithTags(candidateSet, storeTags, target.ID, input.Limit)
+}
+
+func exploreSemanticCandidateSet(
+	ctx context.Context,
+	store issues.Store,
+	searcher semanticIssueSearcher,
+	target issues.Issue,
+	limit int,
+) ([]issues.Issue, error) {
+	results, err := searcher.SearchIssues(ctx, issues.SemanticSearchOptions{
+		QueryEmbedding: target.Embedding,
+		Status:         issues.StatusOpen,
+		ExcludeID:      target.ID,
+		Limit:          semanticSearchCandidateLimit(limit, 0),
+	})
+	if err != nil {
+		return nil, err
+	}
+
+	items := []issues.Issue{target}
+	seen := map[string]struct{}{target.ID: {}}
+
+	addDetailedIssue := func(id string, fallback *issues.Issue) error {
+		id = strings.TrimSpace(id)
+		if id == "" {
+			return nil
+		}
+		if _, ok := seen[id]; ok {
+			return nil
+		}
+
+		issue, err := store.Get(ctx, id)
+		if err != nil {
+			if fallback != nil && errors.Is(err, issues.ErrNotFound) {
+				issue = *fallback
+			} else if errors.Is(err, issues.ErrNotFound) {
+				return nil
+			} else {
+				return err
+			}
+		}
+
+		seen[issue.ID] = struct{}{}
+		items = append(items, issue)
+		return nil
+	}
+
+	for _, result := range results {
+		resultIssue := result.Issue
+		if err := addDetailedIssue(resultIssue.ID, &resultIssue); err != nil {
+			return nil, err
+		}
+	}
+
+	for _, relatedID := range directExploreSupplementIssueIDs(target) {
+		if err := addDetailedIssue(relatedID, nil); err != nil {
+			return nil, err
+		}
+	}
+
+	for i := 0; i < len(items); i++ {
+		for _, canonicalID := range canonicalExploreTargetIDs(items[i]) {
+			if err := addDetailedIssue(canonicalID, nil); err != nil {
+				return nil, err
+			}
+		}
+	}
+
+	return items, nil
+}
+
+func directExploreSupplementIssueIDs(target issues.Issue) []string {
+	ids := make([]string, 0, len(target.Links))
+	seen := make(map[string]struct{}, len(target.Links))
+
+	for _, link := range target.Links {
+		switch link.Type {
+		case issues.IssueLinkTypeRelatedTo,
+			issues.IssueLinkTypeDerivedFrom,
+			issues.IssueLinkTypeParentOf,
+			issues.IssueLinkTypeChildOf:
+			if link.SourceIssueID == target.ID {
+				if addExploreIssueID(seen, link.TargetIssueID) {
+					ids = append(ids, strings.TrimSpace(link.TargetIssueID))
+				}
+			} else if link.TargetIssueID == target.ID {
+				if addExploreIssueID(seen, link.SourceIssueID) {
+					ids = append(ids, strings.TrimSpace(link.SourceIssueID))
+				}
+			}
+		case issues.IssueLinkTypeMergedInto, issues.IssueLinkTypeDuplicateOf:
+			if link.SourceIssueID == target.ID && addExploreIssueID(seen, link.TargetIssueID) {
+				ids = append(ids, strings.TrimSpace(link.TargetIssueID))
+			}
+		}
+	}
+
+	return ids
+}
+
+func canonicalExploreTargetIDs(item issues.Issue) []string {
+	ids := make([]string, 0, len(item.Links))
+	seen := make(map[string]struct{}, len(item.Links))
+
+	for _, link := range item.Links {
+		if link.SourceIssueID != item.ID {
+			continue
+		}
+		if link.Type != issues.IssueLinkTypeMergedInto && link.Type != issues.IssueLinkTypeDuplicateOf {
+			continue
+		}
+		if addExploreIssueID(seen, link.TargetIssueID) {
+			ids = append(ids, strings.TrimSpace(link.TargetIssueID))
+		}
+	}
+
+	return ids
+}
+
+func addExploreIssueID(seen map[string]struct{}, id string) bool {
+	id = strings.TrimSpace(id)
+	if id == "" {
+		return false
+	}
+	if _, ok := seen[id]; ok {
+		return false
+	}
+	seen[id] = struct{}{}
+	return true
 }

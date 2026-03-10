@@ -1,7 +1,6 @@
 package api
 
 import (
-	"encoding/json"
 	"errors"
 	"io"
 	"net/http"
@@ -560,14 +559,9 @@ func (s *Server) handleIssueCreate(w http.ResponseWriter, r *http.Request) {
 }
 
 func decodeCreateIssueRequest(r *http.Request) (createIssueRequest, error) {
-	defer r.Body.Close()
-
-	decoder := json.NewDecoder(io.LimitReader(r.Body, 1<<20))
-	decoder.DisallowUnknownFields()
-
-	var request createIssueRequest
-	if err := decoder.Decode(&request); err != nil {
-		return createIssueRequest{}, errors.New("invalid request body")
+	request, err := decodeJSON[createIssueRequest](r)
+	if err != nil {
+		return createIssueRequest{}, err
 	}
 
 	request.Raw = strings.TrimSpace(request.Raw)
@@ -580,14 +574,9 @@ func decodeCreateIssueRequest(r *http.Request) (createIssueRequest, error) {
 }
 
 func decodeCompareIssuesRequest(r *http.Request) (compareIssuesRequest, error) {
-	defer r.Body.Close()
-
-	decoder := json.NewDecoder(io.LimitReader(r.Body, 1<<20))
-	decoder.DisallowUnknownFields()
-
-	var request compareIssuesRequest
-	if err := decoder.Decode(&request); err != nil {
-		return compareIssuesRequest{}, errors.New("invalid request body")
+	request, err := decodeJSON[compareIssuesRequest](r)
+	if err != nil {
+		return compareIssuesRequest{}, err
 	}
 
 	seen := make(map[string]struct{}, len(request.IDs))
@@ -613,17 +602,12 @@ func decodeCompareIssuesRequest(r *http.Request) (compareIssuesRequest, error) {
 }
 
 func decodeCloseIssueRequest(r *http.Request) (closeIssueRequest, error) {
-	defer r.Body.Close()
-
-	decoder := json.NewDecoder(io.LimitReader(r.Body, 1<<20))
-	decoder.DisallowUnknownFields()
-
-	var request closeIssueRequest
-	if err := decoder.Decode(&request); err != nil {
+	request, err := decodeJSON[closeIssueRequest](r)
+	if err != nil {
 		if errors.Is(err, io.EOF) {
 			return closeIssueRequest{}, nil
 		}
-		return closeIssueRequest{}, errors.New("invalid request body")
+		return closeIssueRequest{}, err
 	}
 
 	request.ClosedBy = strings.TrimSpace(request.ClosedBy)
@@ -631,14 +615,9 @@ func decodeCloseIssueRequest(r *http.Request) (closeIssueRequest, error) {
 }
 
 func decodeRefineIssueRequest(r *http.Request) (refineIssueRequest, error) {
-	defer r.Body.Close()
-
-	decoder := json.NewDecoder(io.LimitReader(r.Body, 1<<20))
-	decoder.DisallowUnknownFields()
-
-	var request refineIssueRequest
-	if err := decoder.Decode(&request); err != nil {
-		return refineIssueRequest{}, errors.New("invalid request body")
+	request, err := decodeJSON[refineIssueRequest](r)
+	if err != nil {
+		return refineIssueRequest{}, err
 	}
 
 	request.Raw = strings.TrimSpace(request.Raw)
@@ -651,14 +630,9 @@ func decodeRefineIssueRequest(r *http.Request) (refineIssueRequest, error) {
 }
 
 func decodeProgressIssueRequest(r *http.Request) (progressIssueRequest, error) {
-	defer r.Body.Close()
-
-	decoder := json.NewDecoder(io.LimitReader(r.Body, 1<<20))
-	decoder.DisallowUnknownFields()
-
-	var request progressIssueRequest
-	if err := decoder.Decode(&request); err != nil {
-		return progressIssueRequest{}, errors.New("invalid request body")
+	request, err := decodeJSON[progressIssueRequest](r)
+	if err != nil {
+		return progressIssueRequest{}, err
 	}
 
 	request.Raw = strings.TrimSpace(request.Raw)
@@ -671,14 +645,9 @@ func decodeProgressIssueRequest(r *http.Request) (progressIssueRequest, error) {
 }
 
 func decodeAssignIssueRequest(r *http.Request) (assignIssueRequest, error) {
-	defer r.Body.Close()
-
-	decoder := json.NewDecoder(io.LimitReader(r.Body, 1<<20))
-	decoder.DisallowUnknownFields()
-
-	var request assignIssueRequest
-	if err := decoder.Decode(&request); err != nil {
-		return assignIssueRequest{}, errors.New("invalid request body")
+	request, err := decodeJSON[assignIssueRequest](r)
+	if err != nil {
+		return assignIssueRequest{}, err
 	}
 
 	request.AssignedTo = strings.TrimSpace(request.AssignedTo)
@@ -686,14 +655,9 @@ func decodeAssignIssueRequest(r *http.Request) (assignIssueRequest, error) {
 }
 
 func decodeSplitIssueRequest(r *http.Request) (splitIssueRequest, error) {
-	defer r.Body.Close()
-
-	decoder := json.NewDecoder(io.LimitReader(r.Body, 1<<20))
-	decoder.DisallowUnknownFields()
-
-	var request splitIssueRequest
-	if err := decoder.Decode(&request); err != nil {
-		return splitIssueRequest{}, errors.New("invalid request body")
+	request, err := decodeJSON[splitIssueRequest](r)
+	if err != nil {
+		return splitIssueRequest{}, err
 	}
 
 	request.CreatedBy = strings.TrimSpace(request.CreatedBy)
@@ -714,14 +678,9 @@ func decodeSplitIssueRequest(r *http.Request) (splitIssueRequest, error) {
 }
 
 func decodeCombineIssuesRequest(r *http.Request) (combineIssuesRequest, error) {
-	defer r.Body.Close()
-
-	decoder := json.NewDecoder(io.LimitReader(r.Body, 1<<20))
-	decoder.DisallowUnknownFields()
-
-	var request combineIssuesRequest
-	if err := decoder.Decode(&request); err != nil {
-		return combineIssuesRequest{}, errors.New("invalid request body")
+	request, err := decodeJSON[combineIssuesRequest](r)
+	if err != nil {
+		return combineIssuesRequest{}, err
 	}
 
 	request.CreatedBy = strings.TrimSpace(request.CreatedBy)
@@ -734,14 +693,9 @@ func decodeCombineIssuesRequest(r *http.Request) (combineIssuesRequest, error) {
 }
 
 func decodeLinkIssuesRequest(r *http.Request) (linkIssuesRequest, error) {
-	defer r.Body.Close()
-
-	decoder := json.NewDecoder(io.LimitReader(r.Body, 1<<20))
-	decoder.DisallowUnknownFields()
-
-	var request linkIssuesRequest
-	if err := decoder.Decode(&request); err != nil {
-		return linkIssuesRequest{}, errors.New("invalid request body")
+	request, err := decodeJSON[linkIssuesRequest](r)
+	if err != nil {
+		return linkIssuesRequest{}, err
 	}
 
 	request.SourceID = strings.TrimSpace(request.SourceID)

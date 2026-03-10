@@ -2,9 +2,7 @@ package api
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
-	"io"
 	"net/http"
 	"strings"
 	"time"
@@ -78,14 +76,9 @@ func (s *Server) handleDebugIssueAnalyze(w http.ResponseWriter, r *http.Request)
 }
 
 func decodeDebugIssueAnalyzeRequest(r *http.Request) (debugIssueAnalyzeRequest, error) {
-	defer r.Body.Close()
-
-	decoder := json.NewDecoder(io.LimitReader(r.Body, 1<<20))
-	decoder.DisallowUnknownFields()
-
-	var request debugIssueAnalyzeRequest
-	if err := decoder.Decode(&request); err != nil {
-		return debugIssueAnalyzeRequest{}, errors.New("invalid request body")
+	request, err := decodeJSON[debugIssueAnalyzeRequest](r)
+	if err != nil {
+		return debugIssueAnalyzeRequest{}, err
 	}
 
 	request.Text = strings.TrimSpace(request.Text)

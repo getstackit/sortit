@@ -35,7 +35,7 @@ func (s failingIssueStore) UpdateIssueFields(context.Context, string, issues.Iss
 	return nil
 }
 func (s failingIssueStore) SaveOperation(context.Context, issues.IssueOperation) error { return nil }
-func (s failingIssueStore) SaveLink(context.Context, issues.IssueLink) error { return nil }
+func (s failingIssueStore) SaveLink(context.Context, issues.IssueLink) error           { return nil }
 
 func TestIssuesEndpointListsSeededIssues(t *testing.T) {
 	server := NewServer(ServerConfig{
@@ -608,6 +608,147 @@ func TestIssuesEndpointExploresIssue(t *testing.T) {
 	}
 	if len(payload.Opportunities[0].SharedTags) == 0 {
 		t.Fatalf("expected opportunity shared tags, got %+v", payload.Opportunities[0])
+	}
+}
+
+func TestIssuesEndpointExploreUsesDBRelationshipSemantics(t *testing.T) {
+	store := newPostgresIssueStore(t, nil)
+	if err := store.Replace(context.Background(), []issues.Issue{
+		{
+			ID:        "issue-target",
+			Raw:       "Safari export crashes on PDF download",
+			CreatedBy: "Casey",
+			CreatedAt: issues.FixtureIssues()[0].CreatedAt,
+			Status:    issues.StatusOpen,
+			TagScores: []issues.TagRelevance{
+				{Tag: "export", Relevance: 0.95},
+				{Tag: "safari", Relevance: 0.92},
+			},
+			Embedding: []float64{1, 0, 0},
+		},
+		{
+			ID:        "issue-semantic",
+			Raw:       "PDF export fails in Safari after tapping share twice",
+			CreatedBy: "Jordan",
+			CreatedAt: issues.FixtureIssues()[1].CreatedAt,
+			Status:    issues.StatusOpen,
+			TagScores: []issues.TagRelevance{
+				{Tag: "export", Relevance: 0.9},
+				{Tag: "safari", Relevance: 0.84},
+			},
+			Embedding: []float64{0.98, 0.02, 0},
+		},
+		{
+			ID:        "issue-hidden-source",
+			Raw:       "Duplicate Safari export crash report",
+			CreatedBy: "Jordan",
+			CreatedAt: issues.FixtureIssues()[2].CreatedAt,
+			Status:    issues.StatusOpen,
+			TagScores: []issues.TagRelevance{
+				{Tag: "export", Relevance: 0.88},
+				{Tag: "safari", Relevance: 0.81},
+			},
+			Embedding: []float64{0.97, 0.03, 0},
+		},
+		{
+			ID:        "issue-canonical",
+			Raw:       "Track export reliability for the next Safari release",
+			CreatedBy: "Riley",
+			CreatedAt: issues.FixtureIssues()[3].CreatedAt,
+			Status:    issues.StatusOpen,
+			TagScores: []issues.TagRelevance{
+				{Tag: "backend", Relevance: 0.91},
+			},
+			Embedding: []float64{0, 1, 0},
+		},
+		{
+			ID:        "issue-linked",
+			Raw:       "Share-sheet handoff breaks after export retries",
+			CreatedBy: "Taylor",
+			CreatedAt: issues.FixtureIssues()[0].CreatedAt,
+			Status:    issues.StatusOpen,
+			TagScores: []issues.TagRelevance{
+				{Tag: "feature", Relevance: 0.9},
+			},
+			Embedding: []float64{0, 0.8, 0.2},
+		},
+	}); err != nil {
+		t.Fatalf("seed issues: %v", err)
+	}
+	if err := store.UpsertTags(context.Background(), []issues.Tag{
+		{Name: "export", Embedding: []float64{1, 0, 0}},
+		{Name: "safari", Embedding: []float64{0.9, 0.1, 0}},
+		{Name: "backend", Embedding: []float64{0, 1, 0}},
+		{Name: "feature", Embedding: []float64{0, 0.8, 0.2}},
+	}); err != nil {
+		t.Fatalf("seed tags: %v", err)
+	}
+	if err := store.SaveLink(context.Background(), issues.IssueLink{
+		ID:            "issue-target-issue-linked-related",
+		Type:          issues.IssueLinkTypeRelatedTo,
+		SourceIssueID: "issue-target",
+		TargetIssueID: "issue-linked",
+		CreatedBy:     "Casey",
+		CreatedAt:     issues.FixtureIssues()[0].CreatedAt,
+	}); err != nil {
+		t.Fatalf("save related link: %v", err)
+	}
+	if err := store.SaveLink(context.Background(), issues.IssueLink{
+		ID:            "issue-hidden-source-issue-canonical-merged",
+		Type:          issues.IssueLinkTypeMergedInto,
+		SourceIssueID: "issue-hidden-source",
+		TargetIssueID: "issue-canonical",
+		CreatedBy:     "Casey",
+		CreatedAt:     issues.FixtureIssues()[0].CreatedAt,
+	}); err != nil {
+		t.Fatalf("save merged link: %v", err)
+	}
+
+	server := NewServer(ServerConfig{
+		CORSOrigins: []string{"http://localhost:3000"},
+		APIPrefixes: []string{"/api"},
+		IssueStore:  store,
+	})
+
+	req := httptest.NewRequest(http.MethodGet, "/api/issues/issue-target/explore?limit=4", nil)
+	rec := httptest.NewRecorder()
+	server.Handler().ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200 for issue explore, got %d", rec.Code)
+	}
+
+	var payload issuemap.ExploreResponse
+	if err := json.NewDecoder(rec.Body).Decode(&payload); err != nil {
+		t.Fatalf("decode explore response: %v", err)
+	}
+
+	var (
+		linkedIndex    = -1
+		canonicalIndex = -1
+	)
+	for i, item := range payload.RelatedIssues {
+		if item.ID == "issue-hidden-source" {
+			t.Fatalf("expected merged source to be hidden, got %+v", payload.RelatedIssues)
+		}
+		if item.ID == "issue-linked" {
+			linkedIndex = i
+			if !strings.Contains(strings.ToLower(item.Reason), "relationship") {
+				t.Fatalf("expected relationship-aware reason for linked issue, got %+v", item)
+			}
+		}
+		if item.ID == "issue-canonical" {
+			canonicalIndex = i
+		}
+	}
+	if linkedIndex == -1 {
+		t.Fatalf("expected directly linked issue in explore results, got %+v", payload.RelatedIssues)
+	}
+	if canonicalIndex == -1 {
+		t.Fatalf("expected canonical merged target in explore results, got %+v", payload.RelatedIssues)
+	}
+	if linkedIndex > canonicalIndex {
+		t.Fatalf("expected relationship boost to rank linked issue ahead of canonical fallback, got %+v", payload.RelatedIssues)
 	}
 }
 

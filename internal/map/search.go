@@ -6,6 +6,7 @@ import (
 	"strings"
 
 	"splat/internal/issues"
+	"splat/internal/vectors"
 )
 
 const defaultSearchLimit = 8
@@ -104,8 +105,8 @@ func SearchFromQueryWithTags(
 	related := make([]RelatedIssue, 0, len(storeIssues))
 	for _, candidate := range storeIssues {
 		candidateSummary := exploreIssueSummary(candidate)
-		semantic := cosineSimilarity(queryVector, issueEmbeddings[candidate.ID])
-		factor := cosineSimilarity(queryFactor, factorVectors[candidate.ID])
+		semantic := vectors.CosineSimilarity(queryVector, issueEmbeddings[candidate.ID])
+		factor := vectors.CosineSimilarity(queryFactor, factorVectors[candidate.ID])
 		textMatch := textMatchScore(queryLower, candidate.Raw)
 		combined := blendScores(semantic, factor, textMatch, tagCorrelationBoost)
 		combined -= issueSpecificityPenalty(candidateSummary.Tags)
@@ -271,7 +272,7 @@ func SearchTags(storeTags []issues.Tag, queryEmbedding []float64, limit int) []R
 		if len(tag.Embedding) == 0 || len(queryEmbedding) == 0 {
 			continue
 		}
-		sim := cosineSimilarity(queryEmbedding, tag.Embedding)
+		sim := vectors.CosineSimilarity(queryEmbedding, tag.Embedding)
 		rankedScores[tag.Name] = sim - genericBucketPenalty(tag.Name)
 		related = append(related, RelatedTag{
 			Name:        tag.Name,

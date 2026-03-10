@@ -1,11 +1,12 @@
 package ai
 
 import (
+	"cmp"
 	"context"
 	"errors"
 	"fmt"
 	"math"
-	"sort"
+	"slices"
 	"strings"
 
 	"splat/internal/domain"
@@ -136,11 +137,11 @@ func normalizeScores(scores []TagScore, taxonomy []Tag) []TagScore {
 		normalized = append(normalized, score)
 	}
 
-	sort.Slice(normalized, func(i, j int) bool {
-		if normalized[i].Relevance == normalized[j].Relevance {
-			return normalized[i].Tag < normalized[j].Tag
+	slices.SortStableFunc(normalized, func(a, b TagScore) int {
+		if c := cmp.Compare(b.Relevance, a.Relevance); c != 0 {
+			return c
 		}
-		return normalized[i].Relevance > normalized[j].Relevance
+		return cmp.Compare(a.Tag, b.Tag)
 	})
 	return normalized
 }

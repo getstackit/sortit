@@ -1,14 +1,16 @@
 package queries
 
 import (
+	"cmp"
 	"context"
 	"errors"
 	"math"
-	"sort"
+	"slices"
 
 	"splat/internal/ai"
 	"splat/internal/issues"
 	"splat/internal/services"
+	"splat/internal/vectors"
 )
 
 type DebugAnalyzeIssue struct {
@@ -88,7 +90,7 @@ func (h DebugAnalyzeIssueHandler) issueEmbeddingSimilarities(ctx context.Context
 			continue
 		}
 
-		similarity := CosineSimilarity(query, issue.Embedding)
+		similarity := vectors.CosineSimilarity(query, issue.Embedding)
 		compared++
 		total += similarity
 		comparisons = append(comparisons, DebugIssueSimilarity{
@@ -99,11 +101,11 @@ func (h DebugAnalyzeIssueHandler) issueEmbeddingSimilarities(ctx context.Context
 		})
 	}
 
-	sort.Slice(comparisons, func(i, j int) bool {
-		if comparisons[i].Similarity == comparisons[j].Similarity {
-			return comparisons[i].ID < comparisons[j].ID
+	slices.SortStableFunc(comparisons, func(a, b DebugIssueSimilarity) int {
+		if c := cmp.Compare(b.Similarity, a.Similarity); c != 0 {
+			return c
 		}
-		return comparisons[i].Similarity > comparisons[j].Similarity
+		return cmp.Compare(a.ID, b.ID)
 	})
 
 	average := 0.0

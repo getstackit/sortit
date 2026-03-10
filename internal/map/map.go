@@ -1,8 +1,9 @@
 package issuemap
 
 import (
+	"cmp"
 	"math"
-	"sort"
+	"slices"
 
 	"splat/internal/issues"
 )
@@ -131,13 +132,13 @@ func maxInt(a, b int) int {
 }
 
 func sortEdgesBySimilarity(edges []Edge) {
-	sort.Slice(edges, func(i, j int) bool {
-		if edges[i].Similarity == edges[j].Similarity {
-			if edges[i].Source == edges[j].Source {
-				return edges[i].Target < edges[j].Target
-			}
-			return edges[i].Source < edges[j].Source
+	slices.SortStableFunc(edges, func(a, b Edge) int {
+		if c := cmp.Compare(b.Similarity, a.Similarity); c != 0 {
+			return c
 		}
-		return edges[i].Similarity > edges[j].Similarity
+		if c := cmp.Compare(a.Source, b.Source); c != 0 {
+			return c
+		}
+		return cmp.Compare(a.Target, b.Target)
 	})
 }

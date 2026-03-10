@@ -14,9 +14,8 @@ type CreateIssue struct {
 }
 
 type CreateIssueHandler struct {
-	Store    issues.Store
+	Runner   *CommandRunner
 	Enricher *services.IssueEnricher
-	Events   issues.EventStore
 }
 
 func (h CreateIssueHandler) Handle(ctx context.Context, input CreateIssue) (issues.Issue, error) {
@@ -36,20 +35,14 @@ func (h CreateIssueHandler) Handle(ctx context.Context, input CreateIssue) (issu
 	}
 
 	issue := issues.BuildNewIssue(id, enriched)
-	if err := h.Store.SaveIssue(ctx, issue); err != nil {
-		return issues.Issue{}, err
-	}
 
-	if h.Events != nil {
-		_ = h.Events.RecordEvent(ctx, issues.Event{
-			ID:        issues.IssuePostID(id, 1),
-			Kind:      "report",
-			IssueID:   id,
-			CreatedBy: issue.CreatedBy,
-			CreatedAt: issue.CreatedAt,
-			Body:      issue.Raw,
-		})
-	}
+	return Run(ctx, h.Runner, func(ctx context.Context, uow issues.UnitOfWork) (issues.Issue, error) {
+		if err := uow.SaveIssue(ctx, issue); err != nil {
+			return issues.Issue{}, err
+		}
 
-	return issue, nil
+		_ = uow.RecordEvent(ctx, issue.ReportEvent())
+
+		return issue, nil
+	})
 }

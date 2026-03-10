@@ -7,6 +7,7 @@ import (
 	"gonum.org/v1/gonum/mat"
 
 	"splat/internal/issues"
+	"splat/internal/vectors"
 )
 
 type Position struct {
@@ -158,7 +159,7 @@ func buildTagCovariance(tags []string, tagEmbeddings map[string][]float64) *mat.
 		for j := i; j < t; j++ {
 			value := 0.0
 			if hasEmbeddings {
-				value = unitCosineSimilarity(tagEmbeddings[tags[i]], tagEmbeddings[tags[j]])
+				value = vectors.UnitCosineSimilarity(tagEmbeddings[tags[i]], tagEmbeddings[tags[j]])
 			} else if i == j {
 				value = 1
 			}

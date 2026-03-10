@@ -1,11 +1,12 @@
 package ai
 
 import (
+	"cmp"
 	"context"
 	"encoding/binary"
 	"hash/fnv"
 	"math"
-	"sort"
+	"slices"
 	"strings"
 )
 
@@ -57,11 +58,11 @@ func (t *StubTagger) Score(_ context.Context, text string, tags []Tag) ([]TagSco
 		})
 	}
 
-	sort.Slice(scores, func(i, j int) bool {
-		if scores[i].Relevance == scores[j].Relevance {
-			return scores[i].Tag < scores[j].Tag
+	slices.SortStableFunc(scores, func(a, b TagScore) int {
+		if c := cmp.Compare(b.Relevance, a.Relevance); c != 0 {
+			return c
 		}
-		return scores[i].Relevance > scores[j].Relevance
+		return cmp.Compare(a.Tag, b.Tag)
 	})
 	return scores, nil
 }

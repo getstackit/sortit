@@ -40,6 +40,17 @@ type Issue struct {
 	Embedding  []float64        `json:"-"`
 }
 
+func (i Issue) ReportEvent() Event {
+	return Event{
+		ID:        IssuePostID(i.ID, 1),
+		Kind:      "report",
+		IssueID:   i.ID,
+		CreatedBy: i.CreatedBy,
+		CreatedAt: i.CreatedAt,
+		Body:      i.Raw,
+	}
+}
+
 type IssuePost struct {
 	ID        string    `json:"id"`
 	IssueID   string    `json:"issueId,omitempty"`

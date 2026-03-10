@@ -3,7 +3,8 @@ package issuemap
 import (
 	"fmt"
 	"hash/fnv"
-	"sort"
+	"cmp"
+	"slices"
 	"strings"
 	"unicode"
 
@@ -186,7 +187,7 @@ func runtimeTagNames(storeIssues []issues.Issue, storeTags []issues.Tag) []strin
 		}
 	}
 
-	sort.Strings(tags)
+	slices.Sort(tags)
 	return tags
 }
 
@@ -249,11 +250,11 @@ func runtimeStoredTagRelevances(issue issues.Issue) []TagRelevance {
 			})
 		}
 
-		sort.Slice(relevances, func(i, j int) bool {
-			if relevances[i].Relevance == relevances[j].Relevance {
-				return relevances[i].Tag < relevances[j].Tag
+		slices.SortStableFunc(relevances, func(a, b TagRelevance) int {
+			if c := cmp.Compare(b.Relevance, a.Relevance); c != 0 {
+				return c
 			}
-			return relevances[i].Relevance > relevances[j].Relevance
+			return cmp.Compare(a.Tag, b.Tag)
 		})
 		return relevances
 	}
@@ -283,8 +284,8 @@ func runtimeTagRelevances(tags []string) []TagRelevance {
 		})
 	}
 
-	sort.Slice(relevances, func(i, j int) bool {
-		return relevances[i].Tag < relevances[j].Tag
+	slices.SortStableFunc(relevances, func(a, b TagRelevance) int {
+		return cmp.Compare(a.Tag, b.Tag)
 	})
 	return relevances
 }

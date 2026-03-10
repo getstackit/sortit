@@ -72,6 +72,13 @@ func derivedCorpusProjectionStoreFromIssueStore(store issues.Store) issues.Deriv
 	return nil
 }
 
+func unitOfWorkBeginnerFromStore(store issues.Store) issues.UnitOfWorkBeginner {
+	if beginner, ok := store.(issues.UnitOfWorkBeginner); ok {
+		return beginner
+	}
+	return nil
+}
+
 type healthResponse struct {
 	Name      string `json:"name"`
 	Status    string `json:"status"`
@@ -305,6 +312,13 @@ func NewServer(cfg ServerConfig) *Server {
 	// EventStore: available on ObservedStore which wraps both Store and EventStore
 	var events issues.EventStore = observed
 
+	// CommandRunner manages DB transaction lifecycle for command handlers.
+	uowBeginner := unitOfWorkBeginnerFromStore(cfg.IssueStore)
+	runner := &commands.CommandRunner{
+		DB:       uowBeginner,
+		OnCommit: func() { revisions.Bump() },
+	}
+
 	tagStore := tagStoreFromIssueStore(store)
 	commandAnalyzer := services.FallbackAnalyzer(cfg.Analyzer)
 	catalog := services.NewCatalogService(tagStore, commandAnalyzer)
@@ -322,9 +336,8 @@ func NewServer(cfg ServerConfig) *Server {
 		revisions:    revisions,
 		corpusLoader: corpusLoader,
 		createIssue: commands.CreateIssueHandler{
-			Store:    store,
+			Runner:   runner,
 			Enricher: enricher,
-			Events:   events,
 		},
 		refineIssue: commands.RefineIssueHandler{
 			Store:    store,
@@ -362,16 +375,16 @@ func NewServer(cfg ServerConfig) *Server {
 		searchIssues: queries.SearchIssuesHandler{
 			Analyzer: commandAnalyzer,
 			Catalog:  catalog,
-			Store:    store,
+			Store:    cfg.IssueStore,
 			Corpus:   corpusLoader,
 		},
 		searchUnified: queries.SearchUnifiedHandler{
 			Analyzer: commandAnalyzer,
 			Catalog:  catalog,
-			Store:    store,
+			Store:    cfg.IssueStore,
 			Corpus:   corpusLoader,
 		},
-		exploreIssue:      queries.ExploreIssueHandler{Store: store, Catalog: catalog, Corpus: corpusLoader},
+		exploreIssue:      queries.ExploreIssueHandler{Store: cfg.IssueStore, Catalog: catalog, Corpus: corpusLoader},
 		listTags:          queries.ListTagsHandler{Catalog: catalog},
 		getMap:            queries.MapHandler{IssueStore: store, Catalog: catalog, Corpus: corpusLoader},
 		getMapEdges:       queries.EdgeHandler{IssueStore: store, Catalog: catalog, Corpus: corpusLoader},
