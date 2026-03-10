@@ -20,7 +20,7 @@ export function useIssues(status: IssueListStatus = "open", enabled = true) {
   const { data: revision = 0 } = useBackendRevision();
   return useSWR(
     enabled ? ["issues", status, revision] : null,
-    (_key: string, currentStatus: IssueListStatus) => fetchIssues(currentStatus)
+    ([, currentStatus]: [string, IssueListStatus, number]) => fetchIssues(currentStatus)
   );
 }
 
@@ -33,20 +33,23 @@ export function useIssueSearch(
   const { data: revision = 0 } = useBackendRevision();
   return useSWR(
     trimmed ? ["issues-search", trimmed, status, limit, revision] : null,
-    (
-      _key: string,
-      currentQuery: string,
-      currentStatus: IssueListStatus,
-      currentLimit: number
-    ) =>
+    ([, currentQuery, currentStatus, currentLimit]: [
+      string,
+      string,
+      IssueListStatus,
+      number,
+      number,
+    ]) =>
       searchIssues(currentQuery, { status: currentStatus, limit: currentLimit })
   );
 }
 
-export function useIssue(id: string) {
+export function useIssue(id?: string | null) {
   const { data: revision = 0 } = useBackendRevision();
-  return useSWR(["issue", id, revision], (_key: string, issueID: string) =>
-    fetchIssue(issueID)
+  const normalizedID = typeof id === "string" ? id.trim() : "";
+  return useSWR(
+    normalizedID && normalizedID !== "undefined" ? ["issue", normalizedID, revision] : null,
+    ([, issueID]: [string, string, number]) => fetchIssue(issueID)
   );
 }
 

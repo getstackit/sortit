@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import { useParams } from "next/navigation";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { motion } from "motion/react";
 import {
@@ -269,7 +270,18 @@ function DiscussionBody({ text }: { text: string }) {
 }
 
 export function IssueDetailPage({ issueID }: { issueID: string }) {
-  const { data: issue, error: issueError, isLoading: loading, mutate: mutateIssue } = useIssue(issueID);
+  const params = useParams<{ id?: string }>();
+  const resolvedIssueID = useMemo(() => {
+    const candidates = [issueID, params?.id];
+    for (const candidate of candidates) {
+      const normalized = typeof candidate === "string" ? candidate.trim() : "";
+      if (normalized && normalized !== "undefined" && normalized !== "null") {
+        return normalized;
+      }
+    }
+    return "";
+  }, [issueID, params]);
+  const { data: issue, error: issueError, isLoading: loading, mutate: mutateIssue } = useIssue(resolvedIssueID);
   const { data: mapData, error: mapError, mutate: mutateMap } = useIssueMapData();
   const [actionError, setActionError] = useState<string | null>(null);
   const [copyState, setCopyState] = useState<
@@ -691,7 +703,7 @@ export function IssueDetailPage({ issueID }: { issueID: string }) {
       shortcuts={shortcuts}
     >
       <SiteHeader
-        title={issue ? formatIssueTitle(issue.raw, 68) : issueID}
+        title={issue ? formatIssueTitle(issue.raw, 68) : resolvedIssueID || "Issue"}
         eyebrow={issue?.id ?? "Issue"}
         subtitle={issue ? `${issue.createdBy} · ${formatRelativeTime(issue.createdAt)}` : undefined}
         meta={
@@ -816,17 +828,21 @@ export function IssueDetailPage({ issueID }: { issueID: string }) {
             </div>
           )}
 
-          {!loading && issueError && (
+          {!loading && !resolvedIssueID && (
+            <div className="app-status-warning p-5">No issue ID was provided in the route.</div>
+          )}
+
+          {!loading && resolvedIssueID && issueError && (
             <div className="app-status-warning p-5">
               {issueError.message === "issue not found"
-                ? `No issue exists for "${issueID}".`
+                ? `No issue exists for "${resolvedIssueID}".`
                 : `Issue backend unavailable: ${issueError.message}`}
             </div>
           )}
 
           {!loading && issue && (
             <motion.div
-              key={issueID}
+              key={resolvedIssueID}
               initial={{ opacity: 0, x: 20 }}
               animate={{ opacity: 1, x: 0 }}
               transition={{ duration: 0.25, ease: "easeOut" }}

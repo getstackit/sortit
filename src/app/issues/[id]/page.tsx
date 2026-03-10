@@ -5,7 +5,7 @@ export default async function IssuePage({
 }: {
   params: Promise<{ id: string }>;
 }) {
-  const { id } = await params;
+  const resolvedParams = await params;
 
-  return <IssueDetailPage issueID={id} />;
+  return <IssueDetailPage issueID={resolvedParams.id} />;
 }

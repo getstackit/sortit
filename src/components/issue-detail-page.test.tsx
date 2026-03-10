@@ -1,6 +1,7 @@
 import type { ReactNode } from "react";
 import { render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
+import { useParams } from "next/navigation";
 import { SWRConfig } from "swr";
 import { IssueDetailPage } from "@/components/issue-detail-page";
 import {
@@ -27,6 +28,10 @@ vi.mock("next/link", () => ({
       {children}
     </a>
   ),
+}));
+
+vi.mock("next/navigation", () => ({
+  useParams: vi.fn(),
 }));
 
 vi.mock("@/components/app-shell", () => ({
@@ -130,6 +135,7 @@ describe("IssueDetailPage", () => {
   const writeTextMock = vi.fn<() => Promise<void>>();
 
   beforeEach(() => {
+    vi.mocked(useParams).mockReturnValue({});
     vi.mocked(fetchIssue).mockReset();
     vi.mocked(fetchRevision).mockReset();
     vi.mocked(progressIssue).mockReset();
@@ -186,6 +192,17 @@ describe("IssueDetailPage", () => {
     ).toBeInTheDocument();
     expect(screen.getByText("Initial report")).toBeInTheDocument();
     expect(screen.getByText("Refinement 1")).toBeInTheDocument();
+  });
+
+  it("falls back to the route param when the prop issue ID is undefined", async () => {
+    vi.mocked(useParams).mockReturnValue({ id: "issue-route-fallback" });
+    vi.mocked(fetchIssue).mockResolvedValue(makeIssue({ id: "issue-route-fallback" }));
+
+    renderIssueDetail(undefined as unknown as string);
+
+    await waitFor(() => {
+      expect(vi.mocked(fetchIssue)).toHaveBeenCalledWith("issue-route-fallback");
+    });
   });
 
   it("renders related issues and operation history when relationship data is present", async () => {
