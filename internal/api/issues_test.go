@@ -29,41 +29,15 @@ func (s failingIssueStore) Get(context.Context, string) (issues.Issue, error) {
 	return issues.Issue{}, issues.ErrNotFound
 }
 
-func (s failingIssueStore) Create(context.Context, issues.CreateInput) (issues.Issue, error) {
-	return issues.Issue{}, nil
+func (s failingIssueStore) SaveIssue(context.Context, issues.Issue) error { return nil }
+func (s failingIssueStore) SaveIssuePost(context.Context, issues.IssuePost) error { return nil }
+func (s failingIssueStore) UpdateIssueFields(context.Context, string, issues.IssueFieldUpdate) error {
+	return nil
 }
-
-func (s failingIssueStore) Refine(context.Context, string, issues.RefineInput) (issues.Issue, error) {
-	return issues.Issue{}, nil
-}
-
-func (s failingIssueStore) ProgressPost(context.Context, string, issues.ProgressInput) (issues.Issue, error) {
-	return issues.Issue{}, nil
-}
-
-func (s failingIssueStore) CloseIssue(context.Context, string, string) (issues.Issue, error) {
-	return issues.Issue{}, nil
-}
-
-func (s failingIssueStore) ReopenIssue(context.Context, string) (issues.Issue, error) {
-	return issues.Issue{}, nil
-}
-
-func (s failingIssueStore) AssignIssue(context.Context, string, string) (issues.Issue, error) {
-	return issues.Issue{}, nil
-}
-
-func (s failingIssueStore) SplitIssue(context.Context, issues.SplitInput) (issues.IssueOperationResult, error) {
-	return issues.IssueOperationResult{}, nil
-}
-
-func (s failingIssueStore) CombineIssues(context.Context, issues.CombineInput) (issues.IssueOperationResult, error) {
-	return issues.IssueOperationResult{}, nil
-}
-
-func (s failingIssueStore) LinkIssues(context.Context, issues.LinkInput) (issues.IssueOperationResult, error) {
-	return issues.IssueOperationResult{}, nil
-}
+func (s failingIssueStore) SaveOperation(context.Context, issues.IssueOperation) error { return nil }
+func (s failingIssueStore) SaveLink(context.Context, issues.IssueLink) error             { return nil }
+func (s failingIssueStore) NextIssueID(context.Context) (string, error)     { return "", nil }
+func (s failingIssueStore) NextOperationID(context.Context) (string, error) { return "", nil }
 
 func TestIssuesEndpointListsSeededIssues(t *testing.T) {
 	server := NewServer(ServerConfig{

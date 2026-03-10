@@ -292,7 +292,11 @@ func NewServer(cfg ServerConfig) *Server {
 		store = issues.NewInMemoryStore(nil)
 	}
 	revisions := issues.NewRevisionTracker()
-	store = issues.NewObservedStore(store, revisions)
+	observed := issues.NewObservedStore(store, revisions)
+	store = observed
+
+	// EventStore: available on ObservedStore which wraps both Store and EventStore
+	var events issues.EventStore = observed
 
 	tagStore := tagStoreFromIssueStore(store)
 	commandAnalyzer := services.FallbackAnalyzer(cfg.Analyzer)
@@ -312,32 +316,39 @@ func NewServer(cfg ServerConfig) *Server {
 		createIssue: commands.CreateIssueHandler{
 			Store:    store,
 			Enricher: enricher,
+			Events:   events,
 		},
 		refineIssue: commands.RefineIssueHandler{
 			Store:    store,
 			Enricher: enricher,
+			Events:   events,
 		},
-		progressIssue: commands.ProgressIssueHandler{Store: store},
-		closeIssue:    commands.CloseIssueHandler{Store: store},
+		progressIssue: commands.ProgressIssueHandler{Store: store, Events: events},
+		closeIssue:    commands.CloseIssueHandler{Store: store, Events: events},
 		reopenIssue: commands.ReopenIssueHandler{
-			Store: store,
+			Store:  store,
+			Events: events,
 		},
 		assignIssue: commands.AssignIssueHandler{
-			Store: store,
+			Store:  store,
+			Events: events,
 		},
 		splitIssue: commands.SplitIssueHandler{
 			Store:    store,
 			Enricher: enricher,
+			Events:   events,
 		},
 		combineIssues: commands.CombineIssuesHandler{
 			Store:    store,
 			Enricher: enricher,
+			Events:   events,
 		},
 		linkIssues: commands.LinkIssuesHandler{
-			Store: store,
+			Store:  store,
+			Events: events,
 		},
 		listIssues:    queries.ListIssuesHandler{Store: store},
-		listActivity:  queries.ListActivityHandler{ReadModel: readModel},
+		listActivity:  queries.ListActivityHandler{Events: events, ReadModel: readModel, Store: store},
 		getIssue:      queries.GetIssueHandler{Store: store},
 		compareIssues: queries.CompareIssuesHandler{Store: store, ReadModel: readModel},
 		searchIssues: queries.SearchIssuesHandler{

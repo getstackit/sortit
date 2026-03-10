@@ -25,6 +25,16 @@ type AuthAccount struct {
 	CreatedAtUnixNano int64
 }
 
+type Event struct {
+	ID                string
+	Kind              string
+	IssueID           string
+	CreatedBy         string
+	CreatedAtUnixNano int64
+	Body              string
+	ParticipantsJson  json.RawMessage
+}
+
 type Issue struct {
 	ID                string
 	Raw               string

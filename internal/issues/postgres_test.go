@@ -4,6 +4,7 @@ import (
 	"context"
 	"sync"
 	"testing"
+	"time"
 
 	"splat/internal/testpostgres"
 )
@@ -17,31 +18,36 @@ var issuesPostgresHarness struct {
 func TestPostgresStoreCreateListAndGet(t *testing.T) {
 	store := newPostgresTestStore(t)
 
-	created, err := store.Create(context.Background(), CreateInput{
+	id, err := store.NextIssueID(context.Background())
+	if err != nil {
+		t.Fatalf("next issue id: %v", err)
+	}
+
+	issue := BuildNewIssue(id, CreateInput{
 		Raw:       "  add postgres storage  ",
 		CreatedBy: "  Casey ",
 		Tags:      []string{"backend", " backend ", ""},
 		TagScores: []TagRelevance{{Tag: "backend", Relevance: 0.9}},
 		Embedding: []float64{0.25, 0.5},
 	})
-	if err != nil {
-		t.Fatalf("create issue: %v", err)
+	if err := store.SaveIssue(context.Background(), issue); err != nil {
+		t.Fatalf("save issue: %v", err)
 	}
 
-	if created.ID != "issue-000001" {
-		t.Fatalf("expected first generated ID, got %q", created.ID)
+	if issue.ID != "issue-000001" {
+		t.Fatalf("expected first generated ID, got %q", issue.ID)
 	}
-	if created.Raw != "add postgres storage" {
-		t.Fatalf("expected trimmed raw value, got %q", created.Raw)
+	if issue.Raw != "add postgres storage" {
+		t.Fatalf("expected trimmed raw value, got %q", issue.Raw)
 	}
-	if created.CreatedBy != "Casey" {
-		t.Fatalf("expected trimmed creator, got %q", created.CreatedBy)
+	if issue.CreatedBy != "Casey" {
+		t.Fatalf("expected trimmed creator, got %q", issue.CreatedBy)
 	}
-	if created.Status != StatusOpen {
-		t.Fatalf("expected created issue to be open, got %q", created.Status)
+	if issue.Status != StatusOpen {
+		t.Fatalf("expected created issue to be open, got %q", issue.Status)
 	}
-	if len(created.Tags) != 1 || created.Tags[0] != "backend" {
-		t.Fatalf("expected sanitized tags, got %#v", created.Tags)
+	if len(issue.Tags) != 1 || issue.Tags[0] != "backend" {
+		t.Fatalf("expected sanitized tags, got %#v", issue.Tags)
 	}
 
 	items, err := store.List(context.Background())
@@ -58,20 +64,20 @@ func TestPostgresStoreCreateListAndGet(t *testing.T) {
 		t.Fatalf("expected persisted embedding, got %#v", items[0].Embedding)
 	}
 
-	loaded, err := store.Get(context.Background(), created.ID)
+	loaded, err := store.Get(context.Background(), issue.ID)
 	if err != nil {
 		t.Fatalf("get created issue: %v", err)
 	}
-	if loaded.ID != created.ID {
-		t.Fatalf("expected %q, got %q", created.ID, loaded.ID)
+	if loaded.ID != issue.ID {
+		t.Fatalf("expected %q, got %q", issue.ID, loaded.ID)
 	}
-	if loaded.Raw != created.Raw {
-		t.Fatalf("expected raw %q, got %q", created.Raw, loaded.Raw)
+	if loaded.Raw != issue.Raw {
+		t.Fatalf("expected raw %q, got %q", issue.Raw, loaded.Raw)
 	}
 	if len(loaded.Discussion) != 1 {
 		t.Fatalf("expected initial discussion post, got %#v", loaded.Discussion)
 	}
-	if loaded.Discussion[0].Raw != created.Raw {
+	if loaded.Discussion[0].Raw != issue.Raw {
 		t.Fatalf("expected discussion to preserve original raw, got %q", loaded.Discussion[0].Raw)
 	}
 }
@@ -79,31 +85,63 @@ func TestPostgresStoreCreateListAndGet(t *testing.T) {
 func TestPostgresStoreRefineAppendsDiscussionAndUpdatesCanonicalIssue(t *testing.T) {
 	store := newPostgresTestStore(t)
 
-	created, err := store.Create(context.Background(), CreateInput{
+	id, err := store.NextIssueID(context.Background())
+	if err != nil {
+		t.Fatalf("next issue id: %v", err)
+	}
+
+	issue := BuildNewIssue(id, CreateInput{
 		Raw:       "export fails on ipad",
 		CreatedBy: "Casey",
 		TagScores: []TagRelevance{{Tag: "export", Relevance: 0.8}},
 		Embedding: []float64{0.25, 0.5},
 	})
-	if err != nil {
-		t.Fatalf("create issue: %v", err)
+	if err := store.SaveIssue(context.Background(), issue); err != nil {
+		t.Fatalf("save issue: %v", err)
 	}
 
-	refined, err := store.Refine(context.Background(), created.ID, RefineInput{
-		PostRaw:      "Customer says this only happens in Safari after tapping share twice.",
-		CanonicalRaw: "Export fails in Safari on iPad after tapping share twice.",
-		CreatedBy:    "Jordan",
+	// Load the issue to get discussion for sequence
+	loaded, err := store.Get(context.Background(), issue.ID)
+	if err != nil {
+		t.Fatalf("get issue: %v", err)
+	}
+
+	// Create refinement post
+	post := NewDiscussionPost(
+		issue.ID,
+		loaded.Discussion,
+		"Customer says this only happens in Safari after tapping share twice.",
+		"Jordan",
+		"refinement",
+	)
+	if err := store.SaveIssuePost(context.Background(), post); err != nil {
+		t.Fatalf("save issue post: %v", err)
+	}
+
+	// Update canonical fields
+	canonicalRaw := "Export fails in Safari on iPad after tapping share twice."
+	newTags := DisplayTags(nil, []TagRelevance{
+		{Tag: "export", Relevance: 0.95},
+		{Tag: "safari", Relevance: 0.73},
+	})
+	if err := store.UpdateIssueFields(context.Background(), issue.ID, IssueFieldUpdate{
+		Raw: &canonicalRaw,
+		Tags: newTags,
 		TagScores: []TagRelevance{
 			{Tag: "export", Relevance: 0.95},
 			{Tag: "safari", Relevance: 0.73},
 		},
 		Embedding: []float64{0.7, 0.2},
-	})
-	if err != nil {
-		t.Fatalf("refine issue: %v", err)
+	}); err != nil {
+		t.Fatalf("update issue fields: %v", err)
 	}
 
-	if refined.Raw != "Export fails in Safari on iPad after tapping share twice." {
+	refined, err := store.Get(context.Background(), issue.ID)
+	if err != nil {
+		t.Fatalf("get refined issue: %v", err)
+	}
+
+	if refined.Raw != canonicalRaw {
 		t.Fatalf("unexpected canonical raw: %q", refined.Raw)
 	}
 	if len(refined.Discussion) != 2 {
@@ -118,32 +156,36 @@ func TestPostgresStoreRefineAppendsDiscussionAndUpdatesCanonicalIssue(t *testing
 	if len(refined.Tags) != 2 || refined.Tags[0] != "export" || refined.Tags[1] != "safari" {
 		t.Fatalf("unexpected refined tags: %#v", refined.Tags)
 	}
-
-	loaded, err := store.Get(context.Background(), created.ID)
-	if err != nil {
-		t.Fatalf("get refined issue: %v", err)
-	}
-	if loaded.Raw != refined.Raw {
-		t.Fatalf("expected persisted canonical raw %q, got %q", refined.Raw, loaded.Raw)
-	}
-	if len(loaded.Discussion) != 2 {
-		t.Fatalf("expected persisted discussion history, got %#v", loaded.Discussion)
-	}
 }
 
 func TestPostgresStoreCloseAndReopenIssue(t *testing.T) {
 	store := newPostgresTestStore(t)
 
-	created, err := store.Create(context.Background(), CreateInput{
-		Raw: "close me",
-	})
+	id, err := store.NextIssueID(context.Background())
 	if err != nil {
-		t.Fatalf("create issue: %v", err)
+		t.Fatalf("next issue id: %v", err)
 	}
 
-	closed, err := store.CloseIssue(context.Background(), created.ID, "Casey")
-	if err != nil {
+	issue := BuildNewIssue(id, CreateInput{Raw: "close me"})
+	if err := store.SaveIssue(context.Background(), issue); err != nil {
+		t.Fatalf("save issue: %v", err)
+	}
+
+	// Close the issue
+	now := time.Now().UTC()
+	closedStatus := StatusClosed
+	closedBy := "Casey"
+	if err := store.UpdateIssueFields(context.Background(), issue.ID, IssueFieldUpdate{
+		Status:   &closedStatus,
+		ClosedAt: &now,
+		ClosedBy: &closedBy,
+	}); err != nil {
 		t.Fatalf("close issue: %v", err)
+	}
+
+	closed, err := store.Get(context.Background(), issue.ID)
+	if err != nil {
+		t.Fatalf("get closed issue: %v", err)
 	}
 	if closed.Status != StatusClosed {
 		t.Fatalf("expected closed status, got %q", closed.Status)
@@ -155,9 +197,17 @@ func TestPostgresStoreCloseAndReopenIssue(t *testing.T) {
 		t.Fatalf("expected closedBy Casey, got %q", closed.ClosedBy)
 	}
 
-	reopened, err := store.ReopenIssue(context.Background(), created.ID)
-	if err != nil {
+	// Reopen the issue
+	openStatus := StatusOpen
+	if err := store.UpdateIssueFields(context.Background(), issue.ID, IssueFieldUpdate{
+		Status: &openStatus,
+	}); err != nil {
 		t.Fatalf("reopen issue: %v", err)
+	}
+
+	reopened, err := store.Get(context.Background(), issue.ID)
+	if err != nil {
+		t.Fatalf("get reopened issue: %v", err)
 	}
 	if reopened.Status != StatusOpen {
 		t.Fatalf("expected open status after reopen, got %q", reopened.Status)
@@ -172,67 +222,183 @@ func TestPostgresStoreCloseAndReopenIssue(t *testing.T) {
 
 func TestPostgresStorePersistsIssueRelationshipsAndOperationHistory(t *testing.T) {
 	store := newPostgresTestStore(t)
+	ctx := context.Background()
 
-	parent, err := store.Create(context.Background(), CreateInput{
+	// Create parent issue
+	parentID, err := store.NextIssueID(ctx)
+	if err != nil {
+		t.Fatalf("next issue id: %v", err)
+	}
+	parent := BuildNewIssue(parentID, CreateInput{
 		Raw:       "Large onboarding redesign",
 		CreatedBy: "Casey",
 		TagScores: []TagRelevance{{Tag: "feature", Relevance: 0.9}},
 		Embedding: []float64{0.1, 0.2},
 	})
-	if err != nil {
-		t.Fatalf("create parent issue: %v", err)
+	if err := store.SaveIssue(ctx, parent); err != nil {
+		t.Fatalf("save parent issue: %v", err)
 	}
 
-	splitResult, err := store.SplitIssue(context.Background(), SplitInput{
-		SourceID: parent.ID,
-		Children: []SplitChildInput{
-			{Raw: "Add onboarding checklist", TagScores: []TagRelevance{{Tag: "feature", Relevance: 0.8}}},
-			{Raw: "Improve invite acceptance copy", TagScores: []TagRelevance{{Tag: "ux", Relevance: 0.7}}},
+	// Create child issues (simulating split)
+	child1ID, err := store.NextIssueID(ctx)
+	if err != nil {
+		t.Fatalf("next issue id: %v", err)
+	}
+	child1 := BuildNewIssue(child1ID, CreateInput{
+		Raw:       "Add onboarding checklist",
+		CreatedBy: "Casey",
+		TagScores: []TagRelevance{{Tag: "feature", Relevance: 0.8}},
+	})
+	if err := store.SaveIssue(ctx, child1); err != nil {
+		t.Fatalf("save child1: %v", err)
+	}
+
+	child2ID, err := store.NextIssueID(ctx)
+	if err != nil {
+		t.Fatalf("next issue id: %v", err)
+	}
+	child2 := BuildNewIssue(child2ID, CreateInput{
+		Raw:       "Improve invite acceptance copy",
+		CreatedBy: "Casey",
+		TagScores: []TagRelevance{{Tag: "ux", Relevance: 0.7}},
+	})
+	if err := store.SaveIssue(ctx, child2); err != nil {
+		t.Fatalf("save child2: %v", err)
+	}
+
+	// Create split operation
+	splitOpID, err := store.NextOperationID(ctx)
+	if err != nil {
+		t.Fatalf("next op id: %v", err)
+	}
+	splitOp := IssueOperation{
+		ID:        splitOpID,
+		Kind:      IssueOperationKindSplit,
+		CreatedBy: "Casey",
+		CreatedAt: time.Now().UTC(),
+		Note:      "Break the umbrella issue into shippable work.",
+		Participants: []IssueOperationParticipant{
+			{IssueID: parent.ID, Role: "source"},
+			{IssueID: child1.ID, Role: "child"},
+			{IssueID: child2.ID, Role: "child"},
 		},
-		CreatedBy:   "Casey",
-		Note:        "Break the umbrella issue into shippable work.",
-		CloseSource: true,
-	})
-	if err != nil {
-		t.Fatalf("split issue: %v", err)
 	}
-	if splitResult.Operation.Kind != IssueOperationKindSplit {
-		t.Fatalf("expected split operation, got %q", splitResult.Operation.Kind)
-	}
-	if len(splitResult.CreatedIssues) != 2 {
-		t.Fatalf("expected 2 child issues, got %d", len(splitResult.CreatedIssues))
+	if err := store.SaveOperation(ctx, splitOp); err != nil {
+		t.Fatalf("save split operation: %v", err)
 	}
 
-	linkedResult, err := store.LinkIssues(context.Background(), LinkInput{
-		SourceID:  splitResult.CreatedIssues[0].ID,
-		TargetID:  splitResult.CreatedIssues[1].ID,
-		Type:      IssueLinkTypeRelatedTo,
+	// Create split links
+	now := time.Now().UTC()
+	splitLinks := []IssueLink{
+		{ID: parent.ID + "-" + child1.ID + "-parent", Type: IssueLinkTypeParentOf, SourceIssueID: parent.ID, TargetIssueID: child1.ID, CreatedBy: "Casey", CreatedAt: now, OperationID: splitOpID},
+		{ID: child1.ID + "-" + parent.ID + "-child", Type: IssueLinkTypeChildOf, SourceIssueID: child1.ID, TargetIssueID: parent.ID, CreatedBy: "Casey", CreatedAt: now, OperationID: splitOpID},
+		{ID: parent.ID + "-" + child2.ID + "-parent", Type: IssueLinkTypeParentOf, SourceIssueID: parent.ID, TargetIssueID: child2.ID, CreatedBy: "Casey", CreatedAt: now, OperationID: splitOpID},
+		{ID: child2.ID + "-" + parent.ID + "-child", Type: IssueLinkTypeChildOf, SourceIssueID: child2.ID, TargetIssueID: parent.ID, CreatedBy: "Casey", CreatedAt: now, OperationID: splitOpID},
+	}
+	for _, link := range splitLinks {
+		if err := store.SaveLink(ctx, link); err != nil {
+			t.Fatalf("save split link: %v", err)
+		}
+	}
+
+	// Close parent after split
+	closedStatus := StatusClosed
+	closedBy := "Casey"
+	if err := store.UpdateIssueFields(ctx, parent.ID, IssueFieldUpdate{
+		Status:   &closedStatus,
+		ClosedAt: &now,
+		ClosedBy: &closedBy,
+	}); err != nil {
+		t.Fatalf("close parent: %v", err)
+	}
+
+	// Create link between children
+	linkOpID, err := store.NextOperationID(ctx)
+	if err != nil {
+		t.Fatalf("next op id: %v", err)
+	}
+	linkOp := IssueOperation{
+		ID:        linkOpID,
+		Kind:      IssueOperationKindLink,
 		CreatedBy: "Jordan",
+		CreatedAt: time.Now().UTC(),
 		Note:      "These two child issues ship together.",
-	})
-	if err != nil {
-		t.Fatalf("link issues: %v", err)
+		Participants: []IssueOperationParticipant{
+			{IssueID: child1.ID, Role: "source"},
+			{IssueID: child2.ID, Role: "target"},
+		},
 	}
-	if linkedResult.Operation.Kind != IssueOperationKindLink {
-		t.Fatalf("expected link operation, got %q", linkedResult.Operation.Kind)
+	if err := store.SaveOperation(ctx, linkOp); err != nil {
+		t.Fatalf("save link operation: %v", err)
+	}
+	relatedLink := IssueLink{
+		ID: child1.ID + "-" + child2.ID + "-related", Type: IssueLinkTypeRelatedTo,
+		SourceIssueID: child1.ID, TargetIssueID: child2.ID,
+		CreatedBy: "Jordan", CreatedAt: time.Now().UTC(), OperationID: linkOpID,
+	}
+	if err := store.SaveLink(ctx, relatedLink); err != nil {
+		t.Fatalf("save related link: %v", err)
 	}
 
-	combinedResult, err := store.CombineIssues(context.Background(), CombineInput{
-		SourceIDs: []string{splitResult.CreatedIssues[0].ID, splitResult.CreatedIssues[1].ID},
+	// Combine children into new issue
+	combinedID, err := store.NextIssueID(ctx)
+	if err != nil {
+		t.Fatalf("next issue id: %v", err)
+	}
+	combined := BuildNewIssue(combinedID, CreateInput{
 		Raw:       "Deliver a tighter onboarding flow with checklist and invite improvements.",
 		CreatedBy: "Taylor",
-		Note:      "Roll the child issues into a single delivery artifact.",
 		TagScores: []TagRelevance{{Tag: "feature", Relevance: 0.95}},
 		Embedding: []float64{0.3, 0.7},
 	})
-	if err != nil {
-		t.Fatalf("combine issues: %v", err)
-	}
-	if len(combinedResult.CreatedIssues) != 1 {
-		t.Fatalf("expected one combined issue, got %d", len(combinedResult.CreatedIssues))
+	if err := store.SaveIssue(ctx, combined); err != nil {
+		t.Fatalf("save combined issue: %v", err)
 	}
 
-	loadedParent, err := store.Get(context.Background(), parent.ID)
+	combineOpID, err := store.NextOperationID(ctx)
+	if err != nil {
+		t.Fatalf("next op id: %v", err)
+	}
+	combineOp := IssueOperation{
+		ID:        combineOpID,
+		Kind:      IssueOperationKindCombine,
+		CreatedBy: "Taylor",
+		CreatedAt: time.Now().UTC(),
+		Note:      "Roll the child issues into a single delivery artifact.",
+		Participants: []IssueOperationParticipant{
+			{IssueID: combined.ID, Role: "result"},
+			{IssueID: child1.ID, Role: "source"},
+			{IssueID: child2.ID, Role: "source"},
+		},
+	}
+	if err := store.SaveOperation(ctx, combineOp); err != nil {
+		t.Fatalf("save combine operation: %v", err)
+	}
+
+	// Create combine links + close source issues
+	combineLinks := []IssueLink{
+		{ID: child1.ID + "-" + combined.ID + "-merged", Type: IssueLinkTypeMergedInto, SourceIssueID: child1.ID, TargetIssueID: combined.ID, CreatedBy: "Taylor", CreatedAt: now, OperationID: combineOpID},
+		{ID: child2.ID + "-" + combined.ID + "-merged", Type: IssueLinkTypeMergedInto, SourceIssueID: child2.ID, TargetIssueID: combined.ID, CreatedBy: "Taylor", CreatedAt: now, OperationID: combineOpID},
+	}
+	for _, link := range combineLinks {
+		if err := store.SaveLink(ctx, link); err != nil {
+			t.Fatalf("save combine link: %v", err)
+		}
+	}
+
+	// Close source issues
+	for _, childID := range []string{child1.ID, child2.ID} {
+		if err := store.UpdateIssueFields(ctx, childID, IssueFieldUpdate{
+			Status:   &closedStatus,
+			ClosedAt: &now,
+			ClosedBy: &closedBy,
+		}); err != nil {
+			t.Fatalf("close child %s: %v", childID, err)
+		}
+	}
+
+	// Verify parent
+	loadedParent, err := store.Get(ctx, parent.ID)
 	if err != nil {
 		t.Fatalf("get parent issue: %v", err)
 	}
@@ -240,13 +406,14 @@ func TestPostgresStorePersistsIssueRelationshipsAndOperationHistory(t *testing.T
 		t.Fatalf("expected parent to be closed after split, got %q", loadedParent.Status)
 	}
 	if len(loadedParent.Links) != 4 {
-		t.Fatalf("expected parent to expose split relationships, got %#v", loadedParent.Links)
+		t.Fatalf("expected parent to expose split relationships, got %d links: %#v", len(loadedParent.Links), loadedParent.Links)
 	}
 	if len(loadedParent.Operations) != 1 {
 		t.Fatalf("expected parent to show one split operation, got %#v", loadedParent.Operations)
 	}
 
-	loadedChild, err := store.Get(context.Background(), splitResult.CreatedIssues[0].ID)
+	// Verify child
+	loadedChild, err := store.Get(ctx, child1.ID)
 	if err != nil {
 		t.Fatalf("get child issue: %v", err)
 	}
@@ -254,13 +421,14 @@ func TestPostgresStorePersistsIssueRelationshipsAndOperationHistory(t *testing.T
 		t.Fatalf("expected child to be closed after combine, got %q", loadedChild.Status)
 	}
 	if len(loadedChild.Operations) != 3 {
-		t.Fatalf("expected child to show split, link, and combine operations, got %#v", loadedChild.Operations)
+		t.Fatalf("expected child to show split, link, and combine operations, got %d: %#v", len(loadedChild.Operations), loadedChild.Operations)
 	}
 	if loadedChild.Links[0].RelatedIssue == nil {
 		t.Fatalf("expected hydrated related issue reference, got %#v", loadedChild.Links[0])
 	}
 
-	loadedCombined, err := store.Get(context.Background(), combinedResult.CreatedIssues[0].ID)
+	// Verify combined
+	loadedCombined, err := store.Get(ctx, combined.ID)
 	if err != nil {
 		t.Fatalf("get combined issue: %v", err)
 	}
@@ -282,28 +450,32 @@ func TestPostgresStoreReplaceResetsSequenceFromLoadedItems(t *testing.T) {
 		t.Fatalf("replace issues with seeds: %v", err)
 	}
 
-	created, err := store.Create(context.Background(), CreateInput{
-		Raw: "created after sample load",
-	})
+	id, err := store.NextIssueID(context.Background())
 	if err != nil {
-		t.Fatalf("create issue after replace: %v", err)
+		t.Fatalf("next issue id: %v", err)
 	}
-	if created.ID != "issue-000007" {
-		t.Fatalf("expected sequence to continue after seeded items, got %q", created.ID)
+	issue := BuildNewIssue(id, CreateInput{Raw: "created after sample load"})
+	if err := store.SaveIssue(context.Background(), issue); err != nil {
+		t.Fatalf("save issue after replace: %v", err)
+	}
+	if issue.ID != "issue-000007" {
+		t.Fatalf("expected sequence to continue after seeded items, got %q", issue.ID)
 	}
 
 	if err := store.Replace(context.Background(), nil); err != nil {
 		t.Fatalf("clear store: %v", err)
 	}
 
-	resetCreated, err := store.Create(context.Background(), CreateInput{
-		Raw: "created after reset",
-	})
+	resetID, err := store.NextIssueID(context.Background())
 	if err != nil {
-		t.Fatalf("create issue after reset: %v", err)
+		t.Fatalf("next issue id: %v", err)
 	}
-	if resetCreated.ID != "issue-000001" {
-		t.Fatalf("expected sequence reset after clearing store, got %q", resetCreated.ID)
+	resetIssue := BuildNewIssue(resetID, CreateInput{Raw: "created after reset"})
+	if err := store.SaveIssue(context.Background(), resetIssue); err != nil {
+		t.Fatalf("save issue after reset: %v", err)
+	}
+	if resetIssue.ID != "issue-000001" {
+		t.Fatalf("expected sequence reset after clearing store, got %q", resetIssue.ID)
 	}
 }
 

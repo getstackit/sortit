@@ -3,7 +3,6 @@ package queries
 import (
 	"context"
 	"fmt"
-	"slices"
 	"strconv"
 	"strings"
 	"time"
@@ -47,10 +46,94 @@ type ActivityResponse struct {
 }
 
 type ListActivityHandler struct {
-	ReadModel *ReadModelLoader
+	Events    issues.EventStore
+	ReadModel *ReadModelLoader // kept for fallback
+	Store     issues.Store
 }
 
 func (h ListActivityHandler) Handle(ctx context.Context, input ListActivity) (ActivityResponse, error) {
+	if h.Events != nil {
+		return h.handleFromEvents(ctx, input)
+	}
+	return h.handleFromReadModel(ctx, input)
+}
+
+func (h ListActivityHandler) handleFromEvents(ctx context.Context, input ListActivity) (ActivityResponse, error) {
+	limit := input.Limit
+	if limit <= 0 {
+		limit = defaultActivityLimit
+	}
+
+	events, nextCursor, err := h.Events.ListEvents(ctx, limit, input.Cursor, strings.TrimSpace(input.Kind))
+	if err != nil {
+		return ActivityResponse{}, err
+	}
+
+	// Batch-load issue details for participant enrichment
+	issuesByID := make(map[string]*ActivityIssue)
+	for _, event := range events {
+		if event.IssueID != "" {
+			issuesByID[event.IssueID] = nil
+		}
+		for _, p := range event.Participants {
+			if p.IssueID != "" {
+				issuesByID[p.IssueID] = nil
+			}
+		}
+	}
+
+	// Load issue details
+	if h.Store != nil {
+		for id := range issuesByID {
+			issue, err := h.Store.Get(ctx, id)
+			if err != nil {
+				continue // issue may have been deleted
+			}
+			issuesByID[id] = &ActivityIssue{
+				ID:     issue.ID,
+				Raw:    issue.Raw,
+				Status: issue.Status,
+			}
+		}
+	}
+
+	activityEvents := make([]ActivityEvent, 0, len(events))
+	for _, event := range events {
+		ae := ActivityEvent{
+			ID:        event.ID,
+			Kind:      event.Kind,
+			CreatedAt: event.CreatedAt,
+			CreatedBy: event.CreatedBy,
+			Body:      event.Body,
+		}
+
+		if event.IssueID != "" {
+			ae.Issue = issuesByID[event.IssueID]
+		}
+
+		if len(event.Participants) > 0 {
+			ae.Participants = make([]ActivityParticipant, 0, len(event.Participants))
+			for _, p := range event.Participants {
+				ap := ActivityParticipant{
+					IssueID: p.IssueID,
+					Role:    p.Role,
+					Issue:   issuesByID[p.IssueID],
+				}
+				ae.Participants = append(ae.Participants, ap)
+			}
+		}
+
+		activityEvents = append(activityEvents, ae)
+	}
+
+	return ActivityResponse{
+		Events:     activityEvents,
+		NextCursor: nextCursor,
+	}, nil
+}
+
+// handleFromReadModel is the legacy path using the read model (loads all issues).
+func (h ListActivityHandler) handleFromReadModel(ctx context.Context, input ListActivity) (ActivityResponse, error) {
 	model, err := h.ReadModel.Current(ctx)
 	if err != nil {
 		return ActivityResponse{}, err
@@ -148,20 +231,31 @@ func buildActivityEvents(items []issues.Issue) []ActivityEvent {
 		}
 	}
 
-	slices.SortFunc(events, func(a, b ActivityEvent) int {
-		if result := b.CreatedAt.Compare(a.CreatedAt); result != 0 {
-			return result
+	// Sort by CreatedAt DESC, ID DESC
+	for i := 1; i < len(events); i++ {
+		for j := i; j > 0; j-- {
+			if compareActivityEvents(events[j], events[j-1]) < 0 {
+				events[j], events[j-1] = events[j-1], events[j]
+			} else {
+				break
+			}
 		}
-		if a.ID < b.ID {
-			return 1
-		}
-		if a.ID > b.ID {
-			return -1
-		}
-		return 0
-	})
+	}
 
 	return events
+}
+
+func compareActivityEvents(a, b ActivityEvent) int {
+	if result := b.CreatedAt.Compare(a.CreatedAt); result != 0 {
+		return result
+	}
+	if a.ID < b.ID {
+		return 1
+	}
+	if a.ID > b.ID {
+		return -1
+	}
+	return 0
 }
 
 func filterActivityEvents(events []ActivityEvent, kind string) []ActivityEvent {

@@ -7,6 +7,7 @@ package issuesdb
 
 import (
 	"context"
+	"database/sql"
 	"encoding/json"
 )
 
@@ -40,6 +41,15 @@ type CloseIssueParams struct {
 
 func (q *Queries) CloseIssue(ctx context.Context, arg CloseIssueParams) error {
 	_, err := q.db.ExecContext(ctx, closeIssue, arg.ClosedAtUnixNano, arg.ClosedBy, arg.ID)
+	return err
+}
+
+const deleteAllEvents = `-- name: DeleteAllEvents :exec
+DELETE FROM events
+`
+
+func (q *Queries) DeleteAllEvents(ctx context.Context) error {
+	_, err := q.db.ExecContext(ctx, deleteAllEvents)
 	return err
 }
 
@@ -111,6 +121,41 @@ func (q *Queries) GetIssue(ctx context.Context, id string) (Issue, error) {
 		&i.AssignedTo,
 	)
 	return i, err
+}
+
+const insertEvent = `-- name: InsertEvent :exec
+INSERT INTO events (
+    id,
+    kind,
+    issue_id,
+    created_by,
+    created_at_unix_nano,
+    body,
+    participants_json
+) VALUES ($1, $2, $3, $4, $5, $6, $7)
+`
+
+type InsertEventParams struct {
+	ID                string
+	Kind              string
+	IssueID           string
+	CreatedBy         string
+	CreatedAtUnixNano int64
+	Body              string
+	ParticipantsJson  json.RawMessage
+}
+
+func (q *Queries) InsertEvent(ctx context.Context, arg InsertEventParams) error {
+	_, err := q.db.ExecContext(ctx, insertEvent,
+		arg.ID,
+		arg.Kind,
+		arg.IssueID,
+		arg.CreatedBy,
+		arg.CreatedAtUnixNano,
+		arg.Body,
+		arg.ParticipantsJson,
+	)
+	return err
 }
 
 const insertIssue = `-- name: InsertIssue :exec
@@ -286,6 +331,283 @@ func (q *Queries) InsertIssuePost(ctx context.Context, arg InsertIssuePostParams
 		arg.Kind,
 	)
 	return err
+}
+
+const listEvents = `-- name: ListEvents :many
+SELECT
+    e.id,
+    e.kind,
+    e.issue_id,
+    e.created_by,
+    e.created_at_unix_nano,
+    e.body,
+    e.participants_json,
+    i.raw AS issue_raw,
+    i.status AS issue_status
+FROM events e
+LEFT JOIN issues i ON e.issue_id = i.id
+ORDER BY e.created_at_unix_nano DESC, e.id DESC
+LIMIT $1
+`
+
+type ListEventsRow struct {
+	ID                string
+	Kind              string
+	IssueID           string
+	CreatedBy         string
+	CreatedAtUnixNano int64
+	Body              string
+	ParticipantsJson  json.RawMessage
+	IssueRaw          sql.NullString
+	IssueStatus       sql.NullString
+}
+
+func (q *Queries) ListEvents(ctx context.Context, limit int32) ([]ListEventsRow, error) {
+	rows, err := q.db.QueryContext(ctx, listEvents, limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ListEventsRow
+	for rows.Next() {
+		var i ListEventsRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.Kind,
+			&i.IssueID,
+			&i.CreatedBy,
+			&i.CreatedAtUnixNano,
+			&i.Body,
+			&i.ParticipantsJson,
+			&i.IssueRaw,
+			&i.IssueStatus,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listEventsBefore = `-- name: ListEventsBefore :many
+SELECT
+    e.id,
+    e.kind,
+    e.issue_id,
+    e.created_by,
+    e.created_at_unix_nano,
+    e.body,
+    e.participants_json,
+    i.raw AS issue_raw,
+    i.status AS issue_status
+FROM events e
+LEFT JOIN issues i ON e.issue_id = i.id
+WHERE e.created_at_unix_nano < $1
+   OR (e.created_at_unix_nano = $1 AND e.id < $2)
+ORDER BY e.created_at_unix_nano DESC, e.id DESC
+LIMIT $3
+`
+
+type ListEventsBeforeParams struct {
+	CreatedAtUnixNano int64
+	ID                string
+	Limit             int32
+}
+
+type ListEventsBeforeRow struct {
+	ID                string
+	Kind              string
+	IssueID           string
+	CreatedBy         string
+	CreatedAtUnixNano int64
+	Body              string
+	ParticipantsJson  json.RawMessage
+	IssueRaw          sql.NullString
+	IssueStatus       sql.NullString
+}
+
+func (q *Queries) ListEventsBefore(ctx context.Context, arg ListEventsBeforeParams) ([]ListEventsBeforeRow, error) {
+	rows, err := q.db.QueryContext(ctx, listEventsBefore, arg.CreatedAtUnixNano, arg.ID, arg.Limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ListEventsBeforeRow
+	for rows.Next() {
+		var i ListEventsBeforeRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.Kind,
+			&i.IssueID,
+			&i.CreatedBy,
+			&i.CreatedAtUnixNano,
+			&i.Body,
+			&i.ParticipantsJson,
+			&i.IssueRaw,
+			&i.IssueStatus,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listEventsByKind = `-- name: ListEventsByKind :many
+SELECT
+    e.id,
+    e.kind,
+    e.issue_id,
+    e.created_by,
+    e.created_at_unix_nano,
+    e.body,
+    e.participants_json,
+    i.raw AS issue_raw,
+    i.status AS issue_status
+FROM events e
+LEFT JOIN issues i ON e.issue_id = i.id
+WHERE e.kind = $1
+ORDER BY e.created_at_unix_nano DESC, e.id DESC
+LIMIT $2
+`
+
+type ListEventsByKindParams struct {
+	Kind  string
+	Limit int32
+}
+
+type ListEventsByKindRow struct {
+	ID                string
+	Kind              string
+	IssueID           string
+	CreatedBy         string
+	CreatedAtUnixNano int64
+	Body              string
+	ParticipantsJson  json.RawMessage
+	IssueRaw          sql.NullString
+	IssueStatus       sql.NullString
+}
+
+func (q *Queries) ListEventsByKind(ctx context.Context, arg ListEventsByKindParams) ([]ListEventsByKindRow, error) {
+	rows, err := q.db.QueryContext(ctx, listEventsByKind, arg.Kind, arg.Limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ListEventsByKindRow
+	for rows.Next() {
+		var i ListEventsByKindRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.Kind,
+			&i.IssueID,
+			&i.CreatedBy,
+			&i.CreatedAtUnixNano,
+			&i.Body,
+			&i.ParticipantsJson,
+			&i.IssueRaw,
+			&i.IssueStatus,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listEventsByKindBefore = `-- name: ListEventsByKindBefore :many
+SELECT
+    e.id,
+    e.kind,
+    e.issue_id,
+    e.created_by,
+    e.created_at_unix_nano,
+    e.body,
+    e.participants_json,
+    i.raw AS issue_raw,
+    i.status AS issue_status
+FROM events e
+LEFT JOIN issues i ON e.issue_id = i.id
+WHERE e.kind = $1
+  AND (e.created_at_unix_nano < $2
+       OR (e.created_at_unix_nano = $2 AND e.id < $3))
+ORDER BY e.created_at_unix_nano DESC, e.id DESC
+LIMIT $4
+`
+
+type ListEventsByKindBeforeParams struct {
+	Kind              string
+	CreatedAtUnixNano int64
+	ID                string
+	Limit             int32
+}
+
+type ListEventsByKindBeforeRow struct {
+	ID                string
+	Kind              string
+	IssueID           string
+	CreatedBy         string
+	CreatedAtUnixNano int64
+	Body              string
+	ParticipantsJson  json.RawMessage
+	IssueRaw          sql.NullString
+	IssueStatus       sql.NullString
+}
+
+func (q *Queries) ListEventsByKindBefore(ctx context.Context, arg ListEventsByKindBeforeParams) ([]ListEventsByKindBeforeRow, error) {
+	rows, err := q.db.QueryContext(ctx, listEventsByKindBefore,
+		arg.Kind,
+		arg.CreatedAtUnixNano,
+		arg.ID,
+		arg.Limit,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ListEventsByKindBeforeRow
+	for rows.Next() {
+		var i ListEventsByKindBeforeRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.Kind,
+			&i.IssueID,
+			&i.CreatedBy,
+			&i.CreatedAtUnixNano,
+			&i.Body,
+			&i.ParticipantsJson,
+			&i.IssueRaw,
+			&i.IssueStatus,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
 }
 
 const listIssueLinksForIssue = `-- name: ListIssueLinksForIssue :many
