@@ -86,44 +86,86 @@ func (s *PostgresStore) List(ctx context.Context) ([]Issue, error) {
 }
 
 func (s *PostgresStore) ListFiltered(ctx context.Context, opts ListOptions) ([]Issue, error) {
-	query, args := buildListIssuesFilteredQuery(opts)
-	rows, err := s.db.QueryContext(ctx, query, args...)
+	rows, err := s.queries.ListIssuesFiltered(ctx, normalizeListIssuesFilteredParams(listIssuesFilteredParams{
+		status:     opts.Status,
+		assignedTo: opts.AssignedTo,
+		tags:       opts.Tags,
+		limit:      opts.Limit,
+		offset:     opts.Offset,
+	}).sqlc())
 	if err != nil {
 		return nil, fmt.Errorf("list filtered issues: %w", err)
 	}
-	defer rows.Close()
 
-	items := make([]Issue, 0)
-	for rows.Next() {
-		var row issuesdb.Issue
-		if err := rows.Scan(
-			&row.ID,
-			&row.Raw,
-			&row.TagsJson,
-			&row.CreatedBy,
-			&row.CreatedAtUnixNano,
-			&row.Status,
-			&row.ClosedAtUnixNano,
-			&row.ClosedBy,
-			&row.TagScoresJson,
-			&row.EmbeddingJson,
-			&row.AssignedTo,
-		); err != nil {
-			return nil, fmt.Errorf("scan filtered issue row: %w", err)
-		}
-
-		issue, err := issueFromQuery(row)
+	items := make([]Issue, 0, len(rows))
+	for _, row := range rows {
+		issue, err := issueFromQuery(issueModelFromListIssuesFilteredRow(row))
 		if err != nil {
 			return nil, err
 		}
 		items = append(items, issue)
 	}
+	return cloneIssues(items), nil
+}
 
-	if err := rows.Err(); err != nil {
-		return nil, fmt.Errorf("iterate filtered issues: %w", err)
+func (s *PostgresStore) SearchIssues(ctx context.Context, opts SemanticSearchOptions) ([]SemanticSearchResult, error) {
+	params := normalizeListIssuesFilteredParams(listIssuesFilteredParams{
+		status:     opts.Status,
+		assignedTo: opts.AssignedTo,
+		tags:       opts.Tags,
+		excludeID:  opts.ExcludeID,
+		limit:      opts.Limit,
+		offset:     opts.Offset,
+	})
+
+	if strings.EqualFold(strings.TrimSpace(opts.SortBy), "created_at") || len(opts.QueryEmbedding) == 0 {
+		rows, err := s.queries.ListIssuesFiltered(ctx, params.sqlc())
+		if err != nil {
+			return nil, fmt.Errorf("search issues by created_at: %w", err)
+		}
+		return semanticSearchResultsFromFilteredRows(rows)
 	}
 
-	return cloneIssues(items), nil
+	vectorLiteral, err := formatVectorLiteral(opts.QueryEmbedding)
+	if err != nil {
+		return nil, fmt.Errorf("format query embedding: %w", err)
+	}
+
+	rows, err := s.queries.SearchIssuesByEmbedding(ctx, issuesdb.SearchIssuesByEmbeddingParams{
+		QueryVector:      vectorLiteral,
+		EmbeddingDims:    int32(len(opts.QueryEmbedding)),
+		FilterStatus:     params.filterStatus,
+		Status:           params.statusValue,
+		FilterAssignedTo: params.filterAssignedTo,
+		AssignedTo:       params.assignedToValue,
+		FilterExcludeID:  params.filterExcludeID,
+		ExcludeID:        params.excludeIDValue,
+		FilterTags:       params.filterTags,
+		Tags:             append([]string(nil), params.tagsValue...),
+		LimitCount:       int32(params.limit),
+		OffsetCount:      int32(params.offset),
+	})
+	if err != nil {
+		return nil, fmt.Errorf("search issues by embedding: %w", err)
+	}
+
+	results := make([]SemanticSearchResult, 0, len(rows))
+	for _, row := range rows {
+		issue, err := issueFromQuery(issueModelFromSearchIssuesByEmbeddingRow(row))
+		if err != nil {
+			return nil, err
+		}
+		distance, err := float64Value(row.SemanticDistance)
+		if err != nil {
+			return nil, fmt.Errorf("decode semantic distance for %q: %w", row.ID, err)
+		}
+		results = append(results, SemanticSearchResult{
+			Issue:            issue,
+			SemanticDistance: distance,
+		})
+	}
+
+	return results, nil
 }
 
 func (s *PostgresStore) Get(ctx context.Context, id string) (Issue, error) {
@@ -170,63 +212,6 @@ func (s *PostgresStore) SaveDerivedCorpusProjection(ctx context.Context, revisio
 	return nil
 }
 
-func buildListIssuesFilteredQuery(opts ListOptions) (string, []any) {
-	var query strings.Builder
-	query.WriteString(`SELECT id, raw, tags_json, created_by, created_at_unix_nano, status, closed_at_unix_nano, closed_by, tag_scores_json, embedding_json, assigned_to
-FROM issues`)
-
-	args := make([]any, 0, 2+len(opts.Tags)*2)
-	conditions := make([]string, 0, 3)
-	addArg := func(value any) string {
-		args = append(args, value)
-		return "$" + strconv.Itoa(len(args))
-	}
-
-	if status := normalizeIssueStatus(opts.Status); status != "" {
-		conditions = append(conditions, "status = "+addArg(string(status)))
-	}
-
-	if assignedTo := strings.TrimSpace(opts.AssignedTo); assignedTo != "" {
-		conditions = append(conditions, "LOWER(assigned_to) = LOWER("+addArg(assignedTo)+")")
-	}
-
-	if tags := normalizeListOptionTags(opts.Tags); len(tags) > 0 {
-		tagConditions := make([]string, len(tags))
-		scoreConditions := make([]string, len(tags))
-		for i, tag := range tags {
-			tagConditions[i] = "LOWER(tag) = " + addArg(tag)
-			scoreConditions[i] = "LOWER(score.tag) = " + addArg(tag)
-		}
-		conditions = append(conditions, `(
-EXISTS (
-	SELECT 1
-	FROM jsonb_array_elements_text(tags_json) AS tag
-	WHERE `+strings.Join(tagConditions, " OR ")+`
-) OR EXISTS (
-	SELECT 1
-	FROM jsonb_to_recordset(tag_scores_json) AS score(tag text, relevance double precision)
-	WHERE score.relevance >= 0.3 AND (`+strings.Join(scoreConditions, " OR ")+`)
-))`)
-	}
-
-	if len(conditions) > 0 {
-		query.WriteString("\nWHERE ")
-		query.WriteString(strings.Join(conditions, "\n  AND "))
-	}
-
-	query.WriteString("\nORDER BY created_at_unix_nano DESC, id ASC")
-	if opts.Limit > 0 {
-		query.WriteString("\nLIMIT ")
-		query.WriteString(addArg(opts.Limit))
-	}
-	if opts.Offset > 0 {
-		query.WriteString("\nOFFSET ")
-		query.WriteString(addArg(opts.Offset))
-	}
-
-	return query.String(), args
-}
-
 func normalizeListOptionTags(tags []string) []string {
 	if len(tags) == 0 {
 		return nil
@@ -247,6 +232,86 @@ func normalizeListOptionTags(tags []string) []string {
 	}
 
 	return normalized
+}
+
+type listIssuesFilteredParams struct {
+	status           IssueStatus
+	assignedTo       string
+	tags             []string
+	excludeID        string
+	limit            int
+	offset           int
+	filterStatus     bool
+	statusValue      string
+	filterAssignedTo bool
+	assignedToValue  string
+	filterTags       bool
+	tagsValue        []string
+	filterExcludeID  bool
+	excludeIDValue   string
+}
+
+func (p listIssuesFilteredParams) sqlc() issuesdb.ListIssuesFilteredParams {
+	return issuesdb.ListIssuesFilteredParams{
+		FilterStatus:     p.filterStatus,
+		Status:           p.statusValue,
+		FilterAssignedTo: p.filterAssignedTo,
+		AssignedTo:       p.assignedToValue,
+		FilterExcludeID:  p.filterExcludeID,
+		ExcludeID:        p.excludeIDValue,
+		FilterTags:       p.filterTags,
+		Tags:             append([]string(nil), p.tagsValue...),
+		LimitCount:       int32(p.limit),
+		OffsetCount:      int32(p.offset),
+	}
+}
+
+func normalizeListIssuesFilteredParams(input listIssuesFilteredParams) listIssuesFilteredParams {
+	normalized := input
+	normalized.tagsValue = normalizeListOptionTags(input.tags)
+	normalized.filterTags = len(normalized.tagsValue) > 0
+	normalized.assignedToValue = strings.TrimSpace(input.assignedTo)
+	normalized.filterAssignedTo = normalized.assignedToValue != ""
+	normalized.excludeIDValue = strings.TrimSpace(input.excludeID)
+	normalized.filterExcludeID = normalized.excludeIDValue != ""
+	normalized.statusValue, normalized.filterStatus = issueStatusFilterValue(input.status)
+	if normalized.limit <= 0 {
+		normalized.limit = 2147483647
+	}
+	if normalized.offset < 0 {
+		normalized.offset = 0
+	}
+	return normalized
+}
+
+func issueStatusFilterValue(status IssueStatus) (string, bool) {
+	switch strings.ToLower(strings.TrimSpace(string(status))) {
+	case string(StatusOpen):
+		return string(StatusOpen), true
+	case string(StatusClosed):
+		return string(StatusClosed), true
+	default:
+		return "", false
+	}
+}
+
+func float64Value(value any) (float64, error) {
+	switch typed := value.(type) {
+	case float64:
+		return typed, nil
+	case float32:
+		return float64(typed), nil
+	case int64:
+		return float64(typed), nil
+	case int32:
+		return float64(typed), nil
+	case []byte:
+		return strconv.ParseFloat(string(typed), 64)
+	case string:
+		return strconv.ParseFloat(typed, 64)
+	default:
+		return 0, fmt.Errorf("unsupported float value type %T", value)
+	}
 }
 
 func (s *PostgresStore) Replace(ctx context.Context, next []Issue) error {
@@ -545,6 +610,50 @@ func issueModelFromListIssuesRow(row issuesdb.ListIssuesRow) issuesdb.Issue {
 		EmbeddingJson:     row.EmbeddingJson,
 		AssignedTo:        row.AssignedTo,
 	}
+}
+
+func issueModelFromListIssuesFilteredRow(row issuesdb.ListIssuesFilteredRow) issuesdb.Issue {
+	return issuesdb.Issue{
+		ID:                row.ID,
+		Raw:               row.Raw,
+		TagsJson:          row.TagsJson,
+		CreatedBy:         row.CreatedBy,
+		CreatedAtUnixNano: row.CreatedAtUnixNano,
+		Status:            row.Status,
+		ClosedAtUnixNano:  row.ClosedAtUnixNano,
+		ClosedBy:          row.ClosedBy,
+		TagScoresJson:     row.TagScoresJson,
+		EmbeddingJson:     row.EmbeddingJson,
+		AssignedTo:        row.AssignedTo,
+	}
+}
+
+func issueModelFromSearchIssuesByEmbeddingRow(row issuesdb.SearchIssuesByEmbeddingRow) issuesdb.Issue {
+	return issuesdb.Issue{
+		ID:                row.ID,
+		Raw:               row.Raw,
+		TagsJson:          row.TagsJson,
+		CreatedBy:         row.CreatedBy,
+		CreatedAtUnixNano: row.CreatedAtUnixNano,
+		Status:            row.Status,
+		ClosedAtUnixNano:  row.ClosedAtUnixNano,
+		ClosedBy:          row.ClosedBy,
+		TagScoresJson:     row.TagScoresJson,
+		EmbeddingJson:     row.EmbeddingJson,
+		AssignedTo:        row.AssignedTo,
+	}
+}
+
+func semanticSearchResultsFromFilteredRows(rows []issuesdb.ListIssuesFilteredRow) ([]SemanticSearchResult, error) {
+	results := make([]SemanticSearchResult, 0, len(rows))
+	for _, row := range rows {
+		issue, err := issueFromQuery(issueModelFromListIssuesFilteredRow(row))
+		if err != nil {
+			return nil, err
+		}
+		results = append(results, SemanticSearchResult{Issue: issue})
+	}
+	return results, nil
 }
 
 func issuePostFromQuery(row issuesdb.IssuePost) IssuePost {

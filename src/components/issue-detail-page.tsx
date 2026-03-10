@@ -1318,45 +1318,64 @@ export function IssueDetailPage({ issueID }: { issueID: string }) {
                 </section>
 
                 <section className="app-surface rounded-[1.5rem] p-5">
-                  <div className="flex items-center gap-2">
-                    <SparklesIcon className="size-4 text-muted-foreground" />
-                    <h3 className="text-sm font-semibold">Operation history</h3>
+                  <div className="flex flex-wrap items-center justify-between gap-3">
+                    <div>
+                      <h3 className="text-sm font-semibold">Operation history</h3>
+                      <p className="mt-0.5 text-[11px] text-muted-foreground">
+                        Split, combine, and link operations involving this issue.
+                      </p>
+                    </div>
+                    <span className="app-chip">
+                      {operationHistory.length} op{operationHistory.length === 1 ? "" : "s"}
+                    </span>
                   </div>
 
                   {operationHistory.length === 0 ? (
-                    <p className="mt-4 text-sm text-muted-foreground">
-                      No grouped split, combine, or link operations yet.
-                    </p>
+                    <div className="app-subtle-surface mt-4 rounded-[1.25rem] p-4 text-sm text-muted-foreground">
+                      No split, combine, or link operations yet.
+                    </div>
                   ) : (
-                    <div className="mt-4 space-y-3">
+                    <div className="mt-4 space-y-4">
                       {operationHistory.map((operation) => (
-                        <article key={operation.id} className="app-subtle-surface rounded-[1.25rem] p-4">
-                          <div className="flex flex-wrap items-center justify-between gap-2">
-                            <div>
-                              <p className="text-sm font-semibold">{formatOperationKind(operation.kind)}</p>
-                              <p className="text-[11px] text-muted-foreground">
-                                {formatRelativeTime(operation.createdAt)} by {operation.createdBy}
-                              </p>
-                            </div>
-                            <span className="app-chip">{operation.id}</span>
+                        <div key={operation.id} className="space-y-2">
+                          <div className="flex items-center gap-2">
+                            <p className="text-[11px] font-medium uppercase tracking-[0.14em] text-muted-foreground">
+                              {formatOperationKind(operation.kind)}
+                            </p>
+                            <span className="text-[11px] text-muted-foreground">
+                              · {formatRelativeTime(operation.createdAt)} by {operation.createdBy}
+                            </span>
                           </div>
+                          {operation.note && (
+                            <p className="text-sm text-muted-foreground">{operation.note}</p>
+                          )}
                           {operation.participants && operation.participants.length > 0 && (
-                            <div className="mt-3 flex flex-wrap gap-1.5">
-                              {operation.participants.map((participant) => (
+                            <div className="space-y-2">
+                              {operation.participants
+                                .filter((p) => p.issueId !== issue.id)
+                                .map((participant) => (
                                 <Link
                                   key={`${operation.id}-${participant.issueId}-${participant.role}`}
                                   href={`/issues/${participant.issueId}`}
-                                  className="rounded-full border border-border/70 px-2.5 py-1 text-[11px] font-medium transition-colors hover:bg-accent/70"
+                                  className="app-subtle-surface flex items-center gap-2 rounded-full px-3 py-1.5 text-[11px] font-medium transition-colors hover:bg-accent/70"
                                 >
-                                  {(participant.issue?.id ?? participant.issueId)} · {participant.role}
+                                  {participant.issue?.id ?? participant.issueId}
+                                  {participant.issue && (
+                                    <span
+                                      className={cn(
+                                        "rounded-full px-1.5 py-0.5 text-[9px] font-medium leading-none",
+                                        statusClasses(participant.issue.status)
+                                      )}
+                                    >
+                                      {participant.issue.status === "closed" ? "Closed" : "Open"}
+                                    </span>
+                                  )}
+                                  <span className="text-muted-foreground">{participant.role}</span>
                                 </Link>
                               ))}
                             </div>
                           )}
-                          {operation.note && (
-                            <p className="mt-3 text-sm text-muted-foreground">{operation.note}</p>
-                          )}
-                        </article>
+                        </div>
                       ))}
                     </div>
                   )}

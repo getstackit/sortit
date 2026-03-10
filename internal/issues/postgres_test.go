@@ -376,6 +376,153 @@ func TestPostgresStoreBackfillsIssueEmbeddingVectorFromJSON(t *testing.T) {
 	assertIssueEmbeddingVectorText(t, store, id, "[0.11,0.22,0.33]")
 }
 
+func TestPostgresStoreSearchIssuesByEmbeddingOrdersAndFilters(t *testing.T) {
+	store := newPostgresTestStore(t)
+	ctx := context.Background()
+
+	alpha := BuildNewIssue("issue-search-alpha", CreateInput{
+		Raw:       "Export fails on Safari",
+		CreatedBy: "Casey",
+		Tags:      []string{"export"},
+		TagScores: []TagRelevance{{Tag: "export", Relevance: 0.95}},
+		Embedding: sparseUnitVector(24, 0),
+	})
+	alpha.AssignedTo = "Casey"
+	if err := store.SaveIssue(ctx, alpha); err != nil {
+		t.Fatalf("save alpha: %v", err)
+	}
+
+	beta := BuildNewIssue("issue-search-beta", CreateInput{
+		Raw:       "Export has an edge-case formatting bug",
+		CreatedBy: "Casey",
+		Tags:      []string{"export"},
+		TagScores: []TagRelevance{{Tag: "export", Relevance: 0.8}},
+		Embedding: sparseUnitVector(24, 1),
+	})
+	beta.AssignedTo = "Casey"
+	if err := store.SaveIssue(ctx, beta); err != nil {
+		t.Fatalf("save beta: %v", err)
+	}
+
+	closed := BuildNewIssue("issue-search-closed", CreateInput{
+		Raw:       "Closed export issue",
+		CreatedBy: "Casey",
+		Tags:      []string{"export"},
+		TagScores: []TagRelevance{{Tag: "export", Relevance: 0.9}},
+		Embedding: sparseUnitVector(24, 0),
+	})
+	closed.AssignedTo = "Casey"
+	if err := store.SaveIssue(ctx, closed); err != nil {
+		t.Fatalf("save closed issue: %v", err)
+	}
+	closedStatus := StatusClosed
+	closedBy := "Casey"
+	closedAt := closed.CreatedAt.Add(time.Minute)
+	if err := store.UpdateIssueFields(ctx, closed.ID, IssueFieldUpdate{
+		Status:   &closedStatus,
+		ClosedBy: &closedBy,
+		ClosedAt: &closedAt,
+	}); err != nil {
+		t.Fatalf("close issue: %v", err)
+	}
+
+	otherAssignee := BuildNewIssue("issue-search-other-assignee", CreateInput{
+		Raw:       "Jordan export bug",
+		CreatedBy: "Jordan",
+		Tags:      []string{"export"},
+		TagScores: []TagRelevance{{Tag: "export", Relevance: 0.88}},
+		Embedding: sparseUnitVector(24, 0),
+	})
+	otherAssignee.AssignedTo = "Jordan"
+	if err := store.SaveIssue(ctx, otherAssignee); err != nil {
+		t.Fatalf("save other assignee issue: %v", err)
+	}
+
+	results, err := store.SearchIssues(ctx, SemanticSearchOptions{
+		QueryEmbedding: sparseUnitVector(24, 0),
+		Status:         StatusOpen,
+		AssignedTo:     "casey",
+		Tags:           []string{"export"},
+		Limit:          10,
+	})
+	if err != nil {
+		t.Fatalf("search issues by embedding: %v", err)
+	}
+
+	if len(results) != 2 {
+		t.Fatalf("expected 2 filtered search results, got %#v", results)
+	}
+	if results[0].Issue.ID != alpha.ID || results[1].Issue.ID != beta.ID {
+		t.Fatalf("unexpected semantic search ordering: %#v", results)
+	}
+	if results[0].SemanticDistance > results[1].SemanticDistance {
+		t.Fatalf("expected alpha to be at least as close as beta, got %f > %f", results[0].SemanticDistance, results[1].SemanticDistance)
+	}
+}
+
+func TestPostgresStoreSearchIssuesSupportsCreatedAtFallback(t *testing.T) {
+	store := newPostgresTestStore(t)
+	ctx := context.Background()
+
+	older := BuildNewIssue("issue-search-created-old", CreateInput{
+		Raw:       "Search filter mismatch on old issue",
+		CreatedBy: "Casey",
+		Tags:      []string{"search"},
+		TagScores: []TagRelevance{{Tag: "search", Relevance: 0.7}},
+		Embedding: sparseUnitVector(24, 2),
+	})
+	older.CreatedAt = time.Unix(10, 0).UTC()
+	older.AssignedTo = "Casey"
+	if err := store.SaveIssue(ctx, older); err != nil {
+		t.Fatalf("save older issue: %v", err)
+	}
+
+	newer := BuildNewIssue("issue-search-created-new", CreateInput{
+		Raw:       "Newer search ranking issue",
+		CreatedBy: "Casey",
+		Tags:      []string{"search"},
+		TagScores: []TagRelevance{{Tag: "search", Relevance: 0.9}},
+		Embedding: sparseUnitVector(24, 3),
+	})
+	newer.CreatedAt = time.Unix(20, 0).UTC()
+	newer.AssignedTo = "Casey"
+	if err := store.SaveIssue(ctx, newer); err != nil {
+		t.Fatalf("save newer issue: %v", err)
+	}
+
+	excluded := BuildNewIssue("issue-search-created-excluded", CreateInput{
+		Raw:       "Newest search issue but excluded",
+		CreatedBy: "Casey",
+		Tags:      []string{"search"},
+		TagScores: []TagRelevance{{Tag: "search", Relevance: 0.95}},
+		Embedding: sparseUnitVector(24, 4),
+	})
+	excluded.CreatedAt = time.Unix(30, 0).UTC()
+	excluded.AssignedTo = "Casey"
+	if err := store.SaveIssue(ctx, excluded); err != nil {
+		t.Fatalf("save excluded issue: %v", err)
+	}
+
+	results, err := store.SearchIssues(ctx, SemanticSearchOptions{
+		Status:     StatusOpen,
+		AssignedTo: "Casey",
+		Tags:       []string{"search"},
+		ExcludeID:  excluded.ID,
+		SortBy:     "created_at",
+		Limit:      10,
+	})
+	if err != nil {
+		t.Fatalf("search issues by created_at: %v", err)
+	}
+
+	if len(results) != 2 {
+		t.Fatalf("expected 2 created_at search results after exclusion, got %#v", results)
+	}
+	if results[0].Issue.ID != newer.ID || results[1].Issue.ID != older.ID {
+		t.Fatalf("unexpected created_at ordering: %#v", results)
+	}
+}
+
 func assertIssueEmbeddingVectorText(t *testing.T, store *PostgresStore, id string, want string) {
 	t.Helper()
 
@@ -710,4 +857,12 @@ func issuesHarness(t *testing.T) *testpostgres.Harness {
 		t.Fatalf("start postgres test harness: %v", issuesPostgresHarness.err)
 	}
 	return issuesPostgresHarness.harness
+}
+
+func sparseUnitVector(dim, index int) []float64 {
+	vector := make([]float64, dim)
+	if index >= 0 && index < dim {
+		vector[index] = 1
+	}
+	return vector
 }

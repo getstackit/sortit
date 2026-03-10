@@ -183,6 +183,22 @@ type ListOptions struct {
 	Offset     int
 }
 
+type SemanticSearchOptions struct {
+	QueryEmbedding []float64
+	Status         IssueStatus
+	AssignedTo     string
+	Tags           []string
+	ExcludeID      string
+	Limit          int
+	Offset         int
+	SortBy         string
+}
+
+type SemanticSearchResult struct {
+	Issue            Issue
+	SemanticDistance float64
+}
+
 type Store interface {
 	// Reads
 	List(context.Context) ([]Issue, error)
@@ -199,6 +215,10 @@ type Store interface {
 type DerivedCorpusProjectionStore interface {
 	GetDerivedCorpusProjection(context.Context, uint64) ([]byte, error)
 	SaveDerivedCorpusProjection(context.Context, uint64, []byte) error
+}
+
+type SemanticSearchStore interface {
+	SearchIssues(context.Context, SemanticSearchOptions) ([]SemanticSearchResult, error)
 }
 
 // IssueFieldUpdate describes which fields to update on an issue.
