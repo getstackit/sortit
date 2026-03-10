@@ -58,10 +58,33 @@ type CompareIssuesResult struct {
 }
 
 type CompareIssuesHandler struct {
-	Store issues.Store
+	Store     issues.Store
+	ReadModel *ReadModelLoader
 }
 
 func (h CompareIssuesHandler) Handle(ctx context.Context, input CompareIssues) (CompareIssuesResult, error) {
+	if h.ReadModel != nil {
+		model, err := h.ReadModel.Current(ctx)
+		if err != nil {
+			return CompareIssuesResult{}, err
+		}
+
+		selected := make([]issues.Issue, 0, len(input.IDs))
+		for _, id := range input.IDs {
+			issue, ok := model.Corpus.IssuesByID[id]
+			if !ok {
+				return CompareIssuesResult{}, issues.ErrNotFound
+			}
+			selected = append(selected, issue)
+		}
+
+		pairs, average := compareIssueEmbeddings(selected)
+		return CompareIssuesResult{
+			ComparedIssueCount:          len(selected),
+			AverageEmbeddingSimilarity:  average,
+			PairwiseEmbeddingSimilarity: pairs,
+		}, nil
+	}
 	storeIssues, err := h.Store.List(ctx)
 	if err != nil {
 		return CompareIssuesResult{}, err
@@ -96,9 +119,10 @@ type SearchIssues struct {
 }
 
 type SearchIssuesHandler struct {
-	Analyzer *ai.Analyzer
-	Catalog  *services.CatalogService
-	Store    issues.Store
+	Analyzer  *ai.Analyzer
+	Catalog   *services.CatalogService
+	Store     issues.Store
+	ReadModel *ReadModelLoader
 }
 
 func (h SearchIssuesHandler) Handle(ctx context.Context, input SearchIssues) (issuemap.SearchResponse, error) {
@@ -120,6 +144,24 @@ func (h SearchIssuesHandler) Handle(ctx context.Context, input SearchIssues) (is
 		return issuemap.SearchResponse{}, err
 	}
 
+	if h.ReadModel != nil {
+		model, err := h.ReadModel.Current(ctx)
+		if err != nil {
+			return issuemap.SearchResponse{}, err
+		}
+		filtered := FilterIssuesByStatus(model.Issues, input.Status)
+		corpus, err := issuemap.BuildDerivedCorpus(filtered, model.Tags)
+		if err != nil {
+			return issuemap.SearchResponse{}, err
+		}
+		return issuemap.SearchFromCorpus(
+			corpus,
+			query,
+			services.IssueTagScoresFromAnalysis(analyzed.Tags),
+			services.Float32VectorToFloat64(analyzed.Embedding.Vector),
+			input.Limit,
+		), nil
+	}
 	storeIssues, err := h.Store.List(ctx)
 	if err != nil {
 		return issuemap.SearchResponse{}, err
@@ -158,11 +200,19 @@ type ExploreIssue struct {
 }
 
 type ExploreIssueHandler struct {
-	Store   issues.Store
-	Catalog *services.CatalogService
+	Store     issues.Store
+	Catalog   *services.CatalogService
+	ReadModel *ReadModelLoader
 }
 
 func (h ExploreIssueHandler) Handle(ctx context.Context, input ExploreIssue) (issuemap.ExploreResponse, error) {
+	if h.ReadModel != nil {
+		model, err := h.ReadModel.Current(ctx)
+		if err != nil {
+			return issuemap.ExploreResponse{}, err
+		}
+		return issuemap.ExploreFromCorpus(model.Corpus, input.ID, input.Limit)
+	}
 	storeIssues, err := h.Store.List(ctx)
 	if err != nil {
 		return issuemap.ExploreResponse{}, err
@@ -177,9 +227,10 @@ func (h ExploreIssueHandler) Handle(ctx context.Context, input ExploreIssue) (is
 }
 
 type SearchUnifiedHandler struct {
-	Analyzer *ai.Analyzer
-	Catalog  *services.CatalogService
-	Store    issues.Store
+	Analyzer  *ai.Analyzer
+	Catalog   *services.CatalogService
+	Store     issues.Store
+	ReadModel *ReadModelLoader
 }
 
 func (h SearchUnifiedHandler) Handle(ctx context.Context, input SearchUnified) (SearchUnifiedResponse, error) {
@@ -200,6 +251,33 @@ func (h SearchUnifiedHandler) Handle(ctx context.Context, input SearchUnified) (
 		return SearchUnifiedResponse{}, err
 	}
 
+	if h.ReadModel != nil {
+		model, err := h.ReadModel.Current(ctx)
+		if err != nil {
+			return SearchUnifiedResponse{}, err
+		}
+		filtered := FilterIssuesByStatus(model.Issues, IssueStatusFilterOpen)
+		corpus, err := issuemap.BuildDerivedCorpus(filtered, model.Tags)
+		if err != nil {
+			return SearchUnifiedResponse{}, err
+		}
+		queryEmbedding := services.Float32VectorToFloat64(analyzed.Embedding.Vector)
+		issueResult := issuemap.SearchFromCorpus(
+			corpus,
+			query,
+			services.IssueTagScoresFromAnalysis(analyzed.Tags),
+			queryEmbedding,
+			limit,
+		)
+
+		relatedTags := issuemap.SearchTags(model.Tags, queryEmbedding, limit)
+
+		return SearchUnifiedResponse{
+			Query:       issueResult.Query,
+			Issues:      issueResult.RelatedIssues,
+			RelatedTags: relatedTags,
+		}, nil
+	}
 	storeIssues, err := h.Store.List(ctx)
 	if err != nil {
 		return SearchUnifiedResponse{}, err

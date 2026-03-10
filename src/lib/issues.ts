@@ -3,7 +3,13 @@ import { getJSON, postJSON } from "@/lib/http";
 
 export type IssueStatus = "open" | "closed";
 export type IssueListStatus = IssueStatus | "all";
-export type IssuePostKind = "report" | "refinement" | "progress";
+export type IssuePostKind =
+  | "report"
+  | "refinement"
+  | "progress"
+  | "closed"
+  | "reopened"
+  | "assigned";
 export type IssueLinkType =
   | "parent_of"
   | "child_of"
@@ -103,6 +109,10 @@ type IssuesResponse = {
   issues: IssueRecord[];
 };
 
+type RevisionResponse = {
+  revision: number;
+};
+
 type CreateIssueInput = {
   raw: string;
   tags?: string[];
@@ -157,6 +167,14 @@ export async function fetchIssue(
     cache: "no-store",
     signal,
   });
+}
+
+export async function fetchRevision(signal?: AbortSignal): Promise<number> {
+  const payload = await getJSON<RevisionResponse>(apiURL("/api/v1/revision"), {
+    cache: "no-store",
+    signal,
+  });
+  return payload.revision;
 }
 
 export async function searchIssues(

@@ -1,5 +1,6 @@
 import useSWR from "swr";
 import {
+  fetchRevision,
   fetchIssues,
   fetchIssue,
   searchIssues,
@@ -7,8 +8,20 @@ import {
 } from "@/lib/issues";
 import { fetchMapData as fetchSharedMapData } from "@/features/map/api";
 
+export function useBackendRevision() {
+  return useSWR("backend-revision", () => fetchRevision(), {
+    refreshInterval: 2000,
+    revalidateOnFocus: true,
+    revalidateOnReconnect: true,
+  });
+}
+
 export function useIssues(status: IssueListStatus = "open", enabled = true) {
-  return useSWR(enabled ? ["issues", status] : null, () => fetchIssues(status));
+  const { data: revision = 0 } = useBackendRevision();
+  return useSWR(
+    enabled ? ["issues", status, revision] : null,
+    (_key: string, currentStatus: IssueListStatus) => fetchIssues(currentStatus)
+  );
 }
 
 export function useIssueSearch(
@@ -17,18 +30,29 @@ export function useIssueSearch(
   limit = 8
 ) {
   const trimmed = query.trim();
+  const { data: revision = 0 } = useBackendRevision();
   return useSWR(
-    trimmed ? ["issues-search", trimmed, status, limit] : null,
-    () => searchIssues(trimmed, { status, limit })
+    trimmed ? ["issues-search", trimmed, status, limit, revision] : null,
+    (
+      _key: string,
+      currentQuery: string,
+      currentStatus: IssueListStatus,
+      currentLimit: number
+    ) =>
+      searchIssues(currentQuery, { status: currentStatus, limit: currentLimit })
   );
 }
 
 export function useIssue(id: string) {
-  return useSWR(["issue", id], () => fetchIssue(id));
+  const { data: revision = 0 } = useBackendRevision();
+  return useSWR(["issue", id, revision], (_key: string, issueID: string) =>
+    fetchIssue(issueID)
+  );
 }
 
 export function useIssueMapData() {
-  return useSWR("issue-detail-map", () =>
+  const { data: revision = 0 } = useBackendRevision();
+  return useSWR(["issue-detail-map", revision], () =>
     fetchSharedMapData("status=all&edgeThreshold=0.4")
   );
 }

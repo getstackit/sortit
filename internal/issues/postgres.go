@@ -325,12 +325,26 @@ func (s *PostgresStore) CloseIssue(ctx context.Context, id string, closedBy stri
 	}
 
 	closedAt := time.Now().UTC()
+	actor := defaultActor(closedBy)
 	if err := qtx.CloseIssue(ctx, issuesdb.CloseIssueParams{
 		ID:               id,
 		ClosedAtUnixNano: closedAt.UnixNano(),
-		ClosedBy:         defaultActor(closedBy),
+		ClosedBy:         actor,
 	}); err != nil {
 		return Issue{}, fmt.Errorf("close issue: %w", err)
+	}
+	post := appendActivityPost(issue.Discussion, id, closedAt, actor, "closed", closeIssuePost(actor))
+	activity := post[len(post)-1]
+	if err := qtx.InsertIssuePost(ctx, issuesdb.InsertIssuePostParams{
+		ID:                activity.ID,
+		IssueID:           activity.IssueID,
+		Raw:               activity.Raw,
+		CreatedBy:         activity.CreatedBy,
+		CreatedAtUnixNano: activity.CreatedAt.UnixNano(),
+		Sequence:          int64(activity.Sequence),
+		Kind:              activity.Kind,
+	}); err != nil {
+		return Issue{}, fmt.Errorf("insert close issue post: %w", err)
 	}
 
 	updated, err := s.getIssueWithDiscussion(ctx, qtx, id)
@@ -370,6 +384,19 @@ func (s *PostgresStore) ReopenIssue(ctx context.Context, id string) (Issue, erro
 	if err := qtx.ReopenIssue(ctx, id); err != nil {
 		return Issue{}, fmt.Errorf("reopen issue: %w", err)
 	}
+	post := appendActivityPost(issue.Discussion, id, time.Now().UTC(), "", "reopened", reopenIssuePost())
+	activity := post[len(post)-1]
+	if err := qtx.InsertIssuePost(ctx, issuesdb.InsertIssuePostParams{
+		ID:                activity.ID,
+		IssueID:           activity.IssueID,
+		Raw:               activity.Raw,
+		CreatedBy:         activity.CreatedBy,
+		CreatedAtUnixNano: activity.CreatedAt.UnixNano(),
+		Sequence:          int64(activity.Sequence),
+		Kind:              activity.Kind,
+	}); err != nil {
+		return Issue{}, fmt.Errorf("insert reopen issue post: %w", err)
+	}
 
 	updated, err := s.getIssueWithDiscussion(ctx, qtx, id)
 	if err != nil {
@@ -402,6 +429,23 @@ func (s *PostgresStore) AssignIssue(ctx context.Context, id, assignee string) (I
 		ID:         id,
 	}); err != nil {
 		return Issue{}, fmt.Errorf("assign issue: %w", err)
+	}
+	current, err := s.getIssueWithDiscussion(ctx, qtx, id)
+	if err != nil {
+		return Issue{}, err
+	}
+	post := appendActivityPost(current.Discussion, id, time.Now().UTC(), "", "assigned", assignIssuePost(assignee))
+	activity := post[len(post)-1]
+	if err := qtx.InsertIssuePost(ctx, issuesdb.InsertIssuePostParams{
+		ID:                activity.ID,
+		IssueID:           activity.IssueID,
+		Raw:               activity.Raw,
+		CreatedBy:         activity.CreatedBy,
+		CreatedAtUnixNano: activity.CreatedAt.UnixNano(),
+		Sequence:          int64(activity.Sequence),
+		Kind:              activity.Kind,
+	}); err != nil {
+		return Issue{}, fmt.Errorf("insert assign issue post: %w", err)
 	}
 
 	issue, err := s.getIssueWithDiscussion(ctx, qtx, id)
@@ -776,6 +820,10 @@ func (s *PostgresStore) LinkIssues(ctx context.Context, input LinkInput) (IssueO
 }
 
 func (s *PostgresStore) Replace(ctx context.Context, next []Issue) error {
+	if err := s.ensureDestructiveResetAllowed(ctx); err != nil {
+		return err
+	}
+
 	items := cloneIssues(next)
 	slices.SortStableFunc(items, compareIssueOrder)
 
@@ -800,6 +848,9 @@ func (s *PostgresStore) Replace(ctx context.Context, next []Issue) error {
 	}
 	if err := qtx.DeleteAllIssues(ctx); err != nil {
 		return fmt.Errorf("clear issues: %w", err)
+	}
+	if _, err := tx.ExecContext(ctx, "DELETE FROM tags"); err != nil {
+		return fmt.Errorf("clear tags: %w", err)
 	}
 
 	for _, issue := range items {
@@ -848,6 +899,20 @@ func (s *PostgresStore) Replace(ctx context.Context, next []Issue) error {
 	}
 
 	return nil
+}
+
+func (s *PostgresStore) ensureDestructiveResetAllowed(ctx context.Context) error {
+	var databaseName string
+	if err := s.db.QueryRowContext(ctx, "SELECT current_database()").Scan(&databaseName); err != nil {
+		return fmt.Errorf("resolve postgres database for destructive reset: %w", err)
+	}
+
+	databaseName = strings.TrimSpace(databaseName)
+	if strings.HasSuffix(databaseName, "_test") {
+		return nil
+	}
+
+	return fmt.Errorf("refusing destructive postgres reset against %q: test databases must end with _test", databaseName)
 }
 
 func (s *PostgresStore) ListTags(ctx context.Context) ([]Tag, error) {

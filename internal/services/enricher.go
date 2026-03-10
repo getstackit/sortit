@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"strings"
+	"time"
 
 	"splat/internal/ai"
 	"splat/internal/issues"
@@ -14,6 +15,8 @@ type IssueEnricher struct {
 	catalog  *CatalogService
 }
 
+const issueEnrichmentTimeout = 20 * time.Second
+
 func NewIssueEnricher(analyzer *ai.Analyzer, catalog *CatalogService) *IssueEnricher {
 	return &IssueEnricher{
 		analyzer: analyzer,
@@ -22,6 +25,9 @@ func NewIssueEnricher(analyzer *ai.Analyzer, catalog *CatalogService) *IssueEnri
 }
 
 func (s *IssueEnricher) AnalyzeCreateInput(ctx context.Context, input issues.CreateInput) (issues.CreateInput, error) {
+	ctx, cancel := context.WithTimeout(ctx, issueEnrichmentTimeout)
+	defer cancel()
+
 	taxonomy, err := s.catalog.IssueTaxonomy(ctx, input.Tags)
 	if err != nil {
 		return issues.CreateInput{}, err
@@ -44,6 +50,9 @@ func (s *IssueEnricher) AnalyzeCreateInput(ctx context.Context, input issues.Cre
 }
 
 func (s *IssueEnricher) AnalyzeRefineInput(ctx context.Context, issue issues.Issue, postRaw string, createdBy string) (issues.RefineInput, error) {
+	ctx, cancel := context.WithTimeout(ctx, issueEnrichmentTimeout)
+	defer cancel()
+
 	postRaw = strings.TrimSpace(postRaw)
 	if postRaw == "" {
 		return issues.RefineInput{}, fmt.Errorf("post raw is required")
@@ -96,6 +105,9 @@ func (s *IssueEnricher) AnalyzeCombineInput(
 	createdBy string,
 	note string,
 ) (issues.CombineInput, error) {
+	ctx, cancel := context.WithTimeout(ctx, issueEnrichmentTimeout)
+	defer cancel()
+
 	if len(sourceIssues) < 2 {
 		return issues.CombineInput{}, fmt.Errorf("at least two source issues are required")
 	}

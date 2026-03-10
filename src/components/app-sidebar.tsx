@@ -152,6 +152,13 @@ export function AppSidebar({
               onClick={closeMobileSidebar}
             />
             <SidebarLink
+              href="/activity"
+              label="Activity"
+              active={pathname === "/activity"}
+              collapsed={collapsed}
+              onClick={closeMobileSidebar}
+            />
+            <SidebarLink
               href="/tags"
               label="Tag Map"
               active={pathname === "/tags"}

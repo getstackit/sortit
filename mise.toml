@@ -7,7 +7,7 @@ _.file = ".env"
 NEXT_PUBLIC_API_ORIGIN = "http://localhost:8081"
 SPLAT_WEB_ORIGIN = "http://localhost:3000"
 SPLAT_DATABASE_URL = "postgres://splat:splat@localhost:5432/splat?sslmode=disable"
-SPLAT_TEST_DATABASE_URL = "postgres://splat:splat@localhost:5432/splat?sslmode=disable"
+SPLAT_TEST_DATABASE_URL = "postgres://splat:splat@localhost:5432/splat_test?sslmode=disable"
 
 [tools]
 go = "1.26"
@@ -26,6 +26,10 @@ run = "go build ./apps/... ./internal/..."
 [tasks.test]
 description = "Run Go tests"
 run = "go test ./apps/... ./internal/..."
+
+[tasks."db:backup"]
+description = "Backup the local PostgreSQL app database"
+run = "sh scripts/db-backup.sh"
 
 [tasks.lint]
 description = "Run ESLint"

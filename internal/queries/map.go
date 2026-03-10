@@ -17,9 +17,23 @@ type MapQuery struct {
 type MapHandler struct {
 	IssueStore issues.Store
 	Catalog    *services.CatalogService
+	ReadModel  *ReadModelLoader
 }
 
 func (h MapHandler) Handle(ctx context.Context, input MapQuery) (issuemap.MapResponse, error) {
+	if h.ReadModel != nil {
+		model, err := h.ReadModel.Current(ctx)
+		if err != nil {
+			return issuemap.MapResponse{}, err
+		}
+		filtered := FilterIssuesByStatus(model.Issues, input.StatusFilter)
+		corpus, err := issuemap.BuildDerivedCorpus(filtered, model.Tags)
+		if err != nil {
+			return issuemap.MapResponse{}, err
+		}
+		threshold := issuemapDefaultThreshold(input.EdgeThreshold)
+		return issuemap.BuildMapFromCorpus(corpus, input.Viewport, threshold)
+	}
 	storeIssues, err := h.IssueStore.List(ctx)
 	if err != nil {
 		return issuemap.MapResponse{}, err
@@ -40,9 +54,23 @@ func (h MapHandler) Handle(ctx context.Context, input MapQuery) (issuemap.MapRes
 type EdgeHandler struct {
 	IssueStore issues.Store
 	Catalog    *services.CatalogService
+	ReadModel  *ReadModelLoader
 }
 
 func (h EdgeHandler) Handle(ctx context.Context, input MapQuery) (issuemap.EdgeResponse, error) {
+	if h.ReadModel != nil {
+		model, err := h.ReadModel.Current(ctx)
+		if err != nil {
+			return issuemap.EdgeResponse{}, err
+		}
+		filtered := FilterIssuesByStatus(model.Issues, input.StatusFilter)
+		corpus, err := issuemap.BuildDerivedCorpus(filtered, model.Tags)
+		if err != nil {
+			return issuemap.EdgeResponse{}, err
+		}
+		threshold := issuemapDefaultThreshold(input.EdgeThreshold)
+		return issuemap.BuildEdgeResponseFromCorpus(corpus, input.Viewport, threshold)
+	}
 	storeIssues, err := h.IssueStore.List(ctx)
 	if err != nil {
 		return issuemap.EdgeResponse{}, err
@@ -58,4 +86,11 @@ func (h EdgeHandler) Handle(ctx context.Context, input MapQuery) (issuemap.EdgeR
 		return issuemap.BuildEdgeResponseFromIssuesWithTagsAndThreshold(storeIssues, storeTags, input.Viewport, *input.EdgeThreshold)
 	}
 	return issuemap.BuildEdgeResponseFromIssuesWithTags(storeIssues, storeTags, input.Viewport)
+}
+
+func issuemapDefaultThreshold(value *float64) float64 {
+	if value == nil {
+		return 0.4
+	}
+	return *value
 }

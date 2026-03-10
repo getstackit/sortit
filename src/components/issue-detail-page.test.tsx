@@ -6,6 +6,7 @@ import { IssueDetailPage } from "@/components/issue-detail-page";
 import {
   closeIssue,
   fetchIssue,
+  fetchRevision,
   progressIssue,
   refineIssue,
   reopenIssue,
@@ -70,6 +71,7 @@ vi.mock("@/lib/issues", async () => {
   return {
     ...actual,
     fetchIssue: vi.fn(),
+    fetchRevision: vi.fn(),
     progressIssue: vi.fn(),
     refineIssue: vi.fn(),
     closeIssue: vi.fn(),
@@ -129,6 +131,7 @@ describe("IssueDetailPage", () => {
 
   beforeEach(() => {
     vi.mocked(fetchIssue).mockReset();
+    vi.mocked(fetchRevision).mockReset();
     vi.mocked(progressIssue).mockReset();
     vi.mocked(refineIssue).mockReset();
     vi.mocked(closeIssue).mockReset();
@@ -136,6 +139,7 @@ describe("IssueDetailPage", () => {
     vi.mocked(fetchMapData).mockReset();
     writeTextMock.mockReset();
     writeTextMock.mockResolvedValue();
+    vi.mocked(fetchRevision).mockResolvedValue(1);
 
     Object.defineProperty(globalThis.navigator, "clipboard", {
       configurable: true,

@@ -307,14 +307,9 @@ func (h *handlers) handleCreateIssue(ctx context.Context, req mcp.CallToolReques
 }
 
 func (h *handlers) handleGetIssue(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
-	id, err := req.RequireString("id")
-	if err != nil {
-		return mcp.NewToolResultError("id is required"), nil
-	}
-
-	id = strings.TrimSpace(id)
-	if id == "" {
-		return mcp.NewToolResultError("id is required"), nil
+	id, result := requireTrimmedString(req, "id")
+	if result != nil {
+		return result, nil
 	}
 
 	issue, err := h.getIssue.Handle(ctx, id)
@@ -359,23 +354,13 @@ func (h *handlers) handleSearchIssues(ctx context.Context, req mcp.CallToolReque
 }
 
 func (h *handlers) handleRefineIssue(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
-	id, err := req.RequireString("id")
-	if err != nil {
-		return mcp.NewToolResultError("id is required"), nil
+	id, result := requireTrimmedString(req, "id")
+	if result != nil {
+		return result, nil
 	}
-
-	raw, err := req.RequireString("raw")
-	if err != nil {
-		return mcp.NewToolResultError("raw is required"), nil
-	}
-
-	id = strings.TrimSpace(id)
-	raw = strings.TrimSpace(raw)
-	if id == "" {
-		return mcp.NewToolResultError("id is required"), nil
-	}
-	if raw == "" {
-		return mcp.NewToolResultError("raw is required"), nil
+	raw, result := requireTrimmedString(req, "raw")
+	if result != nil {
+		return result, nil
 	}
 
 	issue, err := h.refineIssue.Handle(ctx, commands.RefineIssue{
@@ -391,23 +376,13 @@ func (h *handlers) handleRefineIssue(ctx context.Context, req mcp.CallToolReques
 }
 
 func (h *handlers) handleProgressIssue(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
-	id, err := req.RequireString("id")
-	if err != nil {
-		return mcp.NewToolResultError("id is required"), nil
+	id, result := requireTrimmedString(req, "id")
+	if result != nil {
+		return result, nil
 	}
-
-	raw, err := req.RequireString("raw")
-	if err != nil {
-		return mcp.NewToolResultError("raw is required"), nil
-	}
-
-	id = strings.TrimSpace(id)
-	raw = strings.TrimSpace(raw)
-	if id == "" {
-		return mcp.NewToolResultError("id is required"), nil
-	}
-	if raw == "" {
-		return mcp.NewToolResultError("raw is required"), nil
+	raw, result := requireTrimmedString(req, "raw")
+	if result != nil {
+		return result, nil
 	}
 
 	issue, err := h.progressIssue.Handle(ctx, commands.ProgressIssue{
@@ -423,14 +398,9 @@ func (h *handlers) handleProgressIssue(ctx context.Context, req mcp.CallToolRequ
 }
 
 func (h *handlers) handleCloseIssue(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
-	id, err := req.RequireString("id")
-	if err != nil {
-		return mcp.NewToolResultError("id is required"), nil
-	}
-
-	id = strings.TrimSpace(id)
-	if id == "" {
-		return mcp.NewToolResultError("id is required"), nil
+	id, result := requireTrimmedString(req, "id")
+	if result != nil {
+		return result, nil
 	}
 
 	issue, err := h.closeIssue.Handle(ctx, commands.CloseIssue{
@@ -445,19 +415,14 @@ func (h *handlers) handleCloseIssue(ctx context.Context, req mcp.CallToolRequest
 }
 
 func (h *handlers) handleExploreIssue(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
-	id, err := req.RequireString("id")
-	if err != nil {
-		return mcp.NewToolResultError("id is required"), nil
+	id, result := requireTrimmedString(req, "id")
+	if result != nil {
+		return result, nil
 	}
 
-	id = strings.TrimSpace(id)
-	if id == "" {
-		return mcp.NewToolResultError("id is required"), nil
-	}
-
-	limit := req.GetInt("limit", 8)
-	if limit <= 0 {
-		return mcp.NewToolResultError("limit must be greater than 0"), nil
+	limit, result := requirePositiveInt(req, "limit", 8)
+	if result != nil {
+		return result, nil
 	}
 
 	response, err := h.exploreIssue.Handle(ctx, queries.ExploreIssue{
@@ -472,24 +437,18 @@ func (h *handlers) handleExploreIssue(ctx context.Context, req mcp.CallToolReque
 }
 
 func (h *handlers) handleAssignIssue(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
-	id, err := req.RequireString("id")
-	if err != nil {
-		return mcp.NewToolResultError("id is required"), nil
+	id, result := requireTrimmedString(req, "id")
+	if result != nil {
+		return result, nil
 	}
-
-	assignedTo, err := req.RequireString("assigned_to")
-	if err != nil {
-		return mcp.NewToolResultError("assigned_to is required"), nil
-	}
-
-	id = strings.TrimSpace(id)
-	if id == "" {
-		return mcp.NewToolResultError("id is required"), nil
+	assignedTo, result := requireTrimmedString(req, "assigned_to")
+	if result != nil {
+		return result, nil
 	}
 
 	issue, err := h.assignIssue.Handle(ctx, commands.AssignIssue{
 		ID:         id,
-		AssignedTo: strings.TrimSpace(assignedTo),
+		AssignedTo: assignedTo,
 	})
 	if err != nil {
 		return toolResultError(err), nil
@@ -601,14 +560,9 @@ func (h *handlers) handleLinkIssues(ctx context.Context, req mcp.CallToolRequest
 }
 
 func (h *handlers) handleGetPersonProfile(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
-	person, err := req.RequireString("person")
-	if err != nil {
-		return mcp.NewToolResultError("person is required"), nil
-	}
-
-	person = strings.TrimSpace(person)
-	if person == "" {
-		return mcp.NewToolResultError("person is required"), nil
+	person, result := requireTrimmedString(req, "person")
+	if result != nil {
+		return result, nil
 	}
 
 	status, ok := parseStatusFilter(req.GetString("status", "all"), false)
@@ -648,6 +602,26 @@ func actorForContext(ctx context.Context, fallback string) string {
 		return "Claude"
 	}
 	return fallback
+}
+
+func requireTrimmedString(req mcp.CallToolRequest, field string) (string, *mcp.CallToolResult) {
+	value, err := req.RequireString(field)
+	if err != nil {
+		return "", mcp.NewToolResultError(field + " is required")
+	}
+	value = strings.TrimSpace(value)
+	if value == "" {
+		return "", mcp.NewToolResultError(field + " is required")
+	}
+	return value, nil
+}
+
+func requirePositiveInt(req mcp.CallToolRequest, field string, fallback int) (int, *mcp.CallToolResult) {
+	value := req.GetInt(field, fallback)
+	if value <= 0 {
+		return 0, mcp.NewToolResultError(field + " must be greater than 0")
+	}
+	return value, nil
 }
 
 func parseStatusFilter(raw string, defaultOpen bool) (queries.IssueStatusFilter, bool) {

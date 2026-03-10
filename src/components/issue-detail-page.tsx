@@ -133,6 +133,24 @@ function postKind(post: IssuePostRecord): IssuePostKind {
   return post.sequence === 1 ? "report" : "refinement";
 }
 
+function formatPostKindLabel(kind: IssuePostKind, refinementIndex: number) {
+  switch (kind) {
+    case "report":
+      return "Initial report";
+    case "progress":
+      return "Progress update";
+    case "closed":
+      return "Closed";
+    case "reopened":
+      return "Reopened";
+    case "assigned":
+      return "Assignment";
+    case "refinement":
+    default:
+      return `Refinement ${refinementIndex}`;
+  }
+}
+
 function formatLinkType(type: IssueLinkRecord["type"]) {
   switch (type) {
     case "parent_of":
@@ -1103,13 +1121,12 @@ export function IssueDetailPage({ issueID }: { issueID: string }) {
                                   </span>
                                 )}
                                 <span className="text-sm font-semibold">
-                                  {kind === "report"
-                                    ? "Initial report"
-                                    : kind === "progress"
-                                      ? "Progress update"
-                                      : `Refinement ${refinementIndex}`}
+                                  {formatPostKindLabel(kind, refinementIndex)}
                                 </span>
                                 {kind === "report" && <span className="app-chip">Starting state</span>}
+                                {kind === "closed" && <span className="app-chip">Status</span>}
+                                {kind === "reopened" && <span className="app-chip">Status</span>}
+                                {kind === "assigned" && <span className="app-chip">Routing</span>}
                               </div>
                               <p className="text-sm text-muted-foreground">
                                 {post.createdBy} · {formatRelativeTime(post.createdAt)}

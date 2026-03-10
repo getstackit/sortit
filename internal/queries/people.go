@@ -21,7 +21,8 @@ type PersonTagProfile struct {
 }
 
 type GetPersonProfileHandler struct {
-	Store issues.Store
+	Store     issues.Store
+	ReadModel *ReadModelLoader
 }
 
 func (h GetPersonProfileHandler) Handle(ctx context.Context, person string, filter IssueStatusFilter) (PersonTagProfile, error) {
@@ -30,25 +31,18 @@ func (h GetPersonProfileHandler) Handle(ctx context.Context, person string, filt
 		return PersonTagProfile{}, nil
 	}
 
+	if h.ReadModel != nil {
+		model, err := h.ReadModel.Current(ctx)
+		if err != nil {
+			return PersonTagProfile{}, err
+		}
+		return buildPersonTagProfile(model.Issues, person, filter), nil
+	}
 	allIssues, err := h.Store.List(ctx)
 	if err != nil {
 		return PersonTagProfile{}, err
 	}
-
-	allIssues = FilterIssuesByStatus(allIssues, filter)
-
-	var matched []issues.Issue
-	for _, issue := range allIssues {
-		if strings.EqualFold(issue.AssignedTo, person) {
-			matched = append(matched, issue)
-		}
-	}
-
-	return PersonTagProfile{
-		Person:     person,
-		IssueCount: len(matched),
-		TagProfile: meanTagProfile(matched),
-	}, nil
+	return buildPersonTagProfile(allIssues, person, filter), nil
 }
 
 type PersonCorrelation struct {
@@ -69,15 +63,43 @@ type WorkCorrelationsResult struct {
 }
 
 type WorkCorrelationsHandler struct {
-	Store issues.Store
+	Store     issues.Store
+	ReadModel *ReadModelLoader
 }
 
 func (h WorkCorrelationsHandler) Handle(ctx context.Context, filter IssueStatusFilter) (WorkCorrelationsResult, error) {
+	if h.ReadModel != nil {
+		model, err := h.ReadModel.Current(ctx)
+		if err != nil {
+			return WorkCorrelationsResult{}, err
+		}
+		return buildWorkCorrelations(model.Issues, filter), nil
+	}
 	allIssues, err := h.Store.List(ctx)
 	if err != nil {
 		return WorkCorrelationsResult{}, err
 	}
+	return buildWorkCorrelations(allIssues, filter), nil
+}
 
+func buildPersonTagProfile(allIssues []issues.Issue, person string, filter IssueStatusFilter) PersonTagProfile {
+	allIssues = FilterIssuesByStatus(allIssues, filter)
+
+	var matched []issues.Issue
+	for _, issue := range allIssues {
+		if strings.EqualFold(issue.AssignedTo, person) {
+			matched = append(matched, issue)
+		}
+	}
+
+	return PersonTagProfile{
+		Person:     person,
+		IssueCount: len(matched),
+		TagProfile: meanTagProfile(matched),
+	}
+}
+
+func buildWorkCorrelations(allIssues []issues.Issue, filter IssueStatusFilter) WorkCorrelationsResult {
 	allIssues = FilterIssuesByStatus(allIssues, filter)
 
 	// Group issues by assignee
@@ -91,7 +113,7 @@ func (h WorkCorrelationsHandler) Handle(ctx context.Context, filter IssueStatusF
 	}
 
 	if len(byPerson) < 2 {
-		return WorkCorrelationsResult{Correlations: []PersonCorrelation{}}, nil
+		return WorkCorrelationsResult{Correlations: []PersonCorrelation{}}
 	}
 
 	type personData struct {
@@ -144,7 +166,7 @@ func (h WorkCorrelationsHandler) Handle(ctx context.Context, filter IssueStatusF
 		return correlations[i].CombinedScore > correlations[j].CombinedScore
 	})
 
-	return WorkCorrelationsResult{Correlations: correlations}, nil
+	return WorkCorrelationsResult{Correlations: correlations}
 }
 
 func meanTagProfile(matched []issues.Issue) []TagRelevance {

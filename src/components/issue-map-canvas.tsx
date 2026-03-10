@@ -90,6 +90,7 @@ type IssueMapCanvasProps = {
   background?: ReactNode;
   gridLines?: IssueMapCanvasLine[];
   blobs?: IssueMapCanvasBlob[];
+  clusters?: IssueMapCanvasCluster[];
   edges?: IssueMapCanvasLine[];
   nodes?: IssueMapCanvasNode[];
   children?: ReactNode;
@@ -105,6 +106,7 @@ export const IssueMapCanvas = forwardRef<SVGSVGElement, IssueMapCanvasProps>(
       background,
       gridLines = [],
       blobs = [],
+      clusters = [],
       edges = [],
       nodes = [],
       children,
@@ -161,6 +163,34 @@ export const IssueMapCanvas = forwardRef<SVGSVGElement, IssueMapCanvasProps>(
               fillOpacity={blob.labelFillOpacity ?? 0.7}
             >
               {blob.label}
+            </text>
+          )}
+        </g>
+      ))}
+
+      {clusters.map((cluster) => (
+        <g key={cluster.key}>
+          <circle
+            cx={cluster.cx}
+            cy={cluster.cy}
+            r={cluster.radius}
+            fill={cluster.fill ?? "none"}
+            fillOpacity={cluster.fillOpacity ?? 1}
+            stroke={cluster.stroke}
+            strokeOpacity={cluster.strokeOpacity}
+            strokeWidth={cluster.strokeWidth}
+            strokeDasharray={cluster.strokeDasharray}
+          />
+          {cluster.label && (
+            <text
+              x={cluster.cx}
+              y={cluster.labelY ?? cluster.cy - cluster.radius - 8}
+              textAnchor="middle"
+              className={cn("text-[10px] font-medium", cluster.labelClassName)}
+              fill={cluster.labelFill ?? cluster.stroke ?? cluster.fill ?? "currentColor"}
+              fillOpacity={cluster.labelFillOpacity ?? 0.7}
+            >
+              {cluster.label}
             </text>
           )}
         </g>

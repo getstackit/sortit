@@ -2,19 +2,29 @@ package api
 
 import (
 	"context"
-	"os"
+	"sync"
 	"testing"
 
 	"splat/internal/issues"
+	"splat/internal/testpostgres"
 )
+
+var apiPostgresHarness struct {
+	once    sync.Once
+	harness *testpostgres.Harness
+	err     error
+}
 
 func newPostgresIssueStore(t *testing.T, seed []issues.Issue) *issues.PostgresStore {
 	t.Helper()
 
-	databaseURL := os.Getenv("SPLAT_TEST_DATABASE_URL")
-	if databaseURL == "" {
-		t.Skip("SPLAT_TEST_DATABASE_URL not set")
-	}
+	databaseURL := apiHarness(t).Acquire(t, func(ctx context.Context, databaseURL string) error {
+		store, err := issues.OpenPostgresStore(ctx, databaseURL)
+		if err != nil {
+			return err
+		}
+		return store.Close()
+	})
 
 	store, err := issues.OpenPostgresStore(context.Background(), databaseURL)
 	if err != nil {
@@ -26,11 +36,6 @@ func newPostgresIssueStore(t *testing.T, seed []issues.Issue) *issues.PostgresSt
 		}
 	})
 
-	// Clean all data for a fresh test
-	if err := store.Replace(context.Background(), nil); err != nil {
-		t.Fatalf("reset postgres store: %v", err)
-	}
-
 	if seed != nil {
 		if err := store.Replace(context.Background(), seed); err != nil {
 			t.Fatalf("seed postgres store: %v", err)
@@ -38,4 +43,16 @@ func newPostgresIssueStore(t *testing.T, seed []issues.Issue) *issues.PostgresSt
 	}
 
 	return store
+}
+
+func apiHarness(t *testing.T) *testpostgres.Harness {
+	t.Helper()
+
+	apiPostgresHarness.once.Do(func() {
+		apiPostgresHarness.harness, apiPostgresHarness.err = testpostgres.Start(context.Background(), "splat_api_test")
+	})
+	if apiPostgresHarness.err != nil {
+		t.Fatalf("start postgres test harness: %v", apiPostgresHarness.err)
+	}
+	return apiPostgresHarness.harness
 }

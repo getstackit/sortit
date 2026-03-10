@@ -34,9 +34,10 @@ type DebugAnalyzeIssueResult struct {
 }
 
 type DebugAnalyzeIssueHandler struct {
-	Analyzer *ai.Analyzer
-	Catalog  *services.CatalogService
-	Store    issues.Store
+	Analyzer  *ai.Analyzer
+	Catalog   *services.CatalogService
+	Store     issues.Store
+	ReadModel *ReadModelLoader
 }
 
 func (h DebugAnalyzeIssueHandler) Handle(ctx context.Context, input DebugAnalyzeIssue) (DebugAnalyzeIssueResult, error) {
@@ -67,9 +68,19 @@ func (h DebugAnalyzeIssueHandler) Handle(ctx context.Context, input DebugAnalyze
 }
 
 func (h DebugAnalyzeIssueHandler) issueEmbeddingSimilarities(ctx context.Context, query []float64) ([]DebugIssueSimilarity, int, float64, error) {
-	storeIssues, err := h.Store.List(ctx)
-	if err != nil {
-		return nil, 0, 0, err
+	var storeIssues []issues.Issue
+	if h.ReadModel != nil {
+		model, err := h.ReadModel.Current(ctx)
+		if err != nil {
+			return nil, 0, 0, err
+		}
+		storeIssues = model.Issues
+	} else {
+		items, err := h.Store.List(ctx)
+		if err != nil {
+			return nil, 0, 0, err
+		}
+		storeIssues = items
 	}
 
 	if len(query) == 0 {

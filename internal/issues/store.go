@@ -410,9 +410,19 @@ func (s *InMemoryStore) CloseIssue(_ context.Context, id string, closedBy string
 		issue.Status = StatusClosed
 		issue.ClosedAt = &closedAt
 		issue.ClosedBy = defaultActor(closedBy)
+		discussion := appendActivityPost(
+			s.discussion[id],
+			id,
+			closedAt,
+			issue.ClosedBy,
+			"closed",
+			closeIssuePost(issue.ClosedBy),
+		)
+		issue.Discussion = cloneIssuePosts(discussion)
+		s.discussion[id] = cloneIssuePosts(discussion)
 		s.issues[index] = issue
 		cloned := cloneIssues([]Issue{issue})[0]
-		cloned.Discussion = cloneIssuePosts(s.discussion[id])
+		cloned.Discussion = cloneIssuePosts(discussion)
 		return cloned, nil
 	}
 
@@ -438,9 +448,20 @@ func (s *InMemoryStore) ReopenIssue(_ context.Context, id string) (Issue, error)
 		issue.Status = StatusOpen
 		issue.ClosedAt = nil
 		issue.ClosedBy = ""
+		reopenedAt := time.Now().UTC()
+		discussion := appendActivityPost(
+			s.discussion[id],
+			id,
+			reopenedAt,
+			"",
+			"reopened",
+			reopenIssuePost(),
+		)
+		issue.Discussion = cloneIssuePosts(discussion)
+		s.discussion[id] = cloneIssuePosts(discussion)
 		s.issues[index] = issue
 		cloned := cloneIssues([]Issue{issue})[0]
-		cloned.Discussion = cloneIssuePosts(s.discussion[id])
+		cloned.Discussion = cloneIssuePosts(discussion)
 		return cloned, nil
 	}
 
@@ -460,9 +481,20 @@ func (s *InMemoryStore) AssignIssue(_ context.Context, id, assignee string) (Iss
 		}
 
 		issue.AssignedTo = assignee
+		assignedAt := time.Now().UTC()
+		discussion := appendActivityPost(
+			s.discussion[id],
+			id,
+			assignedAt,
+			"",
+			"assigned",
+			assignIssuePost(assignee),
+		)
+		issue.Discussion = cloneIssuePosts(discussion)
+		s.discussion[id] = cloneIssuePosts(discussion)
 		s.issues[index] = issue
 		cloned := cloneIssues([]Issue{issue})[0]
-		cloned.Discussion = cloneIssuePosts(s.discussion[id])
+		cloned.Discussion = cloneIssuePosts(discussion)
 		return cloned, nil
 	}
 

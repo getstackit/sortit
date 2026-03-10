@@ -32,6 +32,8 @@ type Server struct {
 	config            ServerConfig
 	httpServer        *http.Server
 	startedAt         time.Time
+	revisions         *issues.RevisionTracker
+	readModel         *queries.ReadModelLoader
 	createIssue       commands.CreateIssueHandler
 	refineIssue       commands.RefineIssueHandler
 	progressIssue     commands.ProgressIssueHandler
@@ -42,6 +44,7 @@ type Server struct {
 	combineIssues     commands.CombineIssuesHandler
 	linkIssues        commands.LinkIssuesHandler
 	listIssues        queries.ListIssuesHandler
+	listActivity      queries.ListActivityHandler
 	getIssue          queries.GetIssueHandler
 	compareIssues     queries.CompareIssuesHandler
 	searchIssues      queries.SearchIssuesHandler
@@ -73,6 +76,10 @@ type errorResponse struct {
 	Error string `json:"error"`
 }
 
+type revisionResponse struct {
+	Revision uint64 `json:"revision"`
+}
+
 func tagStoreFromIssueStore(store issues.Store) issueTagStore {
 	tagStore, ok := store.(issueTagStore)
 	if !ok {
@@ -99,6 +106,7 @@ func (s *Server) Handler() http.Handler {
 		authTokensRoute := path.Join(prefix, "auth", "tokens")
 		authTokenItemSubtreeRoute := authTokenItemRoute(prefix)
 		issuesRoute := path.Join(prefix, "issues")
+		activityRoute := path.Join(prefix, "activity")
 		issuesCompareRoute := path.Join(prefix, "issues", "compare")
 		issuesCombineRoute := path.Join(prefix, "issues", "combine")
 		issuesLinkRoute := path.Join(prefix, "issues", "link")
@@ -106,6 +114,7 @@ func (s *Server) Handler() http.Handler {
 		searchRoute := path.Join(prefix, "search")
 		issueItemSubtreeRoute := issueItemRoute(prefix)
 		tagsRoute := path.Join(prefix, "tags")
+		revisionRoute := path.Join(prefix, "revision")
 		mapRoute := path.Join(prefix, "map")
 		mapEdgesRoute := path.Join(prefix, "map", "edges")
 		debugAnalyzeRoute := path.Join(prefix, "debug", "issues", "analyze")
@@ -113,6 +122,7 @@ func (s *Server) Handler() http.Handler {
 		peopleCorrelationsRoute := path.Join(prefix, "people", "correlations")
 		apiRoutes[healthRoute] = struct{}{}
 		apiRoutes[issuesRoute] = struct{}{}
+		apiRoutes[activityRoute] = struct{}{}
 		apiRoutes[issuesCompareRoute] = struct{}{}
 		apiRoutes[issuesCombineRoute] = struct{}{}
 		apiRoutes[issuesLinkRoute] = struct{}{}
@@ -120,6 +130,7 @@ func (s *Server) Handler() http.Handler {
 		apiRoutes[searchRoute] = struct{}{}
 		apiRoutes[issueItemSubtreeRoute] = struct{}{}
 		apiRoutes[tagsRoute] = struct{}{}
+		apiRoutes[revisionRoute] = struct{}{}
 		apiRoutes[mapRoute] = struct{}{}
 		apiRoutes[mapEdgesRoute] = struct{}{}
 		apiRoutes[peopleSubtreeRoute] = struct{}{}
@@ -145,6 +156,7 @@ func (s *Server) Handler() http.Handler {
 		apiMux.HandleFunc(authTokensRoute, s.handleAuthTokens)
 		apiMux.HandleFunc(authTokenItemSubtreeRoute, s.handleAuthTokenByID(authTokenItemSubtreeRoute))
 		apiMux.HandleFunc(issuesRoute, s.handleIssues)
+		apiMux.HandleFunc(activityRoute, s.handleActivity)
 		apiMux.HandleFunc(issuesCompareRoute, s.handleIssueCompare)
 		apiMux.HandleFunc(issuesCombineRoute, s.handleIssueCombine)
 		apiMux.HandleFunc(issuesLinkRoute, s.handleIssueLink)
@@ -152,6 +164,7 @@ func (s *Server) Handler() http.Handler {
 		apiMux.HandleFunc(searchRoute, s.handleUnifiedSearch)
 		apiMux.HandleFunc(issueItemSubtreeRoute, s.handleIssueByID(issueItemSubtreeRoute))
 		apiMux.HandleFunc(tagsRoute, s.handleTags)
+		apiMux.HandleFunc(revisionRoute, s.handleRevision)
 		apiMux.HandleFunc(mapRoute, s.handleMap)
 		apiMux.HandleFunc(mapEdgesRoute, s.handleMapEdges)
 		apiMux.HandleFunc(peopleCorrelationsRoute, s.handleWorkCorrelations)
@@ -242,6 +255,18 @@ func (s *Server) handleHealth(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
+func (s *Server) handleRevision(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		w.Header().Set("Allow", http.MethodGet)
+		http.Error(w, http.StatusText(http.StatusMethodNotAllowed), http.StatusMethodNotAllowed)
+		return
+	}
+
+	writeJSON(w, http.StatusOK, revisionResponse{
+		Revision: s.revisions.Revision(),
+	})
+}
+
 func writeJSON(w http.ResponseWriter, status int, payload any) {
 	w.Header().Set("Content-Type", "application/json; charset=utf-8")
 	w.WriteHeader(status)
@@ -266,15 +291,24 @@ func NewServer(cfg ServerConfig) *Server {
 	if store == nil {
 		store = issues.NewInMemoryStore(nil)
 	}
+	revisions := issues.NewRevisionTracker()
+	store = issues.NewObservedStore(store, revisions)
 
 	tagStore := tagStoreFromIssueStore(store)
 	commandAnalyzer := services.FallbackAnalyzer(cfg.Analyzer)
 	catalog := services.NewCatalogService(tagStore, commandAnalyzer)
 	enricher := services.NewIssueEnricher(commandAnalyzer, catalog)
+	readModel := &queries.ReadModelLoader{
+		Store:     store,
+		Catalog:   catalog,
+		Revisions: revisions,
+	}
 
 	return &Server{
 		config:    cfg,
 		startedAt: time.Now().UTC(),
+		revisions: revisions,
+		readModel: readModel,
 		createIssue: commands.CreateIssueHandler{
 			Store:    store,
 			Enricher: enricher,
@@ -303,25 +337,28 @@ func NewServer(cfg ServerConfig) *Server {
 			Store: store,
 		},
 		listIssues:    queries.ListIssuesHandler{Store: store},
+		listActivity:  queries.ListActivityHandler{ReadModel: readModel},
 		getIssue:      queries.GetIssueHandler{Store: store},
-		compareIssues: queries.CompareIssuesHandler{Store: store},
+		compareIssues: queries.CompareIssuesHandler{Store: store, ReadModel: readModel},
 		searchIssues: queries.SearchIssuesHandler{
-			Analyzer: commandAnalyzer,
-			Catalog:  catalog,
-			Store:    store,
+			Analyzer:  commandAnalyzer,
+			Catalog:   catalog,
+			Store:     store,
+			ReadModel: readModel,
 		},
 		searchUnified: queries.SearchUnifiedHandler{
-			Analyzer: commandAnalyzer,
-			Catalog:  catalog,
-			Store:    store,
+			Analyzer:  commandAnalyzer,
+			Catalog:   catalog,
+			Store:     store,
+			ReadModel: readModel,
 		},
-		exploreIssue:      queries.ExploreIssueHandler{Store: store, Catalog: catalog},
+		exploreIssue:      queries.ExploreIssueHandler{Store: store, Catalog: catalog, ReadModel: readModel},
 		listTags:          queries.ListTagsHandler{Catalog: catalog},
-		getMap:            queries.MapHandler{IssueStore: store, Catalog: catalog},
-		getMapEdges:       queries.EdgeHandler{IssueStore: store, Catalog: catalog},
-		debugAnalyzeIssue: queries.DebugAnalyzeIssueHandler{Analyzer: cfg.Analyzer, Catalog: catalog, Store: store},
-		getPersonProfile:  queries.GetPersonProfileHandler{Store: store},
-		workCorrelations:  queries.WorkCorrelationsHandler{Store: store},
+		getMap:            queries.MapHandler{IssueStore: store, Catalog: catalog, ReadModel: readModel},
+		getMapEdges:       queries.EdgeHandler{IssueStore: store, Catalog: catalog, ReadModel: readModel},
+		debugAnalyzeIssue: queries.DebugAnalyzeIssueHandler{Analyzer: cfg.Analyzer, Catalog: catalog, Store: store, ReadModel: readModel},
+		getPersonProfile:  queries.GetPersonProfileHandler{Store: store, ReadModel: readModel},
+		workCorrelations:  queries.WorkCorrelationsHandler{Store: store, ReadModel: readModel},
 		authService:       cfg.Auth,
 		catalog:           catalog,
 	}
