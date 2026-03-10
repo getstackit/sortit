@@ -10,6 +10,46 @@ import (
 
 const defaultSearchLimit = 8
 
+// SearchOptions holds optional search parameters.
+type SearchOptions struct {
+	Query      string
+	QueryTags  []issues.TagRelevance
+	QueryEmbed []float64
+	Limit      int
+	Offset     int
+	SortBy     string // "relevance" (default), "created_at"
+}
+
+// SearchOption is a functional option for search functions.
+type SearchOption func(*searchConfig)
+
+type searchConfig struct {
+	offset int
+	sortBy string
+}
+
+func WithOffset(offset int) SearchOption {
+	return func(c *searchConfig) {
+		if offset > 0 {
+			c.offset = offset
+		}
+	}
+}
+
+func WithSortBy(sortBy string) SearchOption {
+	return func(c *searchConfig) {
+		c.sortBy = sortBy
+	}
+}
+
+func applySearchOptions(opts []SearchOption) searchConfig {
+	cfg := searchConfig{sortBy: "relevance"}
+	for _, opt := range opts {
+		opt(&cfg)
+	}
+	return cfg
+}
+
 type SearchQuery struct {
 	Raw  string         `json:"raw"`
 	Tags []TagRelevance `json:"tags"`
@@ -27,7 +67,9 @@ func SearchFromQueryWithTags(
 	queryTags []issues.TagRelevance,
 	queryEmbedding []float64,
 	limit int,
+	opts ...SearchOption,
 ) SearchResponse {
+	cfg := applySearchOptions(opts)
 	queryRaw = strings.TrimSpace(queryRaw)
 	if limit <= 0 {
 		limit = defaultSearchLimit
@@ -56,12 +98,17 @@ func SearchFromQueryWithTags(
 		TagScores: querySummary.Tags,
 	}}, tagNames, tagEmbeddings)["query"]
 
+	queryLower := strings.ToLower(queryRaw)
+	tagCorrelationBoost := queryMatchesTagNames(queryLower, tagNames)
+
 	related := make([]RelatedIssue, 0, len(storeIssues))
 	for _, candidate := range storeIssues {
 		candidateSummary := exploreIssueSummary(candidate)
 		semantic := cosineSimilarity(queryVector, issueEmbeddings[candidate.ID])
 		factor := cosineSimilarity(queryFactor, factorVectors[candidate.ID])
-		combined := 0.6*semantic + 0.4*factor
+		textMatch := textMatchScore(queryLower, candidate.Raw)
+		combined := blendScores(semantic, factor, textMatch, tagCorrelationBoost)
+		combined -= issueSpecificityPenalty(candidateSummary.Tags)
 		sharedTags := sharedRelevantTags(querySummary.Tags, candidateSummary.Tags, 3)
 
 		related = append(related, RelatedIssue{
@@ -76,19 +123,14 @@ func SearchFromQueryWithTags(
 		})
 	}
 
-	slices.SortFunc(related, func(a, b RelatedIssue) int {
-		if diff := cmp.Compare(b.CombinedSimilarity, a.CombinedSimilarity); diff != 0 {
-			return diff
-		}
-		if diff := cmp.Compare(b.SemanticSimilarity, a.SemanticSimilarity); diff != 0 {
-			return diff
-		}
-		if diff := cmp.Compare(b.FactorSimilarity, a.FactorSimilarity); diff != 0 {
-			return diff
-		}
-		return cmp.Compare(a.ID, b.ID)
-	})
+	sortSearchResults(related, storeIssues, cfg.sortBy)
 
+	// Apply offset then limit.
+	if cfg.offset > 0 && cfg.offset < len(related) {
+		related = related[cfg.offset:]
+	} else if cfg.offset >= len(related) {
+		related = nil
+	}
 	if len(related) > limit {
 		related = related[:limit]
 	}
@@ -97,6 +139,119 @@ func SearchFromQueryWithTags(
 		Query:         querySummary,
 		RelatedIssues: related,
 	}
+}
+
+// sortSearchResults sorts results by the given sort key.
+func sortSearchResults(related []RelatedIssue, storeIssues []issues.Issue, sortBy string) {
+	switch sortBy {
+	case "created_at":
+		issueIndex := make(map[string]issues.Issue, len(storeIssues))
+		for _, issue := range storeIssues {
+			issueIndex[issue.ID] = issue
+		}
+		slices.SortFunc(related, func(a, b RelatedIssue) int {
+			aTime := issueIndex[a.ID].CreatedAt
+			bTime := issueIndex[b.ID].CreatedAt
+			if diff := bTime.Compare(aTime); diff != 0 {
+				return diff
+			}
+			return cmp.Compare(a.ID, b.ID)
+		})
+	default: // "relevance"
+		slices.SortFunc(related, func(a, b RelatedIssue) int {
+			if diff := cmp.Compare(b.CombinedSimilarity, a.CombinedSimilarity); diff != 0 {
+				return diff
+			}
+			if diff := cmp.Compare(b.SemanticSimilarity, a.SemanticSimilarity); diff != 0 {
+				return diff
+			}
+			if diff := cmp.Compare(b.FactorSimilarity, a.FactorSimilarity); diff != 0 {
+				return diff
+			}
+			return cmp.Compare(a.ID, b.ID)
+		})
+	}
+}
+
+// queryMatchesTagNames returns true if any query word exactly matches a known
+// tag name, indicating the user is searching by tag-space concepts.
+func queryMatchesTagNames(queryLower string, tagNames []string) bool {
+	if queryLower == "" || len(tagNames) == 0 {
+		return false
+	}
+	words := make(map[string]struct{})
+	for _, w := range strings.Fields(queryLower) {
+		words[normalizeTagName(w)] = struct{}{}
+	}
+	for _, tag := range tagNames {
+		if _, ok := words[normalizeTagName(tag)]; ok {
+			return true
+		}
+	}
+	return false
+}
+
+// blendScores combines the three similarity signals. When the query matches
+// known tag names, the factor weight is boosted so tag-correlated issues
+// rank higher.
+func blendScores(semantic, factor, textMatch float64, tagCorrelation bool) float64 {
+	if tagCorrelation {
+		// Boost factor weight: 0.4 semantic, 0.4 factor, 0.2 text
+		return 0.4*semantic + 0.4*factor + 0.2*textMatch
+	}
+	return 0.5*semantic + 0.3*factor + 0.2*textMatch
+}
+
+// issueSpecificityPenalty penalizes issues whose top tags are all generic
+// bucket tags, so that issues with specific tags rank above generic ones.
+func issueSpecificityPenalty(tags []TagRelevance) float64 {
+	if len(tags) == 0 {
+		return 0
+	}
+	// Check up to the top 3 tags by relevance (they come pre-sorted).
+	limit := min(3, len(tags))
+	genericCount := 0
+	for _, tag := range tags[:limit] {
+		if genericBucketPenalty(tag.Tag) > 0 {
+			genericCount++
+		}
+	}
+	if genericCount == 0 {
+		return 0
+	}
+	// Small penalty proportional to how generic the top tags are.
+	return 0.02 * float64(genericCount) / float64(limit)
+}
+
+// textMatchScore computes a lightweight text-match signal between the query
+// and issue text, returning a value in [0, 1]. It uses substring matching
+// on the full query and individual words for broad coverage.
+func textMatchScore(queryLower string, issueRaw string) float64 {
+	if queryLower == "" || issueRaw == "" {
+		return 0
+	}
+	issueLower := strings.ToLower(issueRaw)
+
+	// Full substring match is the strongest signal.
+	if strings.Contains(issueLower, queryLower) {
+		return 1.0
+	}
+
+	// Word-level overlap: fraction of query words found in the issue text.
+	words := strings.Fields(queryLower)
+	if len(words) == 0 {
+		return 0
+	}
+	matches := 0
+	for _, word := range words {
+		if len(word) < 2 {
+			continue
+		}
+		if strings.Contains(issueLower, word) {
+			matches++
+		}
+	}
+	return float64(matches) / float64(len(words))
 }
 
 type RelatedTag struct {

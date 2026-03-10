@@ -113,9 +113,13 @@ func (h CompareIssuesHandler) Handle(ctx context.Context, input CompareIssues) (
 }
 
 type SearchIssues struct {
-	Query  string
-	Limit  int
-	Status IssueStatusFilter
+	Query      string
+	Limit      int
+	Offset     int
+	Status     IssueStatusFilter
+	AssignedTo string
+	Tags       []string
+	SortBy     string // "relevance" (default), "created_at", "updated_at"
 }
 
 type SearchIssuesHandler struct {
@@ -144,22 +148,35 @@ func (h SearchIssuesHandler) Handle(ctx context.Context, input SearchIssues) (is
 		return issuemap.SearchResponse{}, err
 	}
 
+	searchOpts := issuemap.SearchOptions{
+		Query:      query,
+		QueryTags:  services.IssueTagScoresFromAnalysis(analyzed.Tags),
+		QueryEmbed: services.Float32VectorToFloat64(analyzed.Embedding.Vector),
+		Limit:      input.Limit,
+		Offset:     input.Offset,
+		SortBy:     input.SortBy,
+	}
+
 	if h.ReadModel != nil {
 		model, err := h.ReadModel.Current(ctx)
 		if err != nil {
 			return issuemap.SearchResponse{}, err
 		}
 		filtered := FilterIssuesByStatus(model.Issues, input.Status)
+		filtered = filterIssuesByAssignee(filtered, input.AssignedTo)
+		filtered = filterIssuesByTags(filtered, input.Tags)
 		corpus, err := issuemap.BuildDerivedCorpus(filtered, model.Tags)
 		if err != nil {
 			return issuemap.SearchResponse{}, err
 		}
 		return issuemap.SearchFromCorpus(
 			corpus,
-			query,
-			services.IssueTagScoresFromAnalysis(analyzed.Tags),
-			services.Float32VectorToFloat64(analyzed.Embedding.Vector),
-			input.Limit,
+			searchOpts.Query,
+			searchOpts.QueryTags,
+			searchOpts.QueryEmbed,
+			searchOpts.Limit,
+			issuemap.WithOffset(searchOpts.Offset),
+			issuemap.WithSortBy(searchOpts.SortBy),
 		), nil
 	}
 	storeIssues, err := h.Store.List(ctx)
@@ -167,6 +184,8 @@ func (h SearchIssuesHandler) Handle(ctx context.Context, input SearchIssues) (is
 		return issuemap.SearchResponse{}, err
 	}
 	storeIssues = FilterIssuesByStatus(storeIssues, input.Status)
+	storeIssues = filterIssuesByAssignee(storeIssues, input.AssignedTo)
+	storeIssues = filterIssuesByTags(storeIssues, input.Tags)
 
 	storeTags, err := h.Catalog.StoredTags(ctx)
 	if err != nil {
@@ -176,10 +195,12 @@ func (h SearchIssuesHandler) Handle(ctx context.Context, input SearchIssues) (is
 	return issuemap.SearchFromQueryWithTags(
 		storeIssues,
 		storeTags,
-		query,
-		services.IssueTagScoresFromAnalysis(analyzed.Tags),
-		services.Float32VectorToFloat64(analyzed.Embedding.Vector),
-		input.Limit,
+		searchOpts.Query,
+		searchOpts.QueryTags,
+		searchOpts.QueryEmbed,
+		searchOpts.Limit,
+		issuemap.WithOffset(searchOpts.Offset),
+		issuemap.WithSortBy(searchOpts.SortBy),
 	), nil
 }
 
@@ -362,6 +383,60 @@ func compareIssueEmbeddings(items []issues.Issue) ([]PairwiseIssueSimilarity, fl
 		average = math.Round((total/float64(len(pairs)))*100) / 100
 	}
 	return pairs, average
+}
+
+func filterIssuesByAssignee(items []issues.Issue, assignedTo string) []issues.Issue {
+	assignedTo = strings.TrimSpace(assignedTo)
+	if assignedTo == "" {
+		return items
+	}
+	filtered := make([]issues.Issue, 0, len(items))
+	for _, item := range items {
+		if strings.EqualFold(item.AssignedTo, assignedTo) {
+			filtered = append(filtered, item)
+		}
+	}
+	return filtered
+}
+
+func filterIssuesByTags(items []issues.Issue, tags []string) []issues.Issue {
+	if len(tags) == 0 {
+		return items
+	}
+	required := make(map[string]struct{}, len(tags))
+	for _, tag := range tags {
+		tag = strings.TrimSpace(strings.ToLower(tag))
+		if tag != "" {
+			required[tag] = struct{}{}
+		}
+	}
+	if len(required) == 0 {
+		return items
+	}
+	filtered := make([]issues.Issue, 0, len(items))
+	for _, item := range items {
+		if issueMatchesTags(item, required) {
+			filtered = append(filtered, item)
+		}
+	}
+	return filtered
+}
+
+func issueMatchesTags(item issues.Issue, required map[string]struct{}) bool {
+	for _, tag := range item.Tags {
+		if _, ok := required[strings.ToLower(tag)]; ok {
+			return true
+		}
+	}
+	for _, ts := range item.TagScores {
+		if ts.Relevance < 0.3 {
+			continue
+		}
+		if _, ok := required[strings.ToLower(ts.Tag)]; ok {
+			return true
+		}
+	}
+	return false
 }
 
 func NotFound(err error) bool {

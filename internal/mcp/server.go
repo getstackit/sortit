@@ -73,7 +73,7 @@ func NewHandler(cfg ServerConfig) http.Handler {
 
 	s.AddTool(
 		mcp.NewTool("search_issues",
-			mcp.WithDescription("Search stored Splat issues from arbitrary text. Returns the most related issues using a blend of semantic similarity and tag-factor relevance."),
+			mcp.WithDescription("Search stored Splat issues from arbitrary text. Returns the most related issues using a blend of semantic similarity, tag-factor relevance, and text matching."),
 			mcp.WithString("query",
 				mcp.Required(),
 				mcp.Description("The search text, page description, or other freeform query to match against stored issues."),
@@ -81,8 +81,20 @@ func NewHandler(cfg ServerConfig) http.Handler {
 			mcp.WithNumber("limit",
 				mcp.Description("Maximum number of related issues to return. Defaults to 8."),
 			),
+			mcp.WithNumber("offset",
+				mcp.Description("Number of results to skip before returning, for pagination. Defaults to 0."),
+			),
 			mcp.WithString("status",
 				mcp.Description("Optional issue status filter: open, closed, or all. Defaults to open."),
+			),
+			mcp.WithString("assigned_to",
+				mcp.Description("Filter results to issues assigned to this person."),
+			),
+			mcp.WithString("tags",
+				mcp.Description("Comma-separated tag names to filter results. Only issues matching at least one tag are returned."),
+			),
+			mcp.WithString("sort_by",
+				mcp.Description("Sort order for results: relevance (default) or created_at (newest first)."),
 			),
 		),
 		h.handleSearchIssues,
@@ -336,15 +348,41 @@ func (h *handlers) handleSearchIssues(ctx context.Context, req mcp.CallToolReque
 		return mcp.NewToolResultError("limit must be greater than 0"), nil
 	}
 
+	offset := req.GetInt("offset", 0)
+	if offset < 0 {
+		return mcp.NewToolResultError("offset must be >= 0"), nil
+	}
+
 	status, ok := parseStatusFilter(req.GetString("status", "open"), true)
 	if !ok {
 		return mcp.NewToolResultError("status must be one of: open, closed, all"), nil
 	}
 
+	assignedTo := strings.TrimSpace(req.GetString("assigned_to", ""))
+	tagsRaw := strings.TrimSpace(req.GetString("tags", ""))
+	var tags []string
+	if tagsRaw != "" {
+		for _, tag := range strings.Split(tagsRaw, ",") {
+			tag = strings.TrimSpace(tag)
+			if tag != "" {
+				tags = append(tags, tag)
+			}
+		}
+	}
+
+	sortBy := strings.TrimSpace(req.GetString("sort_by", "relevance"))
+	if sortBy != "" && sortBy != "relevance" && sortBy != "created_at" {
+		return mcp.NewToolResultError("sort_by must be one of: relevance, created_at"), nil
+	}
+
 	response, err := h.searchIssues.Handle(ctx, queries.SearchIssues{
-		Query:  query,
-		Limit:  limit,
-		Status: status,
+		Query:      query,
+		Limit:      limit,
+		Offset:     offset,
+		Status:     status,
+		AssignedTo: assignedTo,
+		Tags:       tags,
+		SortBy:     sortBy,
 	})
 	if err != nil {
 		return toolResultError(err), nil

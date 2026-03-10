@@ -1,14 +1,40 @@
 "use client";
 
+import { useState } from "react";
 import Link from "next/link";
 import useSWR from "swr";
-import { ActivitySquareIcon, GitMergeIcon, MessageSquareMoreIcon, UserIcon } from "lucide-react";
+import {
+  ActivitySquareIcon,
+  CheckCircle2Icon,
+  CircleDotIcon,
+  GitMergeIcon,
+  LinkIcon,
+  MessageSquareMoreIcon,
+  PlusCircleIcon,
+  RefreshCwIcon,
+  ScissorsIcon,
+  TrendingUpIcon,
+  UserIcon,
+} from "lucide-react";
 import { AppShell } from "@/components/app-shell";
 import { AppSidebar } from "@/components/app-sidebar";
 import { SiteHeader } from "@/components/site-header";
 import { useBackendRevision } from "@/hooks/use-issues";
 import { fetchActivity, type ActivityEventRecord } from "@/lib/activity";
 import { cn } from "@/lib/utils";
+
+const EVENT_KINDS = [
+  { value: "", label: "All" },
+  { value: "report", label: "Reports", icon: PlusCircleIcon },
+  { value: "refinement", label: "Refinements", icon: MessageSquareMoreIcon },
+  { value: "progress", label: "Progress", icon: TrendingUpIcon },
+  { value: "closed", label: "Closed", icon: CheckCircle2Icon },
+  { value: "reopened", label: "Reopened", icon: RefreshCwIcon },
+  { value: "assigned", label: "Assigned", icon: UserIcon },
+  { value: "split", label: "Split", icon: ScissorsIcon },
+  { value: "combine", label: "Combine", icon: GitMergeIcon },
+  { value: "link", label: "Link", icon: LinkIcon },
+] as const;
 
 function formatRelativeTime(value: string) {
   const timestamp = new Date(value).getTime();
@@ -34,38 +60,17 @@ function formatRelativeTime(value: string) {
 }
 
 function eventIcon(kind: string) {
-  if (kind === "split" || kind === "combine" || kind === "link") {
-    return <GitMergeIcon className="size-4" />;
+  const match = EVENT_KINDS.find((k) => k.value === kind);
+  if (match && "icon" in match) {
+    const Icon = match.icon;
+    return <Icon className="size-4" />;
   }
-  if (kind === "assigned") {
-    return <UserIcon className="size-4" />;
-  }
-  return <MessageSquareMoreIcon className="size-4" />;
+  return <CircleDotIcon className="size-4" />;
 }
 
 function eventLabel(kind: string) {
-  switch (kind) {
-    case "report":
-      return "Report";
-    case "refinement":
-      return "Refinement";
-    case "progress":
-      return "Progress";
-    case "closed":
-      return "Closed";
-    case "reopened":
-      return "Reopened";
-    case "assigned":
-      return "Assignment";
-    case "split":
-      return "Split";
-    case "combine":
-      return "Combine";
-    case "link":
-      return "Link";
-    default:
-      return kind;
-  }
+  const match = EVENT_KINDS.find((k) => k.value === kind);
+  return match ? match.label.replace(/s$/, "") : kind;
 }
 
 function entityLink(entityType: string, entityId: string) {
@@ -77,61 +82,65 @@ function entityLink(entityType: string, entityId: string) {
 
 function ActivityCard({ event }: { event: ActivityEventRecord }) {
   return (
-    <article className="app-surface rounded-[1.5rem] p-5">
-      <div className="flex items-start gap-3">
-        <div className="rounded-full bg-muted p-2 text-muted-foreground">
-          {eventIcon(event.kind)}
-        </div>
-        <div className="min-w-0 flex-1">
-          <div className="flex flex-wrap items-center gap-2">
-            <span className="text-sm font-semibold">{eventLabel(event.kind)}</span>
-            <span className="app-chip">{formatRelativeTime(event.createdAt)}</span>
-            <span className="text-xs text-muted-foreground">{event.createdBy}</span>
-          </div>
+    <div className="relative flex gap-4 pb-8 last:pb-0">
+      {/* Timeline line */}
+      <div className="absolute left-[15px] top-9 bottom-0 w-px bg-border/60 last:hidden" />
 
-          {event.entityId && (
-            <div className="mt-2">
-              <Link
-                href={entityLink(event.entityType, event.entityId)}
-                className="text-sm font-medium transition-colors hover:text-foreground/80"
-              >
-                {event.entityId}
-              </Link>
-            </div>
-          )}
-
-          {event.body && (
-            <p className="mt-3 whitespace-pre-wrap text-sm leading-6 text-foreground/85">
-              {event.body}
-            </p>
-          )}
-
-          {event.participants && event.participants.length > 0 && (
-            <div className="mt-3 flex flex-wrap gap-1.5">
-              {event.participants.map((participant) => (
-                <Link
-                  key={`${event.id}-${participant.entityId}-${participant.role}`}
-                  href={entityLink(participant.entityType, participant.entityId)}
-                  className={cn(
-                    "rounded-full border border-border/70 px-2.5 py-1 text-[11px] font-medium transition-colors hover:bg-accent/70"
-                  )}
-                >
-                  {participant.entityId} · {participant.role}
-                </Link>
-              ))}
-            </div>
-          )}
-        </div>
+      {/* Icon */}
+      <div className="relative z-10 flex size-8 shrink-0 items-center justify-center rounded-full border border-border/70 bg-background text-muted-foreground">
+        {eventIcon(event.kind)}
       </div>
-    </article>
+
+      {/* Content */}
+      <div className="min-w-0 flex-1 pt-0.5">
+        <div className="flex flex-wrap items-baseline gap-x-2 gap-y-0.5">
+          <span className="text-sm font-medium">{eventLabel(event.kind)}</span>
+          {event.entityId && (
+            <Link
+              href={entityLink(event.entityType, event.entityId)}
+              className="text-sm text-muted-foreground transition-colors hover:text-foreground"
+            >
+              {event.entityId}
+            </Link>
+          )}
+          <span className="text-xs text-muted-foreground">
+            {event.createdBy ? `by ${event.createdBy}` : ""}
+          </span>
+          <span className="text-xs text-muted-foreground/70">
+            {formatRelativeTime(event.createdAt)}
+          </span>
+        </div>
+
+        {event.body && (
+          <p className="mt-1.5 whitespace-pre-wrap text-sm leading-relaxed text-foreground/80">
+            {event.body}
+          </p>
+        )}
+
+        {event.participants && event.participants.length > 0 && (
+          <div className="mt-2 flex flex-wrap gap-1.5">
+            {event.participants.map((participant) => (
+              <Link
+                key={`${event.id}-${participant.entityId}-${participant.role}`}
+                href={entityLink(participant.entityType, participant.entityId)}
+                className="rounded-full border border-border/70 px-2.5 py-0.5 text-[11px] font-medium text-muted-foreground transition-colors hover:bg-accent/70 hover:text-foreground"
+              >
+                {participant.entityId} · {participant.role}
+              </Link>
+            ))}
+          </div>
+        )}
+      </div>
+    </div>
   );
 }
 
 export function ActivityFeedPage() {
+  const [kindFilter, setKindFilter] = useState("");
   const { data: revision = 0 } = useBackendRevision();
   const { data, error, isLoading } = useSWR(
-    ["activity-feed", revision],
-    () => fetchActivity({ limit: 80 })
+    ["activity-feed", revision, kindFilter],
+    () => fetchActivity({ limit: 80, kind: kindFilter || undefined })
   );
 
   const events = data?.events ?? [];
@@ -144,19 +153,29 @@ export function ActivityFeedPage() {
         subtitle="Cross-issue discussion, status changes, assignments, and relationship operations."
         meta={<span className="app-chip">{events.length} recent events</span>}
         actions={
-          <Link
-            href="/"
-            className="rounded-md border border-border px-3 py-1 text-xs font-medium text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
-          >
-            All issues
-          </Link>
+          <div className="flex flex-wrap items-center gap-1.5">
+            {EVENT_KINDS.map((kind) => (
+              <button
+                key={kind.value}
+                onClick={() => setKindFilter(kind.value)}
+                className={cn(
+                  "rounded-full px-2.5 py-1 text-[11px] font-medium transition-colors",
+                  kindFilter === kind.value
+                    ? "bg-foreground text-background"
+                    : "border border-border/70 text-muted-foreground hover:bg-accent/70 hover:text-foreground"
+                )}
+              >
+                {kind.label}
+              </button>
+            ))}
+          </div>
         }
       />
 
       <div className="app-scrollarea min-h-0 flex-1 overflow-y-auto">
-        <div className="mx-auto flex w-full max-w-5xl flex-col gap-4 px-4 py-6 lg:px-6">
+        <div className="mx-auto w-full max-w-3xl px-4 py-6 lg:px-6">
           {isLoading && (
-            <div className="app-subtle-surface rounded-[1.5rem] p-5 text-sm text-muted-foreground">
+            <div className="py-8 text-center text-sm text-muted-foreground">
               Loading activity...
             </div>
           )}
@@ -168,15 +187,21 @@ export function ActivityFeedPage() {
           )}
 
           {!isLoading && !error && events.length === 0 && (
-            <div className="app-subtle-surface rounded-[1.5rem] p-8 text-center text-sm text-muted-foreground">
+            <div className="py-12 text-center text-sm text-muted-foreground">
               <ActivitySquareIcon className="mx-auto mb-3 size-5" />
-              No activity yet.
+              {kindFilter
+                ? `No ${EVENT_KINDS.find((k) => k.value === kindFilter)?.label.toLowerCase() ?? kindFilter} events yet.`
+                : "No activity yet."}
             </div>
           )}
 
-          {events.map((event) => (
-            <ActivityCard key={event.id} event={event} />
-          ))}
+          {events.length > 0 && (
+            <div className="pl-0">
+              {events.map((event) => (
+                <ActivityCard key={event.id} event={event} />
+              ))}
+            </div>
+          )}
         </div>
       </div>
     </AppShell>

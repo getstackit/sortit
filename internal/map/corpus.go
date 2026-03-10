@@ -131,7 +131,9 @@ func SearchFromCorpus(
 	queryTags []issues.TagRelevance,
 	queryEmbedding []float64,
 	limit int,
+	opts ...SearchOption,
 ) SearchResponse {
+	cfg := applySearchOptions(opts)
 	queryRaw = strings.TrimSpace(queryRaw)
 	if limit <= 0 {
 		limit = defaultSearchLimit
@@ -157,6 +159,9 @@ func SearchFromCorpus(
 		TagScores: querySummary.Tags,
 	}}, corpus.TagNames, corpus.TagEmbeddings)["query"]
 
+	queryLower := strings.ToLower(queryRaw)
+	tagCorrelationBoost := queryMatchesTagNames(queryLower, corpus.TagNames)
+
 	related := make([]RelatedIssue, 0, len(corpus.Issues))
 	for _, candidate := range corpus.Issues {
 		if _, ok := corpus.VisibleIssueIDs[candidate.ID]; !ok {
@@ -166,7 +171,9 @@ func SearchFromCorpus(
 		candidateSummary := exploreIssueSummary(candidate)
 		semantic := cosineSimilarity(queryVector, corpus.IssueEmbeddings[candidate.ID])
 		factor := cosineSimilarity(queryFactor, corpus.FactorVectors[candidate.ID])
-		combined := 0.6*semantic + 0.4*factor
+		textMatch := textMatchScore(queryLower, candidate.Raw)
+		combined := blendScores(semantic, factor, textMatch, tagCorrelationBoost)
+		combined -= issueSpecificityPenalty(candidateSummary.Tags)
 		sharedTags := sharedRelevantTags(querySummary.Tags, candidateSummary.Tags, 3)
 
 		related = append(related, RelatedIssue{
@@ -181,7 +188,13 @@ func SearchFromCorpus(
 		})
 	}
 
-	sortRelatedIssues(related)
+	sortSearchResults(related, corpus.Issues, cfg.sortBy)
+
+	if cfg.offset > 0 && cfg.offset < len(related) {
+		related = related[cfg.offset:]
+	} else if cfg.offset >= len(related) {
+		related = nil
+	}
 	if len(related) > limit {
 		related = related[:limit]
 	}
