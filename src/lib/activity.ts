@@ -1,17 +1,10 @@
 import { apiURL } from "@/lib/api";
 import { getJSON } from "@/lib/http";
-import type { IssueStatus } from "@/lib/issues";
-
-export type ActivityIssueRecord = {
-  id: string;
-  raw: string;
-  status: IssueStatus;
-};
 
 export type ActivityParticipantRecord = {
-  issueId: string;
+  entityType: string;
+  entityId: string;
   role: string;
-  issue?: ActivityIssueRecord;
 };
 
 export type ActivityEventRecord = {
@@ -19,7 +12,8 @@ export type ActivityEventRecord = {
   kind: string;
   createdAt: string;
   createdBy: string;
-  issue?: ActivityIssueRecord;
+  entityType: string;
+  entityId: string;
   participants?: ActivityParticipantRecord[];
   body?: string;
 };

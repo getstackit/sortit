@@ -68,6 +68,13 @@ function eventLabel(kind: string) {
   }
 }
 
+function entityLink(entityType: string, entityId: string) {
+  if (entityType === "issue") {
+    return `/issues/${entityId}`;
+  }
+  return "#";
+}
+
 function ActivityCard({ event }: { event: ActivityEventRecord }) {
   return (
     <article className="app-surface rounded-[1.5rem] p-5">
@@ -82,17 +89,14 @@ function ActivityCard({ event }: { event: ActivityEventRecord }) {
             <span className="text-xs text-muted-foreground">{event.createdBy}</span>
           </div>
 
-          {event.issue && (
+          {event.entityId && (
             <div className="mt-2">
               <Link
-                href={`/issues/${event.issue.id}`}
+                href={entityLink(event.entityType, event.entityId)}
                 className="text-sm font-medium transition-colors hover:text-foreground/80"
               >
-                {event.issue.raw}
+                {event.entityId}
               </Link>
-              <p className="mt-0.5 text-[11px] text-muted-foreground">
-                {event.issue.id} · {event.issue.status}
-              </p>
             </div>
           )}
 
@@ -106,13 +110,13 @@ function ActivityCard({ event }: { event: ActivityEventRecord }) {
             <div className="mt-3 flex flex-wrap gap-1.5">
               {event.participants.map((participant) => (
                 <Link
-                  key={`${event.id}-${participant.issueId}-${participant.role}`}
-                  href={`/issues/${participant.issueId}`}
+                  key={`${event.id}-${participant.entityId}-${participant.role}`}
+                  href={entityLink(participant.entityType, participant.entityId)}
                   className={cn(
                     "rounded-full border border-border/70 px-2.5 py-1 text-[11px] font-medium transition-colors hover:bg-accent/70"
                   )}
                 >
-                  {(participant.issue?.id ?? participant.issueId)} · {participant.role}
+                  {participant.entityId} · {participant.role}
                 </Link>
               ))}
             </div>

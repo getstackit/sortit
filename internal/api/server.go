@@ -348,7 +348,7 @@ func NewServer(cfg ServerConfig) *Server {
 			Events: events,
 		},
 		listIssues:    queries.ListIssuesHandler{Store: store},
-		listActivity:  queries.ListActivityHandler{Events: events, ReadModel: readModel, Store: store},
+		listActivity:  queries.ListActivityHandler{Events: events, ReadModel: readModel},
 		getIssue:      queries.GetIssueHandler{Store: store},
 		compareIssues: queries.CompareIssuesHandler{Store: store, ReadModel: readModel},
 		searchIssues: queries.SearchIssuesHandler{

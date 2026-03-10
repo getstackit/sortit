@@ -158,73 +158,33 @@ INSERT INTO events (
 ) VALUES ($1, $2, $3, $4, $5, $6, $7);
 
 -- name: ListEvents :many
-SELECT
-    e.id,
-    e.kind,
-    e.issue_id,
-    e.created_by,
-    e.created_at_unix_nano,
-    e.body,
-    e.participants_json,
-    i.raw AS issue_raw,
-    i.status AS issue_status
-FROM events e
-LEFT JOIN issues i ON e.issue_id = i.id
-ORDER BY e.created_at_unix_nano DESC, e.id DESC
+SELECT id, kind, issue_id, created_by, created_at_unix_nano, body, participants_json
+FROM events
+ORDER BY created_at_unix_nano DESC, id DESC
 LIMIT $1;
 
 -- name: ListEventsBefore :many
-SELECT
-    e.id,
-    e.kind,
-    e.issue_id,
-    e.created_by,
-    e.created_at_unix_nano,
-    e.body,
-    e.participants_json,
-    i.raw AS issue_raw,
-    i.status AS issue_status
-FROM events e
-LEFT JOIN issues i ON e.issue_id = i.id
-WHERE e.created_at_unix_nano < $1
-   OR (e.created_at_unix_nano = $1 AND e.id < $2)
-ORDER BY e.created_at_unix_nano DESC, e.id DESC
+SELECT id, kind, issue_id, created_by, created_at_unix_nano, body, participants_json
+FROM events
+WHERE created_at_unix_nano < $1
+   OR (created_at_unix_nano = $1 AND id < $2)
+ORDER BY created_at_unix_nano DESC, id DESC
 LIMIT $3;
 
 -- name: ListEventsByKind :many
-SELECT
-    e.id,
-    e.kind,
-    e.issue_id,
-    e.created_by,
-    e.created_at_unix_nano,
-    e.body,
-    e.participants_json,
-    i.raw AS issue_raw,
-    i.status AS issue_status
-FROM events e
-LEFT JOIN issues i ON e.issue_id = i.id
-WHERE e.kind = $1
-ORDER BY e.created_at_unix_nano DESC, e.id DESC
+SELECT id, kind, issue_id, created_by, created_at_unix_nano, body, participants_json
+FROM events
+WHERE kind = $1
+ORDER BY created_at_unix_nano DESC, id DESC
 LIMIT $2;
 
 -- name: ListEventsByKindBefore :many
-SELECT
-    e.id,
-    e.kind,
-    e.issue_id,
-    e.created_by,
-    e.created_at_unix_nano,
-    e.body,
-    e.participants_json,
-    i.raw AS issue_raw,
-    i.status AS issue_status
-FROM events e
-LEFT JOIN issues i ON e.issue_id = i.id
-WHERE e.kind = $1
-  AND (e.created_at_unix_nano < $2
-       OR (e.created_at_unix_nano = $2 AND e.id < $3))
-ORDER BY e.created_at_unix_nano DESC, e.id DESC
+SELECT id, kind, issue_id, created_by, created_at_unix_nano, body, participants_json
+FROM events
+WHERE kind = $1
+  AND (created_at_unix_nano < $2
+       OR (created_at_unix_nano = $2 AND id < $3))
+ORDER BY created_at_unix_nano DESC, id DESC
 LIMIT $4;
 
 -- name: DeleteAllEvents :exec

@@ -18,16 +18,10 @@ type ListActivity struct {
 	Kind   string
 }
 
-type ActivityIssue struct {
-	ID     string             `json:"id"`
-	Raw    string             `json:"raw"`
-	Status issues.IssueStatus `json:"status"`
-}
-
 type ActivityParticipant struct {
-	IssueID string         `json:"issueId"`
-	Role    string         `json:"role"`
-	Issue   *ActivityIssue `json:"issue,omitempty"`
+	EntityType string `json:"entityType"`
+	EntityID   string `json:"entityId"`
+	Role       string `json:"role"`
 }
 
 type ActivityEvent struct {
@@ -35,7 +29,8 @@ type ActivityEvent struct {
 	Kind         string                `json:"kind"`
 	CreatedAt    time.Time             `json:"createdAt"`
 	CreatedBy    string                `json:"createdBy"`
-	Issue        *ActivityIssue        `json:"issue,omitempty"`
+	EntityType   string                `json:"entityType"`
+	EntityID     string                `json:"entityId"`
 	Participants []ActivityParticipant `json:"participants,omitempty"`
 	Body         string                `json:"body,omitempty"`
 }
@@ -48,7 +43,6 @@ type ActivityResponse struct {
 type ListActivityHandler struct {
 	Events    issues.EventStore
 	ReadModel *ReadModelLoader // kept for fallback
-	Store     issues.Store
 }
 
 func (h ListActivityHandler) Handle(ctx context.Context, input ListActivity) (ActivityResponse, error) {
@@ -69,34 +63,6 @@ func (h ListActivityHandler) handleFromEvents(ctx context.Context, input ListAct
 		return ActivityResponse{}, err
 	}
 
-	// Batch-load issue details for participant enrichment
-	issuesByID := make(map[string]*ActivityIssue)
-	for _, event := range events {
-		if event.IssueID != "" {
-			issuesByID[event.IssueID] = nil
-		}
-		for _, p := range event.Participants {
-			if p.IssueID != "" {
-				issuesByID[p.IssueID] = nil
-			}
-		}
-	}
-
-	// Load issue details
-	if h.Store != nil {
-		for id := range issuesByID {
-			issue, err := h.Store.Get(ctx, id)
-			if err != nil {
-				continue // issue may have been deleted
-			}
-			issuesByID[id] = &ActivityIssue{
-				ID:     issue.ID,
-				Raw:    issue.Raw,
-				Status: issue.Status,
-			}
-		}
-	}
-
 	activityEvents := make([]ActivityEvent, 0, len(events))
 	for _, event := range events {
 		ae := ActivityEvent{
@@ -108,18 +74,18 @@ func (h ListActivityHandler) handleFromEvents(ctx context.Context, input ListAct
 		}
 
 		if event.IssueID != "" {
-			ae.Issue = issuesByID[event.IssueID]
+			ae.EntityType = "issue"
+			ae.EntityID = event.IssueID
 		}
 
 		if len(event.Participants) > 0 {
 			ae.Participants = make([]ActivityParticipant, 0, len(event.Participants))
 			for _, p := range event.Participants {
-				ap := ActivityParticipant{
-					IssueID: p.IssueID,
-					Role:    p.Role,
-					Issue:   issuesByID[p.IssueID],
-				}
-				ae.Participants = append(ae.Participants, ap)
+				ae.Participants = append(ae.Participants, ActivityParticipant{
+					EntityType: "issue",
+					EntityID:   p.IssueID,
+					Role:       p.Role,
+				})
 			}
 		}
 
@@ -172,12 +138,6 @@ func buildActivityEvents(items []issues.Issue) []ActivityEvent {
 	seenOperations := make(map[string]struct{})
 
 	for _, item := range items {
-		issueRef := &ActivityIssue{
-			ID:     item.ID,
-			Raw:    item.Raw,
-			Status: item.Status,
-		}
-
 		for _, post := range item.Discussion {
 			kind := strings.TrimSpace(post.Kind)
 			if kind == "" {
@@ -189,12 +149,13 @@ func buildActivityEvents(items []issues.Issue) []ActivityEvent {
 			}
 
 			events = append(events, ActivityEvent{
-				ID:        post.ID,
-				Kind:      kind,
-				CreatedAt: post.CreatedAt,
-				CreatedBy: post.CreatedBy,
-				Issue:     issueRef,
-				Body:      post.Raw,
+				ID:         post.ID,
+				Kind:       kind,
+				CreatedAt:  post.CreatedAt,
+				CreatedBy:  post.CreatedBy,
+				EntityType: "issue",
+				EntityID:   item.ID,
+				Body:       post.Raw,
 			})
 		}
 
@@ -206,18 +167,11 @@ func buildActivityEvents(items []issues.Issue) []ActivityEvent {
 
 			participants := make([]ActivityParticipant, 0, len(operation.Participants))
 			for _, participant := range operation.Participants {
-				entry := ActivityParticipant{
-					IssueID: participant.IssueID,
-					Role:    participant.Role,
-				}
-				if participant.Issue != nil {
-					entry.Issue = &ActivityIssue{
-						ID:     participant.Issue.ID,
-						Raw:    participant.Issue.Raw,
-						Status: participant.Issue.Status,
-					}
-				}
-				participants = append(participants, entry)
+				participants = append(participants, ActivityParticipant{
+					EntityType: "issue",
+					EntityID:   participant.IssueID,
+					Role:       participant.Role,
+				})
 			}
 
 			events = append(events, ActivityEvent{

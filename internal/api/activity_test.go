@@ -106,7 +106,7 @@ func TestActivityEndpointIncludesOperationalEvents(t *testing.T) {
 
 	foundClosed := false
 	for _, event := range activity.Events {
-		if event.Kind == "closed" && event.Issue != nil && event.Issue.ID == issueID {
+		if event.Kind == "closed" && event.EntityType == "issue" && event.EntityID == issueID {
 			foundClosed = true
 			break
 		}

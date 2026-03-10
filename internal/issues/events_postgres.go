@@ -2,7 +2,6 @@ package issues
 
 import (
 	"context"
-	"database/sql"
 	"encoding/json"
 	"fmt"
 	"strings"
@@ -38,38 +37,30 @@ func (s *PostgresStore) ListEvents(ctx context.Context, limit int, cursor string
 	kind = strings.TrimSpace(kind)
 	cursorTime, cursorID, hasCursor := decodeEventCursor(cursor)
 
-	var rows []eventRow
+	var rows []issuesdb.Event
 	var err error
 
 	switch {
 	case kind != "" && hasCursor:
-		dbRows, e := s.queries.ListEventsByKindBefore(ctx, issuesdb.ListEventsByKindBeforeParams{
+		rows, err = s.queries.ListEventsByKindBefore(ctx, issuesdb.ListEventsByKindBeforeParams{
 			Kind:              kind,
 			CreatedAtUnixNano: cursorTime.UnixNano(),
 			ID:                cursorID,
 			Limit:             fetchLimit,
 		})
-		err = e
-		rows = convertEventsByKindBeforeRows(dbRows)
 	case kind != "":
-		dbRows, e := s.queries.ListEventsByKind(ctx, issuesdb.ListEventsByKindParams{
+		rows, err = s.queries.ListEventsByKind(ctx, issuesdb.ListEventsByKindParams{
 			Kind:  kind,
 			Limit: fetchLimit,
 		})
-		err = e
-		rows = convertEventsByKindRows(dbRows)
 	case hasCursor:
-		dbRows, e := s.queries.ListEventsBefore(ctx, issuesdb.ListEventsBeforeParams{
+		rows, err = s.queries.ListEventsBefore(ctx, issuesdb.ListEventsBeforeParams{
 			CreatedAtUnixNano: cursorTime.UnixNano(),
 			ID:                cursorID,
 			Limit:             fetchLimit,
 		})
-		err = e
-		rows = convertEventsBeforeRows(dbRows)
 	default:
-		dbRows, e := s.queries.ListEvents(ctx, fetchLimit)
-		err = e
-		rows = convertEventsRows(dbRows)
+		rows, err = s.queries.ListEvents(ctx, fetchLimit)
 	}
 
 	if err != nil {
@@ -99,75 +90,10 @@ func (s *PostgresStore) ListEvents(ctx context.Context, limit int, cursor string
 	return events, nextCursor, nil
 }
 
-// eventRow is a unified type for all event query result shapes.
-type eventRow struct {
-	ID                string
-	Kind              string
-	IssueID           string
-	CreatedBy         string
-	CreatedAtUnixNano int64
-	Body              string
-	ParticipantsJSON  json.RawMessage
-	IssueRaw          sql.NullString
-	IssueStatus       sql.NullString
-}
-
-func convertEventsRows(rows []issuesdb.ListEventsRow) []eventRow {
-	out := make([]eventRow, len(rows))
-	for i, r := range rows {
-		out[i] = eventRow{
-			ID: r.ID, Kind: r.Kind, IssueID: r.IssueID,
-			CreatedBy: r.CreatedBy, CreatedAtUnixNano: r.CreatedAtUnixNano,
-			Body: r.Body, ParticipantsJSON: r.ParticipantsJson,
-			IssueRaw: r.IssueRaw, IssueStatus: r.IssueStatus,
-		}
-	}
-	return out
-}
-
-func convertEventsBeforeRows(rows []issuesdb.ListEventsBeforeRow) []eventRow {
-	out := make([]eventRow, len(rows))
-	for i, r := range rows {
-		out[i] = eventRow{
-			ID: r.ID, Kind: r.Kind, IssueID: r.IssueID,
-			CreatedBy: r.CreatedBy, CreatedAtUnixNano: r.CreatedAtUnixNano,
-			Body: r.Body, ParticipantsJSON: r.ParticipantsJson,
-			IssueRaw: r.IssueRaw, IssueStatus: r.IssueStatus,
-		}
-	}
-	return out
-}
-
-func convertEventsByKindRows(rows []issuesdb.ListEventsByKindRow) []eventRow {
-	out := make([]eventRow, len(rows))
-	for i, r := range rows {
-		out[i] = eventRow{
-			ID: r.ID, Kind: r.Kind, IssueID: r.IssueID,
-			CreatedBy: r.CreatedBy, CreatedAtUnixNano: r.CreatedAtUnixNano,
-			Body: r.Body, ParticipantsJSON: r.ParticipantsJson,
-			IssueRaw: r.IssueRaw, IssueStatus: r.IssueStatus,
-		}
-	}
-	return out
-}
-
-func convertEventsByKindBeforeRows(rows []issuesdb.ListEventsByKindBeforeRow) []eventRow {
-	out := make([]eventRow, len(rows))
-	for i, r := range rows {
-		out[i] = eventRow{
-			ID: r.ID, Kind: r.Kind, IssueID: r.IssueID,
-			CreatedBy: r.CreatedBy, CreatedAtUnixNano: r.CreatedAtUnixNano,
-			Body: r.Body, ParticipantsJSON: r.ParticipantsJson,
-			IssueRaw: r.IssueRaw, IssueStatus: r.IssueStatus,
-		}
-	}
-	return out
-}
-
-func eventFromRow(row eventRow) (Event, error) {
+func eventFromRow(row issuesdb.Event) (Event, error) {
 	var participants []EventParticipant
-	if len(row.ParticipantsJSON) > 0 {
-		if err := json.Unmarshal(row.ParticipantsJSON, &participants); err != nil {
+	if len(row.ParticipantsJson) > 0 {
+		if err := json.Unmarshal(row.ParticipantsJson, &participants); err != nil {
 			return Event{}, fmt.Errorf("unmarshal event participants: %w", err)
 		}
 	}

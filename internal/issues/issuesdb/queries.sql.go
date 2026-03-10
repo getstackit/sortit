@@ -7,7 +7,6 @@ package issuesdb
 
 import (
 	"context"
-	"database/sql"
 	"encoding/json"
 )
 
@@ -334,43 +333,21 @@ func (q *Queries) InsertIssuePost(ctx context.Context, arg InsertIssuePostParams
 }
 
 const listEvents = `-- name: ListEvents :many
-SELECT
-    e.id,
-    e.kind,
-    e.issue_id,
-    e.created_by,
-    e.created_at_unix_nano,
-    e.body,
-    e.participants_json,
-    i.raw AS issue_raw,
-    i.status AS issue_status
-FROM events e
-LEFT JOIN issues i ON e.issue_id = i.id
-ORDER BY e.created_at_unix_nano DESC, e.id DESC
+SELECT id, kind, issue_id, created_by, created_at_unix_nano, body, participants_json
+FROM events
+ORDER BY created_at_unix_nano DESC, id DESC
 LIMIT $1
 `
 
-type ListEventsRow struct {
-	ID                string
-	Kind              string
-	IssueID           string
-	CreatedBy         string
-	CreatedAtUnixNano int64
-	Body              string
-	ParticipantsJson  json.RawMessage
-	IssueRaw          sql.NullString
-	IssueStatus       sql.NullString
-}
-
-func (q *Queries) ListEvents(ctx context.Context, limit int32) ([]ListEventsRow, error) {
+func (q *Queries) ListEvents(ctx context.Context, limit int32) ([]Event, error) {
 	rows, err := q.db.QueryContext(ctx, listEvents, limit)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
-	var items []ListEventsRow
+	var items []Event
 	for rows.Next() {
-		var i ListEventsRow
+		var i Event
 		if err := rows.Scan(
 			&i.ID,
 			&i.Kind,
@@ -379,8 +356,6 @@ func (q *Queries) ListEvents(ctx context.Context, limit int32) ([]ListEventsRow,
 			&i.CreatedAtUnixNano,
 			&i.Body,
 			&i.ParticipantsJson,
-			&i.IssueRaw,
-			&i.IssueStatus,
 		); err != nil {
 			return nil, err
 		}
@@ -396,21 +371,11 @@ func (q *Queries) ListEvents(ctx context.Context, limit int32) ([]ListEventsRow,
 }
 
 const listEventsBefore = `-- name: ListEventsBefore :many
-SELECT
-    e.id,
-    e.kind,
-    e.issue_id,
-    e.created_by,
-    e.created_at_unix_nano,
-    e.body,
-    e.participants_json,
-    i.raw AS issue_raw,
-    i.status AS issue_status
-FROM events e
-LEFT JOIN issues i ON e.issue_id = i.id
-WHERE e.created_at_unix_nano < $1
-   OR (e.created_at_unix_nano = $1 AND e.id < $2)
-ORDER BY e.created_at_unix_nano DESC, e.id DESC
+SELECT id, kind, issue_id, created_by, created_at_unix_nano, body, participants_json
+FROM events
+WHERE created_at_unix_nano < $1
+   OR (created_at_unix_nano = $1 AND id < $2)
+ORDER BY created_at_unix_nano DESC, id DESC
 LIMIT $3
 `
 
@@ -420,27 +385,15 @@ type ListEventsBeforeParams struct {
 	Limit             int32
 }
 
-type ListEventsBeforeRow struct {
-	ID                string
-	Kind              string
-	IssueID           string
-	CreatedBy         string
-	CreatedAtUnixNano int64
-	Body              string
-	ParticipantsJson  json.RawMessage
-	IssueRaw          sql.NullString
-	IssueStatus       sql.NullString
-}
-
-func (q *Queries) ListEventsBefore(ctx context.Context, arg ListEventsBeforeParams) ([]ListEventsBeforeRow, error) {
+func (q *Queries) ListEventsBefore(ctx context.Context, arg ListEventsBeforeParams) ([]Event, error) {
 	rows, err := q.db.QueryContext(ctx, listEventsBefore, arg.CreatedAtUnixNano, arg.ID, arg.Limit)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
-	var items []ListEventsBeforeRow
+	var items []Event
 	for rows.Next() {
-		var i ListEventsBeforeRow
+		var i Event
 		if err := rows.Scan(
 			&i.ID,
 			&i.Kind,
@@ -449,8 +402,6 @@ func (q *Queries) ListEventsBefore(ctx context.Context, arg ListEventsBeforePara
 			&i.CreatedAtUnixNano,
 			&i.Body,
 			&i.ParticipantsJson,
-			&i.IssueRaw,
-			&i.IssueStatus,
 		); err != nil {
 			return nil, err
 		}
@@ -466,20 +417,10 @@ func (q *Queries) ListEventsBefore(ctx context.Context, arg ListEventsBeforePara
 }
 
 const listEventsByKind = `-- name: ListEventsByKind :many
-SELECT
-    e.id,
-    e.kind,
-    e.issue_id,
-    e.created_by,
-    e.created_at_unix_nano,
-    e.body,
-    e.participants_json,
-    i.raw AS issue_raw,
-    i.status AS issue_status
-FROM events e
-LEFT JOIN issues i ON e.issue_id = i.id
-WHERE e.kind = $1
-ORDER BY e.created_at_unix_nano DESC, e.id DESC
+SELECT id, kind, issue_id, created_by, created_at_unix_nano, body, participants_json
+FROM events
+WHERE kind = $1
+ORDER BY created_at_unix_nano DESC, id DESC
 LIMIT $2
 `
 
@@ -488,27 +429,15 @@ type ListEventsByKindParams struct {
 	Limit int32
 }
 
-type ListEventsByKindRow struct {
-	ID                string
-	Kind              string
-	IssueID           string
-	CreatedBy         string
-	CreatedAtUnixNano int64
-	Body              string
-	ParticipantsJson  json.RawMessage
-	IssueRaw          sql.NullString
-	IssueStatus       sql.NullString
-}
-
-func (q *Queries) ListEventsByKind(ctx context.Context, arg ListEventsByKindParams) ([]ListEventsByKindRow, error) {
+func (q *Queries) ListEventsByKind(ctx context.Context, arg ListEventsByKindParams) ([]Event, error) {
 	rows, err := q.db.QueryContext(ctx, listEventsByKind, arg.Kind, arg.Limit)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
-	var items []ListEventsByKindRow
+	var items []Event
 	for rows.Next() {
-		var i ListEventsByKindRow
+		var i Event
 		if err := rows.Scan(
 			&i.ID,
 			&i.Kind,
@@ -517,8 +446,6 @@ func (q *Queries) ListEventsByKind(ctx context.Context, arg ListEventsByKindPara
 			&i.CreatedAtUnixNano,
 			&i.Body,
 			&i.ParticipantsJson,
-			&i.IssueRaw,
-			&i.IssueStatus,
 		); err != nil {
 			return nil, err
 		}
@@ -534,22 +461,12 @@ func (q *Queries) ListEventsByKind(ctx context.Context, arg ListEventsByKindPara
 }
 
 const listEventsByKindBefore = `-- name: ListEventsByKindBefore :many
-SELECT
-    e.id,
-    e.kind,
-    e.issue_id,
-    e.created_by,
-    e.created_at_unix_nano,
-    e.body,
-    e.participants_json,
-    i.raw AS issue_raw,
-    i.status AS issue_status
-FROM events e
-LEFT JOIN issues i ON e.issue_id = i.id
-WHERE e.kind = $1
-  AND (e.created_at_unix_nano < $2
-       OR (e.created_at_unix_nano = $2 AND e.id < $3))
-ORDER BY e.created_at_unix_nano DESC, e.id DESC
+SELECT id, kind, issue_id, created_by, created_at_unix_nano, body, participants_json
+FROM events
+WHERE kind = $1
+  AND (created_at_unix_nano < $2
+       OR (created_at_unix_nano = $2 AND id < $3))
+ORDER BY created_at_unix_nano DESC, id DESC
 LIMIT $4
 `
 
@@ -560,19 +477,7 @@ type ListEventsByKindBeforeParams struct {
 	Limit             int32
 }
 
-type ListEventsByKindBeforeRow struct {
-	ID                string
-	Kind              string
-	IssueID           string
-	CreatedBy         string
-	CreatedAtUnixNano int64
-	Body              string
-	ParticipantsJson  json.RawMessage
-	IssueRaw          sql.NullString
-	IssueStatus       sql.NullString
-}
-
-func (q *Queries) ListEventsByKindBefore(ctx context.Context, arg ListEventsByKindBeforeParams) ([]ListEventsByKindBeforeRow, error) {
+func (q *Queries) ListEventsByKindBefore(ctx context.Context, arg ListEventsByKindBeforeParams) ([]Event, error) {
 	rows, err := q.db.QueryContext(ctx, listEventsByKindBefore,
 		arg.Kind,
 		arg.CreatedAtUnixNano,
@@ -583,9 +488,9 @@ func (q *Queries) ListEventsByKindBefore(ctx context.Context, arg ListEventsByKi
 		return nil, err
 	}
 	defer rows.Close()
-	var items []ListEventsByKindBeforeRow
+	var items []Event
 	for rows.Next() {
-		var i ListEventsByKindBeforeRow
+		var i Event
 		if err := rows.Scan(
 			&i.ID,
 			&i.Kind,
@@ -594,8 +499,6 @@ func (q *Queries) ListEventsByKindBefore(ctx context.Context, arg ListEventsByKi
 			&i.CreatedAtUnixNano,
 			&i.Body,
 			&i.ParticipantsJson,
-			&i.IssueRaw,
-			&i.IssueStatus,
 		); err != nil {
 			return nil, err
 		}

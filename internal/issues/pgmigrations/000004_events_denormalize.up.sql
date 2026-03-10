@@ -1,0 +1,1 @@
+-- no-op: columns were never needed
