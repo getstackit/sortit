@@ -25,12 +25,41 @@ type ListIssuesHandler struct {
 	Store issues.Store
 }
 
-func (h ListIssuesHandler) Handle(ctx context.Context, filter IssueStatusFilter) ([]issues.Issue, error) {
+type ListIssuesQuery struct {
+	Status     IssueStatusFilter
+	AssignedTo string
+	Tags       []string
+	Limit      int
+	Offset     int
+}
+
+type filteredIssueLister interface {
+	ListFiltered(context.Context, issues.ListOptions) ([]issues.Issue, error)
+}
+
+func (h ListIssuesHandler) Handle(ctx context.Context, input ListIssuesQuery) ([]issues.Issue, error) {
+	if input.Status == "" {
+		input.Status = IssueStatusFilterOpen
+	}
+
+	if store, ok := h.Store.(filteredIssueLister); ok {
+		return store.ListFiltered(ctx, issues.ListOptions{
+			Status:     issueStatusFromFilter(input.Status),
+			AssignedTo: input.AssignedTo,
+			Tags:       input.Tags,
+			Limit:      input.Limit,
+			Offset:     input.Offset,
+		})
+	}
+
 	items, err := h.Store.List(ctx)
 	if err != nil {
 		return nil, err
 	}
-	return FilterIssuesByStatus(items, filter), nil
+	items = FilterIssuesByStatus(items, input.Status)
+	items = filterIssuesByAssignee(items, input.AssignedTo)
+	items = filterIssuesByTags(items, input.Tags)
+	return paginateIssues(items, input.Limit, input.Offset), nil
 }
 
 type GetIssueHandler struct {
@@ -63,13 +92,20 @@ type CompareIssuesHandler struct {
 }
 
 func (h CompareIssuesHandler) Handle(ctx context.Context, input CompareIssues) (CompareIssuesResult, error) {
-	if h.ReadModel != nil {
+	selected := make([]issues.Issue, 0, len(input.IDs))
+	if h.Store != nil {
+		for _, id := range input.IDs {
+			issue, err := h.Store.Get(ctx, id)
+			if err != nil {
+				return CompareIssuesResult{}, err
+			}
+			selected = append(selected, issue)
+		}
+	} else if h.ReadModel != nil {
 		model, err := h.ReadModel.Current(ctx)
 		if err != nil {
 			return CompareIssuesResult{}, err
 		}
-
-		selected := make([]issues.Issue, 0, len(input.IDs))
 		for _, id := range input.IDs {
 			issue, ok := model.Corpus.IssuesByID[id]
 			if !ok {
@@ -77,31 +113,8 @@ func (h CompareIssuesHandler) Handle(ctx context.Context, input CompareIssues) (
 			}
 			selected = append(selected, issue)
 		}
-
-		pairs, average := compareIssueEmbeddings(selected)
-		return CompareIssuesResult{
-			ComparedIssueCount:          len(selected),
-			AverageEmbeddingSimilarity:  average,
-			PairwiseEmbeddingSimilarity: pairs,
-		}, nil
-	}
-	storeIssues, err := h.Store.List(ctx)
-	if err != nil {
-		return CompareIssuesResult{}, err
-	}
-
-	issuesByID := make(map[string]issues.Issue, len(storeIssues))
-	for _, issue := range storeIssues {
-		issuesByID[issue.ID] = issue
-	}
-
-	selected := make([]issues.Issue, 0, len(input.IDs))
-	for _, id := range input.IDs {
-		issue, ok := issuesByID[id]
-		if !ok {
-			return CompareIssuesResult{}, issues.ErrNotFound
-		}
-		selected = append(selected, issue)
+	} else {
+		return CompareIssuesResult{}, issues.ErrNotFound
 	}
 
 	pairs, average := compareIssueEmbeddings(selected)
@@ -162,13 +175,10 @@ func (h SearchIssuesHandler) Handle(ctx context.Context, input SearchIssues) (is
 		if err != nil {
 			return issuemap.SearchResponse{}, err
 		}
-		filtered := FilterIssuesByStatus(model.Issues, input.Status)
+		filtered := FilterIssuesByStatus(model.Corpus.Issues, input.Status)
 		filtered = filterIssuesByAssignee(filtered, input.AssignedTo)
 		filtered = filterIssuesByTags(filtered, input.Tags)
-		corpus, err := issuemap.BuildDerivedCorpus(filtered, model.Tags)
-		if err != nil {
-			return issuemap.SearchResponse{}, err
-		}
+		corpus := subsetCorpusByIssues(model.Corpus, filtered)
 		return issuemap.SearchFromCorpus(
 			corpus,
 			searchOpts.Query,
@@ -277,11 +287,8 @@ func (h SearchUnifiedHandler) Handle(ctx context.Context, input SearchUnified) (
 		if err != nil {
 			return SearchUnifiedResponse{}, err
 		}
-		filtered := FilterIssuesByStatus(model.Issues, IssueStatusFilterOpen)
-		corpus, err := issuemap.BuildDerivedCorpus(filtered, model.Tags)
-		if err != nil {
-			return SearchUnifiedResponse{}, err
-		}
+		filtered := FilterIssuesByStatus(model.Corpus.Issues, IssueStatusFilterOpen)
+		corpus := subsetCorpusByIssues(model.Corpus, filtered)
 		queryEmbedding := services.Float32VectorToFloat64(analyzed.Embedding.Vector)
 		issueResult := issuemap.SearchFromCorpus(
 			corpus,
@@ -291,7 +298,7 @@ func (h SearchUnifiedHandler) Handle(ctx context.Context, input SearchUnified) (
 			limit,
 		)
 
-		relatedTags := issuemap.SearchTags(model.Tags, queryEmbedding, limit)
+		relatedTags := issuemap.SearchTags(model.Corpus.Tags, queryEmbedding, limit)
 
 		return SearchUnifiedResponse{
 			Query:       issueResult.Query,
@@ -331,6 +338,9 @@ func (h SearchUnifiedHandler) Handle(ctx context.Context, input SearchUnified) (
 }
 
 func FilterIssuesByStatus(items []issues.Issue, filter IssueStatusFilter) []issues.Issue {
+	if filter == "" {
+		filter = IssueStatusFilterOpen
+	}
 	if filter == IssueStatusFilterAll {
 		return items
 	}
@@ -350,6 +360,17 @@ func FilterIssuesByStatus(items []issues.Issue, filter IssueStatusFilter) []issu
 		}
 	}
 	return filtered
+}
+
+func issueStatusFromFilter(filter IssueStatusFilter) issues.IssueStatus {
+	switch filter {
+	case IssueStatusFilterClosed:
+		return issues.StatusClosed
+	case IssueStatusFilterAll:
+		return ""
+	default:
+		return issues.StatusOpen
+	}
 }
 
 func compareIssueEmbeddings(items []issues.Issue) ([]PairwiseIssueSimilarity, float64) {
@@ -420,6 +441,27 @@ func filterIssuesByTags(items []issues.Issue, tags []string) []issues.Issue {
 		}
 	}
 	return filtered
+}
+
+func subsetCorpusByIssues(corpus issuemap.DerivedCorpus, items []issues.Issue) issuemap.DerivedCorpus {
+	ids := make(map[string]struct{}, len(items))
+	for _, item := range items {
+		ids[item.ID] = struct{}{}
+	}
+	return issuemap.SubsetDerivedCorpus(corpus, ids)
+}
+
+func paginateIssues(items []issues.Issue, limit, offset int) []issues.Issue {
+	if offset > 0 {
+		if offset >= len(items) {
+			return []issues.Issue{}
+		}
+		items = items[offset:]
+	}
+	if limit > 0 && limit < len(items) {
+		items = items[:limit]
+	}
+	return items
 }
 
 func issueMatchesTags(item issues.Issue, required map[string]struct{}) bool {

@@ -26,11 +26,8 @@ func (h MapHandler) Handle(ctx context.Context, input MapQuery) (issuemap.MapRes
 		if err != nil {
 			return issuemap.MapResponse{}, err
 		}
-		filtered := FilterIssuesByStatus(model.Issues, input.StatusFilter)
-		corpus, err := issuemap.BuildDerivedCorpus(filtered, model.Tags)
-		if err != nil {
-			return issuemap.MapResponse{}, err
-		}
+		filtered := FilterIssuesByStatus(model.Corpus.Issues, input.StatusFilter)
+		corpus := subsetCorpusByIssues(model.Corpus, filtered)
 		threshold := issuemapDefaultThreshold(input.EdgeThreshold)
 		return issuemap.BuildMapFromCorpus(corpus, input.Viewport, threshold)
 	}
@@ -63,11 +60,8 @@ func (h EdgeHandler) Handle(ctx context.Context, input MapQuery) (issuemap.EdgeR
 		if err != nil {
 			return issuemap.EdgeResponse{}, err
 		}
-		filtered := FilterIssuesByStatus(model.Issues, input.StatusFilter)
-		corpus, err := issuemap.BuildDerivedCorpus(filtered, model.Tags)
-		if err != nil {
-			return issuemap.EdgeResponse{}, err
-		}
+		filtered := FilterIssuesByStatus(model.Corpus.Issues, input.StatusFilter)
+		corpus := subsetCorpusByIssues(model.Corpus, filtered)
 		threshold := issuemapDefaultThreshold(input.EdgeThreshold)
 		return issuemap.BuildEdgeResponseFromCorpus(corpus, input.Viewport, threshold)
 	}

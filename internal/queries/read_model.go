@@ -15,8 +15,6 @@ type revisionSource interface {
 
 type ReadModel struct {
 	Revision uint64
-	Issues   []issues.Issue
-	Tags     []issues.Tag
 	Corpus   issuemap.DerivedCorpus
 }
 
@@ -86,8 +84,6 @@ func (l *ReadModelLoader) rebuild(ctx context.Context, revision uint64) (ReadMod
 
 	return ReadModel{
 		Revision: revision,
-		Issues:   detailed,
-		Tags:     tags,
 		Corpus:   corpus,
 	}, nil
 }

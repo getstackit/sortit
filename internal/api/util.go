@@ -108,6 +108,19 @@ func ParsePositiveIntQuery(values url.Values, key string) (*int, error) {
 	return &parsed, nil
 }
 
+func ParseNonNegativeIntQuery(values url.Values, key string) (*int, error) {
+	raw := strings.TrimSpace(values.Get(key))
+	if raw == "" {
+		return nil, nil
+	}
+
+	parsed, err := strconv.Atoi(raw)
+	if err != nil || parsed < 0 {
+		return nil, strconv.ErrSyntax
+	}
+	return &parsed, nil
+}
+
 func parseFloatQuery(values url.Values, key string) (float64, error) {
 	value := strings.TrimSpace(values.Get(key))
 	if value == "" {

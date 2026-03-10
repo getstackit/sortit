@@ -85,6 +85,47 @@ func (s *PostgresStore) List(ctx context.Context) ([]Issue, error) {
 	return cloneIssues(items), nil
 }
 
+func (s *PostgresStore) ListFiltered(ctx context.Context, opts ListOptions) ([]Issue, error) {
+	query, args := buildListIssuesFilteredQuery(opts)
+	rows, err := s.db.QueryContext(ctx, query, args...)
+	if err != nil {
+		return nil, fmt.Errorf("list filtered issues: %w", err)
+	}
+	defer rows.Close()
+
+	items := make([]Issue, 0)
+	for rows.Next() {
+		var row issuesdb.Issue
+		if err := rows.Scan(
+			&row.ID,
+			&row.Raw,
+			&row.TagsJson,
+			&row.CreatedBy,
+			&row.CreatedAtUnixNano,
+			&row.Status,
+			&row.ClosedAtUnixNano,
+			&row.ClosedBy,
+			&row.TagScoresJson,
+			&row.EmbeddingJson,
+			&row.AssignedTo,
+		); err != nil {
+			return nil, fmt.Errorf("scan filtered issue row: %w", err)
+		}
+
+		issue, err := issueFromQuery(row)
+		if err != nil {
+			return nil, err
+		}
+		items = append(items, issue)
+	}
+
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("iterate filtered issues: %w", err)
+	}
+
+	return cloneIssues(items), nil
+}
+
 func (s *PostgresStore) Get(ctx context.Context, id string) (Issue, error) {
 	id = strings.TrimSpace(id)
 	if id == "" {
@@ -92,6 +133,85 @@ func (s *PostgresStore) Get(ctx context.Context, id string) (Issue, error) {
 	}
 
 	return s.getIssueWithDiscussion(ctx, s.queries, id)
+}
+
+func buildListIssuesFilteredQuery(opts ListOptions) (string, []any) {
+	var query strings.Builder
+	query.WriteString(`SELECT id, raw, tags_json, created_by, created_at_unix_nano, status, closed_at_unix_nano, closed_by, tag_scores_json, embedding_json, assigned_to
+FROM issues`)
+
+	args := make([]any, 0, 2+len(opts.Tags)*2)
+	conditions := make([]string, 0, 3)
+	addArg := func(value any) string {
+		args = append(args, value)
+		return "$" + strconv.Itoa(len(args))
+	}
+
+	if status := normalizeIssueStatus(opts.Status); status != "" {
+		conditions = append(conditions, "status = "+addArg(string(status)))
+	}
+
+	if assignedTo := strings.TrimSpace(opts.AssignedTo); assignedTo != "" {
+		conditions = append(conditions, "LOWER(assigned_to) = LOWER("+addArg(assignedTo)+")")
+	}
+
+	if tags := normalizeListOptionTags(opts.Tags); len(tags) > 0 {
+		tagConditions := make([]string, len(tags))
+		scoreConditions := make([]string, len(tags))
+		for i, tag := range tags {
+			tagConditions[i] = "LOWER(tag) = " + addArg(tag)
+			scoreConditions[i] = "LOWER(score.tag) = " + addArg(tag)
+		}
+		conditions = append(conditions, `(
+EXISTS (
+	SELECT 1
+	FROM jsonb_array_elements_text(tags_json) AS tag
+	WHERE `+strings.Join(tagConditions, " OR ")+`
+) OR EXISTS (
+	SELECT 1
+	FROM jsonb_to_recordset(tag_scores_json) AS score(tag text, relevance double precision)
+	WHERE score.relevance >= 0.3 AND (`+strings.Join(scoreConditions, " OR ")+`)
+))`)
+	}
+
+	if len(conditions) > 0 {
+		query.WriteString("\nWHERE ")
+		query.WriteString(strings.Join(conditions, "\n  AND "))
+	}
+
+	query.WriteString("\nORDER BY created_at_unix_nano DESC, id ASC")
+	if opts.Limit > 0 {
+		query.WriteString("\nLIMIT ")
+		query.WriteString(addArg(opts.Limit))
+	}
+	if opts.Offset > 0 {
+		query.WriteString("\nOFFSET ")
+		query.WriteString(addArg(opts.Offset))
+	}
+
+	return query.String(), args
+}
+
+func normalizeListOptionTags(tags []string) []string {
+	if len(tags) == 0 {
+		return nil
+	}
+
+	seen := make(map[string]struct{}, len(tags))
+	normalized := make([]string, 0, len(tags))
+	for _, tag := range tags {
+		tag = strings.TrimSpace(strings.ToLower(tag))
+		if tag == "" {
+			continue
+		}
+		if _, ok := seen[tag]; ok {
+			continue
+		}
+		seen[tag] = struct{}{}
+		normalized = append(normalized, tag)
+	}
+
+	return normalized
 }
 
 func (s *PostgresStore) Replace(ctx context.Context, next []Issue) error {

@@ -175,6 +175,14 @@ type ProgressInput struct {
 	CreatedBy string
 }
 
+type ListOptions struct {
+	Status     IssueStatus
+	AssignedTo string
+	Tags       []string
+	Limit      int
+	Offset     int
+}
+
 type Store interface {
 	// Reads
 	List(context.Context) ([]Issue, error)

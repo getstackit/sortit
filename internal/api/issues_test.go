@@ -29,15 +29,15 @@ func (s failingIssueStore) Get(context.Context, string) (issues.Issue, error) {
 	return issues.Issue{}, issues.ErrNotFound
 }
 
-func (s failingIssueStore) SaveIssue(context.Context, issues.Issue) error { return nil }
+func (s failingIssueStore) SaveIssue(context.Context, issues.Issue) error         { return nil }
 func (s failingIssueStore) SaveIssuePost(context.Context, issues.IssuePost) error { return nil }
 func (s failingIssueStore) UpdateIssueFields(context.Context, string, issues.IssueFieldUpdate) error {
 	return nil
 }
 func (s failingIssueStore) SaveOperation(context.Context, issues.IssueOperation) error { return nil }
-func (s failingIssueStore) SaveLink(context.Context, issues.IssueLink) error             { return nil }
-func (s failingIssueStore) NextIssueID(context.Context) (string, error)     { return "", nil }
-func (s failingIssueStore) NextOperationID(context.Context) (string, error) { return "", nil }
+func (s failingIssueStore) SaveLink(context.Context, issues.IssueLink) error           { return nil }
+func (s failingIssueStore) NextIssueID(context.Context) (string, error)                { return "", nil }
+func (s failingIssueStore) NextOperationID(context.Context) (string, error)            { return "", nil }
 
 func TestIssuesEndpointListsSeededIssues(t *testing.T) {
 	server := NewServer(ServerConfig{
@@ -427,6 +427,65 @@ func TestIssuesEndpointReopensIssue(t *testing.T) {
 	}
 	if reopened.ClosedBy != "" {
 		t.Fatalf("expected closedBy cleared, got %q", reopened.ClosedBy)
+	}
+}
+
+func TestIssuesEndpointListSupportsAdditionalFilters(t *testing.T) {
+	store := newPostgresIssueStore(t, []issues.Issue{
+		{
+			ID:         "issue-001",
+			Raw:        "onboarding checklist",
+			CreatedBy:  "Casey",
+			CreatedAt:  issues.FixtureIssues()[0].CreatedAt,
+			Status:     issues.StatusOpen,
+			AssignedTo: "Casey",
+			Tags:       []string{"onboarding"},
+			TagScores:  []issues.TagRelevance{{Tag: "onboarding", Relevance: 0.8}},
+			Embedding:  []float64{0.1, 0.2},
+		},
+		{
+			ID:         "issue-002",
+			Raw:        "export regression",
+			CreatedBy:  "Jordan",
+			CreatedAt:  issues.FixtureIssues()[0].CreatedAt.Add(time.Minute),
+			Status:     issues.StatusOpen,
+			AssignedTo: "Jordan",
+			Tags:       []string{"export"},
+			TagScores:  []issues.TagRelevance{{Tag: "export", Relevance: 0.9}},
+			Embedding:  []float64{0.2, 0.3},
+		},
+		{
+			ID:         "issue-003",
+			Raw:        "search ranking drift",
+			CreatedBy:  "Casey",
+			CreatedAt:  issues.FixtureIssues()[0].CreatedAt.Add(2 * time.Minute),
+			Status:     issues.StatusClosed,
+			AssignedTo: "Casey",
+			Tags:       []string{"backend"},
+			TagScores:  []issues.TagRelevance{{Tag: "search", Relevance: 0.7}},
+			Embedding:  []float64{0.3, 0.4},
+		},
+	})
+	server := NewServer(ServerConfig{
+		CORSOrigins: []string{"http://localhost:3000"},
+		APIPrefixes: []string{"/api"},
+		IssueStore:  store,
+	})
+
+	req := httptest.NewRequest(http.MethodGet, "/api/issues?status=all&assignedTo=casey&tags=search&limit=1&offset=0", nil)
+	rec := httptest.NewRecorder()
+	server.Handler().ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200 for filtered issue list, got %d", rec.Code)
+	}
+
+	var payload issuesResponse
+	if err := json.NewDecoder(rec.Body).Decode(&payload); err != nil {
+		t.Fatalf("decode filtered issues response: %v", err)
+	}
+	if len(payload.Issues) != 1 || payload.Issues[0].ID != "issue-003" {
+		t.Fatalf("expected only issue-003, got %#v", payload.Issues)
 	}
 }
 

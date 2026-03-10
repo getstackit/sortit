@@ -30,18 +30,34 @@ func (h GetPersonProfileHandler) Handle(ctx context.Context, person string, filt
 		return PersonTagProfile{}, nil
 	}
 
+	if store, ok := h.Store.(filteredIssueLister); ok {
+		items, err := store.ListFiltered(ctx, issues.ListOptions{
+			Status:     issueStatusFromFilter(filter),
+			AssignedTo: person,
+		})
+		if err != nil {
+			return PersonTagProfile{}, err
+		}
+		return buildPersonTagProfile(items, person, IssueStatusFilterAll), nil
+	}
+
+	if h.Store != nil {
+		allIssues, err := h.Store.List(ctx)
+		if err != nil {
+			return PersonTagProfile{}, err
+		}
+		return buildPersonTagProfile(allIssues, person, filter), nil
+	}
+
 	if h.ReadModel != nil {
 		model, err := h.ReadModel.Current(ctx)
 		if err != nil {
 			return PersonTagProfile{}, err
 		}
-		return buildPersonTagProfile(model.Issues, person, filter), nil
+		return buildPersonTagProfile(model.Corpus.Issues, person, filter), nil
 	}
-	allIssues, err := h.Store.List(ctx)
-	if err != nil {
-		return PersonTagProfile{}, err
-	}
-	return buildPersonTagProfile(allIssues, person, filter), nil
+
+	return PersonTagProfile{}, nil
 }
 
 type PersonCorrelation struct {
@@ -67,18 +83,33 @@ type WorkCorrelationsHandler struct {
 }
 
 func (h WorkCorrelationsHandler) Handle(ctx context.Context, filter IssueStatusFilter) (WorkCorrelationsResult, error) {
+	if store, ok := h.Store.(filteredIssueLister); ok {
+		items, err := store.ListFiltered(ctx, issues.ListOptions{
+			Status: issueStatusFromFilter(filter),
+		})
+		if err != nil {
+			return WorkCorrelationsResult{}, err
+		}
+		return buildWorkCorrelations(items, IssueStatusFilterAll), nil
+	}
+
+	if h.Store != nil {
+		allIssues, err := h.Store.List(ctx)
+		if err != nil {
+			return WorkCorrelationsResult{}, err
+		}
+		return buildWorkCorrelations(allIssues, filter), nil
+	}
+
 	if h.ReadModel != nil {
 		model, err := h.ReadModel.Current(ctx)
 		if err != nil {
 			return WorkCorrelationsResult{}, err
 		}
-		return buildWorkCorrelations(model.Issues, filter), nil
+		return buildWorkCorrelations(model.Corpus.Issues, filter), nil
 	}
-	allIssues, err := h.Store.List(ctx)
-	if err != nil {
-		return WorkCorrelationsResult{}, err
-	}
-	return buildWorkCorrelations(allIssues, filter), nil
+
+	return WorkCorrelationsResult{Correlations: []PersonCorrelation{}}, nil
 }
 
 func buildPersonTagProfile(allIssues []issues.Issue, person string, filter IssueStatusFilter) PersonTagProfile {

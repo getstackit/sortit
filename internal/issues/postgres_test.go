@@ -125,7 +125,7 @@ func TestPostgresStoreRefineAppendsDiscussionAndUpdatesCanonicalIssue(t *testing
 		{Tag: "safari", Relevance: 0.73},
 	})
 	if err := store.UpdateIssueFields(context.Background(), issue.ID, IssueFieldUpdate{
-		Raw: &canonicalRaw,
+		Raw:  &canonicalRaw,
 		Tags: newTags,
 		TagScores: []TagRelevance{
 			{Tag: "export", Relevance: 0.95},
@@ -217,6 +217,90 @@ func TestPostgresStoreCloseAndReopenIssue(t *testing.T) {
 	}
 	if reopened.ClosedBy != "" {
 		t.Fatalf("expected closedBy cleared, got %q", reopened.ClosedBy)
+	}
+}
+
+func TestPostgresStoreListFiltered(t *testing.T) {
+	store := newPostgresTestStore(t)
+	ctx := context.Background()
+
+	alpha := BuildNewIssue("issue-000001", CreateInput{
+		Raw:       "Alpha onboarding issue",
+		CreatedBy: "Casey",
+		Tags:      []string{"onboarding"},
+		TagScores: []TagRelevance{{Tag: "onboarding", Relevance: 0.9}},
+		Embedding: []float64{0.1, 0.2},
+	})
+	alpha.AssignedTo = "Casey"
+	if err := store.SaveIssue(ctx, alpha); err != nil {
+		t.Fatalf("save alpha: %v", err)
+	}
+
+	beta := BuildNewIssue("issue-000002", CreateInput{
+		Raw:       "Beta export issue",
+		CreatedBy: "Jordan",
+		Tags:      []string{"export"},
+		TagScores: []TagRelevance{{Tag: "export", Relevance: 0.85}},
+		Embedding: []float64{0.3, 0.4},
+	})
+	beta.AssignedTo = "Jordan"
+	if err := store.SaveIssue(ctx, beta); err != nil {
+		t.Fatalf("save beta: %v", err)
+	}
+
+	closedStatus := StatusClosed
+	closedBy := "Jordan"
+	closedAt := beta.CreatedAt.Add(time.Hour)
+	if err := store.UpdateIssueFields(ctx, beta.ID, IssueFieldUpdate{
+		Status:   &closedStatus,
+		ClosedBy: &closedBy,
+		ClosedAt: &closedAt,
+	}); err != nil {
+		t.Fatalf("close beta: %v", err)
+	}
+
+	gamma := BuildNewIssue("issue-000003", CreateInput{
+		Raw:       "Gamma backend issue",
+		CreatedBy: "Casey",
+		Tags:      []string{"backend"},
+		TagScores: []TagRelevance{{Tag: "search", Relevance: 0.5}},
+		Embedding: []float64{0.5, 0.6},
+	})
+	gamma.AssignedTo = "Casey"
+	if err := store.SaveIssue(ctx, gamma); err != nil {
+		t.Fatalf("save gamma: %v", err)
+	}
+
+	openOnly, err := store.ListFiltered(ctx, ListOptions{Status: StatusOpen})
+	if err != nil {
+		t.Fatalf("list open issues: %v", err)
+	}
+	if len(openOnly) != 2 {
+		t.Fatalf("expected 2 open issues, got %d", len(openOnly))
+	}
+
+	caseyOnly, err := store.ListFiltered(ctx, ListOptions{AssignedTo: "casey"})
+	if err != nil {
+		t.Fatalf("list assigned issues: %v", err)
+	}
+	if len(caseyOnly) != 2 {
+		t.Fatalf("expected 2 Casey issues, got %d", len(caseyOnly))
+	}
+
+	tagFiltered, err := store.ListFiltered(ctx, ListOptions{Tags: []string{"search"}})
+	if err != nil {
+		t.Fatalf("list tagged issues: %v", err)
+	}
+	if len(tagFiltered) != 1 || tagFiltered[0].ID != gamma.ID {
+		t.Fatalf("expected gamma for search tag filter, got %#v", tagFiltered)
+	}
+
+	paged, err := store.ListFiltered(ctx, ListOptions{Status: "", Limit: 1, Offset: 1})
+	if err != nil {
+		t.Fatalf("list paged issues: %v", err)
+	}
+	if len(paged) != 1 {
+		t.Fatalf("expected 1 paged issue, got %d", len(paged))
 	}
 }
 

@@ -27,6 +27,57 @@ type DerivedCorpus struct {
 	RelationshipBoosts map[string]map[string]float64
 }
 
+func SubsetDerivedCorpus(corpus DerivedCorpus, issueIDs map[string]struct{}) DerivedCorpus {
+	if len(issueIDs) == 0 {
+		return DerivedCorpus{
+			Tags:               corpus.Tags,
+			TagNames:           corpus.TagNames,
+			TagEmbeddings:      corpus.TagEmbeddings,
+			IssueEmbeddings:    map[string][]float64{},
+			FactorVectors:      map[string][]float64{},
+			Positions:          map[string]Position{},
+			IssuesByID:         map[string]issues.Issue{},
+			MapIssuesByID:      map[string]MapIssue{},
+			VisibleIssueIDs:    map[string]struct{}{},
+			CanonicalIssueIDs:  map[string]string{},
+			RelationshipBoosts: map[string]map[string]float64{},
+		}
+	}
+
+	filteredIssues := make([]issues.Issue, 0, len(issueIDs))
+	for _, issue := range corpus.Issues {
+		if _, ok := issueIDs[issue.ID]; ok {
+			filteredIssues = append(filteredIssues, issue)
+		}
+	}
+	if len(filteredIssues) == len(corpus.Issues) {
+		return corpus
+	}
+
+	canonical, visible, boosts := deriveRelationshipSemantics(filteredIssues)
+	filteredRuntime := filterRuntimeIssuesByID(corpus.RuntimeIssues, issueIDs)
+	filteredPositions := filterPositionsByID(corpus.Positions, issueIDs)
+
+	return DerivedCorpus{
+		Issues:             filteredIssues,
+		Tags:               corpus.Tags,
+		RuntimeIssues:      filteredRuntime,
+		TagNames:           corpus.TagNames,
+		IssueEmbeddings:    filterEmbeddingMapByID(corpus.IssueEmbeddings, issueIDs),
+		TagEmbeddings:      corpus.TagEmbeddings,
+		FactorVectors:      filterEmbeddingMapByID(corpus.FactorVectors, issueIDs),
+		MapIssues:          filterMapIssuesByID(corpus.MapIssues, issueIDs),
+		Positions:          filteredPositions,
+		AllEdges:           filterEdgesByID(corpus.AllEdges, issueIDs),
+		Clusters:           ComputeFactorClusters(filteredRuntime, filteredPositions),
+		IssuesByID:         issuesByID(filteredIssues),
+		MapIssuesByID:      mapIssuesByID(filterMapIssuesByID(corpus.MapIssues, issueIDs)),
+		VisibleIssueIDs:    visible,
+		CanonicalIssueIDs:  canonical,
+		RelationshipBoosts: boosts,
+	}
+}
+
 func BuildDerivedCorpus(storeIssues []issues.Issue, storeTags []issues.Tag) (DerivedCorpus, error) {
 	canonical, visible, boosts := deriveRelationshipSemantics(storeIssues)
 
@@ -440,6 +491,68 @@ func filterVisibleClusters(items []Cluster, visible map[string]struct{}) []Clust
 		filtered = append(filtered, cluster)
 	}
 	return filtered
+}
+
+func filterRuntimeIssuesByID(items []issues.Issue, ids map[string]struct{}) []issues.Issue {
+	filtered := make([]issues.Issue, 0, len(ids))
+	for _, item := range items {
+		if _, ok := ids[item.ID]; ok {
+			filtered = append(filtered, item)
+		}
+	}
+	return filtered
+}
+
+func filterEmbeddingMapByID(input map[string][]float64, ids map[string]struct{}) map[string][]float64 {
+	filtered := make(map[string][]float64, len(ids))
+	for id := range ids {
+		if value, ok := input[id]; ok {
+			filtered[id] = value
+		}
+	}
+	return filtered
+}
+
+func filterMapIssuesByID(items []MapIssue, ids map[string]struct{}) []MapIssue {
+	filtered := make([]MapIssue, 0, len(ids))
+	for _, item := range items {
+		if _, ok := ids[item.ID]; ok {
+			filtered = append(filtered, item)
+		}
+	}
+	return filtered
+}
+
+func filterPositionsByID(items map[string]Position, ids map[string]struct{}) map[string]Position {
+	filtered := make(map[string]Position, len(ids))
+	for id, position := range items {
+		if _, ok := ids[id]; ok {
+			filtered[id] = position
+		}
+	}
+	return filtered
+}
+
+func filterEdgesByID(items []Edge, ids map[string]struct{}) []Edge {
+	filtered := make([]Edge, 0, len(items))
+	for _, item := range items {
+		if _, ok := ids[item.Source]; !ok {
+			continue
+		}
+		if _, ok := ids[item.Target]; !ok {
+			continue
+		}
+		filtered = append(filtered, item)
+	}
+	return filtered
+}
+
+func mapIssuesByID(items []MapIssue) map[string]MapIssue {
+	index := make(map[string]MapIssue, len(items))
+	for _, item := range items {
+		index[item.ID] = item
+	}
+	return index
 }
 
 func cloneEmbeddingMap(input map[string][]float64) map[string][]float64 {

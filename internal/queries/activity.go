@@ -105,7 +105,7 @@ func (h ListActivityHandler) handleFromReadModel(ctx context.Context, input List
 		return ActivityResponse{}, err
 	}
 
-	events := buildActivityEvents(model.Issues)
+	events := buildActivityEvents(model.Corpus.Issues)
 	events = filterActivityEvents(events, strings.TrimSpace(input.Kind))
 
 	if input.Limit <= 0 {

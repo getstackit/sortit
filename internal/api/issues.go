@@ -504,7 +504,33 @@ func (s *Server) handleIssueList(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	items, err := s.listIssues.Handle(r.Context(), filter)
+	limit, err := ParsePositiveIntQuery(r.URL.Query(), "limit")
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "invalid limit query")
+		return
+	}
+	offset, err := ParseNonNegativeIntQuery(r.URL.Query(), "offset")
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "invalid offset query")
+		return
+	}
+
+	listLimit := 0
+	if limit != nil {
+		listLimit = *limit
+	}
+	listOffset := 0
+	if offset != nil {
+		listOffset = *offset
+	}
+
+	items, err := s.listIssues.Handle(r.Context(), queries.ListIssuesQuery{
+		Status:     filter,
+		AssignedTo: strings.TrimSpace(r.URL.Query().Get("assignedTo")),
+		Tags:       ParseCSV(r.URL.Query().Get("tags")),
+		Limit:      listLimit,
+		Offset:     listOffset,
+	})
 	if err != nil {
 		writeInternalError(w, r, "failed to list issues", err)
 		return

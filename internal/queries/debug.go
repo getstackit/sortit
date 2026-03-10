@@ -69,18 +69,18 @@ func (h DebugAnalyzeIssueHandler) Handle(ctx context.Context, input DebugAnalyze
 
 func (h DebugAnalyzeIssueHandler) issueEmbeddingSimilarities(ctx context.Context, query []float64) ([]DebugIssueSimilarity, int, float64, error) {
 	var storeIssues []issues.Issue
-	if h.ReadModel != nil {
-		model, err := h.ReadModel.Current(ctx)
-		if err != nil {
-			return nil, 0, 0, err
-		}
-		storeIssues = model.Issues
-	} else {
+	if h.Store != nil {
 		items, err := h.Store.List(ctx)
 		if err != nil {
 			return nil, 0, 0, err
 		}
 		storeIssues = items
+	} else if h.ReadModel != nil {
+		model, err := h.ReadModel.Current(ctx)
+		if err != nil {
+			return nil, 0, 0, err
+		}
+		storeIssues = model.Corpus.Issues
 	}
 
 	if len(query) == 0 {
