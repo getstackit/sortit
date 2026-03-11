@@ -326,3 +326,24 @@ export function hashTagColor(tag: string): string {
   }
   return BLOB_COLORS[sum % BLOB_COLORS.length];
 }
+
+export function uniqueBlobColors(keys: readonly string[]): Record<string, string> {
+  const colors: Record<string, string> = {};
+  const usedHues = new Set<number>();
+
+  for (const key of [...new Set(keys)].sort()) {
+    let hue = 0;
+    for (let index = 0; index < key.length; index += 1) {
+      hue = (hue + key.charCodeAt(index) * (index + 1)) % 360;
+    }
+
+    while (usedHues.has(hue)) {
+      hue = (hue + 37) % 360;
+    }
+
+    usedHues.add(hue);
+    colors[key] = `hsl(${hue} 78% 63%)`;
+  }
+
+  return colors;
+}

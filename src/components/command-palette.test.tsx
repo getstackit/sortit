@@ -31,6 +31,7 @@ vi.mock("@base-ui/react/dialog", () => ({
 }));
 
 vi.mock("@/hooks/use-search", () => ({
+  UNIFIED_SEARCH_LIMIT: 8,
   useUnifiedSearch: vi.fn(),
 }));
 
@@ -67,5 +68,17 @@ describe("CommandPalette", () => {
     await user.click(await screen.findByRole("button", { name: /billing/i }));
 
     expect(push).toHaveBeenCalledWith("/tags/billing");
+  });
+
+  it("discloses that the palette is a truncated quick switcher", async () => {
+    const user = userEvent.setup();
+
+    render(<CommandPalette open onOpenChange={() => {}} />);
+
+    await user.type(screen.getByPlaceholderText("Search issues and tags..."), "billing");
+
+    expect(
+      screen.getByText("Quick switcher showing up to 8 matches.")
+    ).toBeInTheDocument();
   });
 });

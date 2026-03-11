@@ -37,12 +37,12 @@ import {
   computeBlobPath,
   dominantTag,
   edgeRenderLimit,
-  hashTagColor,
   issueRadius,
   MAX_RENDERED_SELECTED_EDGES,
   normalizeWheelDelta,
   pointInPolygon,
   TAG_COLORS,
+  uniqueBlobColors,
 } from "@/features/map/model";
 import type {
   BatchEmbeddingAnalysis,
@@ -71,6 +71,29 @@ const EMPTY_CLUSTERS: MapCluster[] = [];
 const EMPTY_NEIGHBORS: Neighbor[] = [];
 const EDGE_FETCH_DEBOUNCE_MS = 120;
 
+function viewportsEqual(left: Viewport, right: Viewport) {
+  return (
+    left.xMin === right.xMin &&
+    left.xMax === right.xMax &&
+    left.yMin === right.yMin &&
+    left.yMax === right.yMax
+  );
+}
+
+function issueIDSetsEqual(left: Set<string>, rightIDs: readonly string[]) {
+  if (left.size !== rightIDs.length) {
+    return false;
+  }
+
+  for (const id of rightIDs) {
+    if (!left.has(id)) {
+      return false;
+    }
+  }
+
+  return true;
+}
+
 function issueLabel(raw: string, maxLength: number) {
   return raw.length > maxLength ? `${raw.slice(0, maxLength)}...` : raw;
 }
@@ -78,28 +101,28 @@ function issueLabel(raw: string, maxLength: number) {
 function MapPageContent() {
   const pathname = usePathname();
   const searchParams = useSearchParams();
-  const initialURLState = useMemo(() => parseMapURLState(searchParams), [searchParams]);
-  const baseQueryParamsRef = useRef(new URLSearchParams(searchParams.toString()));
+  const searchParamsString = searchParams.toString();
+  const urlState = useMemo(
+    () => parseMapURLState(searchParams),
+    [searchParamsString]
+  );
+  const baseQueryParamsRef = useRef(new URLSearchParams(searchParamsString));
   const [mapData, setMapData] = useState<MapData | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [viewport, setViewport] = useState<Viewport>(initialURLState.viewport);
+  const [viewport, setViewport] = useState<Viewport>(urlState.viewport);
   const deferredViewport = useDeferredValue(viewport);
-  const [edgeThreshold, setEdgeThreshold] = useState(initialURLState.edgeThreshold);
-  const [showClosed, setShowClosed] = useState(initialURLState.showClosed);
+  const [edgeThreshold, setEdgeThreshold] = useState(urlState.edgeThreshold);
+  const [showClosed, setShowClosed] = useState(urlState.showClosed);
   const [loadedEdgeKey, setLoadedEdgeKey] = useState("");
   const [hoveredId, setHoveredId] = useState<string | null>(null);
-  const [selectedIdState, setSelectedId] = useState<string | null>(
-    initialURLState.selectedId
-  );
+  const [selectedIdState, setSelectedId] = useState<string | null>(urlState.selectedId);
   const [lassoPoints, setLassoPoints] = useState<ScreenPoint[]>([]);
   const [isLassoing, setIsLassoing] = useState(false);
   const [selectedBatchState, setSelectedBatch] = useState<Set<string>>(
-    new Set(initialURLState.batchIds)
+    new Set(urlState.batchIds)
   );
-  const [showBatchAnalysisState, setShowBatchAnalysis] = useState(
-    initialURLState.showBatchAnalysis
-  );
+  const [showBatchAnalysisState, setShowBatchAnalysis] = useState(urlState.showBatchAnalysis);
   const [batchEmbeddingAnalysis, setBatchEmbeddingAnalysis] =
     useState<BatchEmbeddingAnalysis | null>(null);
   const [batchEmbeddingError, setBatchEmbeddingError] = useState<string | null>(null);
@@ -119,12 +142,12 @@ function MapPageContent() {
   const lassoFrameRef = useRef<number | null>(null);
   const blankClickCandidateRef = useRef(false);
   const blankClickStartRef = useRef<ScreenPoint | null>(null);
-  const showClosedRef = useRef(initialURLState.showClosed);
+  const showClosedRef = useRef(urlState.showClosed);
   const initialViewportKeyRef = useRef(
     mapQuery(
-      initialURLState.viewport,
-      initialURLState.edgeThreshold,
-      initialURLState.showClosed
+      urlState.viewport,
+      urlState.edgeThreshold,
+      urlState.showClosed
     )
   );
 
@@ -135,6 +158,39 @@ function MapPageContent() {
   useEffect(() => {
     lassoPointsRef.current = lassoPoints;
   }, [lassoPoints]);
+
+  useEffect(() => {
+    baseQueryParamsRef.current = new URLSearchParams(searchParamsString);
+
+    setViewport((current) =>
+      viewportsEqual(current, urlState.viewport) ? current : urlState.viewport
+    );
+    setEdgeThreshold((current) =>
+      current === urlState.edgeThreshold ? current : urlState.edgeThreshold
+    );
+    setShowClosed((current) =>
+      current === urlState.showClosed ? current : urlState.showClosed
+    );
+    setSelectedId((current) =>
+      current === urlState.selectedId ? current : urlState.selectedId
+    );
+    setSelectedBatch((current) =>
+      issueIDSetsEqual(current, urlState.batchIds)
+        ? current
+        : new Set(urlState.batchIds)
+    );
+    setShowBatchAnalysis((current) =>
+      current === urlState.showBatchAnalysis ? current : urlState.showBatchAnalysis
+    );
+  }, [
+    searchParamsString,
+    urlState.batchIds,
+    urlState.edgeThreshold,
+    urlState.selectedId,
+    urlState.showBatchAnalysis,
+    urlState.showClosed,
+    urlState.viewport,
+  ]);
 
   useEffect(() => {
     return () => {
@@ -892,6 +948,13 @@ function MapPageContent() {
   }, [clusters, issues]);
 
   const canvasBlobs = useMemo<IssueMapCanvasBlob[]>(() => {
+    const blobColorByKey = uniqueBlobColors(
+      visibleClusters.map(
+        (cluster, clusterIndex) =>
+          `${cluster.label}::${cluster.topTag ?? ""}::${clusterIndex}`
+      )
+    );
+
     return visibleClusters
       .filter((cluster) => {
         const members = clusterMembers.get(cluster.label) ?? [];
@@ -911,8 +974,8 @@ function MapPageContent() {
 
         const centroidX = memberPoints.reduce((s, p) => s + p.x, 0) / memberPoints.length;
         const topY = Math.min(...memberPoints.map((p) => p.y));
-        const topTag = cluster.topTag ?? cluster.label.split(" / ")[0]?.toLowerCase() ?? "feature";
-        const color = hashTagColor(topTag);
+        const blobColorKey = `${cluster.label}::${cluster.topTag ?? ""}::${clusterIndex}`;
+        const color = blobColorByKey[blobColorKey] ?? "#94a3b8";
         const isFiltered = filteredClusterLabel != null;
         const isThisCluster = filteredClusterLabel === cluster.label;
 
@@ -936,7 +999,7 @@ function MapPageContent() {
         };
       })
       .filter(Boolean) as IssueMapCanvasBlob[];
-  }, [visibleClusters, clusterMembers, issueIndex, toScreen, filteredClusterLabel, viewport, dimensions.width]);
+  }, [visibleClusters, clusterMembers, issueIndex, toScreen, filteredClusterLabel]);
 
   const filteredIssueIds = useMemo(() => {
     if (!filteredClusterLabel) return null;

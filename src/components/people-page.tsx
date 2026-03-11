@@ -111,7 +111,7 @@ export function PeoplePage() {
   const [status, setStatus] = useState<PeopleListStatus>("all");
   const { data: correlationsData, error: correlationsError, isLoading: correlationsLoading } =
     useWorkCorrelations(status);
-  const { data: allIssues, isLoading: issuesLoading } = useIssues("all");
+  const { data: allIssues, isLoading: issuesLoading } = useIssues(status);
 
   const people = useMemo(() => {
     if (!allIssues) return [];

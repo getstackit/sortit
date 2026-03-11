@@ -1,4 +1,4 @@
-import { analyzeBatch, edgeRenderLimit } from "@/features/map/model";
+import { analyzeBatch, edgeRenderLimit, uniqueBlobColors } from "@/features/map/model";
 import type { MapIssue } from "@/features/map/types";
 
 const batchIssues: MapIssue[] = [
@@ -55,5 +55,11 @@ describe("map model", () => {
     expect(edgeRenderLimit(0)).toBe(0);
     expect(edgeRenderLimit(10)).toBe(24);
     expect(edgeRenderLimit(2000)).toBe(180);
+  });
+
+  it("assigns distinct colors to each blob key", () => {
+    const colors = uniqueBlobColors(["cluster-a", "cluster-b", "cluster-c"]);
+
+    expect(new Set(Object.values(colors)).size).toBe(3);
   });
 });

@@ -20,6 +20,8 @@ import { entityStyle } from "@/lib/entity-colors";
 import type { IssueRecord, SearchIssueRecord } from "@/lib/issues";
 import { cn } from "@/lib/utils";
 
+const ISSUE_SEARCH_RESULT_LIMIT = 8;
+
 function parseIssuesSearchState(searchParams: Pick<URLSearchParams, "get">) {
   const query =
     searchParams.get("q")?.trim() ?? searchParams.get("query")?.trim() ?? "";
@@ -196,7 +198,7 @@ export function IssuesBoard() {
     error: searchError,
     isLoading: searchLoading,
     mutate: mutateSearch,
-  } = useIssueSearch(activeQuery, searchStatus, 8);
+  } = useIssueSearch(activeQuery, searchStatus, ISSUE_SEARCH_RESULT_LIMIT);
 
   const searchResults = searchResponse?.relatedIssues ?? [];
   const visibleIssues = hasQuery ? searchResults : issues;
@@ -379,6 +381,9 @@ export function IssuesBoard() {
                         </p>
                         <p className="truncate text-sm font-medium text-foreground">
                           {searchResponse?.query.raw ?? activeQuery}
+                        </p>
+                        <p className="mt-1 text-xs text-muted-foreground">
+                          Showing up to {ISSUE_SEARCH_RESULT_LIMIT} semantic matches.
                         </p>
                       </div>
                       <span className="rounded-full border border-border/60 bg-muted/50 px-3 py-1 text-xs font-medium text-muted-foreground">

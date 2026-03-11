@@ -4,7 +4,7 @@ import { useCallback, useDeferredValue, useEffect, useMemo, useRef, useState } f
 import { useRouter } from "next/navigation";
 import { Dialog } from "@base-ui/react/dialog";
 import { FileTextIcon, LoaderIcon, SearchIcon, TagIcon } from "lucide-react";
-import { useUnifiedSearch } from "@/hooks/use-search";
+import { UNIFIED_SEARCH_LIMIT, useUnifiedSearch } from "@/hooks/use-search";
 import { tagHref } from "@/lib/tags";
 import { entityStyle } from "@/lib/entity-colors";
 import type { SearchIssueRecord } from "@/lib/issues";
@@ -230,6 +230,10 @@ export function CommandPalette({ open, onOpenChange }: CommandPaletteProps) {
                       </button>
                     );
                   })}
+
+                  <div className="border-t border-border/50 px-4 py-2 text-xs text-muted-foreground/70">
+                    Quick switcher showing up to {UNIFIED_SEARCH_LIMIT} matches.
+                  </div>
                 </div>
               )}
             </div>

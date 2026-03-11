@@ -139,7 +139,7 @@ export function AppSidebar({
           <div className="space-y-1">
             <SidebarLink
               href="/"
-              label="All Issues"
+              label="Open Issues"
               active={pathname === "/"}
               collapsed={collapsed}
               onClick={closeMobileSidebar}

@@ -206,6 +206,9 @@ describe("IssuesBoard", () => {
     });
 
     expect(
+      screen.getByText("Showing up to 8 semantic matches.")
+    ).toBeInTheDocument();
+    expect(
       screen.getByText("Shared factor relevance in frontend")
     ).toBeInTheDocument();
     expect(screen.queryByText("Open issue from the normal list")).not.toBeInTheDocument();

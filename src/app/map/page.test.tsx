@@ -4,6 +4,8 @@ import userEvent from "@testing-library/user-event";
 import MapPage from "@/app/map/page";
 import type { MapData } from "@/features/map/types";
 
+let mockSearchParams = new URLSearchParams();
+
 vi.mock("next/link", () => ({
   default: ({
     children,
@@ -21,7 +23,7 @@ vi.mock("next/link", () => ({
 
 vi.mock("next/navigation", () => ({
   usePathname: () => "/map",
-  useSearchParams: () => new URLSearchParams(),
+  useSearchParams: () => mockSearchParams,
 }));
 
 vi.mock("@/components/app-shell", () => ({
@@ -33,7 +35,18 @@ vi.mock("@/components/app-sidebar", () => ({
 }));
 
 vi.mock("@/components/site-header", () => ({
-  SiteHeader: ({ title }: { title: string }) => <header><h1>{title}</h1></header>,
+  SiteHeader: ({
+    title,
+    actions,
+  }: {
+    title: string;
+    actions?: ReactNode;
+  }) => (
+    <header>
+      <h1>{title}</h1>
+      {actions}
+    </header>
+  ),
 }));
 
 vi.mock("@/components/tag-relevance-bars", () => ({
@@ -41,8 +54,13 @@ vi.mock("@/components/tag-relevance-bars", () => ({
 }));
 
 vi.mock("@/components/ui/switch", () => ({
-  Switch: (props: { checked: boolean; onCheckedChange: (v: boolean) => void }) => (
+  Switch: (props: {
+    checked: boolean;
+    onCheckedChange: (v: boolean) => void;
+    "aria-label"?: string;
+  }) => (
     <input
+      aria-label={props["aria-label"]}
       type="checkbox"
       checked={props.checked}
       onChange={(e) => props.onCheckedChange(e.target.checked)}
@@ -102,6 +120,7 @@ function makeMapData(overrides?: Partial<MapData>): MapData {
 
 beforeEach(() => {
   vi.clearAllMocks();
+  mockSearchParams = new URLSearchParams();
   mockFetchMapData.mockResolvedValue(makeMapData());
   mockFetchViewportEdges.mockResolvedValue({ edges: [] });
 
@@ -153,6 +172,19 @@ describe("MapPage", () => {
 
     const paths = container.querySelectorAll("path[stroke-linejoin='round']");
     expect(paths.length).toBe(2);
+  });
+
+  it("renders each blob with a distinct fill color", async () => {
+    const { container } = render(<MapPage />);
+    await waitFor(() => {
+      expect(container.querySelector("svg")).toBeInTheDocument();
+    });
+
+    const fills = Array.from(
+      container.querySelectorAll("path[stroke-linejoin='round']")
+    ).map((path) => path.getAttribute("fill"));
+
+    expect(new Set(fills).size).toBe(fills.length);
   });
 
   it("renders blob labels", async () => {
@@ -422,5 +454,26 @@ describe("MapPage", () => {
     await waitFor(() => {
       expect(screen.getByText("Cluster members")).toBeInTheDocument();
     });
+  });
+
+  it("rehydrates map controls when the URL search params change after mount", async () => {
+    const { rerender } = render(<MapPage />);
+
+    const showClosedToggle = await screen.findByLabelText("Show closed issues");
+    const edgeThresholdSlider = screen.getByLabelText("Similarity edge threshold");
+
+    expect(showClosedToggle).not.toBeChecked();
+    expect(edgeThresholdSlider).toHaveValue("0.4");
+
+    mockSearchParams = new URLSearchParams(
+      "status=all&edgeThreshold=0.75&xMin=0.1&xMax=0.6&yMin=0.2&yMax=0.7"
+    );
+    rerender(<MapPage />);
+
+    await waitFor(() => {
+      expect(screen.getByLabelText("Show closed issues")).toBeChecked();
+    });
+
+    expect(screen.getByLabelText("Similarity edge threshold")).toHaveValue("0.75");
   });
 });

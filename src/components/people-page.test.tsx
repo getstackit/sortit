@@ -1,0 +1,104 @@
+import type { ReactNode } from "react";
+import { render, screen, waitFor } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
+import { PeoplePage } from "@/components/people-page";
+import { useIssues } from "@/hooks/use-issues";
+import { useWorkCorrelations } from "@/hooks/use-people";
+import type { IssueRecord } from "@/lib/issues";
+
+vi.mock("@/components/app-shell", () => ({
+  AppShell: ({
+    children,
+    sidebar,
+  }: {
+    children: ReactNode;
+    sidebar: ReactNode;
+  }) => (
+    <div>
+      <aside>{sidebar}</aside>
+      <main>{children}</main>
+    </div>
+  ),
+}));
+
+vi.mock("@/components/app-sidebar", () => ({
+  AppSidebar: () => <div>Sidebar</div>,
+}));
+
+vi.mock("@/components/site-header", () => ({
+  SiteHeader: ({ title }: { title: string }) => <header><h1>{title}</h1></header>,
+}));
+
+vi.mock("@/components/tag-relevance-bars", () => ({
+  TagRelevanceBars: () => <div>Tag bars</div>,
+}));
+
+vi.mock("@/hooks/use-issues", () => ({
+  useIssues: vi.fn(),
+}));
+
+vi.mock("@/hooks/use-people", () => ({
+  useWorkCorrelations: vi.fn(),
+}));
+
+function makeIssue(
+  id: string,
+  assignedTo: string,
+  status: IssueRecord["status"]
+): IssueRecord {
+  return {
+    id,
+    raw: `${status} issue`,
+    tags: ["bug"],
+    tagScores: [{ tag: "bug", relevance: 0.8 }],
+    createdBy: "Casey",
+    createdAt: new Date("2026-03-09T12:00:00Z").toISOString(),
+    assignedTo,
+    status,
+  };
+}
+
+describe("PeoplePage", () => {
+  beforeEach(() => {
+    vi.mocked(useIssues).mockReset();
+    vi.mocked(useWorkCorrelations).mockReset();
+
+    vi.mocked(useIssues).mockImplementation((status) => {
+      const issuesByStatus: Record<string, IssueRecord[]> = {
+        all: [
+          makeIssue("issue-open", "Avery", "open"),
+          makeIssue("issue-closed", "Avery", "closed"),
+        ],
+        open: [makeIssue("issue-open", "Avery", "open")],
+        closed: [makeIssue("issue-closed", "Avery", "closed")],
+      };
+
+      return {
+        data: issuesByStatus[status] ?? [],
+        isLoading: false,
+      } as ReturnType<typeof useIssues>;
+    });
+
+    vi.mocked(useWorkCorrelations).mockReturnValue({
+      data: { correlations: [] },
+      error: undefined,
+      isLoading: false,
+    } as ReturnType<typeof useWorkCorrelations>);
+  });
+
+  it("applies the selected status filter to the people profiles", async () => {
+    const user = userEvent.setup();
+
+    render(<PeoplePage />);
+
+    expect(screen.getByText("2 issues assigned")).toBeInTheDocument();
+
+    await user.click(screen.getByRole("button", { name: "Closed" }));
+
+    await waitFor(() => {
+      expect(screen.getByText("1 issue assigned")).toBeInTheDocument();
+    });
+
+    expect(vi.mocked(useIssues)).toHaveBeenLastCalledWith("closed");
+  });
+});

@@ -265,7 +265,9 @@ describe("IssueDetailPage", () => {
     expect(screen.getByText("Add onboarding checklist")).toBeInTheDocument();
     expect(screen.getByText("Operation history")).toBeInTheDocument();
     expect(screen.getByText("Split")).toBeInTheDocument();
-    expect(screen.getByText("issue-456 · child:1")).toBeInTheDocument();
+    expect(
+      screen.getByRole("link", { name: /issue-456.*child:1/i })
+    ).toBeInTheDocument();
   });
 
   it("posts a refinement and refreshes the canonical summary", async () => {
