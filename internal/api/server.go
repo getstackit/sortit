@@ -139,6 +139,7 @@ func (s *Server) Handler() http.Handler {
 		mapRoute := path.Join(prefix, "map")
 		mapEdgesRoute := path.Join(prefix, "map", "edges")
 		debugAnalyzeRoute := path.Join(prefix, "debug", "issues", "analyze")
+		debugInvalidateDerivedCorpusRoute := path.Join(prefix, "debug", "derived-corpus", "invalidate")
 		peopleSubtreeRoute := path.Join(prefix, "people") + "/"
 		peopleCorrelationsRoute := path.Join(prefix, "people", "correlations")
 		apiRoutes[healthRoute] = struct{}{}
@@ -157,6 +158,7 @@ func (s *Server) Handler() http.Handler {
 		apiRoutes[peopleSubtreeRoute] = struct{}{}
 		apiRoutes[peopleCorrelationsRoute] = struct{}{}
 		apiRoutes[debugAnalyzeRoute] = struct{}{}
+		apiRoutes[debugInvalidateDerivedCorpusRoute] = struct{}{}
 		apiRoutes[authGitHubStartRoute] = struct{}{}
 		apiRoutes[authGitHubCallbackRoute] = struct{}{}
 		apiRoutes[authSessionRoute] = struct{}{}
@@ -191,6 +193,7 @@ func (s *Server) Handler() http.Handler {
 		apiMux.HandleFunc(peopleCorrelationsRoute, s.handleWorkCorrelations)
 		apiMux.HandleFunc(peopleSubtreeRoute, s.handlePersonProfile(peopleSubtreeRoute))
 		apiMux.HandleFunc(debugAnalyzeRoute, s.handleDebugIssueAnalyze)
+		apiMux.HandleFunc(debugInvalidateDerivedCorpusRoute, s.handleDebugInvalidateDerivedCorpus)
 	}
 
 	mcpHandler := mcpserver.NewHandler(mcpserver.ServerConfig{

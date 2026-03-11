@@ -12,6 +12,7 @@ import (
 )
 
 const debugAnalyzeTimeout = 45 * time.Second
+const debugInvalidateDerivedCorpusTimeout = 15 * time.Second
 
 type debugIssueAnalyzeRequest struct {
 	Text string   `json:"text"`
@@ -33,6 +34,10 @@ type debugIssueAnalyzeResponse struct {
 	ComparedIssueCount     int                    `json:"comparedIssueCount"`
 	AverageIssueSimilarity float64                `json:"averageIssueSimilarity"`
 	SimilarIssues          []debugIssueSimilarity `json:"similarIssues"`
+}
+
+type debugInvalidateDerivedCorpusResponse struct {
+	Invalidated bool `json:"invalidated"`
 }
 
 func (s *Server) handleDebugIssueAnalyze(w http.ResponseWriter, r *http.Request) {
@@ -73,6 +78,30 @@ func (s *Server) handleDebugIssueAnalyze(w http.ResponseWriter, r *http.Request)
 		AverageIssueSimilarity: analyzed.AverageIssueSimilarity,
 		SimilarIssues:          toDebugIssueSimilarities(analyzed.SimilarIssues),
 	})
+}
+
+func (s *Server) handleDebugInvalidateDerivedCorpus(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		w.Header().Set("Allow", http.MethodPost)
+		http.Error(w, http.StatusText(http.StatusMethodNotAllowed), http.StatusMethodNotAllowed)
+		return
+	}
+
+	invalidator := derivedCorpusProjectionInvalidatorFromIssueStore(s.config.IssueStore)
+	if invalidator == nil {
+		writeError(w, http.StatusNotImplemented, "derived corpus invalidation is unavailable")
+		return
+	}
+
+	ctx, cancel := context.WithTimeout(r.Context(), debugInvalidateDerivedCorpusTimeout)
+	defer cancel()
+
+	if err := invalidator.InvalidateDerivedCorpusProjections(ctx); err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+
+	writeJSON(w, http.StatusOK, debugInvalidateDerivedCorpusResponse{Invalidated: true})
 }
 
 func decodeDebugIssueAnalyzeRequest(r *http.Request) (debugIssueAnalyzeRequest, error) {

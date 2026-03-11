@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -32,6 +33,17 @@ func (t *fakeTagger) Model() string {
 
 type fakeEmbedder struct {
 	result ai.EmbeddingResult
+}
+
+type debugInvalidationStore struct {
+	issues.Store
+	calls int
+	err   error
+}
+
+func (s *debugInvalidationStore) InvalidateDerivedCorpusProjections(context.Context) error {
+	s.calls++
+	return s.err
 }
 
 func (e *fakeEmbedder) EmbedText(_ context.Context, _ string) (ai.EmbeddingResult, error) {
@@ -225,6 +237,72 @@ func TestDebugIssueAnalyzeEndpointUsesCustomTags(t *testing.T) {
 	}
 }
 
+func TestDebugInvalidateDerivedCorpusEndpoint(t *testing.T) {
+	store := &debugInvalidationStore{Store: issues.NewInMemoryStore(nil)}
+	server := NewServer(ServerConfig{
+		CORSOrigins: []string{"http://localhost:3000"},
+		APIPrefixes: []string{"/api"},
+		IssueStore:  store,
+	})
+
+	req := httptest.NewRequest(http.MethodPost, "/api/debug/derived-corpus/invalidate", nil)
+	rec := httptest.NewRecorder()
+
+	server.Handler().ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d", rec.Code)
+	}
+	if store.calls != 1 {
+		t.Fatalf("expected 1 invalidation call, got %d", store.calls)
+	}
+
+	var payload debugInvalidateDerivedCorpusResponse
+	if err := json.NewDecoder(rec.Body).Decode(&payload); err != nil {
+		t.Fatalf("decode payload: %v", err)
+	}
+	if !payload.Invalidated {
+		t.Fatal("expected invalidated=true")
+	}
+}
+
+func TestDebugInvalidateDerivedCorpusEndpointReturnsNotImplementedWithoutInvalidator(t *testing.T) {
+	server := NewServer(ServerConfig{
+		CORSOrigins: []string{"http://localhost:3000"},
+		APIPrefixes: []string{"/api"},
+	})
+
+	req := httptest.NewRequest(http.MethodPost, "/api/debug/derived-corpus/invalidate", nil)
+	rec := httptest.NewRecorder()
+
+	server.Handler().ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusNotImplemented {
+		t.Fatalf("expected 501, got %d", rec.Code)
+	}
+}
+
+func TestDebugInvalidateDerivedCorpusEndpointReturnsServerErrorOnInvalidationFailure(t *testing.T) {
+	store := &debugInvalidationStore{
+		Store: issues.NewInMemoryStore(nil),
+		err:   errors.New("boom"),
+	}
+	server := NewServer(ServerConfig{
+		CORSOrigins: []string{"http://localhost:3000"},
+		APIPrefixes: []string{"/api"},
+		IssueStore:  store,
+	})
+
+	req := httptest.NewRequest(http.MethodPost, "/api/debug/derived-corpus/invalidate", nil)
+	rec := httptest.NewRecorder()
+
+	server.Handler().ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusInternalServerError {
+		t.Fatalf("expected 500, got %d", rec.Code)
+	}
+}
+
 func TestDebugIssueAnalyzeEndpointRejectsInvalidInput(t *testing.T) {
 	server := NewServer(ServerConfig{
 		CORSOrigins: []string{"http://localhost:3000"},
@@ -234,6 +312,17 @@ func TestDebugIssueAnalyzeEndpointRejectsInvalidInput(t *testing.T) {
 
 	t.Run("wrong method", func(t *testing.T) {
 		req := httptest.NewRequest(http.MethodGet, "/api/debug/issues/analyze", nil)
+		rec := httptest.NewRecorder()
+
+		handler.ServeHTTP(rec, req)
+
+		if rec.Code != http.StatusMethodNotAllowed {
+			t.Fatalf("expected 405, got %d", rec.Code)
+		}
+	})
+
+	t.Run("invalidate wrong method", func(t *testing.T) {
+		req := httptest.NewRequest(http.MethodGet, "/api/debug/derived-corpus/invalidate", nil)
 		rec := httptest.NewRecorder()
 
 		handler.ServeHTTP(rec, req)
@@ -288,4 +377,3 @@ func TestDebugIssueAnalyzeEndpointRejectsInvalidInput(t *testing.T) {
 		}
 	})
 }
-

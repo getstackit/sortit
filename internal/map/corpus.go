@@ -4,10 +4,29 @@ import (
 	"cmp"
 	"slices"
 	"strings"
+	"time"
 
 	"splat/internal/issues"
 	"splat/internal/vectors"
 )
+
+type BuildDerivedCorpusStep struct {
+	Name     string
+	Duration time.Duration
+}
+
+type BuildDerivedCorpusProfile struct {
+	IssueCount          int
+	StoredTagCount      int
+	RuntimeIssueCount   int
+	TagNameCount        int
+	VisibleIssueCount   int
+	CanonicalIssueCount int
+	EdgeCount           int
+	ClusterCount        int
+	Steps               []BuildDerivedCorpusStep
+	TotalDuration       time.Duration
+}
 
 type DerivedCorpus struct {
 	Issues             []issues.Issue
@@ -80,10 +99,41 @@ func SubsetDerivedCorpus(corpus DerivedCorpus, issueIDs map[string]struct{}) Der
 }
 
 func BuildDerivedCorpus(storeIssues []issues.Issue, storeTags []issues.Tag) (DerivedCorpus, error) {
-	canonical, visible, boosts := deriveRelationshipSemantics(storeIssues)
+	corpus, _, err := BuildDerivedCorpusProfiled(storeIssues, storeTags)
+	return corpus, err
+}
 
+func BuildDerivedCorpusProfiled(storeIssues []issues.Issue, storeTags []issues.Tag) (DerivedCorpus, BuildDerivedCorpusProfile, error) {
+	startedAt := time.Now()
+	profile := BuildDerivedCorpusProfile{
+		IssueCount:     len(storeIssues),
+		StoredTagCount: len(storeTags),
+	}
+
+	stepStartedAt := time.Now()
+	canonical, visible, boosts := deriveRelationshipSemantics(storeIssues)
+	profile.VisibleIssueCount = len(visible)
+	profile.CanonicalIssueCount = len(canonical)
+	profile.Steps = append(profile.Steps, BuildDerivedCorpusStep{
+		Name:     "derive_relationship_semantics",
+		Duration: time.Since(stepStartedAt),
+	})
+
+	stepStartedAt = time.Now()
 	runtimeIssues, tagNames, issueEmbeddings, tagEmbeddings := runtimeMapInputs(storeIssues, storeTags)
+	profile.RuntimeIssueCount = len(runtimeIssues)
+	profile.TagNameCount = len(tagNames)
+	profile.Steps = append(profile.Steps, BuildDerivedCorpusStep{
+		Name:     "runtime_map_inputs",
+		Duration: time.Since(stepStartedAt),
+	})
+
+	stepStartedAt = time.Now()
 	factorVectors := runtimeFactorVectors(runtimeIssues, tagNames, tagEmbeddings)
+	profile.Steps = append(profile.Steps, BuildDerivedCorpusStep{
+		Name:     "runtime_factor_vectors",
+		Duration: time.Since(stepStartedAt),
+	})
 
 	positions := make(map[string]Position, len(runtimeIssues))
 	roundedPositions := make(map[string]Position, len(runtimeIssues))
@@ -93,12 +143,18 @@ func BuildDerivedCorpus(storeIssues []issues.Issue, storeTags []issues.Tag) (Der
 	clusters := []Cluster{}
 
 	if len(runtimeIssues) > 0 {
+		stepStartedAt = time.Now()
 		computedPositions, err := ComputePositions(runtimeIssues, tagNames, tagEmbeddings)
 		if err != nil {
-			return DerivedCorpus{}, err
+			return DerivedCorpus{}, BuildDerivedCorpusProfile{}, err
 		}
 		positions = computedPositions
+		profile.Steps = append(profile.Steps, BuildDerivedCorpusStep{
+			Name:     "compute_positions",
+			Duration: time.Since(stepStartedAt),
+		})
 
+		stepStartedAt = time.Now()
 		for i, item := range runtimeIssues {
 			position := roundPosition(positions[item.ID])
 			roundedPositions[item.ID] = position
@@ -113,11 +169,36 @@ func BuildDerivedCorpus(storeIssues []issues.Issue, storeTags []issues.Tag) (Der
 			mapIssues[i] = mapIssue
 			mapIssuesByID[item.ID] = mapIssue
 		}
+		profile.Steps = append(profile.Steps, BuildDerivedCorpusStep{
+			Name:     "materialize_map_issues",
+			Duration: time.Since(stepStartedAt),
+		})
 
+		stepStartedAt = time.Now()
 		allEdges = ComputeEdgesWithEmbeddings(runtimeIssues, issueEmbeddings, 0)
+		profile.EdgeCount = len(allEdges)
+		profile.Steps = append(profile.Steps, BuildDerivedCorpusStep{
+			Name:     "compute_edges",
+			Duration: time.Since(stepStartedAt),
+		})
+
+		stepStartedAt = time.Now()
 		sortEdgesBySimilarity(allEdges)
+		profile.Steps = append(profile.Steps, BuildDerivedCorpusStep{
+			Name:     "sort_edges",
+			Duration: time.Since(stepStartedAt),
+		})
+
+		stepStartedAt = time.Now()
 		clusters = ComputeFactorClusters(runtimeIssues, positions)
+		profile.ClusterCount = len(clusters)
+		profile.Steps = append(profile.Steps, BuildDerivedCorpusStep{
+			Name:     "compute_clusters",
+			Duration: time.Since(stepStartedAt),
+		})
 	}
+
+	profile.TotalDuration = time.Since(startedAt)
 
 	return DerivedCorpus{
 		Issues:             cloneStoreIssues(storeIssues),
@@ -136,7 +217,7 @@ func BuildDerivedCorpus(storeIssues []issues.Issue, storeTags []issues.Tag) (Der
 		VisibleIssueIDs:    visible,
 		CanonicalIssueIDs:  canonical,
 		RelationshipBoosts: boosts,
-	}, nil
+	}, profile, nil
 }
 
 func BuildMapFromCorpus(corpus DerivedCorpus, viewport *Viewport, edgeThreshold float64) (MapResponse, error) {

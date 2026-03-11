@@ -41,6 +41,10 @@ type IssueAnalysis = {
   }>;
 };
 
+type InvalidateDerivedCorpusResponse = {
+  invalidated: boolean;
+};
+
 const SECTION_LINKS = [
   { id: "prompt", title: "Prompt" },
   { id: "tags", title: "Tags" },
@@ -55,7 +59,7 @@ function formatFloat(value: number) {
   return value.toFixed(3);
 }
 
-async function parseAnalyzeResponse(response: Response) {
+async function parseDebugResponse(response: Response) {
   const raw = await response.text();
   const contentType = response.headers.get("content-type") ?? "";
   const isJSON = contentType.includes("application/json");
@@ -77,6 +81,9 @@ export default function DebugPage() {
   const [result, setResult] = useState<IssueAnalysis | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
+  const [invalidateLoading, setInvalidateLoading] = useState(false);
+  const [invalidateError, setInvalidateError] = useState<string | null>(null);
+  const [invalidateMessage, setInvalidateMessage] = useState<string | null>(null);
 
   const topTags = result?.tags.slice(0, 8) ?? [];
   const embeddingPreview = result?.embedding.preview ?? [];
@@ -108,7 +115,7 @@ export default function DebugPage() {
         }),
       });
 
-      const payload = await parseAnalyzeResponse(response);
+      const payload = await parseDebugResponse(response);
 
       if (!response.ok) {
         throw new Error(
@@ -128,6 +135,49 @@ export default function DebugPage() {
       );
     } finally {
       setLoading(false);
+    }
+  }
+
+  async function invalidateDerivedCorpus() {
+    setInvalidateLoading(true);
+    setInvalidateError(null);
+    setInvalidateMessage(null);
+
+    try {
+      const response = await fetch(
+        apiURL("/api/v1/debug/derived-corpus/invalidate"),
+        {
+          method: "POST",
+          credentials: "include",
+        }
+      );
+
+      const payload =
+        (await parseDebugResponse(
+          response
+        )) as InvalidateDerivedCorpusResponse | { error?: string };
+
+      if (!response.ok) {
+        throw new Error(
+          "error" in payload && payload.error
+            ? payload.error
+            : `Request failed with ${response.status}`
+        );
+      }
+
+      if (!("invalidated" in payload) || !payload.invalidated) {
+        throw new Error("Backend did not confirm invalidation.");
+      }
+
+      setInvalidateMessage("Derived corpus invalidated. It will rebuild on next read.");
+    } catch (caughtError) {
+      setInvalidateError(
+        caughtError instanceof Error
+          ? caughtError.message
+          : "Unknown invalidation error"
+      );
+    } finally {
+      setInvalidateLoading(false);
     }
   }
 
@@ -191,6 +241,15 @@ export default function DebugPage() {
                 </Button>
                 <Button
                   variant="outline"
+                  onClick={invalidateDerivedCorpus}
+                  disabled={loading || invalidateLoading}
+                >
+                  {invalidateLoading
+                    ? "Invalidating corpus..."
+                    : "Invalidate derived corpus"}
+                </Button>
+                <Button
+                  variant="outline"
                   onClick={() => {
                     setText(DEFAULT_TEXT);
                     setTags("");
@@ -204,6 +263,18 @@ export default function DebugPage() {
               {error && (
                 <div className="app-status-warning">
                   {error}
+                </div>
+              )}
+
+              {invalidateError && (
+                <div className="app-status-warning">
+                  {invalidateError}
+                </div>
+              )}
+
+              {invalidateMessage && (
+                <div className="app-status-success">
+                  {invalidateMessage}
                 </div>
               )}
 
