@@ -146,13 +146,18 @@ func runtimeProjectionInputs(
 ) ([]issues.Issue, []string, map[string][]float64, map[string][]float64) {
 	prepared := make([]issues.Issue, len(storeIssues))
 	for i, storeIssue := range storeIssues {
+		tagScores := copyProjectionTagScores(storeIssue.TagScores)
+		if len(tagScores) == 0 {
+			tagScores = runtimeTagRelevances(storeIssue.Tags)
+		}
+
 		prepared[i] = issues.Issue{
 			ID:         storeIssue.ID,
 			Raw:        storeIssue.Raw,
 			Tags:       append([]string(nil), storeIssue.Tags...),
 			Status:     storeIssue.Status,
 			AssignedTo: storeIssue.AssignedTo,
-			TagScores:  copyProjectionTagScores(storeIssue.TagScores),
+			TagScores:  tagScores,
 			Embedding:  append([]float64(nil), storeIssue.Embedding...),
 		}
 	}

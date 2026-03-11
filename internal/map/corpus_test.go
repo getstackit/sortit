@@ -45,3 +45,30 @@ func TestSubsetMapProjectionEmptySet(t *testing.T) {
 		t.Fatalf("expected no map issues, got %d", len(filtered.MapIssues))
 	}
 }
+
+func TestBuildEdgeResponseFromProjectionMatchesRuntimePath(t *testing.T) {
+	storeIssues := issues.FixtureIssues()
+	projection, err := BuildMapProjection(issues.MapProjectionIssuesFromIssues(storeIssues), nil)
+	if err != nil {
+		t.Fatalf("build projection: %v", err)
+	}
+
+	runtime, err := BuildEdgeResponseFromIssues(storeIssues, nil)
+	if err != nil {
+		t.Fatalf("build runtime edge response: %v", err)
+	}
+
+	fromProjection, err := BuildEdgeResponseFromProjection(projection, nil, minEdgeSimilarity)
+	if err != nil {
+		t.Fatalf("build projection edge response: %v", err)
+	}
+
+	if len(fromProjection.Edges) != len(runtime.Edges) {
+		t.Fatalf("expected %d edges from projection, got %d", len(runtime.Edges), len(fromProjection.Edges))
+	}
+	for i := range runtime.Edges {
+		if fromProjection.Edges[i] != runtime.Edges[i] {
+			t.Fatalf("unexpected edge at index %d: got %+v want %+v", i, fromProjection.Edges[i], runtime.Edges[i])
+		}
+	}
+}
