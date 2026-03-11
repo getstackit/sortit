@@ -212,6 +212,13 @@ func (s *PostgresStore) SaveDerivedCorpusProjection(ctx context.Context, revisio
 	return nil
 }
 
+func (s *PostgresStore) InvalidateDerivedCorpusProjections(ctx context.Context) error {
+	if _, err := s.db.ExecContext(ctx, `DELETE FROM derived_corpus_projections`); err != nil {
+		return fmt.Errorf("invalidate derived corpus projections: %w", err)
+	}
+	return nil
+}
+
 func normalizeListOptionTags(tags []string) []string {
 	if len(tags) == 0 {
 		return nil

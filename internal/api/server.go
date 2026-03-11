@@ -72,6 +72,13 @@ func derivedCorpusProjectionStoreFromIssueStore(store issues.Store) issues.Deriv
 	return nil
 }
 
+func derivedCorpusProjectionInvalidatorFromIssueStore(store issues.Store) issues.DerivedCorpusProjectionInvalidator {
+	if invalidator, ok := store.(issues.DerivedCorpusProjectionInvalidator); ok {
+		return invalidator
+	}
+	return nil
+}
+
 func unitOfWorkBeginnerFromStore(store issues.Store) issues.UnitOfWorkBeginner {
 	if beginner, ok := store.(issues.UnitOfWorkBeginner); ok {
 		return beginner
@@ -314,6 +321,12 @@ func NewServer(cfg ServerConfig) *Server {
 
 	// CommandRunner manages DB transaction lifecycle for command handlers.
 	uowBeginner := unitOfWorkBeginnerFromStore(cfg.IssueStore)
+	eventBus := issues.NewEventBus()
+	if listener := projectionInvalidationListener(
+		derivedCorpusProjectionInvalidatorFromIssueStore(cfg.IssueStore),
+	); listener != nil {
+		eventBus.Subscribe(listener)
+	}
 	runner := &commands.CommandRunner{
 		DB:       uowBeginner,
 		OnCommit: func() { revisions.Bump() },
@@ -338,6 +351,7 @@ func NewServer(cfg ServerConfig) *Server {
 		createIssue: commands.CreateIssueHandler{
 			Runner:   runner,
 			Enricher: enricher,
+			Events:   eventBus,
 		},
 		refineIssue: commands.RefineIssueHandler{
 			Store:    store,
@@ -393,6 +407,25 @@ func NewServer(cfg ServerConfig) *Server {
 		workCorrelations:  queries.WorkCorrelationsHandler{Store: store},
 		authService:       cfg.Auth,
 		catalog:           catalog,
+	}
+}
+
+func projectionInvalidationListener(
+	invalidator issues.DerivedCorpusProjectionInvalidator,
+) issues.EventListener {
+	if invalidator == nil {
+		return nil
+	}
+
+	return func(ctx context.Context, event issues.Event) {
+		if err := invalidator.InvalidateDerivedCorpusProjections(ctx); err != nil {
+			log.Printf(
+				"failed to invalidate derived corpus projections after %s event for issue %s: %v",
+				event.Kind,
+				event.IssueID,
+				err,
+			)
+		}
 	}
 }
 

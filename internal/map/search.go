@@ -181,7 +181,7 @@ func queryMatchesTagNames(queryLower string, tagNames []string) bool {
 		return false
 	}
 	words := make(map[string]struct{})
-	for _, w := range strings.Fields(queryLower) {
+	for w := range strings.FieldsSeq(queryLower) {
 		words[normalizeTagName(w)] = struct{}{}
 	}
 	for _, tag := range tagNames {

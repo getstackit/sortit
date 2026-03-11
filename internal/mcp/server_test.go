@@ -346,6 +346,7 @@ func newTestHandlers() *handlers {
 		createIssue: commands.CreateIssueHandler{
 			Runner:   &commands.CommandRunner{DB: store},
 			Enricher: enricher,
+			Events:   issues.NewEventBus(),
 		},
 		refineIssue:      commands.RefineIssueHandler{Store: store, Enricher: enricher},
 		progressIssue:    commands.ProgressIssueHandler{Store: store},

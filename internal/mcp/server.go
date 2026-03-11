@@ -362,7 +362,7 @@ func (h *handlers) handleSearchIssues(ctx context.Context, req mcp.CallToolReque
 	tagsRaw := strings.TrimSpace(req.GetString("tags", ""))
 	var tags []string
 	if tagsRaw != "" {
-		for _, tag := range strings.Split(tagsRaw, ",") {
+		for tag := range strings.SplitSeq(tagsRaw, ",") {
 			tag = strings.TrimSpace(tag)
 			if tag != "" {
 				tags = append(tags, tag)

@@ -40,10 +40,7 @@ func semanticSearchCandidateLimit(limit, offset int) int {
 		offset = 0
 	}
 
-	window := (limit + offset) * 6
-	if window < 32 {
-		window = 32
-	}
+	window := max((limit+offset)*6, 32)
 	if window > 256 {
 		window = 256
 	}

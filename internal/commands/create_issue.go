@@ -16,9 +16,10 @@ type CreateIssue struct {
 type CreateIssueHandler struct {
 	Runner   *CommandRunner
 	Enricher *services.IssueEnricher
+	Events   issues.EventPublisher
 }
 
-func (h CreateIssueHandler) Handle(ctx context.Context, input CreateIssue) (issues.Issue, error) {
+func (h CreateIssueHandler) Handle(ctx context.Context, input CreateIssue) (created issues.Issue, err error) {
 	if _, err := issues.ValidateRaw(input.Raw, "raw"); err != nil {
 		return issues.Issue{}, err
 	}
@@ -35,14 +36,22 @@ func (h CreateIssueHandler) Handle(ctx context.Context, input CreateIssue) (issu
 	}
 
 	issue := issues.BuildNewIssue(id, enriched)
+	reportEvent := issue.ReportEvent()
 
-	return Run(ctx, h.Runner, func(ctx context.Context, uow issues.UnitOfWork) (issues.Issue, error) {
-		if err := uow.SaveIssue(ctx, issue); err != nil {
-			return issues.Issue{}, err
-		}
+	uow, finish, err := Begin(ctx, h.Runner)
+	if err != nil {
+		return issues.Issue{}, err
+	}
 
-		_ = uow.RecordEvent(ctx, issue.ReportEvent())
-
-		return issue, nil
+	defer FinishAndThen(&err, finish, func() {
+		h.Events.PublishOne(ctx, reportEvent)
 	})
+
+	if err := uow.SaveIssue(ctx, issue); err != nil {
+		return issues.Issue{}, err
+	}
+
+	_ = uow.RecordEvent(ctx, reportEvent)
+
+	return issue, nil
 }

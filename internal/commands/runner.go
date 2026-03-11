@@ -13,30 +13,44 @@ type CommandRunner struct {
 	OnCommit func() // called after a successful commit; may be nil
 }
 
-// Run executes fn inside a unit of work (database transaction).
-// It commits on success and rolls back on error.
-func Run[T any](ctx context.Context, runner *CommandRunner, fn func(ctx context.Context, uow issues.UnitOfWork) (T, error)) (T, error) {
+// Begin opens a unit of work and returns a finisher suitable for defer.
+// The finisher rolls back on error and commits on success.
+func Begin(
+	ctx context.Context,
+	runner *CommandRunner,
+) (issues.UnitOfWork, func(*error), error) {
 	uow, err := runner.DB.BeginUnitOfWork(ctx)
 	if err != nil {
-		var zero T
-		return zero, fmt.Errorf("begin transaction: %w", err)
-	}
-	defer uow.Rollback()
-
-	result, err := fn(ctx, uow)
-	if err != nil {
-		var zero T
-		return zero, err
+		return nil, nil, fmt.Errorf("begin transaction: %w", err)
 	}
 
-	if err := uow.Commit(); err != nil {
-		var zero T
-		return zero, fmt.Errorf("commit transaction: %w", err)
+	finish := func(errp *error) {
+		if errp != nil && *errp != nil {
+			_ = uow.Rollback()
+			return
+		}
+
+		if err := uow.Commit(); err != nil {
+			if errp != nil {
+				*errp = fmt.Errorf("commit transaction: %w", err)
+			}
+			_ = uow.Rollback()
+			return
+		}
+
+		if runner.OnCommit != nil {
+			runner.OnCommit()
+		}
 	}
 
-	if runner.OnCommit != nil {
-		runner.OnCommit()
-	}
+	return uow, finish, nil
+}
 
-	return result, nil
+func FinishAndThen(errp *error, finish func(*error), afterSuccess func()) {
+	if finish != nil {
+		finish(errp)
+	}
+	if errp != nil && *errp == nil && afterSuccess != nil {
+		afterSuccess()
+	}
 }

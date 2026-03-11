@@ -228,6 +228,10 @@ type DerivedCorpusProjectionStore interface {
 	SaveDerivedCorpusProjection(context.Context, uint64, []byte) error
 }
 
+type DerivedCorpusProjectionInvalidator interface {
+	InvalidateDerivedCorpusProjections(context.Context) error
+}
+
 type SemanticSearchStore interface {
 	SearchIssues(context.Context, SemanticSearchOptions) ([]SemanticSearchResult, error)
 }
