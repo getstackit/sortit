@@ -168,111 +168,211 @@ func TestHandleSearchIssuesRejectsInvalidStatus(t *testing.T) {
 	}
 }
 
-func TestHandleRefineIssue(t *testing.T) {
+func TestHandleRefineIssues(t *testing.T) {
 	t.Parallel()
 
 	handler := newTestHandlers()
 	created := createTestIssue(t, handler, "Safari crashes when exporting a PDF", "Casey")
 
-	result, err := handler.handleRefineIssue(context.Background(), toolRequest(map[string]any{
-		"id":         " " + created.ID + " ",
+	result, err := handler.handleRefineIssues(context.Background(), toolRequest(map[string]any{
+		"ids":        []string{" " + created.ID + " "},
 		"raw":        "Happens after tapping share twice on iPad.",
 		"created_by": "Jordan",
 	}))
 	if err != nil {
-		t.Fatalf("handleRefineIssue returned error: %v", err)
+		t.Fatalf("handleRefineIssues returned error: %v", err)
 	}
 	if result.IsError {
 		t.Fatalf("expected success result, got error: %s", firstText(result))
 	}
 
-	issue, ok := result.StructuredContent.(issues.Issue)
+	response, ok := result.StructuredContent.(commands.IssueMutationResult)
 	if !ok {
-		t.Fatalf("expected issues.Issue structured content, got %T", result.StructuredContent)
+		t.Fatalf("expected commands.IssueMutationResult structured content, got %T", result.StructuredContent)
 	}
-	if len(issue.Discussion) != 2 {
-		t.Fatalf("expected discussion in refined issue, got %#v", issue.Discussion)
+	if response.Summary.Succeeded != 1 || response.Summary.Failed != 0 {
+		t.Fatalf("unexpected summary: %#v", response.Summary)
 	}
-	if issue.Discussion[1].CreatedBy != "Jordan" {
-		t.Fatalf("expected refinement author Jordan, got %q", issue.Discussion[1].CreatedBy)
+	if len(response.Results) != 1 || response.Results[0].Issue == nil {
+		t.Fatalf("expected per-issue success result, got %#v", response.Results)
+	}
+	if len(response.Results[0].Issue.Discussion) != 2 {
+		t.Fatalf("expected discussion in refined issue, got %#v", response.Results[0].Issue.Discussion)
+	}
+	if response.Results[0].Issue.Discussion[1].CreatedBy != "Jordan" {
+		t.Fatalf("expected refinement author Jordan, got %q", response.Results[0].Issue.Discussion[1].CreatedBy)
 	}
 }
 
-func TestHandleProgressIssue(t *testing.T) {
+func TestHandleRefineIssuesUsesAuthenticatedPrincipal(t *testing.T) {
+	t.Parallel()
+
+	handler := newTestHandlers()
+	created := createTestIssue(t, handler, "Safari crashes when exporting a PDF", "Casey")
+	ctx := auth.WithPrincipal(context.Background(), auth.Principal{
+		UserID:      "user-123",
+		Login:       "casey",
+		DisplayName: "Casey Authenticated",
+	})
+
+	result, err := handler.handleRefineIssues(ctx, toolRequest(map[string]any{
+		"ids":        []string{created.ID},
+		"raw":        "Happens after tapping share twice on iPad.",
+		"created_by": "Ignored",
+	}))
+	if err != nil {
+		t.Fatalf("handleRefineIssues returned error: %v", err)
+	}
+	if result.IsError {
+		t.Fatalf("expected success result, got error: %s", firstText(result))
+	}
+
+	response := result.StructuredContent.(commands.IssueMutationResult)
+	if response.Results[0].Issue.Discussion[1].CreatedBy != "Casey Authenticated" {
+		t.Fatalf("expected authenticated actor, got %q", response.Results[0].Issue.Discussion[1].CreatedBy)
+	}
+}
+
+func TestHandleProgressIssues(t *testing.T) {
 	t.Parallel()
 
 	handler := newTestHandlers()
 	created := createTestIssue(t, handler, "Safari crashes when exporting a PDF", "Casey")
 
-	result, err := handler.handleProgressIssue(context.Background(), toolRequest(map[string]any{
-		"id":         " " + created.ID + " ",
+	result, err := handler.handleProgressIssues(context.Background(), toolRequest(map[string]any{
+		"ids":        []string{" " + created.ID + " "},
 		"raw":        "Identified the root cause in the share handler.",
 		"created_by": "Jordan",
 	}))
 	if err != nil {
-		t.Fatalf("handleProgressIssue returned error: %v", err)
+		t.Fatalf("handleProgressIssues returned error: %v", err)
 	}
 	if result.IsError {
 		t.Fatalf("expected success result, got error: %s", firstText(result))
 	}
 
-	issue, ok := result.StructuredContent.(issues.Issue)
+	response, ok := result.StructuredContent.(commands.IssueMutationResult)
 	if !ok {
-		t.Fatalf("expected issues.Issue structured content, got %T", result.StructuredContent)
+		t.Fatalf("expected commands.IssueMutationResult structured content, got %T", result.StructuredContent)
 	}
-	if len(issue.Discussion) != 2 {
-		t.Fatalf("expected discussion in progress issue, got %#v", issue.Discussion)
+	if len(response.Results) != 1 || response.Results[0].Issue == nil {
+		t.Fatalf("expected per-issue success result, got %#v", response.Results)
 	}
-	if issue.Discussion[1].Kind != "progress" {
-		t.Fatalf("expected progress post kind, got %q", issue.Discussion[1].Kind)
+	if len(response.Results[0].Issue.Discussion) != 2 {
+		t.Fatalf("expected discussion in progress issue, got %#v", response.Results[0].Issue.Discussion)
+	}
+	if response.Results[0].Issue.Discussion[1].Kind != "progress" {
+		t.Fatalf("expected progress post kind, got %q", response.Results[0].Issue.Discussion[1].Kind)
 	}
 }
 
-func TestHandleCloseIssue(t *testing.T) {
+func TestHandleCloseIssues(t *testing.T) {
 	t.Parallel()
 
 	handler := newTestHandlers()
 	created := createTestIssue(t, handler, "Safari crashes when exporting a PDF", "Casey")
 
-	result, err := handler.handleCloseIssue(context.Background(), toolRequest(map[string]any{
-		"id":        " " + created.ID + " ",
+	result, err := handler.handleCloseIssues(context.Background(), toolRequest(map[string]any{
+		"ids":       []string{" " + created.ID + " "},
 		"closed_by": "Jordan",
 	}))
 	if err != nil {
-		t.Fatalf("handleCloseIssue returned error: %v", err)
+		t.Fatalf("handleCloseIssues returned error: %v", err)
 	}
 	if result.IsError {
 		t.Fatalf("expected success result, got error: %s", firstText(result))
 	}
 
-	issue, ok := result.StructuredContent.(issues.Issue)
+	response, ok := result.StructuredContent.(commands.IssueMutationResult)
 	if !ok {
-		t.Fatalf("expected issues.Issue structured content, got %T", result.StructuredContent)
+		t.Fatalf("expected commands.IssueMutationResult structured content, got %T", result.StructuredContent)
 	}
-	if issue.Status != issues.StatusClosed {
-		t.Fatalf("expected closed issue, got %q", issue.Status)
+	if len(response.Results) != 1 || response.Results[0].Issue == nil {
+		t.Fatalf("expected per-issue success result, got %#v", response.Results)
 	}
-	if issue.ClosedBy != "Jordan" {
-		t.Fatalf("expected ClosedBy Jordan, got %q", issue.ClosedBy)
+	if response.Results[0].Issue.Status != issues.StatusClosed {
+		t.Fatalf("expected closed issue, got %q", response.Results[0].Issue.Status)
+	}
+	if response.Results[0].Issue.ClosedBy != "Jordan" {
+		t.Fatalf("expected ClosedBy Jordan, got %q", response.Results[0].Issue.ClosedBy)
 	}
 }
 
-func TestHandleCloseIssueNotFound(t *testing.T) {
+func TestHandleCloseIssuesSupportsPartialFailure(t *testing.T) {
+	t.Parallel()
+
+	handler := newTestHandlers()
+	created := createTestIssue(t, handler, "Safari crashes when exporting a PDF", "Casey")
+
+	result, err := handler.handleCloseIssues(context.Background(), toolRequest(map[string]any{
+		"ids": []string{created.ID, "issue-000999", created.ID},
+	}))
+	if err != nil {
+		t.Fatalf("handleCloseIssues returned error: %v", err)
+	}
+	if result.IsError {
+		t.Fatalf("expected success result, got error: %s", firstText(result))
+	}
+
+	response := result.StructuredContent.(commands.IssueMutationResult)
+	if got := response.RequestedIDs; len(got) != 2 || got[0] != created.ID || got[1] != "issue-000999" {
+		t.Fatalf("expected sanitized requested ids, got %#v", got)
+	}
+	if response.Summary.Requested != 2 || response.Summary.Succeeded != 1 || response.Summary.Failed != 1 {
+		t.Fatalf("unexpected summary: %#v", response.Summary)
+	}
+	if len(response.Failed) != 1 || response.Failed[0].Error != "issue not found" {
+		t.Fatalf("expected issue not found failure, got %#v", response.Failed)
+	}
+}
+
+func TestHandleAssignIssuesAllowsUnassign(t *testing.T) {
+	t.Parallel()
+
+	handler := newTestHandlers()
+	created := createTestIssue(t, handler, "Safari crashes when exporting a PDF", "Casey")
+	_, err := handler.assignIssues.Handle(context.Background(), commands.AssignIssues{
+		IDs:        []string{created.ID},
+		AssignedTo: "Jordan",
+	})
+	if err != nil {
+		t.Fatalf("seed assign: %v", err)
+	}
+
+	result, err := handler.handleAssignIssues(context.Background(), toolRequest(map[string]any{
+		"ids":         []string{created.ID},
+		"assigned_to": "   ",
+	}))
+	if err != nil {
+		t.Fatalf("handleAssignIssues returned error: %v", err)
+	}
+	if result.IsError {
+		t.Fatalf("expected success result, got error: %s", firstText(result))
+	}
+
+	response := result.StructuredContent.(commands.IssueMutationResult)
+	if response.Results[0].Issue.AssignedTo != "" {
+		t.Fatalf("expected issue to be unassigned, got %q", response.Results[0].Issue.AssignedTo)
+	}
+}
+
+func TestHandleAssignIssuesRequiresIDs(t *testing.T) {
 	t.Parallel()
 
 	handler := newTestHandlers()
 
-	result, err := handler.handleCloseIssue(context.Background(), toolRequest(map[string]any{
-		"id": "issue-000999",
+	result, err := handler.handleAssignIssues(context.Background(), toolRequest(map[string]any{
+		"ids":         []string{" ", " "},
+		"assigned_to": "Jordan",
 	}))
 	if err != nil {
-		t.Fatalf("handleCloseIssue returned error: %v", err)
+		t.Fatalf("handleAssignIssues returned error: %v", err)
 	}
 	if !result.IsError {
 		t.Fatal("expected MCP error result")
 	}
-	if !strings.Contains(firstText(result), "issue not found") {
-		t.Fatalf("expected issue not found error, got %q", firstText(result))
+	if !strings.Contains(firstText(result), "at least one issue id is required") {
+		t.Fatalf("expected ids validation error, got %q", firstText(result))
 	}
 }
 
@@ -350,10 +450,10 @@ func newTestHandlers() *handlers {
 			Enricher: enricher,
 			Events:   eventBus,
 		},
-		refineIssue:      commands.RefineIssueHandler{Runner: runner, Store: store, Enricher: enricher, Events: eventBus},
-		progressIssue:    commands.ProgressIssueHandler{Runner: runner, Events: eventBus},
-		closeIssue:       commands.CloseIssueHandler{Runner: runner, Events: eventBus},
-		assignIssue:      commands.AssignIssueHandler{Runner: runner, Events: eventBus},
+		refineIssues:     commands.RefineIssuesHandler{RefineIssue: commands.RefineIssueHandler{Runner: runner, Store: store, Enricher: enricher, Events: eventBus}},
+		progressIssues:   commands.ProgressIssuesHandler{ProgressIssue: commands.ProgressIssueHandler{Runner: runner, Events: eventBus}},
+		closeIssues:      commands.CloseIssuesHandler{CloseIssue: commands.CloseIssueHandler{Runner: runner, Events: eventBus}},
+		assignIssues:     commands.AssignIssuesHandler{AssignIssue: commands.AssignIssueHandler{Runner: runner, Events: eventBus}},
 		splitIssue:       commands.SplitIssueHandler{Runner: runner, Enricher: enricher, Events: eventBus},
 		combineIssues:    commands.CombineIssuesHandler{Runner: runner, Store: store, Enricher: enricher, Events: eventBus},
 		linkIssues:       commands.LinkIssuesHandler{Runner: runner, Events: eventBus},

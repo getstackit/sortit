@@ -89,6 +89,9 @@ export type IssueSearchResponse = {
   relatedIssues: SearchIssueRecord[];
 };
 
+const ISSUE_ULID_PATTERN = /^[0-9A-HJKMNP-TV-Z]{26}$/i;
+const LEGACY_ISSUE_ID_PATTERN = /^issue-[a-z0-9][a-z0-9-]*$/i;
+
 export type IssueRecord = {
   id: string;
   raw: string;
@@ -196,6 +199,32 @@ export async function searchIssues(
       signal,
     }
   );
+}
+
+export function parseIssueID(value: string): string | null {
+  const trimmed = value.trim();
+  if (!trimmed) {
+    return null;
+  }
+
+  if (ISSUE_ULID_PATTERN.test(trimmed)) {
+    return trimmed.toUpperCase();
+  }
+
+  if (LEGACY_ISSUE_ID_PATTERN.test(trimmed)) {
+    return trimmed;
+  }
+
+  return null;
+}
+
+export function issueHrefFromText(value: string): string | null {
+  const issueID = parseIssueID(value);
+  if (!issueID) {
+    return null;
+  }
+
+  return `/issues/${encodeURIComponent(issueID)}`;
 }
 
 export async function createIssue(input: CreateIssueInput): Promise<IssueRecord> {

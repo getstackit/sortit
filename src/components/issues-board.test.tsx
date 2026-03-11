@@ -6,6 +6,8 @@ import type { IssueRecord, IssueSearchResponse, SearchIssueRecord } from "@/lib/
 import { useIssueSearch, useIssues } from "@/hooks/use-issues";
 import type { AppShortcutRegistration } from "@/components/app-shell";
 
+const push = vi.fn();
+
 vi.mock("next/link", () => ({
   default: ({
     children,
@@ -31,6 +33,7 @@ vi.mock("motion/react", () => ({
 vi.mock("next/navigation", () => ({
   usePathname: () => window.location.pathname,
   useSearchParams: () => new URLSearchParams(window.location.search),
+  useRouter: () => ({ push }),
 }));
 
 let appShellShortcuts: AppShortcutRegistration[] = [];
@@ -128,6 +131,7 @@ describe("IssuesBoard", () => {
   beforeEach(() => {
     window.history.replaceState({}, "", "/");
     appShellShortcuts = [];
+    push.mockReset();
     vi.mocked(useIssues).mockReset();
     vi.mocked(useIssueSearch).mockReset();
 
@@ -280,5 +284,15 @@ describe("IssuesBoard", () => {
 
     const scrollRegion = container.querySelector(".app-scrollarea.overflow-y-auto");
     expect(scrollRegion).not.toBeNull();
+  });
+
+  it("navigates directly to an issue when a full issue id is pasted", async () => {
+    render(<IssuesBoard />);
+
+    const input = screen.getByLabelText("Search issues");
+    await userEvent.click(input);
+    await userEvent.paste("01kkbqe0f7xz0s82nqbbg2fheh");
+
+    expect(push).toHaveBeenCalledWith("/issues/01KKBQE0F7XZ0S82NQBBG2FHEH");
   });
 });

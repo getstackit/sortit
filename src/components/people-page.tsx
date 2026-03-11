@@ -3,7 +3,7 @@
 import { useMemo, useState } from "react";
 import { AppShell } from "@/components/app-shell";
 import { AppSidebar } from "@/components/app-sidebar";
-import { IssueCard } from "@/components/issue-card";
+import { IssueListItem } from "@/components/issue-list-item";
 import { SiteHeader } from "@/components/site-header";
 import { TagRelevanceBars } from "@/components/tag-relevance-bars";
 import { useWorkCorrelations } from "@/hooks/use-people";
@@ -59,11 +59,11 @@ function PersonProfileCard({
         </div>
         <div className="space-y-2">
           {issues.map((issue) => (
-            <IssueCard
+            <IssueListItem
               key={issue.id}
               issue={issue}
+              tags={issue.tagScores ?? issue.tags}
               href={`/issues/${issue.id}`}
-              compact
             />
           ))}
         </div>

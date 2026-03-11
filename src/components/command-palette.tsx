@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { Dialog } from "@base-ui/react/dialog";
 import { FileTextIcon, LoaderIcon, SearchIcon, TagIcon } from "lucide-react";
 import { UNIFIED_SEARCH_LIMIT, useUnifiedSearch } from "@/hooks/use-search";
+import { issueHrefFromText } from "@/lib/issues";
 import { tagHref } from "@/lib/tags";
 import { entityStyle } from "@/lib/entity-colors";
 import type { SearchIssueRecord } from "@/lib/issues";
@@ -60,6 +61,20 @@ export function CommandPalette({ open, onOpenChange }: CommandPaletteProps) {
     [onOpenChange]
   );
 
+  const navigateToDirectIssue = useCallback(
+    (value: string) => {
+      const href = issueHrefFromText(value);
+      if (!href) {
+        return false;
+      }
+
+      router.push(href);
+      handleOpenChange(false);
+      return true;
+    },
+    [handleOpenChange, router]
+  );
+
   const navigate = useCallback(
     (item: ResultItem) => {
       if (item.kind === "issue") {
@@ -84,13 +99,16 @@ export function CommandPalette({ open, onOpenChange }: CommandPaletteProps) {
         );
       } else if (event.key === "Enter") {
         event.preventDefault();
+        if (navigateToDirectIssue(searchText)) {
+          return;
+        }
         const item = items[resolvedActiveIndex];
         if (item) {
           navigate(item);
         }
       }
     },
-    [items, navigate, resolvedActiveIndex]
+    [items, navigate, navigateToDirectIssue, resolvedActiveIndex, searchText]
   );
 
   useEffect(() => {
@@ -113,6 +131,12 @@ export function CommandPalette({ open, onOpenChange }: CommandPaletteProps) {
                 onChange={(e) => {
                   setSearchText(e.target.value);
                   setActiveIndex(0);
+                }}
+                onPaste={(event) => {
+                  const pastedText = event.clipboardData.getData("text");
+                  if (navigateToDirectIssue(pastedText)) {
+                    event.preventDefault();
+                  }
                 }}
                 onKeyDown={handleKeyDown}
                 placeholder="Search issues and tags..."

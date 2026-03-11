@@ -43,10 +43,10 @@ func NewHandler(cfg ServerConfig) http.Handler {
 
 	h := &handlers{
 		createIssue:      cfg.CreateIssue,
-		refineIssue:      cfg.RefineIssue,
-		progressIssue:    cfg.ProgressIssue,
-		closeIssue:       cfg.CloseIssue,
-		assignIssue:      cfg.AssignIssue,
+		refineIssues:     commands.RefineIssuesHandler{RefineIssue: cfg.RefineIssue},
+		progressIssues:   commands.ProgressIssuesHandler{ProgressIssue: cfg.ProgressIssue},
+		closeIssues:      commands.CloseIssuesHandler{CloseIssue: cfg.CloseIssue},
+		assignIssues:     commands.AssignIssuesHandler{AssignIssue: cfg.AssignIssue},
 		splitIssue:       cfg.SplitIssue,
 		combineIssues:    cfg.CombineIssues,
 		linkIssues:       cfg.LinkIssues,
@@ -112,68 +112,72 @@ func NewHandler(cfg ServerConfig) http.Handler {
 	)
 
 	s.AddTool(
-		mcp.NewTool("refine_issue",
-			mcp.WithDescription("Refine an existing Splat issue by appending discussion context or feedback. This updates the issue's canonical description, tags, and semantic similarity."),
-			mcp.WithString("id",
+		mcp.NewTool("refine_issues",
+			mcp.WithDescription("Refine one or more existing Splat issues by appending shared discussion context or feedback. This updates each issue's canonical description, tags, and semantic similarity."),
+			mcp.WithArray("ids",
 				mcp.Required(),
-				mcp.Description("The issue ID to refine, for example issue-000003."),
+				mcp.Description("The issue IDs to refine."),
+				mcp.WithStringItems(),
 			),
 			mcp.WithString("raw",
 				mcp.Required(),
-				mcp.Description("The new discussion post to append as additional context, refinement, or feedback."),
+				mcp.Description("The shared discussion post to append as additional context, refinement, or feedback."),
 			),
 			mcp.WithString("created_by",
 				mcp.Description("Who authored the refinement. Defaults to 'Claude'."),
 			),
 		),
-		h.handleRefineIssue,
+		h.handleRefineIssues,
 	)
 
 	s.AddTool(
-		mcp.NewTool("progress_issue",
-			mcp.WithDescription("Post a progress update on an existing Splat issue. Progress updates report work done toward resolving an issue without changing the canonical summary, tags, or semantic similarity."),
-			mcp.WithString("id",
+		mcp.NewTool("progress_issues",
+			mcp.WithDescription("Post the same progress update on one or more existing Splat issues. Progress updates report work done toward resolving an issue without changing the canonical summary, tags, or semantic similarity."),
+			mcp.WithArray("ids",
 				mcp.Required(),
-				mcp.Description("The issue ID to post progress on, for example issue-000003."),
+				mcp.Description("The issue IDs to post progress on."),
+				mcp.WithStringItems(),
 			),
 			mcp.WithString("raw",
 				mcp.Required(),
-				mcp.Description("The progress update text describing work done toward resolving the issue."),
+				mcp.Description("The shared progress update text describing work done toward each issue."),
 			),
 			mcp.WithString("created_by",
 				mcp.Description("Who authored the progress update. Defaults to 'Claude'."),
 			),
 		),
-		h.handleProgressIssue,
+		h.handleProgressIssues,
 	)
 
 	s.AddTool(
-		mcp.NewTool("close_issue",
-			mcp.WithDescription("Close a Splat issue by ID."),
-			mcp.WithString("id",
+		mcp.NewTool("close_issues",
+			mcp.WithDescription("Close one or more Splat issues."),
+			mcp.WithArray("ids",
 				mcp.Required(),
-				mcp.Description("The issue ID to close, for example issue-000003."),
+				mcp.Description("The issue IDs to close."),
+				mcp.WithStringItems(),
 			),
 			mcp.WithString("closed_by",
-				mcp.Description("Who closed the issue. Defaults to 'Claude'."),
+				mcp.Description("Who closed the issues. Defaults to 'Claude'."),
 			),
 		),
-		h.handleCloseIssue,
+		h.handleCloseIssues,
 	)
 
 	s.AddTool(
-		mcp.NewTool("assign_issue",
-			mcp.WithDescription("Assign a Splat issue to a person, or unassign by passing an empty string."),
-			mcp.WithString("id",
+		mcp.NewTool("assign_issues",
+			mcp.WithDescription("Assign one or more Splat issues to a person, or unassign by passing an empty string."),
+			mcp.WithArray("ids",
 				mcp.Required(),
-				mcp.Description("The issue ID to assign, for example issue-000003."),
+				mcp.Description("The issue IDs to assign."),
+				mcp.WithStringItems(),
 			),
 			mcp.WithString("assigned_to",
 				mcp.Required(),
-				mcp.Description("The person to assign the issue to. Pass an empty string to unassign."),
+				mcp.Description("The person to assign every issue to. Pass an empty string to unassign."),
 			),
 		),
-		h.handleAssignIssue,
+		h.handleAssignIssues,
 	)
 
 	s.AddTool(
@@ -287,10 +291,10 @@ func NewHandler(cfg ServerConfig) http.Handler {
 
 type handlers struct {
 	createIssue      commands.CreateIssueHandler
-	refineIssue      commands.RefineIssueHandler
-	progressIssue    commands.ProgressIssueHandler
-	closeIssue       commands.CloseIssueHandler
-	assignIssue      commands.AssignIssueHandler
+	refineIssues     commands.RefineIssuesHandler
+	progressIssues   commands.ProgressIssuesHandler
+	closeIssues      commands.CloseIssuesHandler
+	assignIssues     commands.AssignIssuesHandler
 	splitIssue       commands.SplitIssueHandler
 	combineIssues    commands.CombineIssuesHandler
 	linkIssues       commands.LinkIssuesHandler
@@ -391,8 +395,8 @@ func (h *handlers) handleSearchIssues(ctx context.Context, req mcp.CallToolReque
 	return jsonResult(response)
 }
 
-func (h *handlers) handleRefineIssue(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
-	id, result := requireTrimmedString(req, "id")
+func (h *handlers) handleRefineIssues(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+	ids, result := requireIssueIDs(req, "ids")
 	if result != nil {
 		return result, nil
 	}
@@ -401,8 +405,8 @@ func (h *handlers) handleRefineIssue(ctx context.Context, req mcp.CallToolReques
 		return result, nil
 	}
 
-	issue, err := h.refineIssue.Handle(ctx, commands.RefineIssue{
-		ID:        id,
+	issue, err := h.refineIssues.Handle(ctx, commands.RefineIssues{
+		IDs:       ids,
 		Raw:       raw,
 		CreatedBy: actorForContext(ctx, req.GetString("created_by", "Claude")),
 	})
@@ -413,8 +417,8 @@ func (h *handlers) handleRefineIssue(ctx context.Context, req mcp.CallToolReques
 	return jsonResult(issue)
 }
 
-func (h *handlers) handleProgressIssue(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
-	id, result := requireTrimmedString(req, "id")
+func (h *handlers) handleProgressIssues(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+	ids, result := requireIssueIDs(req, "ids")
 	if result != nil {
 		return result, nil
 	}
@@ -423,8 +427,8 @@ func (h *handlers) handleProgressIssue(ctx context.Context, req mcp.CallToolRequ
 		return result, nil
 	}
 
-	issue, err := h.progressIssue.Handle(ctx, commands.ProgressIssue{
-		ID:        id,
+	issue, err := h.progressIssues.Handle(ctx, commands.ProgressIssues{
+		IDs:       ids,
 		Raw:       raw,
 		CreatedBy: actorForContext(ctx, req.GetString("created_by", "Claude")),
 	})
@@ -435,14 +439,14 @@ func (h *handlers) handleProgressIssue(ctx context.Context, req mcp.CallToolRequ
 	return jsonResult(issue)
 }
 
-func (h *handlers) handleCloseIssue(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
-	id, result := requireTrimmedString(req, "id")
+func (h *handlers) handleCloseIssues(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+	ids, result := requireIssueIDs(req, "ids")
 	if result != nil {
 		return result, nil
 	}
 
-	issue, err := h.closeIssue.Handle(ctx, commands.CloseIssue{
-		ID:       id,
+	issue, err := h.closeIssues.Handle(ctx, commands.CloseIssues{
+		IDs:      ids,
 		ClosedBy: actorForContext(ctx, req.GetString("closed_by", "Claude")),
 	})
 	if err != nil {
@@ -474,19 +478,19 @@ func (h *handlers) handleExploreIssue(ctx context.Context, req mcp.CallToolReque
 	return jsonResult(response)
 }
 
-func (h *handlers) handleAssignIssue(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
-	id, result := requireTrimmedString(req, "id")
+func (h *handlers) handleAssignIssues(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+	ids, result := requireIssueIDs(req, "ids")
 	if result != nil {
 		return result, nil
 	}
-	assignedTo, result := requireTrimmedString(req, "assigned_to")
-	if result != nil {
-		return result, nil
+	assignedTo, err := req.RequireString("assigned_to")
+	if err != nil {
+		return mcp.NewToolResultError("assigned_to is required"), nil
 	}
 
-	issue, err := h.assignIssue.Handle(ctx, commands.AssignIssue{
-		ID:         id,
-		AssignedTo: assignedTo,
+	issue, err := h.assignIssues.Handle(ctx, commands.AssignIssues{
+		IDs:        ids,
+		AssignedTo: strings.TrimSpace(assignedTo),
 	})
 	if err != nil {
 		return toolResultError(err), nil
@@ -541,7 +545,7 @@ func (h *handlers) handleCombineIssues(ctx context.Context, req mcp.CallToolRequ
 	if err != nil {
 		return mcp.NewToolResultError("ids is required"), nil
 	}
-	ids = sanitizeIssueIDs(ids)
+	ids = issues.SanitizeIssueIDs(ids)
 	if len(ids) < 2 {
 		return mcp.NewToolResultError("at least two issue ids are required"), nil
 	}
@@ -662,6 +666,18 @@ func requirePositiveInt(req mcp.CallToolRequest, field string, fallback int) (in
 	return value, nil
 }
 
+func requireIssueIDs(req mcp.CallToolRequest, field string) ([]string, *mcp.CallToolResult) {
+	ids, err := req.RequireStringSlice(field)
+	if err != nil {
+		return nil, mcp.NewToolResultError(field + " is required")
+	}
+	ids = issues.SanitizeIssueIDs(ids)
+	if len(ids) == 0 {
+		return nil, mcp.NewToolResultError("at least one issue id is required")
+	}
+	return ids, nil
+}
+
 func parseStatusFilter(raw string, defaultOpen bool) (queries.IssueStatusFilter, bool) {
 	switch strings.ToLower(strings.TrimSpace(raw)) {
 	case "":
@@ -693,23 +709,6 @@ func parseLinkType(raw string) (issues.IssueLinkType, bool) {
 	default:
 		return "", false
 	}
-}
-
-func sanitizeIssueIDs(ids []string) []string {
-	seen := make(map[string]struct{}, len(ids))
-	normalized := make([]string, 0, len(ids))
-	for _, id := range ids {
-		id = strings.TrimSpace(id)
-		if id == "" {
-			continue
-		}
-		if _, ok := seen[id]; ok {
-			continue
-		}
-		seen[id] = struct{}{}
-		normalized = append(normalized, id)
-	}
-	return normalized
 }
 
 func jsonResult[T any](payload T) (*mcp.CallToolResult, error) {

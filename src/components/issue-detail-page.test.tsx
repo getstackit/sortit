@@ -535,6 +535,15 @@ describe("IssueDetailPage", () => {
     expect(screen.getByText("Map context and nearby issues")).toBeInTheDocument();
     expect(screen.getByText("Semantic neighbors")).toBeInTheDocument();
     expect(screen.getByText("Clustered nearby")).toBeInTheDocument();
+    expect(
+      screen.getByRole("img", { name: "Mini map centered on issue-related-context" })
+    ).toHaveAttribute("width", "100%");
+    expect(
+      screen.getByRole("img", { name: "Mini map centered on issue-related-context" })
+    ).toHaveAttribute("height", "100%");
+    expect(
+      screen.getByRole("img", { name: "Mini map centered on issue-related-context" })
+    ).toHaveAttribute("viewBox", "0 0 640 360");
   });
 
   it("sorts semantic and clustered neighbors with open issues first", async () => {

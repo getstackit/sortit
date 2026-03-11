@@ -48,10 +48,6 @@ vi.mock("@/components/tag-relevance-bars", () => ({
   TagRelevanceBars: () => <div>Tag bars</div>,
 }));
 
-vi.mock("@/components/issue-card", () => ({
-  IssueCard: ({ issue }: { issue: IssueRecord }) => <div>{issue.raw}</div>,
-}));
-
 vi.mock("@/hooks/use-issues", () => ({
   useIssues: vi.fn(),
 }));

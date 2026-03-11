@@ -61,6 +61,9 @@ type ClusterNeighbor = {
 const EMPTY_MAP_ISSUES: MapIssue[] = [];
 const EMPTY_MAP_EDGES: MapEdge[] = [];
 const EMPTY_MAP_CLUSTERS: MapCluster[] = [];
+const MINI_MAP_VIEWBOX_WIDTH = 640;
+const MINI_MAP_VIEWBOX_HEIGHT = 360;
+const MINI_MAP_PADDING = 18;
 
 function formatDateTime(value: string) {
   return new Date(value).toLocaleString();
@@ -196,11 +199,9 @@ function clusterContainsIssue(cluster: MapCluster, issue: MapIssue) {
 }
 
 function projectPoint(x: number, y: number, width: number, height: number) {
-  const padding = 18;
-
   return {
-    x: padding + x * (width - padding * 2),
-    y: height - padding - y * (height - padding * 2),
+    x: MINI_MAP_PADDING + x * (width - MINI_MAP_PADDING * 2),
+    y: height - MINI_MAP_PADDING - y * (height - MINI_MAP_PADDING * 2),
   };
 }
 
@@ -566,13 +567,18 @@ export function IssueDetailPage({ issueID }: { issueID: string }) {
 
   const miniMapClusters = useMemo<IssueMapCanvasCluster[]>(() => {
     return mapClusters.map((cluster) => {
-      const center = projectPoint(cluster.centerX, cluster.centerY, 640, 360);
+      const center = projectPoint(
+        cluster.centerX,
+        cluster.centerY,
+        MINI_MAP_VIEWBOX_WIDTH,
+        MINI_MAP_VIEWBOX_HEIGHT
+      );
 
       return {
         key: `${cluster.label}-${cluster.centerX}-${cluster.centerY}`,
         cx: center.x,
         cy: center.y,
-        radius: Math.max(cluster.radius * (640 - 36), 10),
+        radius: Math.max(cluster.radius * (MINI_MAP_VIEWBOX_WIDTH - MINI_MAP_PADDING * 2), 10),
         fill: cluster.color,
         fillOpacity: currentClusters.includes(cluster) ? 0.18 : 0.08,
         stroke: cluster.color,
@@ -588,8 +594,18 @@ export function IssueDetailPage({ issueID }: { issueID: string }) {
     }
 
     return semanticNeighbors.map(({ issue: neighbor, similarity }) => {
-      const from = projectPoint(currentMapIssue.x, currentMapIssue.y, 640, 360);
-      const to = projectPoint(neighbor.x, neighbor.y, 640, 360);
+      const from = projectPoint(
+        currentMapIssue.x,
+        currentMapIssue.y,
+        MINI_MAP_VIEWBOX_WIDTH,
+        MINI_MAP_VIEWBOX_HEIGHT
+      );
+      const to = projectPoint(
+        neighbor.x,
+        neighbor.y,
+        MINI_MAP_VIEWBOX_WIDTH,
+        MINI_MAP_VIEWBOX_HEIGHT
+      );
 
       return {
         key: `${currentMapIssue.id}-${neighbor.id}`,
@@ -606,7 +622,12 @@ export function IssueDetailPage({ issueID }: { issueID: string }) {
 
   const miniMapNodes = useMemo<IssueMapCanvasNode[]>(() => {
     return mapIssues.map((entry) => {
-      const point = projectPoint(entry.x, entry.y, 640, 360);
+      const point = projectPoint(
+        entry.x,
+        entry.y,
+        MINI_MAP_VIEWBOX_WIDTH,
+        MINI_MAP_VIEWBOX_HEIGHT
+      );
       const isCurrent = entry.id === currentMapIssue?.id;
       const isSemantic = semanticNeighborIds.has(entry.id);
       const isCluster = clusterNeighborIds.has(entry.id);
@@ -983,9 +1004,9 @@ export function IssueDetailPage({ issueID }: { issueID: string }) {
                     <div className="app-subtle-surface mt-4 rounded-[1.25rem] p-3">
                       <div className="relative aspect-[16/9] w-full overflow-hidden rounded-[1rem]">
                         <IssueMapCanvas
-                          width={640}
-                          height={360}
-                          viewBox="0 0 640 360"
+                          width="100%"
+                          height="100%"
+                          viewBox={`0 0 ${MINI_MAP_VIEWBOX_WIDTH} ${MINI_MAP_VIEWBOX_HEIGHT}`}
                           preserveAspectRatio="xMidYMid meet"
                           className="absolute inset-0 h-full w-full"
                           role="img"
@@ -994,8 +1015,8 @@ export function IssueDetailPage({ issueID }: { issueID: string }) {
                             <rect
                               x="0"
                               y="0"
-                              width="640"
-                              height="360"
+                              width={MINI_MAP_VIEWBOX_WIDTH}
+                              height={MINI_MAP_VIEWBOX_HEIGHT}
                               rx="18"
                               fill="currentColor"
                               className="text-background"

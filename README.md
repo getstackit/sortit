@@ -83,13 +83,24 @@ Pure embedding similarity is a black box. The relevance model gives you interpre
 ## Development
 
 ```bash
-npm run dev
+mise install
+npm install
+mise run dev
 ```
 
 Open [http://localhost:3000](http://localhost:3000).
 
 This repo pins npm to the `linked` install strategy via `.npmrc` so frontend dependencies live under `node_modules/.store` instead of a fully hoisted tree. That keeps `go list ./...` and `go test ./...` scoped to first-party Go packages instead of traversing incidental Go files from frontend dependencies. If you already have an older hoisted `node_modules` tree, rerun `npm install` once to migrate it.
 
-In local development, browser API requests default to `http://127.0.0.1:8081` to avoid proxying through Next.js. Set `NEXT_PUBLIC_API_ORIGIN` if you need a different backend origin.
+`mise run dev` starts PostgreSQL, the Go API, and the Next.js app together. The default local endpoints are:
+
+- Web UI: `http://localhost:3000`
+- API: `http://localhost:8081`
+- MCP: `http://localhost:8081/mcp`
+- PostgreSQL: `postgres://splat:splat@localhost:5432/splat?sslmode=disable`
+
+In local development, keep your hostname consistent across the browser, `SPLAT_WEB_ORIGIN`, `NEXT_PUBLIC_API_ORIGIN`, `SPLAT_SERVER_CORS`, and the GitHub OAuth callback URL. `localhost` and `127.0.0.1` do not share cookies.
+
+For the full GitHub auth, API token, and MCP client setup, see [docs/local-auth-mcp.md](docs/local-auth-mcp.md).
 
 The Go API persists all data in PostgreSQL. Set `SPLAT_DATABASE_URL` or pass `-database-url` to the server. Tests run in disposable Testcontainers-managed databases. Local Postgres can be backed up with `mise run db:backup`, which writes a custom-format dump into `backups/postgres/`.

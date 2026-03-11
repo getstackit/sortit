@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { usePathname, useSearchParams } from "next/navigation";
+import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { useCallback, useDeferredValue, useEffect, useMemo, useRef, useState } from "react";
 import { motion, AnimatePresence } from "motion/react";
 import { Rows3Icon, Rows4Icon, SearchIcon, XIcon } from "lucide-react";
@@ -16,6 +16,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { Switch } from "@/components/ui/switch";
 import { CompactModeProvider, useCompactMode } from "@/hooks/use-compact-mode";
 import { useIssueSearch, useIssues } from "@/hooks/use-issues";
+import { issueHrefFromText } from "@/lib/issues";
 import { entityStyle } from "@/lib/entity-colors";
 import type { IssueRecord, SearchIssueRecord } from "@/lib/issues";
 import { cn } from "@/lib/utils";
@@ -172,6 +173,7 @@ function SearchResultList({ issues }: { issues: SearchIssueRecord[] }) {
 
 export function IssuesBoard() {
   const pathname = usePathname();
+  const router = useRouter();
   const searchParams = useSearchParams();
   const searchParamsString = searchParams.toString();
   const initialSearchState = useMemo(
@@ -259,6 +261,19 @@ export function IssuesBoard() {
     input.select();
   }, []);
 
+  const navigateToDirectIssue = useCallback(
+    (value: string) => {
+      const href = issueHrefFromText(value);
+      if (!href) {
+        return false;
+      }
+
+      router.push(href);
+      return true;
+    },
+    [router]
+  );
+
   const shortcuts = useMemo(
     () => [
       {
@@ -323,6 +338,21 @@ export function IssuesBoard() {
                   aria-label="Search issues"
                   value={searchText}
                   onChange={(event) => setSearchText(event.currentTarget.value)}
+                  onPaste={(event) => {
+                    const pastedText = event.clipboardData.getData("text");
+                    if (navigateToDirectIssue(pastedText)) {
+                      event.preventDefault();
+                    }
+                  }}
+                  onKeyDown={(event) => {
+                    if (event.key !== "Enter") {
+                      return;
+                    }
+
+                    if (navigateToDirectIssue(searchText)) {
+                      event.preventDefault();
+                    }
+                  }}
                   placeholder="Search issues semantically..."
                   className="h-9 rounded-xl bg-background/85 pl-9 pr-10"
                 />

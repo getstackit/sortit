@@ -70,6 +70,20 @@ describe("CommandPalette", () => {
     expect(push).toHaveBeenCalledWith("/tags/billing");
   });
 
+  it("navigates straight to an issue when a full issue id is pasted", async () => {
+    const user = userEvent.setup();
+    const onOpenChange = vi.fn();
+
+    render(<CommandPalette open onOpenChange={onOpenChange} />);
+
+    const input = screen.getByPlaceholderText("Search issues and tags...");
+    await user.click(input);
+    await user.paste("01kkbqe0f7xz0s82nqbbg2fheh");
+
+    expect(push).toHaveBeenCalledWith("/issues/01KKBQE0F7XZ0S82NQBBG2FHEH");
+    expect(onOpenChange).toHaveBeenCalledWith(false);
+  });
+
   it("discloses that the palette is a truncated quick switcher", async () => {
     const user = userEvent.setup();
 
