@@ -48,6 +48,10 @@ vi.mock("@/components/tag-relevance-bars", () => ({
   TagRelevanceBars: () => <div>Tag bars</div>,
 }));
 
+vi.mock("@/components/closed-factor-attribution-chart", () => ({
+  ClosedFactorAttributionChart: () => <div>Closed factor chart</div>,
+}));
+
 vi.mock("@/hooks/use-issues", () => ({
   useIssues: vi.fn(),
 }));
@@ -68,6 +72,7 @@ function makeIssue(
     tagScores: [{ tag: "bug", relevance: 0.8 }],
     createdBy: "Casey",
     createdAt: new Date("2026-03-09T12:00:00Z").toISOString(),
+    closedAt: status === "closed" ? new Date("2026-03-09T15:00:00Z").toISOString() : null,
     assignedTo,
     status,
   };
@@ -113,8 +118,8 @@ describe("PeoplePage", () => {
     await waitFor(() => {
       expect(screen.getByText("1 issue assigned")).toBeInTheDocument();
     });
-
-    expect(vi.mocked(useIssues)).toHaveBeenLastCalledWith("closed");
+    expect(screen.queryByText("open issue")).not.toBeInTheDocument();
+    expect(screen.getByText("closed issue")).toBeInTheDocument();
   });
 
   it("shows the assigned issues for each person", () => {
@@ -123,5 +128,12 @@ describe("PeoplePage", () => {
     expect(screen.getByText("Assigned issues")).toBeInTheDocument();
     expect(screen.getByText("open issue")).toBeInTheDocument();
     expect(screen.getByText("closed issue")).toBeInTheDocument();
+  });
+
+  it("shows the closed factor timeline section", () => {
+    render(<PeoplePage />);
+
+    expect(screen.getByText("Closed Factor Timeline")).toBeInTheDocument();
+    expect(screen.getByText("Closed factor chart")).toBeInTheDocument();
   });
 });
