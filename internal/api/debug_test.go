@@ -41,7 +41,7 @@ type debugInvalidationStore struct {
 	err   error
 }
 
-func (s *debugInvalidationStore) InvalidateDerivedCorpusProjections(context.Context) error {
+func (s *debugInvalidationStore) InvalidateMapProjections(context.Context) error {
 	s.calls++
 	return s.err
 }
@@ -237,7 +237,7 @@ func TestDebugIssueAnalyzeEndpointUsesCustomTags(t *testing.T) {
 	}
 }
 
-func TestDebugInvalidateDerivedCorpusEndpoint(t *testing.T) {
+func TestDebugInvalidateMapProjectionEndpoint(t *testing.T) {
 	store := &debugInvalidationStore{Store: issues.NewInMemoryStore(nil)}
 	server := NewServer(ServerConfig{
 		CORSOrigins: []string{"http://localhost:3000"},
@@ -245,7 +245,7 @@ func TestDebugInvalidateDerivedCorpusEndpoint(t *testing.T) {
 		IssueStore:  store,
 	})
 
-	req := httptest.NewRequest(http.MethodPost, "/api/debug/derived-corpus/invalidate", nil)
+	req := httptest.NewRequest(http.MethodPost, "/api/debug/map-projection/invalidate", nil)
 	rec := httptest.NewRecorder()
 
 	server.Handler().ServeHTTP(rec, req)
@@ -257,7 +257,7 @@ func TestDebugInvalidateDerivedCorpusEndpoint(t *testing.T) {
 		t.Fatalf("expected 1 invalidation call, got %d", store.calls)
 	}
 
-	var payload debugInvalidateDerivedCorpusResponse
+	var payload debugInvalidateMapProjectionResponse
 	if err := json.NewDecoder(rec.Body).Decode(&payload); err != nil {
 		t.Fatalf("decode payload: %v", err)
 	}
@@ -266,13 +266,13 @@ func TestDebugInvalidateDerivedCorpusEndpoint(t *testing.T) {
 	}
 }
 
-func TestDebugInvalidateDerivedCorpusEndpointReturnsNotImplementedWithoutInvalidator(t *testing.T) {
+func TestDebugInvalidateMapProjectionEndpointReturnsNotImplementedWithoutInvalidator(t *testing.T) {
 	server := NewServer(ServerConfig{
 		CORSOrigins: []string{"http://localhost:3000"},
 		APIPrefixes: []string{"/api"},
 	})
 
-	req := httptest.NewRequest(http.MethodPost, "/api/debug/derived-corpus/invalidate", nil)
+	req := httptest.NewRequest(http.MethodPost, "/api/debug/map-projection/invalidate", nil)
 	rec := httptest.NewRecorder()
 
 	server.Handler().ServeHTTP(rec, req)
@@ -282,7 +282,7 @@ func TestDebugInvalidateDerivedCorpusEndpointReturnsNotImplementedWithoutInvalid
 	}
 }
 
-func TestDebugInvalidateDerivedCorpusEndpointReturnsServerErrorOnInvalidationFailure(t *testing.T) {
+func TestDebugInvalidateMapProjectionEndpointReturnsServerErrorOnInvalidationFailure(t *testing.T) {
 	store := &debugInvalidationStore{
 		Store: issues.NewInMemoryStore(nil),
 		err:   errors.New("boom"),
@@ -293,7 +293,7 @@ func TestDebugInvalidateDerivedCorpusEndpointReturnsServerErrorOnInvalidationFai
 		IssueStore:  store,
 	})
 
-	req := httptest.NewRequest(http.MethodPost, "/api/debug/derived-corpus/invalidate", nil)
+	req := httptest.NewRequest(http.MethodPost, "/api/debug/map-projection/invalidate", nil)
 	rec := httptest.NewRecorder()
 
 	server.Handler().ServeHTTP(rec, req)
@@ -322,7 +322,7 @@ func TestDebugIssueAnalyzeEndpointRejectsInvalidInput(t *testing.T) {
 	})
 
 	t.Run("invalidate wrong method", func(t *testing.T) {
-		req := httptest.NewRequest(http.MethodGet, "/api/debug/derived-corpus/invalidate", nil)
+		req := httptest.NewRequest(http.MethodGet, "/api/debug/map-projection/invalidate", nil)
 		rec := httptest.NewRecorder()
 
 		handler.ServeHTTP(rec, req)

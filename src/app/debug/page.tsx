@@ -41,7 +41,7 @@ type IssueAnalysis = {
   }>;
 };
 
-type InvalidateDerivedCorpusResponse = {
+type InvalidateMapProjectionResponse = {
   invalidated: boolean;
 };
 
@@ -138,14 +138,14 @@ export default function DebugPage() {
     }
   }
 
-  async function invalidateDerivedCorpus() {
+  async function invalidateMapProjection() {
     setInvalidateLoading(true);
     setInvalidateError(null);
     setInvalidateMessage(null);
 
     try {
       const response = await fetch(
-        apiURL("/api/v1/debug/derived-corpus/invalidate"),
+        apiURL("/api/v1/debug/map-projection/invalidate"),
         {
           method: "POST",
           credentials: "include",
@@ -155,7 +155,7 @@ export default function DebugPage() {
       const payload =
         (await parseDebugResponse(
           response
-        )) as InvalidateDerivedCorpusResponse | { error?: string };
+        )) as InvalidateMapProjectionResponse | { error?: string };
 
       if (!response.ok) {
         throw new Error(
@@ -241,12 +241,12 @@ export default function DebugPage() {
                 </Button>
                 <Button
                   variant="outline"
-                  onClick={invalidateDerivedCorpus}
+                  onClick={invalidateMapProjection}
                   disabled={loading || invalidateLoading}
                 >
                   {invalidateLoading
                     ? "Invalidating corpus..."
-                    : "Invalidate derived corpus"}
+                    : "Invalidate map projection"}
                 </Button>
                 <Button
                   variant="outline"

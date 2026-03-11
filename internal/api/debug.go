@@ -12,7 +12,7 @@ import (
 )
 
 const debugAnalyzeTimeout = 45 * time.Second
-const debugInvalidateDerivedCorpusTimeout = 15 * time.Second
+const debugInvalidateMapProjectionTimeout = 15 * time.Second
 
 type debugIssueAnalyzeRequest struct {
 	Text string   `json:"text"`
@@ -36,7 +36,7 @@ type debugIssueAnalyzeResponse struct {
 	SimilarIssues          []debugIssueSimilarity `json:"similarIssues"`
 }
 
-type debugInvalidateDerivedCorpusResponse struct {
+type debugInvalidateMapProjectionResponse struct {
 	Invalidated bool `json:"invalidated"`
 }
 
@@ -80,28 +80,28 @@ func (s *Server) handleDebugIssueAnalyze(w http.ResponseWriter, r *http.Request)
 	})
 }
 
-func (s *Server) handleDebugInvalidateDerivedCorpus(w http.ResponseWriter, r *http.Request) {
+func (s *Server) handleDebugInvalidateMapProjection(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
 		w.Header().Set("Allow", http.MethodPost)
 		http.Error(w, http.StatusText(http.StatusMethodNotAllowed), http.StatusMethodNotAllowed)
 		return
 	}
 
-	invalidator := derivedCorpusProjectionInvalidatorFromIssueStore(s.config.IssueStore)
+	invalidator := mapProjectionInvalidatorFromIssueStore(s.config.IssueStore)
 	if invalidator == nil {
-		writeError(w, http.StatusNotImplemented, "derived corpus invalidation is unavailable")
+		writeError(w, http.StatusNotImplemented, "map projection invalidation is unavailable")
 		return
 	}
 
-	ctx, cancel := context.WithTimeout(r.Context(), debugInvalidateDerivedCorpusTimeout)
+	ctx, cancel := context.WithTimeout(r.Context(), debugInvalidateMapProjectionTimeout)
 	defer cancel()
 
-	if err := invalidator.InvalidateDerivedCorpusProjections(ctx); err != nil {
+	if err := invalidator.InvalidateMapProjections(ctx); err != nil {
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
 
-	writeJSON(w, http.StatusOK, debugInvalidateDerivedCorpusResponse{Invalidated: true})
+	writeJSON(w, http.StatusOK, debugInvalidateMapProjectionResponse{Invalidated: true})
 }
 
 func decodeDebugIssueAnalyzeRequest(r *http.Request) (debugIssueAnalyzeRequest, error) {

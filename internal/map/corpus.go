@@ -7,114 +7,77 @@ import (
 	"time"
 
 	"splat/internal/issues"
-	"splat/internal/vectors"
 )
 
-type BuildDerivedCorpusStep struct {
+type BuildMapProjectionStep struct {
 	Name     string
 	Duration time.Duration
 }
 
-type BuildDerivedCorpusProfile struct {
-	IssueCount          int
-	StoredTagCount      int
-	RuntimeIssueCount   int
-	TagNameCount        int
-	VisibleIssueCount   int
-	CanonicalIssueCount int
-	EdgeCount           int
-	ClusterCount        int
-	Steps               []BuildDerivedCorpusStep
-	TotalDuration       time.Duration
+type BuildMapProjectionProfile struct {
+	IssueCount        int
+	StoredTagCount    int
+	RuntimeIssueCount int
+	TagNameCount      int
+	VisibleIssueCount int
+	EdgeCount         int
+	ClusterCount      int
+	Steps             []BuildMapProjectionStep
+	TotalDuration     time.Duration
 }
 
-type DerivedCorpus struct {
-	Issues             []issues.Issue
-	Tags               []issues.Tag
-	RuntimeIssues      []issues.Issue
-	TagNames           []string
-	IssueEmbeddings    map[string][]float64
-	TagEmbeddings      map[string][]float64
-	FactorVectors      map[string][]float64
-	MapIssues          []MapIssue
-	Positions          map[string]Position
-	AllEdges           []Edge
-	Clusters           []Cluster
-	IssuesByID         map[string]issues.Issue
-	MapIssuesByID      map[string]MapIssue
-	VisibleIssueIDs    map[string]struct{}
-	CanonicalIssueIDs  map[string]string
-	RelationshipBoosts map[string]map[string]float64
+type MapProjection struct {
+	MapIssues       []MapIssue
+	Positions       map[string]Position
+	AllEdges        []Edge
+	Clusters        []Cluster
+	VisibleIssueIDs map[string]struct{}
 }
 
-func SubsetDerivedCorpus(corpus DerivedCorpus, issueIDs map[string]struct{}) DerivedCorpus {
+func SubsetMapProjection(projection MapProjection, issueIDs map[string]struct{}) MapProjection {
 	if len(issueIDs) == 0 {
-		return DerivedCorpus{
-			Tags:               corpus.Tags,
-			TagNames:           corpus.TagNames,
-			TagEmbeddings:      corpus.TagEmbeddings,
-			IssueEmbeddings:    map[string][]float64{},
-			FactorVectors:      map[string][]float64{},
-			Positions:          map[string]Position{},
-			IssuesByID:         map[string]issues.Issue{},
-			MapIssuesByID:      map[string]MapIssue{},
-			VisibleIssueIDs:    map[string]struct{}{},
-			CanonicalIssueIDs:  map[string]string{},
-			RelationshipBoosts: map[string]map[string]float64{},
+		return MapProjection{
+			Positions:       map[string]Position{},
+			VisibleIssueIDs: map[string]struct{}{},
 		}
 	}
 
-	filteredIssues := make([]issues.Issue, 0, len(issueIDs))
-	for _, issue := range corpus.Issues {
-		if _, ok := issueIDs[issue.ID]; ok {
-			filteredIssues = append(filteredIssues, issue)
+	if len(issueIDs) == len(projection.MapIssues) {
+		return projection
+	}
+
+	filteredVisible := make(map[string]struct{}, len(issueIDs))
+	for id := range issueIDs {
+		if _, ok := projection.VisibleIssueIDs[id]; ok {
+			filteredVisible[id] = struct{}{}
 		}
 	}
-	if len(filteredIssues) == len(corpus.Issues) {
-		return corpus
-	}
 
-	canonical, visible, boosts := deriveRelationshipSemantics(filteredIssues)
-	filteredRuntime := filterRuntimeIssuesByID(corpus.RuntimeIssues, issueIDs)
-	filteredPositions := filterPositionsByID(corpus.Positions, issueIDs)
-
-	return DerivedCorpus{
-		Issues:             filteredIssues,
-		Tags:               corpus.Tags,
-		RuntimeIssues:      filteredRuntime,
-		TagNames:           corpus.TagNames,
-		IssueEmbeddings:    filterEmbeddingMapByID(corpus.IssueEmbeddings, issueIDs),
-		TagEmbeddings:      corpus.TagEmbeddings,
-		FactorVectors:      filterEmbeddingMapByID(corpus.FactorVectors, issueIDs),
-		MapIssues:          filterMapIssuesByID(corpus.MapIssues, issueIDs),
-		Positions:          filteredPositions,
-		AllEdges:           filterEdgesByID(corpus.AllEdges, issueIDs),
-		Clusters:           ComputeFactorClusters(filteredRuntime, filteredPositions),
-		IssuesByID:         issuesByID(filteredIssues),
-		MapIssuesByID:      mapIssuesByID(filterMapIssuesByID(corpus.MapIssues, issueIDs)),
-		VisibleIssueIDs:    visible,
-		CanonicalIssueIDs:  canonical,
-		RelationshipBoosts: boosts,
+	return MapProjection{
+		MapIssues:       filterMapIssuesByID(projection.MapIssues, issueIDs),
+		Positions:       filterPositionsByID(projection.Positions, issueIDs),
+		AllEdges:        filterEdgesByID(projection.AllEdges, issueIDs),
+		Clusters:        filterVisibleClusters(projection.Clusters, issueIDs),
+		VisibleIssueIDs: filteredVisible,
 	}
 }
 
-func BuildDerivedCorpus(storeIssues []issues.Issue, storeTags []issues.Tag) (DerivedCorpus, error) {
-	corpus, _, err := BuildDerivedCorpusProfiled(storeIssues, storeTags)
-	return corpus, err
+func BuildMapProjection(storeIssues []issues.Issue, storeTags []issues.Tag) (MapProjection, error) {
+	projection, _, err := BuildMapProjectionProfiled(storeIssues, storeTags)
+	return projection, err
 }
 
-func BuildDerivedCorpusProfiled(storeIssues []issues.Issue, storeTags []issues.Tag) (DerivedCorpus, BuildDerivedCorpusProfile, error) {
+func BuildMapProjectionProfiled(storeIssues []issues.Issue, storeTags []issues.Tag) (MapProjection, BuildMapProjectionProfile, error) {
 	startedAt := time.Now()
-	profile := BuildDerivedCorpusProfile{
+	profile := BuildMapProjectionProfile{
 		IssueCount:     len(storeIssues),
 		StoredTagCount: len(storeTags),
 	}
 
 	stepStartedAt := time.Now()
-	canonical, visible, boosts := deriveRelationshipSemantics(storeIssues)
+	_, visible, _ := deriveRelationshipSemantics(storeIssues)
 	profile.VisibleIssueCount = len(visible)
-	profile.CanonicalIssueCount = len(canonical)
-	profile.Steps = append(profile.Steps, BuildDerivedCorpusStep{
+	profile.Steps = append(profile.Steps, BuildMapProjectionStep{
 		Name:     "derive_relationship_semantics",
 		Duration: time.Since(stepStartedAt),
 	})
@@ -123,14 +86,14 @@ func BuildDerivedCorpusProfiled(storeIssues []issues.Issue, storeTags []issues.T
 	runtimeIssues, tagNames, issueEmbeddings, tagEmbeddings := runtimeMapInputs(storeIssues, storeTags)
 	profile.RuntimeIssueCount = len(runtimeIssues)
 	profile.TagNameCount = len(tagNames)
-	profile.Steps = append(profile.Steps, BuildDerivedCorpusStep{
+	profile.Steps = append(profile.Steps, BuildMapProjectionStep{
 		Name:     "runtime_map_inputs",
 		Duration: time.Since(stepStartedAt),
 	})
 
 	stepStartedAt = time.Now()
-	factorVectors := runtimeFactorVectors(runtimeIssues, tagNames, tagEmbeddings)
-	profile.Steps = append(profile.Steps, BuildDerivedCorpusStep{
+	_ = runtimeFactorVectors(runtimeIssues, tagNames, tagEmbeddings)
+	profile.Steps = append(profile.Steps, BuildMapProjectionStep{
 		Name:     "runtime_factor_vectors",
 		Duration: time.Since(stepStartedAt),
 	})
@@ -138,7 +101,6 @@ func BuildDerivedCorpusProfiled(storeIssues []issues.Issue, storeTags []issues.T
 	positions := make(map[string]Position, len(runtimeIssues))
 	roundedPositions := make(map[string]Position, len(runtimeIssues))
 	mapIssues := make([]MapIssue, len(runtimeIssues))
-	mapIssuesByID := make(map[string]MapIssue, len(runtimeIssues))
 	allEdges := []Edge{}
 	clusters := []Cluster{}
 
@@ -146,10 +108,10 @@ func BuildDerivedCorpusProfiled(storeIssues []issues.Issue, storeTags []issues.T
 		stepStartedAt = time.Now()
 		computedPositions, err := ComputePositions(runtimeIssues, tagNames, tagEmbeddings)
 		if err != nil {
-			return DerivedCorpus{}, BuildDerivedCorpusProfile{}, err
+			return MapProjection{}, BuildMapProjectionProfile{}, err
 		}
 		positions = computedPositions
-		profile.Steps = append(profile.Steps, BuildDerivedCorpusStep{
+		profile.Steps = append(profile.Steps, BuildMapProjectionStep{
 			Name:     "compute_positions",
 			Duration: time.Since(stepStartedAt),
 		})
@@ -167,9 +129,8 @@ func BuildDerivedCorpusProfiled(storeIssues []issues.Issue, storeTags []issues.T
 				Y:      position.Y,
 			}
 			mapIssues[i] = mapIssue
-			mapIssuesByID[item.ID] = mapIssue
 		}
-		profile.Steps = append(profile.Steps, BuildDerivedCorpusStep{
+		profile.Steps = append(profile.Steps, BuildMapProjectionStep{
 			Name:     "materialize_map_issues",
 			Duration: time.Since(stepStartedAt),
 		})
@@ -177,14 +138,14 @@ func BuildDerivedCorpusProfiled(storeIssues []issues.Issue, storeTags []issues.T
 		stepStartedAt = time.Now()
 		allEdges = ComputeEdgesWithEmbeddings(runtimeIssues, issueEmbeddings, 0)
 		profile.EdgeCount = len(allEdges)
-		profile.Steps = append(profile.Steps, BuildDerivedCorpusStep{
+		profile.Steps = append(profile.Steps, BuildMapProjectionStep{
 			Name:     "compute_edges",
 			Duration: time.Since(stepStartedAt),
 		})
 
 		stepStartedAt = time.Now()
 		sortEdgesBySimilarity(allEdges)
-		profile.Steps = append(profile.Steps, BuildDerivedCorpusStep{
+		profile.Steps = append(profile.Steps, BuildMapProjectionStep{
 			Name:     "sort_edges",
 			Duration: time.Since(stepStartedAt),
 		})
@@ -192,7 +153,7 @@ func BuildDerivedCorpusProfiled(storeIssues []issues.Issue, storeTags []issues.T
 		stepStartedAt = time.Now()
 		clusters = ComputeFactorClusters(runtimeIssues, positions)
 		profile.ClusterCount = len(clusters)
-		profile.Steps = append(profile.Steps, BuildDerivedCorpusStep{
+		profile.Steps = append(profile.Steps, BuildMapProjectionStep{
 			Name:     "compute_clusters",
 			Duration: time.Since(stepStartedAt),
 		})
@@ -200,32 +161,21 @@ func BuildDerivedCorpusProfiled(storeIssues []issues.Issue, storeTags []issues.T
 
 	profile.TotalDuration = time.Since(startedAt)
 
-	return DerivedCorpus{
-		Issues:             cloneStoreIssues(storeIssues),
-		Tags:               cloneStoreTags(storeTags),
-		RuntimeIssues:      cloneRuntimeIssues(runtimeIssues),
-		TagNames:           append([]string(nil), tagNames...),
-		IssueEmbeddings:    cloneEmbeddingMap(issueEmbeddings),
-		TagEmbeddings:      cloneEmbeddingMap(tagEmbeddings),
-		FactorVectors:      cloneEmbeddingMap(factorVectors),
-		MapIssues:          append([]MapIssue(nil), mapIssues...),
-		Positions:          roundedPositions,
-		AllEdges:           append([]Edge(nil), allEdges...),
-		Clusters:           cloneClusters(clusters),
-		IssuesByID:         issuesByID(storeIssues),
-		MapIssuesByID:      mapIssuesByID,
-		VisibleIssueIDs:    visible,
-		CanonicalIssueIDs:  canonical,
-		RelationshipBoosts: boosts,
+	return MapProjection{
+		MapIssues:       append([]MapIssue(nil), mapIssues...),
+		Positions:       roundedPositions,
+		AllEdges:        append([]Edge(nil), allEdges...),
+		Clusters:        cloneClusters(clusters),
+		VisibleIssueIDs: cloneVisibleIDs(visible),
 	}, profile, nil
 }
 
-func BuildMapFromCorpus(corpus DerivedCorpus, viewport *Viewport, edgeThreshold float64) (MapResponse, error) {
+func BuildMapFromProjection(projection MapProjection, viewport *Viewport, edgeThreshold float64) (MapResponse, error) {
 	base := mapBaseData{
-		mapIssues:      filterVisibleMapIssues(corpus.MapIssues, corpus.VisibleIssueIDs),
-		positions:      filterVisiblePositions(corpus.Positions, corpus.VisibleIssueIDs),
-		candidateEdges: filterEdgesByThresholdAndVisibility(corpus.AllEdges, edgeThreshold, corpus.VisibleIssueIDs),
-		clusters:       filterVisibleClusters(corpus.Clusters, corpus.VisibleIssueIDs),
+		mapIssues:      filterVisibleMapIssues(projection.MapIssues, projection.VisibleIssueIDs),
+		positions:      filterVisiblePositions(projection.Positions, projection.VisibleIssueIDs),
+		candidateEdges: filterEdgesByThresholdAndVisibility(projection.AllEdges, edgeThreshold, projection.VisibleIssueIDs),
+		clusters:       filterVisibleClusters(projection.Clusters, projection.VisibleIssueIDs),
 	}
 
 	edges := filterEdgesForViewport(base, normalizeViewport(viewport))
@@ -243,12 +193,12 @@ func BuildMapFromCorpus(corpus DerivedCorpus, viewport *Viewport, edgeThreshold 
 	}, nil
 }
 
-func BuildEdgeResponseFromCorpus(corpus DerivedCorpus, viewport *Viewport, edgeThreshold float64) (EdgeResponse, error) {
+func BuildEdgeResponseFromProjection(projection MapProjection, viewport *Viewport, edgeThreshold float64) (EdgeResponse, error) {
 	base := mapBaseData{
-		mapIssues:      filterVisibleMapIssues(corpus.MapIssues, corpus.VisibleIssueIDs),
-		positions:      filterVisiblePositions(corpus.Positions, corpus.VisibleIssueIDs),
-		candidateEdges: filterEdgesByThresholdAndVisibility(corpus.AllEdges, edgeThreshold, corpus.VisibleIssueIDs),
-		clusters:       filterVisibleClusters(corpus.Clusters, corpus.VisibleIssueIDs),
+		mapIssues:      filterVisibleMapIssues(projection.MapIssues, projection.VisibleIssueIDs),
+		positions:      filterVisiblePositions(projection.Positions, projection.VisibleIssueIDs),
+		candidateEdges: filterEdgesByThresholdAndVisibility(projection.AllEdges, edgeThreshold, projection.VisibleIssueIDs),
+		clusters:       filterVisibleClusters(projection.Clusters, projection.VisibleIssueIDs),
 	}
 
 	edges := filterEdgesForViewport(base, normalizeViewport(viewport))
@@ -256,145 +206,6 @@ func BuildEdgeResponseFromCorpus(corpus DerivedCorpus, viewport *Viewport, edgeT
 		edges = []Edge{}
 	}
 	return EdgeResponse{Edges: edges}, nil
-}
-
-func SearchFromCorpus(
-	corpus DerivedCorpus,
-	queryRaw string,
-	queryTags []issues.TagRelevance,
-	queryEmbedding []float64,
-	limit int,
-	opts ...SearchOption,
-) SearchResponse {
-	cfg := applySearchOptions(opts)
-	queryRaw = strings.TrimSpace(queryRaw)
-	if limit <= 0 {
-		limit = defaultSearchLimit
-	}
-
-	querySummary := SearchQuery{
-		Raw:  queryRaw,
-		Tags: searchQueryTags(queryTags),
-	}
-
-	queryVector := append([]float64(nil), queryEmbedding...)
-	if isZeroVector(queryVector) {
-		queryVector = runtimeIssueEmbedding(issues.Issue{
-			ID:        "query",
-			Raw:       queryRaw,
-			TagScores: querySummary.Tags,
-		}, corpus.TagEmbeddings)
-	}
-
-	queryFactor := runtimeFactorVectors([]issues.Issue{{
-		ID:        "query",
-		Raw:       queryRaw,
-		TagScores: querySummary.Tags,
-	}}, corpus.TagNames, corpus.TagEmbeddings)["query"]
-
-	queryLower := strings.ToLower(queryRaw)
-	tagCorrelationBoost := queryMatchesTagNames(queryLower, corpus.TagNames)
-
-	related := make([]RelatedIssue, 0, len(corpus.Issues))
-	for _, candidate := range corpus.Issues {
-		if _, ok := corpus.VisibleIssueIDs[candidate.ID]; !ok {
-			continue
-		}
-
-		candidateSummary := exploreIssueSummary(candidate)
-		semantic := vectors.CosineSimilarity(queryVector, corpus.IssueEmbeddings[candidate.ID])
-		factor := vectors.CosineSimilarity(queryFactor, corpus.FactorVectors[candidate.ID])
-		textMatch := textMatchScore(queryLower, candidate.Raw)
-		combined := blendScores(semantic, factor, textMatch, tagCorrelationBoost)
-		combined -= issueSpecificityPenalty(candidateSummary.Tags)
-		sharedTags := sharedRelevantTags(querySummary.Tags, candidateSummary.Tags, 3)
-
-		related = append(related, RelatedIssue{
-			ID:                 candidateSummary.ID,
-			Raw:                candidateSummary.Raw,
-			Status:             candidateSummary.Status,
-			Tags:               candidateSummary.Tags,
-			SemanticSimilarity: round(semantic, 2),
-			FactorSimilarity:   round(factor, 2),
-			CombinedSimilarity: round(combined, 2),
-			Reason:             relatedIssueReason(sharedTags, semantic, factor),
-		})
-	}
-
-	sortSearchResults(related, corpus.Issues, cfg.sortBy)
-
-	if cfg.offset > 0 && cfg.offset < len(related) {
-		related = related[cfg.offset:]
-	} else if cfg.offset >= len(related) {
-		related = nil
-	}
-	if len(related) > limit {
-		related = related[:limit]
-	}
-
-	return SearchResponse{
-		Query:         querySummary,
-		RelatedIssues: related,
-	}
-}
-
-func ExploreFromCorpus(corpus DerivedCorpus, targetID string, limit int) (ExploreResponse, error) {
-	targetID = strings.TrimSpace(targetID)
-	if targetID == "" {
-		return ExploreResponse{}, issues.ErrNotFound
-	}
-
-	target, ok := corpus.IssuesByID[targetID]
-	if !ok {
-		return ExploreResponse{}, issues.ErrNotFound
-	}
-
-	if limit <= 0 {
-		limit = defaultExploreLimit
-	}
-
-	targetSummary := exploreIssueSummary(target)
-	targetEmbedding := corpus.IssueEmbeddings[target.ID]
-	targetFactor := corpus.FactorVectors[target.ID]
-
-	related := make([]RelatedIssue, 0, len(corpus.Issues))
-	for _, candidate := range corpus.Issues {
-		if candidate.ID == targetID || candidate.Status != issues.StatusOpen {
-			continue
-		}
-		if _, visible := corpus.VisibleIssueIDs[candidate.ID]; !visible {
-			continue
-		}
-
-		candidateSummary := exploreIssueSummary(candidate)
-		semantic := vectors.UnitCosineSimilarity(targetEmbedding, corpus.IssueEmbeddings[candidate.ID])
-		factor := vectors.UnitCosineSimilarity(targetFactor, corpus.FactorVectors[candidate.ID])
-		boost := relationshipBoost(corpus.RelationshipBoosts, target.ID, candidate.ID)
-		combined := minFloat(1, 0.6*semantic+0.4*factor+boost)
-		sharedTags := sharedRelevantTags(targetSummary.Tags, candidateSummary.Tags, 3)
-
-		related = append(related, RelatedIssue{
-			ID:                 candidateSummary.ID,
-			Raw:                candidateSummary.Raw,
-			Status:             candidateSummary.Status,
-			Tags:               candidateSummary.Tags,
-			SemanticSimilarity: round(semantic, 2),
-			FactorSimilarity:   round(factor, 2),
-			CombinedSimilarity: round(combined, 2),
-			Reason:             relatedIssueReasonWithBoost(sharedTags, semantic, factor, boost, corpus.CanonicalIssueIDs[candidate.ID]),
-		})
-	}
-
-	sortRelatedIssues(related)
-	if len(related) > limit {
-		related = related[:limit]
-	}
-
-	return ExploreResponse{
-		Issue:         targetSummary,
-		RelatedIssues: related,
-		Opportunities: buildExploreOpportunities(targetSummary, related),
-	}, nil
 }
 
 func deriveRelationshipSemantics(items []issues.Issue) (map[string]string, map[string]struct{}, map[string]map[string]float64) {
@@ -627,6 +438,18 @@ func filterEdgesByID(items []Edge, ids map[string]struct{}) []Edge {
 		filtered = append(filtered, item)
 	}
 	return filtered
+}
+
+func cloneVisibleIDs(input map[string]struct{}) map[string]struct{} {
+	if len(input) == 0 {
+		return map[string]struct{}{}
+	}
+
+	out := make(map[string]struct{}, len(input))
+	for id := range input {
+		out[id] = struct{}{}
+	}
+	return out
 }
 
 func mapIssuesByID(items []MapIssue) map[string]MapIssue {

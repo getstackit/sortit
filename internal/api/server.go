@@ -29,35 +29,35 @@ type ServerConfig struct {
 }
 
 type Server struct {
-	config            ServerConfig
-	httpServer        *http.Server
-	startedAt         time.Time
-	revisions         *issues.RevisionTracker
-	corpusLoader      *queries.DerivedCorpusLoader
-	createIssue       commands.CreateIssueHandler
-	refineIssue       commands.RefineIssueHandler
-	progressIssue     commands.ProgressIssueHandler
-	closeIssue        commands.CloseIssueHandler
-	reopenIssue       commands.ReopenIssueHandler
-	assignIssue       commands.AssignIssueHandler
-	splitIssue        commands.SplitIssueHandler
-	combineIssues     commands.CombineIssuesHandler
-	linkIssues        commands.LinkIssuesHandler
-	listIssues        queries.ListIssuesHandler
-	listActivity      queries.ListActivityHandler
-	getIssue          queries.GetIssueHandler
-	compareIssues     queries.CompareIssuesHandler
-	searchIssues      queries.SearchIssuesHandler
-	searchUnified     queries.SearchUnifiedHandler
-	listTags          queries.ListTagsHandler
-	getMap            queries.MapHandler
-	getMapEdges       queries.EdgeHandler
-	debugAnalyzeIssue queries.DebugAnalyzeIssueHandler
-	exploreIssue      queries.ExploreIssueHandler
-	getPersonProfile  queries.GetPersonProfileHandler
-	workCorrelations  queries.WorkCorrelationsHandler
-	authService       *auth.Service
-	catalog           *services.CatalogService
+	config              ServerConfig
+	httpServer          *http.Server
+	startedAt           time.Time
+	revisions           *issues.RevisionTracker
+	mapProjectionLoader *queries.MapProjectionLoader
+	createIssue         commands.CreateIssueHandler
+	refineIssue         commands.RefineIssueHandler
+	progressIssue       commands.ProgressIssueHandler
+	closeIssue          commands.CloseIssueHandler
+	reopenIssue         commands.ReopenIssueHandler
+	assignIssue         commands.AssignIssueHandler
+	splitIssue          commands.SplitIssueHandler
+	combineIssues       commands.CombineIssuesHandler
+	linkIssues          commands.LinkIssuesHandler
+	listIssues          queries.ListIssuesHandler
+	listActivity        queries.ListActivityHandler
+	getIssue            queries.GetIssueHandler
+	compareIssues       queries.CompareIssuesHandler
+	searchIssues        queries.SearchIssuesHandler
+	searchUnified       queries.SearchUnifiedHandler
+	listTags            queries.ListTagsHandler
+	getMap              queries.MapHandler
+	getMapEdges         queries.EdgeHandler
+	debugAnalyzeIssue   queries.DebugAnalyzeIssueHandler
+	exploreIssue        queries.ExploreIssueHandler
+	getPersonProfile    queries.GetPersonProfileHandler
+	workCorrelations    queries.WorkCorrelationsHandler
+	authService         *auth.Service
+	catalog             *services.CatalogService
 }
 
 type issueTagStore interface {
@@ -65,15 +65,15 @@ type issueTagStore interface {
 	UpsertTags(context.Context, []issues.Tag) error
 }
 
-func derivedCorpusProjectionStoreFromIssueStore(store issues.Store) issues.DerivedCorpusProjectionStore {
-	if projectionStore, ok := store.(issues.DerivedCorpusProjectionStore); ok {
+func mapProjectionStoreFromIssueStore(store issues.Store) issues.MapProjectionStorePersistence {
+	if projectionStore, ok := store.(issues.MapProjectionStorePersistence); ok {
 		return projectionStore
 	}
 	return nil
 }
 
-func derivedCorpusProjectionInvalidatorFromIssueStore(store issues.Store) issues.DerivedCorpusProjectionInvalidator {
-	if invalidator, ok := store.(issues.DerivedCorpusProjectionInvalidator); ok {
+func mapProjectionInvalidatorFromIssueStore(store issues.Store) issues.MapProjectionInvalidator {
+	if invalidator, ok := store.(issues.MapProjectionInvalidator); ok {
 		return invalidator
 	}
 	return nil
@@ -139,7 +139,7 @@ func (s *Server) Handler() http.Handler {
 		mapRoute := path.Join(prefix, "map")
 		mapEdgesRoute := path.Join(prefix, "map", "edges")
 		debugAnalyzeRoute := path.Join(prefix, "debug", "issues", "analyze")
-		debugInvalidateDerivedCorpusRoute := path.Join(prefix, "debug", "derived-corpus", "invalidate")
+		debugInvalidateMapProjectionRoute := path.Join(prefix, "debug", "map-projection", "invalidate")
 		peopleSubtreeRoute := path.Join(prefix, "people") + "/"
 		peopleCorrelationsRoute := path.Join(prefix, "people", "correlations")
 		apiRoutes[healthRoute] = struct{}{}
@@ -158,7 +158,7 @@ func (s *Server) Handler() http.Handler {
 		apiRoutes[peopleSubtreeRoute] = struct{}{}
 		apiRoutes[peopleCorrelationsRoute] = struct{}{}
 		apiRoutes[debugAnalyzeRoute] = struct{}{}
-		apiRoutes[debugInvalidateDerivedCorpusRoute] = struct{}{}
+		apiRoutes[debugInvalidateMapProjectionRoute] = struct{}{}
 		apiRoutes[authGitHubStartRoute] = struct{}{}
 		apiRoutes[authGitHubCallbackRoute] = struct{}{}
 		apiRoutes[authSessionRoute] = struct{}{}
@@ -193,7 +193,7 @@ func (s *Server) Handler() http.Handler {
 		apiMux.HandleFunc(peopleCorrelationsRoute, s.handleWorkCorrelations)
 		apiMux.HandleFunc(peopleSubtreeRoute, s.handlePersonProfile(peopleSubtreeRoute))
 		apiMux.HandleFunc(debugAnalyzeRoute, s.handleDebugIssueAnalyze)
-		apiMux.HandleFunc(debugInvalidateDerivedCorpusRoute, s.handleDebugInvalidateDerivedCorpus)
+		apiMux.HandleFunc(debugInvalidateMapProjectionRoute, s.handleDebugInvalidateMapProjection)
 	}
 
 	mcpHandler := mcpserver.NewHandler(mcpserver.ServerConfig{
@@ -326,7 +326,7 @@ func NewServer(cfg ServerConfig) *Server {
 	uowBeginner := unitOfWorkBeginnerFromStore(cfg.IssueStore)
 	eventBus := issues.NewEventBus()
 	if listener := projectionInvalidationListener(
-		derivedCorpusProjectionInvalidatorFromIssueStore(cfg.IssueStore),
+		mapProjectionInvalidatorFromIssueStore(cfg.IssueStore),
 	); listener != nil {
 		eventBus.Subscribe(listener)
 	}
@@ -339,18 +339,18 @@ func NewServer(cfg ServerConfig) *Server {
 	commandAnalyzer := services.FallbackAnalyzer(cfg.Analyzer)
 	catalog := services.NewCatalogService(tagStore, commandAnalyzer)
 	enricher := services.NewIssueEnricher(commandAnalyzer, catalog)
-	corpusLoader := &queries.DerivedCorpusLoader{
+	mapProjectionLoader := &queries.MapProjectionLoader{
 		Store:       store,
 		Catalog:     catalog,
 		Revisions:   revisions,
-		Projections: derivedCorpusProjectionStoreFromIssueStore(cfg.IssueStore),
+		Projections: mapProjectionStoreFromIssueStore(cfg.IssueStore),
 	}
 
 	return &Server{
-		config:       cfg,
-		startedAt:    time.Now().UTC(),
-		revisions:    revisions,
-		corpusLoader: corpusLoader,
+		config:              cfg,
+		startedAt:           time.Now().UTC(),
+		revisions:           revisions,
+		mapProjectionLoader: mapProjectionLoader,
 		createIssue: commands.CreateIssueHandler{
 			Runner:   runner,
 			Enricher: enricher,
@@ -393,18 +393,16 @@ func NewServer(cfg ServerConfig) *Server {
 			Analyzer: commandAnalyzer,
 			Catalog:  catalog,
 			Store:    cfg.IssueStore,
-			Corpus:   corpusLoader,
 		},
 		searchUnified: queries.SearchUnifiedHandler{
 			Analyzer: commandAnalyzer,
 			Catalog:  catalog,
 			Store:    cfg.IssueStore,
-			Corpus:   corpusLoader,
 		},
-		exploreIssue:      queries.ExploreIssueHandler{Store: cfg.IssueStore, Catalog: catalog, Corpus: corpusLoader},
+		exploreIssue:      queries.ExploreIssueHandler{Store: cfg.IssueStore, Catalog: catalog},
 		listTags:          queries.ListTagsHandler{Catalog: catalog},
-		getMap:            queries.MapHandler{IssueStore: store, Catalog: catalog, Corpus: corpusLoader},
-		getMapEdges:       queries.EdgeHandler{IssueStore: store, Catalog: catalog, Corpus: corpusLoader},
+		getMap:            queries.MapHandler{IssueStore: store, Catalog: catalog, Projection: mapProjectionLoader},
+		getMapEdges:       queries.EdgeHandler{IssueStore: store, Catalog: catalog, Projection: mapProjectionLoader},
 		debugAnalyzeIssue: queries.DebugAnalyzeIssueHandler{Analyzer: cfg.Analyzer, Catalog: catalog, Store: store},
 		getPersonProfile:  queries.GetPersonProfileHandler{Store: store},
 		workCorrelations:  queries.WorkCorrelationsHandler{Store: store},
@@ -414,16 +412,16 @@ func NewServer(cfg ServerConfig) *Server {
 }
 
 func projectionInvalidationListener(
-	invalidator issues.DerivedCorpusProjectionInvalidator,
+	invalidator issues.MapProjectionInvalidator,
 ) issues.EventListener {
 	if invalidator == nil {
 		return nil
 	}
 
 	return func(ctx context.Context, event issues.Event) {
-		if err := invalidator.InvalidateDerivedCorpusProjections(ctx); err != nil {
+		if err := invalidator.InvalidateMapProjections(ctx); err != nil {
 			log.Printf(
-				"failed to invalidate derived corpus projections after %s event for issue %s: %v",
+				"failed to invalidate map projections after %s event for issue %s: %v",
 				event.Kind,
 				event.IssueID,
 				err,

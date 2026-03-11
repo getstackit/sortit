@@ -25,7 +25,6 @@ type SearchIssuesHandler struct {
 	Analyzer *ai.Analyzer
 	Catalog  *services.CatalogService
 	Store    issues.Store
-	Corpus   *DerivedCorpusLoader
 }
 
 func (h SearchIssuesHandler) Handle(ctx context.Context, input SearchIssues) (issuemap.SearchResponse, error) {
@@ -85,25 +84,6 @@ func (h SearchIssuesHandler) Handle(ctx context.Context, input SearchIssues) (is
 		), nil
 	}
 
-	if h.Corpus != nil {
-		corpus, err := h.Corpus.Current(ctx)
-		if err != nil {
-			return issuemap.SearchResponse{}, err
-		}
-		filtered := FilterIssuesByStatus(corpus.Issues, input.Status)
-		filtered = filterIssuesByAssignee(filtered, input.AssignedTo)
-		filtered = filterIssuesByTags(filtered, input.Tags)
-		corpus = subsetCorpusByIssues(corpus, filtered)
-		return issuemap.SearchFromCorpus(
-			corpus,
-			searchOpts.Query,
-			searchOpts.QueryTags,
-			searchOpts.QueryEmbed,
-			searchOpts.Limit,
-			issuemap.WithOffset(searchOpts.Offset),
-			issuemap.WithSortBy(searchOpts.SortBy),
-		), nil
-	}
 	storeIssues, err := h.Store.List(ctx)
 	if err != nil {
 		return issuemap.SearchResponse{}, err

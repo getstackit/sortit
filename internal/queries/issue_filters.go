@@ -94,12 +94,27 @@ func filterIssuesByTags(items []issues.Issue, tags []string) []issues.Issue {
 	return filtered
 }
 
-func subsetCorpusByIssues(corpus issuemap.DerivedCorpus, items []issues.Issue) issuemap.DerivedCorpus {
-	ids := make(map[string]struct{}, len(items))
-	for _, item := range items {
-		ids[item.ID] = struct{}{}
+func subsetProjectionByStatus(projection issuemap.MapProjection, filter IssueStatusFilter) issuemap.MapProjection {
+	ids := make(map[string]struct{}, len(projection.MapIssues))
+	for _, item := range projection.MapIssues {
+		status := item.Status
+		if status == "" {
+			status = issues.StatusOpen
+		}
+		switch filter {
+		case IssueStatusFilterAll:
+			ids[item.ID] = struct{}{}
+		case IssueStatusFilterClosed:
+			if status == issues.StatusClosed {
+				ids[item.ID] = struct{}{}
+			}
+		default:
+			if status == issues.StatusOpen {
+				ids[item.ID] = struct{}{}
+			}
+		}
 	}
-	return issuemap.SubsetDerivedCorpus(corpus, ids)
+	return issuemap.SubsetMapProjection(projection, ids)
 }
 
 func paginateIssues(items []issues.Issue, limit, offset int) []issues.Issue {

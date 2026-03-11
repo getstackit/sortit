@@ -17,19 +17,18 @@ type MapQuery struct {
 type MapHandler struct {
 	IssueStore issues.Store
 	Catalog    *services.CatalogService
-	Corpus     *DerivedCorpusLoader
+	Projection *MapProjectionLoader
 }
 
 func (h MapHandler) Handle(ctx context.Context, input MapQuery) (issuemap.MapResponse, error) {
-	if h.Corpus != nil {
-		corpus, err := h.Corpus.Current(ctx)
+	if h.Projection != nil {
+		projection, err := h.Projection.Current(ctx)
 		if err != nil {
 			return issuemap.MapResponse{}, err
 		}
-		filtered := FilterIssuesByStatus(corpus.Issues, input.StatusFilter)
-		corpus = subsetCorpusByIssues(corpus, filtered)
+		projection = subsetProjectionByStatus(projection, input.StatusFilter)
 		threshold := issuemapDefaultThreshold(input.EdgeThreshold)
-		return issuemap.BuildMapFromCorpus(corpus, input.Viewport, threshold)
+		return issuemap.BuildMapFromProjection(projection, input.Viewport, threshold)
 	}
 	storeIssues, err := h.IssueStore.List(ctx)
 	if err != nil {

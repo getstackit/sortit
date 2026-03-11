@@ -13,7 +13,7 @@ type recordingProjectionInvalidator struct {
 	err   error
 }
 
-func (i *recordingProjectionInvalidator) InvalidateDerivedCorpusProjections(context.Context) error {
+func (i *recordingProjectionInvalidator) InvalidateMapProjections(context.Context) error {
 	i.calls++
 	return i.err
 }

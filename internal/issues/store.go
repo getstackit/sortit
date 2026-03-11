@@ -14,7 +14,7 @@ import (
 
 var ErrNotFound = errors.New("issue not found")
 var ErrIssueClosed = errors.New("issue is closed")
-var ErrDerivedCorpusNotFound = errors.New("derived corpus not found")
+var ErrMapProjectionNotFound = errors.New("map projection not found")
 
 type IssueStatus string
 
@@ -223,13 +223,19 @@ type Store interface {
 	SaveLink(ctx context.Context, link IssueLink) error
 }
 
-type DerivedCorpusProjectionStore interface {
-	GetDerivedCorpusProjection(context.Context, uint64) ([]byte, error)
-	SaveDerivedCorpusProjection(context.Context, uint64, []byte) error
+// MapProjectionStore optionally provides a bulk read path tailored for
+// rebuilding the map projection without hydrating full issue details.
+type MapProjectionStore interface {
+	LoadMapProjectionData(context.Context) ([]Issue, []Tag, error)
 }
 
-type DerivedCorpusProjectionInvalidator interface {
-	InvalidateDerivedCorpusProjections(context.Context) error
+type MapProjectionStorePersistence interface {
+	GetMapProjection(context.Context, uint64) ([]byte, error)
+	SaveMapProjection(context.Context, uint64, []byte) error
+}
+
+type MapProjectionInvalidator interface {
+	InvalidateMapProjections(context.Context) error
 }
 
 type SemanticSearchStore interface {
@@ -315,6 +321,19 @@ func (s *InMemoryStore) Get(_ context.Context, id string) (Issue, error) {
 	}
 
 	return Issue{}, ErrNotFound
+}
+
+func (s *InMemoryStore) LoadMapProjectionData(_ context.Context) ([]Issue, []Tag, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	items := cloneIssues(s.issues)
+	for i := range items {
+		items[i].Discussion = nil
+		s.hydrateIssueRelationships(&items[i])
+	}
+
+	return items, nil, nil
 }
 
 func (s *InMemoryStore) Replace(_ context.Context, next []Issue) error {

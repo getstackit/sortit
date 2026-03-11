@@ -18,7 +18,6 @@ type ExploreIssue struct {
 type ExploreIssueHandler struct {
 	Store   issues.Store
 	Catalog *services.CatalogService
-	Corpus  *DerivedCorpusLoader
 }
 
 func (h ExploreIssueHandler) Handle(ctx context.Context, input ExploreIssue) (issuemap.ExploreResponse, error) {
@@ -26,13 +25,6 @@ func (h ExploreIssueHandler) Handle(ctx context.Context, input ExploreIssue) (is
 		return h.handleSemanticExplore(ctx, input, searcher)
 	}
 
-	if h.Corpus != nil {
-		corpus, err := h.Corpus.Current(ctx)
-		if err != nil {
-			return issuemap.ExploreResponse{}, err
-		}
-		return issuemap.ExploreFromCorpus(corpus, input.ID, input.Limit)
-	}
 	storeIssues, err := h.Store.List(ctx)
 	if err != nil {
 		return issuemap.ExploreResponse{}, err

@@ -177,27 +177,94 @@ func (s *PostgresStore) Get(ctx context.Context, id string) (Issue, error) {
 	return s.getIssueWithDiscussion(ctx, s.queries, id)
 }
 
-func (s *PostgresStore) GetDerivedCorpusProjection(ctx context.Context, revision uint64) ([]byte, error) {
+func (s *PostgresStore) LoadMapProjectionData(ctx context.Context) ([]Issue, []Tag, error) {
+	rows, err := s.queries.ListIssues(ctx)
+	if err != nil {
+		return nil, nil, fmt.Errorf("list issues for map projection: %w", err)
+	}
+
+	items := make([]Issue, 0, len(rows))
+	for _, row := range rows {
+		issue, err := issueFromQuery(issueModelFromListIssuesRow(row))
+		if err != nil {
+			return nil, nil, err
+		}
+		items = append(items, issue)
+	}
+
+	linkRows, err := s.db.QueryContext(
+		ctx,
+		`SELECT id, source_issue_id, target_issue_id, type
+		 FROM issue_links
+		 ORDER BY created_at_unix_nano DESC, id DESC`,
+	)
+	if err != nil {
+		return nil, nil, fmt.Errorf("list issue links for map projection: %w", err)
+	}
+	defer linkRows.Close()
+
+	linksByIssue := make(map[string][]IssueLink, len(items))
+	for linkRows.Next() {
+		var (
+			id       string
+			sourceID string
+			targetID string
+			linkType string
+		)
+		if err := linkRows.Scan(&id, &sourceID, &targetID, &linkType); err != nil {
+			return nil, nil, fmt.Errorf("scan issue link for map projection: %w", err)
+		}
+
+		link := IssueLink{
+			ID:            id,
+			SourceIssueID: sourceID,
+			TargetIssueID: targetID,
+			Type:          normalizeIssueLinkType(IssueLinkType(linkType)),
+		}
+		linksByIssue[sourceID] = append(linksByIssue[sourceID], link)
+		if targetID != sourceID {
+			linksByIssue[targetID] = append(linksByIssue[targetID], link)
+		}
+	}
+	if err := linkRows.Err(); err != nil {
+		return nil, nil, fmt.Errorf("iterate issue links for map projection: %w", err)
+	}
+
+	for i := range items {
+		items[i].Discussion = nil
+		items[i].Operations = nil
+		items[i].Links = cloneIssueLinks(linksByIssue[items[i].ID])
+	}
+
+	tags, err := s.ListTags(ctx)
+	if err != nil {
+		return nil, nil, err
+	}
+
+	return cloneIssues(items), tags, nil
+}
+
+func (s *PostgresStore) GetMapProjection(ctx context.Context, revision uint64) ([]byte, error) {
 	row := s.db.QueryRowContext(
 		ctx,
-		`SELECT payload_json FROM derived_corpus_projections WHERE revision = $1`,
+		`SELECT payload_json FROM map_projections WHERE revision = $1`,
 		int64(revision),
 	)
 
 	var payload []byte
 	if err := row.Scan(&payload); err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
-			return nil, ErrDerivedCorpusNotFound
+			return nil, ErrMapProjectionNotFound
 		}
-		return nil, fmt.Errorf("get derived corpus projection: %w", err)
+		return nil, fmt.Errorf("get map projection: %w", err)
 	}
 	return payload, nil
 }
 
-func (s *PostgresStore) SaveDerivedCorpusProjection(ctx context.Context, revision uint64, payload []byte) error {
+func (s *PostgresStore) SaveMapProjection(ctx context.Context, revision uint64, payload []byte) error {
 	_, err := s.db.ExecContext(
 		ctx,
-		`INSERT INTO derived_corpus_projections (revision, payload_json, created_at_unix_nano)
+		`INSERT INTO map_projections (revision, payload_json, created_at_unix_nano)
 		 VALUES ($1, $2, $3)
 		 ON CONFLICT (revision) DO UPDATE
 		 SET payload_json = excluded.payload_json,
@@ -207,14 +274,14 @@ func (s *PostgresStore) SaveDerivedCorpusProjection(ctx context.Context, revisio
 		time.Now().UTC().UnixNano(),
 	)
 	if err != nil {
-		return fmt.Errorf("save derived corpus projection: %w", err)
+		return fmt.Errorf("save map projection: %w", err)
 	}
 	return nil
 }
 
-func (s *PostgresStore) InvalidateDerivedCorpusProjections(ctx context.Context) error {
-	if _, err := s.db.ExecContext(ctx, `DELETE FROM derived_corpus_projections`); err != nil {
-		return fmt.Errorf("invalidate derived corpus projections: %w", err)
+func (s *PostgresStore) InvalidateMapProjections(ctx context.Context) error {
+	if _, err := s.db.ExecContext(ctx, `DELETE FROM map_projections`); err != nil {
+		return fmt.Errorf("invalidate map projections: %w", err)
 	}
 	return nil
 }

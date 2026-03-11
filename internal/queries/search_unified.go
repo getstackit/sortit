@@ -26,7 +26,6 @@ type SearchUnifiedHandler struct {
 	Analyzer *ai.Analyzer
 	Catalog  *services.CatalogService
 	Store    issues.Store
-	Corpus   *DerivedCorpusLoader
 }
 
 func (h SearchUnifiedHandler) Handle(ctx context.Context, input SearchUnified) (SearchUnifiedResponse, error) {
@@ -80,29 +79,6 @@ func (h SearchUnifiedHandler) Handle(ctx context.Context, input SearchUnified) (
 		}, nil
 	}
 
-	if h.Corpus != nil {
-		corpus, err := h.Corpus.Current(ctx)
-		if err != nil {
-			return SearchUnifiedResponse{}, err
-		}
-		filtered := FilterIssuesByStatus(corpus.Issues, IssueStatusFilterOpen)
-		corpus = subsetCorpusByIssues(corpus, filtered)
-		issueResult := issuemap.SearchFromCorpus(
-			corpus,
-			query,
-			queryTags,
-			queryEmbedding,
-			limit,
-		)
-
-		relatedTags := issuemap.SearchTags(corpus.Tags, queryEmbedding, limit)
-
-		return SearchUnifiedResponse{
-			Query:       issueResult.Query,
-			Issues:      issueResult.RelatedIssues,
-			RelatedTags: relatedTags,
-		}, nil
-	}
 	storeIssues, err := h.Store.List(ctx)
 	if err != nil {
 		return SearchUnifiedResponse{}, err

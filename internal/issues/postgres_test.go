@@ -539,29 +539,100 @@ func assertIssueEmbeddingVectorText(t *testing.T, store *PostgresStore, id strin
 	}
 }
 
-func TestPostgresStoreDerivedCorpusProjectionRoundTrip(t *testing.T) {
+func TestPostgresStoreMapProjectionRoundTrip(t *testing.T) {
 	store := newPostgresTestStore(t)
 	ctx := context.Background()
 
-	payload := []byte(`{"issues":[],"tags":[]}`)
-	if err := store.SaveDerivedCorpusProjection(ctx, 7, payload); err != nil {
-		t.Fatalf("save derived corpus projection: %v", err)
+	payload := []byte(`{"mapIssues":[]}`)
+	if err := store.SaveMapProjection(ctx, 7, payload); err != nil {
+		t.Fatalf("save map projection: %v", err)
 	}
 
-	loaded, err := store.GetDerivedCorpusProjection(ctx, 7)
+	loaded, err := store.GetMapProjection(ctx, 7)
 	if err != nil {
-		t.Fatalf("get derived corpus projection: %v", err)
+		t.Fatalf("get map projection: %v", err)
 	}
 
 	var decoded map[string]any
 	if err := json.Unmarshal(loaded, &decoded); err != nil {
 		t.Fatalf("decode loaded projection: %v", err)
 	}
-	if tags, ok := decoded["tags"].([]any); !ok || len(tags) != 0 {
-		t.Fatalf("expected empty tags, got %#v", decoded["tags"])
+	if issuesPayload, ok := decoded["mapIssues"].([]any); !ok || len(issuesPayload) != 0 {
+		t.Fatalf("expected empty mapIssues, got %#v", decoded["mapIssues"])
 	}
-	if issuesPayload, ok := decoded["issues"].([]any); !ok || len(issuesPayload) != 0 {
-		t.Fatalf("expected empty issues, got %#v", decoded["issues"])
+}
+
+func TestPostgresStoreLoadMapProjectionDataReturnsLinkedIssuesAndTags(t *testing.T) {
+	store := newPostgresTestStore(t)
+	ctx := context.Background()
+
+	parent := BuildNewIssue(NewIssueID(), CreateInput{
+		Raw:       "Search ranking quality regressed",
+		CreatedBy: "Casey",
+		TagScores: []TagRelevance{{Tag: "search", Relevance: 0.9}},
+		Embedding: []float64{1, 0},
+	})
+	child := BuildNewIssue(NewIssueID(), CreateInput{
+		Raw:       "Map projection should slim payloads",
+		CreatedBy: "Jordan",
+		TagScores: []TagRelevance{{Tag: "backend", Relevance: 0.8}},
+		Embedding: []float64{0, 1},
+	})
+	if err := store.SaveIssue(ctx, parent); err != nil {
+		t.Fatalf("save parent issue: %v", err)
+	}
+	if err := store.SaveIssue(ctx, child); err != nil {
+		t.Fatalf("save child issue: %v", err)
+	}
+	if err := store.SaveLink(ctx, IssueLink{
+		ID:            NewOperationID(),
+		Type:          IssueLinkTypeDerivedFrom,
+		SourceIssueID: child.ID,
+		TargetIssueID: parent.ID,
+		CreatedBy:     "Jordan",
+		CreatedAt:     time.Now().UTC(),
+	}); err != nil {
+		t.Fatalf("save link: %v", err)
+	}
+	if err := store.UpsertTags(ctx, []Tag{
+		{Name: "search", Embedding: []float64{1, 0}},
+		{Name: "backend", Embedding: []float64{0, 1}},
+	}); err != nil {
+		t.Fatalf("upsert tags: %v", err)
+	}
+
+	items, tags, err := store.LoadMapProjectionData(ctx)
+	if err != nil {
+		t.Fatalf("load map projection data: %v", err)
+	}
+	if len(items) != 2 {
+		t.Fatalf("expected 2 projection issues, got %d", len(items))
+	}
+	if len(tags) != 2 {
+		t.Fatalf("expected 2 projection tags, got %d", len(tags))
+	}
+
+	var linked Issue
+	for _, item := range items {
+		if item.ID == child.ID {
+			linked = item
+			break
+		}
+	}
+	if linked.ID == "" {
+		t.Fatalf("expected child issue %q in projection data", child.ID)
+	}
+	if len(linked.Links) != 1 {
+		t.Fatalf("expected one projection link, got %#v", linked.Links)
+	}
+	if linked.Links[0].TargetIssueID != parent.ID || linked.Links[0].Type != IssueLinkTypeDerivedFrom {
+		t.Fatalf("unexpected projection link: %#v", linked.Links[0])
+	}
+	if len(linked.Discussion) != 0 {
+		t.Fatalf("expected projection issue discussion to be omitted, got %#v", linked.Discussion)
+	}
+	if len(linked.Operations) != 0 {
+		t.Fatalf("expected projection issue operations to be omitted, got %#v", linked.Operations)
 	}
 }
 
