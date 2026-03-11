@@ -124,12 +124,18 @@ func TestAPIIntegrationCreateLookupMapAndTagsWithMockAIBackend(t *testing.T) {
 		Raw:       "CSV export is too slow for large workspaces",
 		CreatedBy: "Jordan",
 	})
+	assigned := assignIssueViaAPI(t, handler, first.ID, assignIssueRequest{
+		AssignedTo: "Avery",
+	})
 
 	if !slices.Equal(first.Tags, []string{"onboarding", "wizard", "ux"}) {
 		t.Fatalf("unexpected tags for first issue: %#v", first.Tags)
 	}
 	if !slices.Equal(second.Tags, []string{"export", "csv", "performance"}) {
 		t.Fatalf("unexpected tags for second issue: %#v", second.Tags)
+	}
+	if assigned.AssignedTo != "Avery" {
+		t.Fatalf("expected assigned issue to be owned by Avery, got %q", assigned.AssignedTo)
 	}
 
 	storedFirst := getIssueViaAPI(t, handler, first.ID)
@@ -165,6 +171,9 @@ func TestAPIIntegrationCreateLookupMapAndTagsWithMockAIBackend(t *testing.T) {
 	}
 	if secondMapIssue.Tags[0].Tag != "export" {
 		t.Fatalf("expected second map issue to use analyzed tags, got %+v", secondMapIssue.Tags)
+	}
+	if firstMapIssue.AssignedTo != "Avery" {
+		t.Fatalf("expected first map issue assignee Avery, got %q", firstMapIssue.AssignedTo)
 	}
 
 	tagsReq := httptest.NewRequest(http.MethodGet, "/api/tags", nil)
@@ -463,6 +472,39 @@ func refineIssueViaAPI(
 	var issue issues.Issue
 	if err := json.NewDecoder(rec.Body).Decode(&issue); err != nil {
 		t.Fatalf("decode refined issue: %v", err)
+	}
+	return issue
+}
+
+func assignIssueViaAPI(
+	t *testing.T,
+	handler http.Handler,
+	id string,
+	request assignIssueRequest,
+) issues.Issue {
+	t.Helper()
+
+	body, err := json.Marshal(request)
+	if err != nil {
+		t.Fatalf("marshal assign issue request: %v", err)
+	}
+
+	req := httptest.NewRequest(
+		http.MethodPost,
+		"/api/issues/"+id+"/assign",
+		bytes.NewReader(body),
+	)
+	req.Header.Set("Content-Type", "application/json")
+	rec := httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200 for issue assign, got %d", rec.Code)
+	}
+
+	var issue issues.Issue
+	if err := json.NewDecoder(rec.Body).Decode(&issue); err != nil {
+		t.Fatalf("decode assigned issue: %v", err)
 	}
 	return issue
 }

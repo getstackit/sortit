@@ -1,9 +1,9 @@
 package issuemap
 
 import (
+	"cmp"
 	"fmt"
 	"hash/fnv"
-	"cmp"
 	"slices"
 	"strings"
 	"unicode"
@@ -83,12 +83,13 @@ func buildBaseMapDataFromIssues(storeIssues []issues.Issue, storeTags []issues.T
 		rounded := roundPosition(p)
 		roundedPositions[issue.ID] = rounded
 		mapIssues[i] = MapIssue{
-			ID:     issue.ID,
-			Raw:    issue.Raw,
-			Status: issue.Status,
-			Tags:   issue.TagScores,
-			X:      rounded.X,
-			Y:      rounded.Y,
+			ID:         issue.ID,
+			Raw:        issue.Raw,
+			Status:     issue.Status,
+			AssignedTo: issue.AssignedTo,
+			Tags:       issue.TagScores,
+			X:          rounded.X,
+			Y:          rounded.Y,
 		}
 	}
 
@@ -113,11 +114,12 @@ func runtimeMapInputs(storeIssues []issues.Issue, storeTags []issues.Tag) ([]iss
 	for i, storeIssue := range storeIssues {
 		tagScores := runtimeStoredTagRelevances(storeIssue)
 		prepared[i] = issues.Issue{
-			ID:        storeIssue.ID,
-			Raw:       storeIssue.Raw,
-			Status:    storeIssue.Status,
-			TagScores: tagScores,
-			Embedding: storeIssue.Embedding,
+			ID:         storeIssue.ID,
+			Raw:        storeIssue.Raw,
+			Status:     storeIssue.Status,
+			AssignedTo: storeIssue.AssignedTo,
+			TagScores:  tagScores,
+			Embedding:  storeIssue.Embedding,
 		}
 		embeddings[storeIssue.ID] = runtimeStoredEmbedding(storeIssue, prepared[i], tagEmbeddings)
 	}
@@ -136,6 +138,55 @@ func runtimeMapInputs(storeIssues []issues.Issue, storeTags []issues.Tag) ([]iss
 	}
 
 	return prepared, tagNames, embeddings, tagEmbeddings
+}
+
+func runtimeProjectionInputs(
+	storeIssues []issues.MapProjectionIssue,
+	storeTags []issues.Tag,
+) ([]issues.Issue, []string, map[string][]float64, map[string][]float64) {
+	prepared := make([]issues.Issue, len(storeIssues))
+	for i, storeIssue := range storeIssues {
+		prepared[i] = issues.Issue{
+			ID:         storeIssue.ID,
+			Raw:        storeIssue.Raw,
+			Tags:       append([]string(nil), storeIssue.Tags...),
+			Status:     storeIssue.Status,
+			AssignedTo: storeIssue.AssignedTo,
+			TagScores:  copyProjectionTagScores(storeIssue.TagScores),
+			Embedding:  append([]float64(nil), storeIssue.Embedding...),
+		}
+	}
+
+	tagNames := runtimeTagNames(prepared, storeTags)
+	tagEmbeddings := runtimeTagEmbeddings(tagNames, storeTags)
+	embeddings := make(map[string][]float64, len(prepared))
+	for i, storeIssue := range prepared {
+		embeddings[storeIssue.ID] = runtimeStoredEmbedding(storeIssue, prepared[i], tagEmbeddings)
+	}
+
+	hasTagSignal := false
+	for _, issue := range prepared {
+		if len(issue.TagScores) > 0 {
+			hasTagSignal = true
+			break
+		}
+	}
+	if !hasTagSignal {
+		tagNames = nil
+		tagEmbeddings = nil
+	}
+
+	return prepared, tagNames, embeddings, tagEmbeddings
+}
+
+func copyProjectionTagScores(input []issues.TagRelevance) []issues.TagRelevance {
+	if len(input) == 0 {
+		return nil
+	}
+
+	items := make([]issues.TagRelevance, len(input))
+	copy(items, input)
+	return items
 }
 
 func runtimeTagNames(storeIssues []issues.Issue, storeTags []issues.Tag) []string {

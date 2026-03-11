@@ -28,7 +28,6 @@ type BuildMapProjectionProfile struct {
 
 type MapProjection struct {
 	MapIssues       []MapIssue
-	Positions       map[string]Position
 	AllEdges        []Edge
 	Clusters        []Cluster
 	VisibleIssueIDs map[string]struct{}
@@ -37,7 +36,6 @@ type MapProjection struct {
 func SubsetMapProjection(projection MapProjection, issueIDs map[string]struct{}) MapProjection {
 	if len(issueIDs) == 0 {
 		return MapProjection{
-			Positions:       map[string]Position{},
 			VisibleIssueIDs: map[string]struct{}{},
 		}
 	}
@@ -55,19 +53,21 @@ func SubsetMapProjection(projection MapProjection, issueIDs map[string]struct{})
 
 	return MapProjection{
 		MapIssues:       filterMapIssuesByID(projection.MapIssues, issueIDs),
-		Positions:       filterPositionsByID(projection.Positions, issueIDs),
 		AllEdges:        filterEdgesByID(projection.AllEdges, issueIDs),
 		Clusters:        filterVisibleClusters(projection.Clusters, issueIDs),
 		VisibleIssueIDs: filteredVisible,
 	}
 }
 
-func BuildMapProjection(storeIssues []issues.Issue, storeTags []issues.Tag) (MapProjection, error) {
+func BuildMapProjection(storeIssues []issues.MapProjectionIssue, storeTags []issues.Tag) (MapProjection, error) {
 	projection, _, err := BuildMapProjectionProfiled(storeIssues, storeTags)
 	return projection, err
 }
 
-func BuildMapProjectionProfiled(storeIssues []issues.Issue, storeTags []issues.Tag) (MapProjection, BuildMapProjectionProfile, error) {
+func BuildMapProjectionProfiled(
+	storeIssues []issues.MapProjectionIssue,
+	storeTags []issues.Tag,
+) (MapProjection, BuildMapProjectionProfile, error) {
 	startedAt := time.Now()
 	profile := BuildMapProjectionProfile{
 		IssueCount:     len(storeIssues),
@@ -75,7 +75,7 @@ func BuildMapProjectionProfiled(storeIssues []issues.Issue, storeTags []issues.T
 	}
 
 	stepStartedAt := time.Now()
-	_, visible, _ := deriveRelationshipSemantics(storeIssues)
+	_, visible, _ := deriveProjectionRelationshipSemantics(storeIssues)
 	profile.VisibleIssueCount = len(visible)
 	profile.Steps = append(profile.Steps, BuildMapProjectionStep{
 		Name:     "derive_relationship_semantics",
@@ -83,7 +83,7 @@ func BuildMapProjectionProfiled(storeIssues []issues.Issue, storeTags []issues.T
 	})
 
 	stepStartedAt = time.Now()
-	runtimeIssues, tagNames, issueEmbeddings, tagEmbeddings := runtimeMapInputs(storeIssues, storeTags)
+	runtimeIssues, tagNames, issueEmbeddings, tagEmbeddings := runtimeProjectionInputs(storeIssues, storeTags)
 	profile.RuntimeIssueCount = len(runtimeIssues)
 	profile.TagNameCount = len(tagNames)
 	profile.Steps = append(profile.Steps, BuildMapProjectionStep{
@@ -121,12 +121,13 @@ func BuildMapProjectionProfiled(storeIssues []issues.Issue, storeTags []issues.T
 			position := roundPosition(positions[item.ID])
 			roundedPositions[item.ID] = position
 			mapIssue := MapIssue{
-				ID:     item.ID,
-				Raw:    storeIssues[i].Raw,
-				Status: storeIssues[i].Status,
-				Tags:   item.TagScores,
-				X:      position.X,
-				Y:      position.Y,
+				ID:         item.ID,
+				Raw:        storeIssues[i].Raw,
+				Status:     storeIssues[i].Status,
+				AssignedTo: storeIssues[i].AssignedTo,
+				Tags:       item.TagScores,
+				X:          position.X,
+				Y:          position.Y,
 			}
 			mapIssues[i] = mapIssue
 		}
@@ -163,7 +164,6 @@ func BuildMapProjectionProfiled(storeIssues []issues.Issue, storeTags []issues.T
 
 	return MapProjection{
 		MapIssues:       append([]MapIssue(nil), mapIssues...),
-		Positions:       roundedPositions,
 		AllEdges:        append([]Edge(nil), allEdges...),
 		Clusters:        cloneClusters(clusters),
 		VisibleIssueIDs: cloneVisibleIDs(visible),
@@ -171,9 +171,10 @@ func BuildMapProjectionProfiled(storeIssues []issues.Issue, storeTags []issues.T
 }
 
 func BuildMapFromProjection(projection MapProjection, viewport *Viewport, edgeThreshold float64) (MapResponse, error) {
+	visibleMapIssues := filterVisibleMapIssues(projection.MapIssues, projection.VisibleIssueIDs)
 	base := mapBaseData{
-		mapIssues:      filterVisibleMapIssues(projection.MapIssues, projection.VisibleIssueIDs),
-		positions:      filterVisiblePositions(projection.Positions, projection.VisibleIssueIDs),
+		mapIssues:      visibleMapIssues,
+		positions:      positionsFromMapIssues(visibleMapIssues),
 		candidateEdges: filterEdgesByThresholdAndVisibility(projection.AllEdges, edgeThreshold, projection.VisibleIssueIDs),
 		clusters:       filterVisibleClusters(projection.Clusters, projection.VisibleIssueIDs),
 	}
@@ -194,9 +195,10 @@ func BuildMapFromProjection(projection MapProjection, viewport *Viewport, edgeTh
 }
 
 func BuildEdgeResponseFromProjection(projection MapProjection, viewport *Viewport, edgeThreshold float64) (EdgeResponse, error) {
+	visibleMapIssues := filterVisibleMapIssues(projection.MapIssues, projection.VisibleIssueIDs)
 	base := mapBaseData{
-		mapIssues:      filterVisibleMapIssues(projection.MapIssues, projection.VisibleIssueIDs),
-		positions:      filterVisiblePositions(projection.Positions, projection.VisibleIssueIDs),
+		mapIssues:      visibleMapIssues,
+		positions:      positionsFromMapIssues(visibleMapIssues),
 		candidateEdges: filterEdgesByThresholdAndVisibility(projection.AllEdges, edgeThreshold, projection.VisibleIssueIDs),
 		clusters:       filterVisibleClusters(projection.Clusters, projection.VisibleIssueIDs),
 	}
@@ -208,7 +210,32 @@ func BuildEdgeResponseFromProjection(projection MapProjection, viewport *Viewpor
 	return EdgeResponse{Edges: edges}, nil
 }
 
+type relationshipIssue struct {
+	ID    string
+	Links []issues.IssueLink
+}
+
 func deriveRelationshipSemantics(items []issues.Issue) (map[string]string, map[string]struct{}, map[string]map[string]float64) {
+	relationshipItems := make([]relationshipIssue, len(items))
+	for i, item := range items {
+		relationshipItems[i] = relationshipIssue{ID: item.ID, Links: item.Links}
+	}
+	return deriveRelationshipSemanticsFromItems(relationshipItems)
+}
+
+func deriveProjectionRelationshipSemantics(
+	items []issues.MapProjectionIssue,
+) (map[string]string, map[string]struct{}, map[string]map[string]float64) {
+	relationshipItems := make([]relationshipIssue, len(items))
+	for i, item := range items {
+		relationshipItems[i] = relationshipIssue{ID: item.ID, Links: item.Links}
+	}
+	return deriveRelationshipSemanticsFromItems(relationshipItems)
+}
+
+func deriveRelationshipSemanticsFromItems(
+	items []relationshipIssue,
+) (map[string]string, map[string]struct{}, map[string]map[string]float64) {
 	linksBySource := make(map[string][]issues.IssueLink, len(items))
 	canonical := make(map[string]string, len(items))
 	visible := make(map[string]struct{}, len(items))
@@ -358,16 +385,6 @@ func filterVisibleMapIssues(items []MapIssue, visible map[string]struct{}) []Map
 	return filtered
 }
 
-func filterVisiblePositions(items map[string]Position, visible map[string]struct{}) map[string]Position {
-	filtered := make(map[string]Position, len(visible))
-	for id, position := range items {
-		if _, ok := visible[id]; ok {
-			filtered[id] = position
-		}
-	}
-	return filtered
-}
-
 func filterVisibleClusters(items []Cluster, visible map[string]struct{}) []Cluster {
 	filtered := make([]Cluster, 0, len(items))
 	for _, cluster := range items {
@@ -416,14 +433,16 @@ func filterMapIssuesByID(items []MapIssue, ids map[string]struct{}) []MapIssue {
 	return filtered
 }
 
-func filterPositionsByID(items map[string]Position, ids map[string]struct{}) map[string]Position {
-	filtered := make(map[string]Position, len(ids))
-	for id, position := range items {
-		if _, ok := ids[id]; ok {
-			filtered[id] = position
-		}
+func positionsFromMapIssues(items []MapIssue) map[string]Position {
+	if len(items) == 0 {
+		return map[string]Position{}
 	}
-	return filtered
+
+	positions := make(map[string]Position, len(items))
+	for _, item := range items {
+		positions[item.ID] = Position{X: item.X, Y: item.Y}
+	}
+	return positions
 }
 
 func filterEdgesByID(items []Edge, ids map[string]struct{}) []Edge {

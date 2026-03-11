@@ -81,7 +81,7 @@ vi.mock("@/features/map/api", () => ({
 function makeMapData(overrides?: Partial<MapData>): MapData {
   return {
     issues: [
-      { id: "issue-001", raw: "First issue", status: "open", x: 0.1, y: 0.1, tags: [{ tag: "bug", relevance: 0.9 }] },
+      { id: "issue-001", raw: "First issue", status: "open", assignedTo: "Avery", x: 0.1, y: 0.1, tags: [{ tag: "bug", relevance: 0.9 }] },
       { id: "issue-002", raw: "Second issue", status: "open", x: 0.2, y: 0.2, tags: [{ tag: "feature", relevance: 0.8 }] },
       { id: "issue-003", raw: "Third issue", status: "open", x: 0.3, y: 0.3, tags: [{ tag: "bug", relevance: 0.7 }] },
       { id: "issue-004", raw: "Fourth issue", status: "open", x: 0.15, y: 0.15, tags: [{ tag: "bug", relevance: 0.6 }] },
@@ -363,6 +363,44 @@ describe("MapPage", () => {
         "/issues/issue-001"
       );
     });
+  });
+
+  it("shows assignment state in the issue sidebar", async () => {
+    const user = userEvent.setup();
+    const { container } = render(<MapPage />);
+
+    await waitFor(() => {
+      expect(container.querySelector("svg")).toBeInTheDocument();
+    });
+
+    const firstIssue = container.querySelector("[data-issue='issue-001']");
+    expect(firstIssue).toBeInTheDocument();
+
+    await user.click(firstIssue!);
+
+    await waitFor(() => {
+      expect(screen.getByText("Avery")).toBeInTheDocument();
+    });
+  });
+
+  it("shows assigned counts and unassigned labels in the cluster sidebar", async () => {
+    const user = userEvent.setup();
+    const { container } = render(<MapPage />);
+
+    await waitFor(() => {
+      expect(container.querySelector("svg")).toBeInTheDocument();
+    });
+
+    const blobGroup = container.querySelector("path[stroke-linejoin='round']")?.parentElement;
+    expect(blobGroup).toBeInTheDocument();
+
+    await user.click(blobGroup!);
+
+    await waitFor(() => {
+      expect(screen.getByText("1 assigned")).toBeInTheDocument();
+    });
+
+    expect(screen.getAllByText("Unassigned").length).toBeGreaterThan(0);
   });
 
   it("renders issue nodes inside the SVG", async () => {

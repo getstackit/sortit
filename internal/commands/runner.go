@@ -3,6 +3,7 @@ package commands
 import (
 	"context"
 	"fmt"
+	"strings"
 
 	"splat/internal/issues"
 )
@@ -53,4 +54,24 @@ func FinishAndThen(errp *error, finish func(*error), afterSuccess func()) {
 	if errp != nil && *errp == nil && afterSuccess != nil {
 		afterSuccess()
 	}
+}
+
+func FinishAndPublish(
+	errp *error,
+	finish func(*error),
+	ctx context.Context,
+	publisher issues.EventPublisher,
+	events ...issues.Event,
+) {
+	FinishAndThen(errp, finish, func() {
+		if publisher == nil {
+			return
+		}
+		for _, event := range events {
+			if strings.TrimSpace(event.Kind) == "" {
+				continue
+			}
+			publisher.PublishOne(ctx, event)
+		}
+	})
 }

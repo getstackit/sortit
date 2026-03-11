@@ -40,6 +40,19 @@ type Issue struct {
 	Embedding  []float64        `json:"-"`
 }
 
+// MapProjectionIssue contains only the fields needed to rebuild the map
+// projection and its relationship-driven visibility semantics.
+type MapProjectionIssue struct {
+	ID         string         `json:"id"`
+	Raw        string         `json:"raw"`
+	Tags       []string       `json:"tags"`
+	Status     IssueStatus    `json:"status"`
+	AssignedTo string         `json:"assignedTo,omitempty"`
+	TagScores  []TagRelevance `json:"tagScores"`
+	Embedding  []float64      `json:"-"`
+	Links      []IssueLink    `json:"links,omitempty"`
+}
+
 func (i Issue) ReportEvent() Event {
 	return Event{
 		ID:        IssuePostID(i.ID, 1),
@@ -226,7 +239,7 @@ type Store interface {
 // MapProjectionStore optionally provides a bulk read path tailored for
 // rebuilding the map projection without hydrating full issue details.
 type MapProjectionStore interface {
-	LoadMapProjectionData(context.Context) ([]Issue, []Tag, error)
+	LoadMapProjectionData(context.Context) ([]MapProjectionIssue, []Tag, error)
 }
 
 type MapProjectionStorePersistence interface {
@@ -323,7 +336,7 @@ func (s *InMemoryStore) Get(_ context.Context, id string) (Issue, error) {
 	return Issue{}, ErrNotFound
 }
 
-func (s *InMemoryStore) LoadMapProjectionData(_ context.Context) ([]Issue, []Tag, error) {
+func (s *InMemoryStore) LoadMapProjectionData(_ context.Context) ([]MapProjectionIssue, []Tag, error) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 
@@ -333,7 +346,7 @@ func (s *InMemoryStore) LoadMapProjectionData(_ context.Context) ([]Issue, []Tag
 		s.hydrateIssueRelationships(&items[i])
 	}
 
-	return items, nil, nil
+	return MapProjectionIssuesFromIssues(items), nil, nil
 }
 
 func (s *InMemoryStore) Replace(_ context.Context, next []Issue) error {
@@ -442,6 +455,23 @@ func cloneIssues(input []Issue) []Issue {
 			Operations: cloneIssueOperations(issue.Operations),
 			TagScores:  copyTagScores(issue.TagScores),
 			Embedding:  copyEmbedding(issue.Embedding),
+		}
+	}
+	return items
+}
+
+func cloneMapProjectionIssues(input []MapProjectionIssue) []MapProjectionIssue {
+	items := make([]MapProjectionIssue, len(input))
+	for i, issue := range input {
+		items[i] = MapProjectionIssue{
+			ID:         issue.ID,
+			Raw:        issue.Raw,
+			Tags:       append([]string(nil), issue.Tags...),
+			Status:     normalizeIssueStatus(issue.Status),
+			AssignedTo: issue.AssignedTo,
+			TagScores:  copyTagScores(issue.TagScores),
+			Embedding:  copyEmbedding(issue.Embedding),
+			Links:      cloneIssueLinks(issue.Links),
 		}
 	}
 	return items

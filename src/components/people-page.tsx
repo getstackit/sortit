@@ -3,12 +3,14 @@
 import { useMemo, useState } from "react";
 import { AppShell } from "@/components/app-shell";
 import { AppSidebar } from "@/components/app-sidebar";
+import { IssueCard } from "@/components/issue-card";
 import { SiteHeader } from "@/components/site-header";
 import { TagRelevanceBars } from "@/components/tag-relevance-bars";
 import { useWorkCorrelations } from "@/hooks/use-people";
 import { useIssues } from "@/hooks/use-issues";
 import { entityStyle } from "@/lib/entity-colors";
 import { cn } from "@/lib/utils";
+import type { IssueRecord } from "@/lib/issues";
 import type { PeopleListStatus, PersonCorrelation, TagRelevance } from "@/lib/people";
 
 function scoreColor(score: number) {
@@ -21,10 +23,12 @@ function PersonProfileCard({
   person,
   issueCount,
   tagProfile,
+  issues,
 }: {
   person: string;
   issueCount: number;
   tagProfile: TagRelevance[];
+  issues: IssueRecord[];
 }) {
   return (
     <div className="app-surface rounded-[1.5rem] p-5">
@@ -46,6 +50,24 @@ function PersonProfileCard({
           <TagRelevanceBars tags={tagProfile} />
         </div>
       )}
+      <div className="mt-5 space-y-2">
+        <div className="flex items-center justify-between gap-2">
+          <p className="text-[11px] font-medium uppercase tracking-[0.14em] text-muted-foreground">
+            Assigned issues
+          </p>
+          <span className="app-chip">{issues.length}</span>
+        </div>
+        <div className="space-y-2">
+          {issues.map((issue) => (
+            <IssueCard
+              key={issue.id}
+              issue={issue}
+              href={`/issues/${issue.id}`}
+              compact
+            />
+          ))}
+        </div>
+      </div>
     </div>
   );
 }
@@ -116,7 +138,10 @@ export function PeoplePage() {
   const people = useMemo(() => {
     if (!allIssues) return [];
 
-    const byPerson = new Map<string, { name: string; count: number; tagSums: Map<string, number> }>();
+    const byPerson = new Map<
+      string,
+      { name: string; count: number; tagSums: Map<string, number>; issues: IssueRecord[] }
+    >();
 
     for (const issue of allIssues) {
       if (!issue.assignedTo) continue;
@@ -124,10 +149,11 @@ export function PeoplePage() {
       const key = issue.assignedTo.toLowerCase();
       let entry = byPerson.get(key);
       if (!entry) {
-        entry = { name: issue.assignedTo, count: 0, tagSums: new Map() };
+        entry = { name: issue.assignedTo, count: 0, tagSums: new Map(), issues: [] };
         byPerson.set(key, entry);
       }
       entry.count++;
+      entry.issues.push(issue);
 
       for (const ts of issue.tagScores ?? []) {
         entry.tagSums.set(ts.tag, (entry.tagSums.get(ts.tag) ?? 0) + ts.relevance);
@@ -141,8 +167,20 @@ export function PeoplePage() {
           profile.push({ tag, relevance: Math.round((sum / data.count) * 100) / 100 });
         }
         profile.sort((a, b) => b.relevance - a.relevance || a.tag.localeCompare(b.tag));
+        const sortedIssues = [...data.issues].sort((left, right) => {
+          if (left.status !== right.status) {
+            return left.status === "open" ? -1 : 1;
+          }
 
-        return { person: data.name, issueCount: data.count, tagProfile: profile };
+          return new Date(right.createdAt).getTime() - new Date(left.createdAt).getTime();
+        });
+
+        return {
+          person: data.name,
+          issueCount: data.count,
+          tagProfile: profile,
+          issues: sortedIssues,
+        };
       })
       .sort((a, b) => b.issueCount - a.issueCount);
   }, [allIssues]);
@@ -201,6 +239,7 @@ export function PeoplePage() {
                     person={p.person}
                     issueCount={p.issueCount}
                     tagProfile={p.tagProfile}
+                    issues={p.issues}
                   />
                 ))}
               </div>

@@ -14,12 +14,13 @@ type RefineIssue struct {
 }
 
 type RefineIssueHandler struct {
+	Runner   *CommandRunner
 	Store    issues.Store
 	Enricher *services.IssueEnricher
-	Events   issues.EventStore
+	Events   issues.EventPublisher
 }
 
-func (h RefineIssueHandler) Handle(ctx context.Context, input RefineIssue) (issues.Issue, error) {
+func (h RefineIssueHandler) Handle(ctx context.Context, input RefineIssue) (refined issues.Issue, err error) {
 	current, err := h.Store.Get(ctx, input.ID)
 	if err != nil {
 		return issues.Issue{}, err
@@ -39,12 +40,30 @@ func (h RefineIssueHandler) Handle(ctx context.Context, input RefineIssue) (issu
 		return issues.Issue{}, err
 	}
 
-	post := issues.NewDiscussionPost(current.ID, current.Discussion, postRaw, enriched.CreatedBy, "refinement")
-	if err := h.Store.SaveIssuePost(ctx, post); err != nil {
+	uow, finish, err := Begin(ctx, h.Runner)
+	if err != nil {
 		return issues.Issue{}, err
 	}
 
-	if err := h.Store.UpdateIssueFields(ctx, current.ID, issues.IssueFieldUpdate{
+	var refinementEvent issues.Event
+	defer func() {
+		FinishAndPublish(&err, finish, ctx, h.Events, refinementEvent)
+	}()
+
+	current, err = uow.Get(ctx, input.ID)
+	if err != nil {
+		return issues.Issue{}, err
+	}
+	if err := issues.EnsureMutable(current); err != nil {
+		return issues.Issue{}, err
+	}
+
+	post := issues.NewDiscussionPost(current.ID, current.Discussion, postRaw, enriched.CreatedBy, "refinement")
+	if err := uow.SaveIssuePost(ctx, post); err != nil {
+		return issues.Issue{}, err
+	}
+
+	if err := uow.UpdateIssueFields(ctx, current.ID, issues.IssueFieldUpdate{
 		Raw:       &canonicalRaw,
 		Tags:      issues.DisplayTags(enriched.Tags, enriched.TagScores),
 		TagScores: enriched.TagScores,
@@ -53,16 +72,15 @@ func (h RefineIssueHandler) Handle(ctx context.Context, input RefineIssue) (issu
 		return issues.Issue{}, err
 	}
 
-	if h.Events != nil {
-		_ = h.Events.RecordEvent(ctx, issues.Event{
-			ID:        post.ID,
-			Kind:      "refinement",
-			IssueID:   current.ID,
-			CreatedBy: post.CreatedBy,
-			CreatedAt: post.CreatedAt,
-			Body:      postRaw,
-		})
+	refinementEvent = issues.Event{
+		ID:        post.ID,
+		Kind:      "refinement",
+		IssueID:   current.ID,
+		CreatedBy: post.CreatedBy,
+		CreatedAt: post.CreatedAt,
+		Body:      postRaw,
 	}
+	_ = uow.RecordEvent(ctx, refinementEvent)
 
-	return h.Store.Get(ctx, current.ID)
+	return uow.Get(ctx, current.ID)
 }

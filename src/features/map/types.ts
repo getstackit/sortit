@@ -7,6 +7,7 @@ export type MapIssue = {
   id: string;
   raw: string;
   status: "open" | "closed";
+  assignedTo?: string;
   tags: TagRelevance[];
   x: number;
   y: number;

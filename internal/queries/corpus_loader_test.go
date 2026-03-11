@@ -15,28 +15,48 @@ type memoryMapProjectionStore struct {
 }
 
 type stubMapProjectionStore struct {
-	items     []issues.Issue
+	items     []issues.MapProjectionIssue
 	tags      []issues.Tag
 	loadCalls int
 	listCalls int
 	getCalls  int
 }
 
-func (s *stubMapProjectionStore) LoadMapProjectionData(_ context.Context) ([]issues.Issue, []issues.Tag, error) {
+func (s *stubMapProjectionStore) LoadMapProjectionData(_ context.Context) ([]issues.MapProjectionIssue, []issues.Tag, error) {
 	s.loadCalls++
-	return append([]issues.Issue(nil), s.items...), append([]issues.Tag(nil), s.tags...), nil
+	return append([]issues.MapProjectionIssue(nil), s.items...), append([]issues.Tag(nil), s.tags...), nil
 }
 
 func (s *stubMapProjectionStore) List(_ context.Context) ([]issues.Issue, error) {
 	s.listCalls++
-	return append([]issues.Issue(nil), s.items...), nil
+	items := make([]issues.Issue, 0, len(s.items))
+	for _, item := range s.items {
+		items = append(items, issues.Issue{
+			ID:        item.ID,
+			Raw:       item.Raw,
+			Tags:      append([]string(nil), item.Tags...),
+			Status:    item.Status,
+			TagScores: append([]issues.TagRelevance(nil), item.TagScores...),
+			Embedding: append([]float64(nil), item.Embedding...),
+			Links:     append([]issues.IssueLink(nil), item.Links...),
+		})
+	}
+	return items, nil
 }
 
 func (s *stubMapProjectionStore) Get(_ context.Context, id string) (issues.Issue, error) {
 	s.getCalls++
 	for _, item := range s.items {
 		if item.ID == id {
-			return item, nil
+			return issues.Issue{
+				ID:        item.ID,
+				Raw:       item.Raw,
+				Tags:      append([]string(nil), item.Tags...),
+				Status:    item.Status,
+				TagScores: append([]issues.TagRelevance(nil), item.TagScores...),
+				Embedding: append([]float64(nil), item.Embedding...),
+				Links:     append([]issues.IssueLink(nil), item.Links...),
+			}, nil
 		}
 	}
 	return issues.Issue{}, issues.ErrNotFound
@@ -121,7 +141,7 @@ func TestMapProjectionLoaderPersistsAndReloadsProjection(t *testing.T) {
 func TestMapProjectionLoaderUsesBulkProjectionStoreWhenAvailable(t *testing.T) {
 	ctx := context.Background()
 	store := &stubMapProjectionStore{
-		items: issues.FixtureIssues(),
+		items: issues.MapProjectionIssuesFromIssues(issues.FixtureIssues()),
 		tags: []issues.Tag{
 			{Name: "search"},
 		},

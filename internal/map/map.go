@@ -16,12 +16,13 @@ const (
 )
 
 type MapIssue struct {
-	ID     string             `json:"id"`
-	Raw    string             `json:"raw"`
-	Status issues.IssueStatus `json:"status"`
-	Tags   []TagRelevance     `json:"tags"`
-	X      float64            `json:"x"`
-	Y      float64            `json:"y"`
+	ID         string             `json:"id"`
+	Raw        string             `json:"raw"`
+	Status     issues.IssueStatus `json:"status"`
+	AssignedTo string             `json:"assignedTo,omitempty"`
+	Tags       []TagRelevance     `json:"tags"`
+	X          float64            `json:"x"`
+	Y          float64            `json:"y"`
 }
 
 type MapResponse struct {

@@ -63,6 +63,7 @@ import {
   viewportQuery,
 } from "@/features/map/url-state";
 import { tagHref } from "@/lib/tags";
+import { cn } from "@/lib/utils";
 
 const PADDING = 60;
 const EMPTY_ISSUES: MapIssue[] = [];
@@ -1182,6 +1183,16 @@ function MapPageContent() {
         });
       }
 
+      if (issue.assignedTo) {
+        rings.push({
+          radius: radius + 3,
+          fill: "none",
+          stroke: color,
+          strokeWidth: 1.5,
+          strokeOpacity: clusterDimmed ? 0.14 : dimmed ? 0.2 : 0.45,
+        });
+      }
+
       return {
         id: issue.id,
         x: issue.x,
@@ -1348,7 +1359,7 @@ function MapPageContent() {
               </>
             )}
             <span className="text-[11px] text-muted-foreground/50">
-              Scroll to zoom. Drag to pan. Shift-click to build a batch. Shift-drag to lasso. Use Analyze in the sidebar to compare tags and embeddings.
+              Scroll to zoom. Drag to pan. Shift-click to build a batch. Shift-drag to lasso. Solid halos mark assigned issues. Use Analyze in the sidebar to compare tags and embeddings.
             </span>
           </>
         }
@@ -1423,6 +1434,15 @@ function MapPageContent() {
                       >
                         {sidebarIssue.status === "closed" ? "Closed" : "Open"}
                       </span>
+                      {sidebarIssue.assignedTo ? (
+                        <span className="rounded-full bg-violet-100 px-2 py-0.5 text-[10px] font-medium text-violet-700">
+                          {sidebarIssue.assignedTo}
+                        </span>
+                      ) : (
+                        <span className="rounded-full bg-muted px-2 py-0.5 text-[10px] font-medium text-muted-foreground">
+                          Unassigned
+                        </span>
+                      )}
                     </div>
                     <p className="whitespace-pre-wrap text-[13px] leading-relaxed">
                       {sidebarIssue.raw}
@@ -1546,6 +1566,9 @@ function MapPageContent() {
                       <span className="rounded-full bg-emerald-100 px-2 py-0.5 text-[10px] font-medium text-emerald-700">
                         {selectedClusterOpenCount} open
                       </span>
+                      <span className="rounded-full bg-violet-100 px-2 py-0.5 text-[10px] font-medium text-violet-700">
+                        {selectedClusterIssues.filter((issue) => Boolean(issue.assignedTo)).length} assigned
+                      </span>
                     </div>
                     <p className="text-[15px] font-semibold leading-snug">
                       {selectedCluster.label}
@@ -1625,6 +1648,16 @@ function MapPageContent() {
                             {issueLabel(issue.raw, 60)}
                           </p>
                           <div className="mt-1 flex flex-wrap gap-1">
+                            <span
+                              className={cn(
+                                "rounded-full px-1.5 py-0.5 text-[9px] font-medium",
+                                issue.assignedTo
+                                  ? "bg-violet-100 text-violet-700"
+                                  : "bg-muted text-muted-foreground"
+                              )}
+                            >
+                              {issue.assignedTo ?? "Unassigned"}
+                            </span>
                             {issue.tags.slice(0, 3).map(({ tag }) => (
                               <span
                                 key={tag}

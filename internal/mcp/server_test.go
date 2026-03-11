@@ -341,20 +341,22 @@ func newTestHandlers() *handlers {
 	store := issues.NewInMemoryStore(nil)
 	catalog := services.NewCatalogService(nil, analyzer)
 	enricher := services.NewIssueEnricher(analyzer, catalog)
+	runner := &commands.CommandRunner{DB: store}
+	eventBus := issues.NewEventBus()
 
 	return &handlers{
 		createIssue: commands.CreateIssueHandler{
-			Runner:   &commands.CommandRunner{DB: store},
+			Runner:   runner,
 			Enricher: enricher,
-			Events:   issues.NewEventBus(),
+			Events:   eventBus,
 		},
-		refineIssue:      commands.RefineIssueHandler{Store: store, Enricher: enricher},
-		progressIssue:    commands.ProgressIssueHandler{Store: store},
-		closeIssue:       commands.CloseIssueHandler{Store: store},
-		assignIssue:      commands.AssignIssueHandler{Store: store},
-		splitIssue:       commands.SplitIssueHandler{Store: store, Enricher: enricher},
-		combineIssues:    commands.CombineIssuesHandler{Store: store, Enricher: enricher},
-		linkIssues:       commands.LinkIssuesHandler{Store: store},
+		refineIssue:      commands.RefineIssueHandler{Runner: runner, Store: store, Enricher: enricher, Events: eventBus},
+		progressIssue:    commands.ProgressIssueHandler{Runner: runner, Events: eventBus},
+		closeIssue:       commands.CloseIssueHandler{Runner: runner, Events: eventBus},
+		assignIssue:      commands.AssignIssueHandler{Runner: runner, Events: eventBus},
+		splitIssue:       commands.SplitIssueHandler{Runner: runner, Enricher: enricher, Events: eventBus},
+		combineIssues:    commands.CombineIssuesHandler{Runner: runner, Store: store, Enricher: enricher, Events: eventBus},
+		linkIssues:       commands.LinkIssuesHandler{Runner: runner, Events: eventBus},
 		getIssue:         queries.GetIssueHandler{Store: store},
 		searchIssues:     queries.SearchIssuesHandler{Analyzer: analyzer, Catalog: catalog, Store: store},
 		exploreIssue:     queries.ExploreIssueHandler{Store: store, Catalog: catalog},

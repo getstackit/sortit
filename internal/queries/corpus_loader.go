@@ -206,7 +206,11 @@ func (l *MapProjectionLoader) rebuildProfiled(ctx context.Context) (issuemap.Map
 	}, nil
 }
 
-func loadDetailedIssuesAndTags(ctx context.Context, store issues.Store, catalog *services.CatalogService) ([]issues.Issue, []issues.Tag, error) {
+func loadDetailedIssuesAndTags(
+	ctx context.Context,
+	store issues.Store,
+	catalog *services.CatalogService,
+) ([]issues.MapProjectionIssue, []issues.Tag, error) {
 	items, tags, _, err := loadDetailedIssuesAndTagsProfiled(ctx, store, catalog)
 	return items, tags, err
 }
@@ -215,7 +219,7 @@ func loadDetailedIssuesAndTagsProfiled(
 	ctx context.Context,
 	store issues.Store,
 	catalog *services.CatalogService,
-) ([]issues.Issue, []issues.Tag, DetailedIssueLoadProfile, error) {
+) ([]issues.MapProjectionIssue, []issues.Tag, DetailedIssueLoadProfile, error) {
 	startedAt := time.Now()
 	profile := DetailedIssueLoadProfile{}
 
@@ -274,5 +278,5 @@ func loadDetailedIssuesAndTagsProfiled(
 	})
 	profile.TotalDuration = time.Since(startedAt)
 
-	return detailed, tags, profile, nil
+	return issues.MapProjectionIssuesFromIssues(detailed), tags, profile, nil
 }

@@ -6,6 +6,21 @@ import { useIssues } from "@/hooks/use-issues";
 import { useWorkCorrelations } from "@/hooks/use-people";
 import type { IssueRecord } from "@/lib/issues";
 
+vi.mock("next/link", () => ({
+  default: ({
+    children,
+    href,
+    ...props
+  }: {
+    children: ReactNode;
+    href: string;
+  }) => (
+    <a href={href} {...props}>
+      {children}
+    </a>
+  ),
+}));
+
 vi.mock("@/components/app-shell", () => ({
   AppShell: ({
     children,
@@ -31,6 +46,10 @@ vi.mock("@/components/site-header", () => ({
 
 vi.mock("@/components/tag-relevance-bars", () => ({
   TagRelevanceBars: () => <div>Tag bars</div>,
+}));
+
+vi.mock("@/components/issue-card", () => ({
+  IssueCard: ({ issue }: { issue: IssueRecord }) => <div>{issue.raw}</div>,
 }));
 
 vi.mock("@/hooks/use-issues", () => ({
@@ -100,5 +119,13 @@ describe("PeoplePage", () => {
     });
 
     expect(vi.mocked(useIssues)).toHaveBeenLastCalledWith("closed");
+  });
+
+  it("shows the assigned issues for each person", () => {
+    render(<PeoplePage />);
+
+    expect(screen.getByText("Assigned issues")).toBeInTheDocument();
+    expect(screen.getByText("open issue")).toBeInTheDocument();
+    expect(screen.getByText("closed issue")).toBeInTheDocument();
   });
 });

@@ -13,11 +13,11 @@ type ProgressIssue struct {
 }
 
 type ProgressIssueHandler struct {
-	Store  issues.Store
-	Events issues.EventStore
+	Runner *CommandRunner
+	Events issues.EventPublisher
 }
 
-func (h ProgressIssueHandler) Handle(ctx context.Context, input ProgressIssue) (issues.Issue, error) {
+func (h ProgressIssueHandler) Handle(ctx context.Context, input ProgressIssue) (progressed issues.Issue, err error) {
 	id, err := issues.ValidateID(input.ID)
 	if err != nil {
 		return issues.Issue{}, err
@@ -27,7 +27,17 @@ func (h ProgressIssueHandler) Handle(ctx context.Context, input ProgressIssue) (
 		return issues.Issue{}, err
 	}
 
-	current, err := h.Store.Get(ctx, id)
+	uow, finish, err := Begin(ctx, h.Runner)
+	if err != nil {
+		return issues.Issue{}, err
+	}
+
+	var progressEvent issues.Event
+	defer func() {
+		FinishAndPublish(&err, finish, ctx, h.Events, progressEvent)
+	}()
+
+	current, err := uow.Get(ctx, id)
 	if err != nil {
 		return issues.Issue{}, err
 	}
@@ -36,20 +46,19 @@ func (h ProgressIssueHandler) Handle(ctx context.Context, input ProgressIssue) (
 	}
 
 	post := issues.NewDiscussionPost(id, current.Discussion, raw, input.CreatedBy, "progress")
-	if err := h.Store.SaveIssuePost(ctx, post); err != nil {
+	if err := uow.SaveIssuePost(ctx, post); err != nil {
 		return issues.Issue{}, err
 	}
 
-	if h.Events != nil {
-		_ = h.Events.RecordEvent(ctx, issues.Event{
-			ID:        post.ID,
-			Kind:      "progress",
-			IssueID:   id,
-			CreatedBy: post.CreatedBy,
-			CreatedAt: post.CreatedAt,
-			Body:      raw,
-		})
+	progressEvent = issues.Event{
+		ID:        post.ID,
+		Kind:      "progress",
+		IssueID:   id,
+		CreatedBy: post.CreatedBy,
+		CreatedAt: post.CreatedAt,
+		Body:      raw,
 	}
+	_ = uow.RecordEvent(ctx, progressEvent)
 
-	return h.Store.Get(ctx, id)
+	return uow.Get(ctx, id)
 }

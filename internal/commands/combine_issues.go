@@ -17,12 +17,13 @@ type CombineIssues struct {
 }
 
 type CombineIssuesHandler struct {
+	Runner   *CommandRunner
 	Store    issues.Store
 	Enricher *services.IssueEnricher
-	Events   issues.EventStore
+	Events   issues.EventPublisher
 }
 
-func (h CombineIssuesHandler) Handle(ctx context.Context, input CombineIssues) (issues.IssueOperationResult, error) {
+func (h CombineIssuesHandler) Handle(ctx context.Context, input CombineIssues) (result issues.IssueOperationResult, err error) {
 	sourceIDs := issues.SanitizeIssueIDs(input.SourceIDs)
 	if len(sourceIDs) < 2 {
 		return issues.IssueOperationResult{}, fmt.Errorf("at least two source issues are required")
@@ -62,7 +63,17 @@ func (h CombineIssuesHandler) Handle(ctx context.Context, input CombineIssues) (
 	})
 	combinedIssue.CreatedAt = createdAt
 
-	if err := h.Store.SaveIssue(ctx, combinedIssue); err != nil {
+	uow, finish, err := Begin(ctx, h.Runner)
+	if err != nil {
+		return issues.IssueOperationResult{}, err
+	}
+
+	var combineEvent issues.Event
+	defer func() {
+		FinishAndPublish(&err, finish, ctx, h.Events, combineEvent)
+	}()
+
+	if err := uow.SaveIssue(ctx, combinedIssue); err != nil {
 		return issues.IssueOperationResult{}, err
 	}
 
@@ -84,8 +95,13 @@ func (h CombineIssuesHandler) Handle(ctx context.Context, input CombineIssues) (
 	touched := []issues.IssueReference{issues.IssueReferenceFrom(combinedIssue)}
 
 	for index, id := range sourceIDs {
+		source, err := uow.Get(ctx, id)
+		if err != nil {
+			return issues.IssueOperationResult{}, err
+		}
+
 		status := issues.StatusClosed
-		if err := h.Store.UpdateIssueFields(ctx, id, issues.IssueFieldUpdate{
+		if err := uow.UpdateIssueFields(ctx, id, issues.IssueFieldUpdate{
 			Status:   &status,
 			ClosedAt: &createdAt,
 			ClosedBy: &actor,
@@ -93,14 +109,13 @@ func (h CombineIssuesHandler) Handle(ctx context.Context, input CombineIssues) (
 			return issues.IssueOperationResult{}, err
 		}
 
-		source := sourceIssues[index]
 		source.Status = issues.StatusClosed
 		source.ClosedAt = &createdAt
 		source.ClosedBy = actor
 		allIssues[id] = source
 		touched = append(touched, issues.IssueReferenceFrom(source))
 
-		if err := h.Store.SaveLink(ctx, issues.IssueLink{
+		if err := uow.SaveLink(ctx, issues.IssueLink{
 			ID:            fmt.Sprintf("%s-link-%06d", opID, index+1),
 			Type:          issues.IssueLinkTypeMergedInto,
 			SourceIssueID: id,
@@ -119,28 +134,27 @@ func (h CombineIssuesHandler) Handle(ctx context.Context, input CombineIssues) (
 		})
 	}
 
-	if err := h.Store.SaveOperation(ctx, operation); err != nil {
+	if err := uow.SaveOperation(ctx, operation); err != nil {
 		return issues.IssueOperationResult{}, err
 	}
 
-	if h.Events != nil {
-		participants := make([]issues.EventParticipant, 0, len(operation.Participants))
-		for _, p := range operation.Participants {
-			participants = append(participants, issues.EventParticipant{
-				IssueID: p.IssueID,
-				Role:    p.Role,
-			})
-		}
-		_ = h.Events.RecordEvent(ctx, issues.Event{
-			ID:           opID,
-			Kind:         "combine",
-			IssueID:      combinedID,
-			CreatedBy:    actor,
-			CreatedAt:    createdAt,
-			Body:         note,
-			Participants: participants,
+	participants := make([]issues.EventParticipant, 0, len(operation.Participants))
+	for _, p := range operation.Participants {
+		participants = append(participants, issues.EventParticipant{
+			IssueID: p.IssueID,
+			Role:    p.Role,
 		})
 	}
+	combineEvent = issues.Event{
+		ID:           opID,
+		Kind:         "combine",
+		IssueID:      combinedID,
+		CreatedBy:    actor,
+		CreatedAt:    createdAt,
+		Body:         note,
+		Participants: participants,
+	}
+	_ = uow.RecordEvent(ctx, combineEvent)
 
 	return issues.IssueOperationResult{
 		Operation:     issues.HydrateOperation(operation, allIssues),

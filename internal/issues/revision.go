@@ -111,7 +111,7 @@ type observedTagStore interface {
 }
 
 type observedMapProjectionStore interface {
-	LoadMapProjectionData(context.Context) ([]Issue, []Tag, error)
+	LoadMapProjectionData(context.Context) ([]MapProjectionIssue, []Tag, error)
 }
 
 func (s *ObservedStore) ListTags(ctx context.Context) ([]Tag, error) {
@@ -136,7 +136,7 @@ func (s *ObservedStore) UpsertTags(ctx context.Context, tags []Tag) error {
 	return nil
 }
 
-func (s *ObservedStore) LoadMapProjectionData(ctx context.Context) ([]Issue, []Tag, error) {
+func (s *ObservedStore) LoadMapProjectionData(ctx context.Context) ([]MapProjectionIssue, []Tag, error) {
 	projectionStore, ok := s.base.(observedMapProjectionStore)
 	if ok {
 		return projectionStore.LoadMapProjectionData(ctx)
@@ -158,11 +158,11 @@ func (s *ObservedStore) LoadMapProjectionData(ctx context.Context) ([]Issue, []T
 
 	tagStore, ok := s.base.(observedTagStore)
 	if !ok {
-		return detailed, nil, nil
+		return MapProjectionIssuesFromIssues(detailed), nil, nil
 	}
 	tags, err := tagStore.ListTags(ctx)
 	if err != nil {
 		return nil, nil, err
 	}
-	return detailed, tags, nil
+	return MapProjectionIssuesFromIssues(detailed), tags, nil
 }

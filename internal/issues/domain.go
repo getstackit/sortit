@@ -59,3 +59,22 @@ func HydrateOperation(operation IssueOperation, issuesByID map[string]Issue) Iss
 func IssuesByIDFromList(items []Issue) map[string]Issue {
 	return issuesByIDFromList(items)
 }
+
+// MapProjectionIssuesFromIssues converts full issues into the minimal payload
+// needed to rebuild the map projection.
+func MapProjectionIssuesFromIssues(items []Issue) []MapProjectionIssue {
+	projectionItems := make([]MapProjectionIssue, len(items))
+	for i, item := range items {
+		projectionItems[i] = MapProjectionIssue{
+			ID:         item.ID,
+			Raw:        item.Raw,
+			Tags:       append([]string(nil), item.Tags...),
+			Status:     normalizeIssueStatus(item.Status),
+			AssignedTo: item.AssignedTo,
+			TagScores:  copyTagScores(item.TagScores),
+			Embedding:  copyEmbedding(item.Embedding),
+			Links:      cloneIssueLinks(item.Links),
+		}
+	}
+	return projectionItems
+}

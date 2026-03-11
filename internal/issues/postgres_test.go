@@ -612,7 +612,7 @@ func TestPostgresStoreLoadMapProjectionDataReturnsLinkedIssuesAndTags(t *testing
 		t.Fatalf("expected 2 projection tags, got %d", len(tags))
 	}
 
-	var linked Issue
+	var linked MapProjectionIssue
 	for _, item := range items {
 		if item.ID == child.ID {
 			linked = item
@@ -627,12 +627,6 @@ func TestPostgresStoreLoadMapProjectionDataReturnsLinkedIssuesAndTags(t *testing
 	}
 	if linked.Links[0].TargetIssueID != parent.ID || linked.Links[0].Type != IssueLinkTypeDerivedFrom {
 		t.Fatalf("unexpected projection link: %#v", linked.Links[0])
-	}
-	if len(linked.Discussion) != 0 {
-		t.Fatalf("expected projection issue discussion to be omitted, got %#v", linked.Discussion)
-	}
-	if len(linked.Operations) != 0 {
-		t.Fatalf("expected projection issue operations to be omitted, got %#v", linked.Operations)
 	}
 }
 

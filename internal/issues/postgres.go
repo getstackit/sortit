@@ -177,19 +177,58 @@ func (s *PostgresStore) Get(ctx context.Context, id string) (Issue, error) {
 	return s.getIssueWithDiscussion(ctx, s.queries, id)
 }
 
-func (s *PostgresStore) LoadMapProjectionData(ctx context.Context) ([]Issue, []Tag, error) {
-	rows, err := s.queries.ListIssues(ctx)
+func (s *PostgresStore) LoadMapProjectionData(ctx context.Context) ([]MapProjectionIssue, []Tag, error) {
+	rows, err := s.db.QueryContext(
+		ctx,
+		`SELECT id, raw, tags_json, status, tag_scores_json, embedding_json, assigned_to
+		 FROM issues
+		 ORDER BY created_at_unix_nano DESC, id ASC`,
+	)
 	if err != nil {
 		return nil, nil, fmt.Errorf("list issues for map projection: %w", err)
 	}
+	defer rows.Close()
 
-	items := make([]Issue, 0, len(rows))
-	for _, row := range rows {
-		issue, err := issueFromQuery(issueModelFromListIssuesRow(row))
-		if err != nil {
-			return nil, nil, err
+	items := make([]MapProjectionIssue, 0)
+	for rows.Next() {
+		var (
+			id            string
+			raw           string
+			tagsJSON      json.RawMessage
+			status        string
+			tagScoresJSON json.RawMessage
+			embeddingJSON json.RawMessage
+			assignedTo    string
+		)
+		if err := rows.Scan(&id, &raw, &tagsJSON, &status, &tagScoresJSON, &embeddingJSON, &assignedTo); err != nil {
+			return nil, nil, fmt.Errorf("scan issue for map projection: %w", err)
 		}
-		items = append(items, issue)
+
+		tags, err := unmarshalJSONB[[]string](tagsJSON)
+		if err != nil {
+			return nil, nil, fmt.Errorf("decode tags for %q: %w", id, err)
+		}
+		tagScores, err := unmarshalJSONB[[]TagRelevance](tagScoresJSON)
+		if err != nil {
+			return nil, nil, fmt.Errorf("decode tag scores for %q: %w", id, err)
+		}
+		embedding, err := unmarshalJSONB[[]float64](embeddingJSON)
+		if err != nil {
+			return nil, nil, fmt.Errorf("decode embedding for %q: %w", id, err)
+		}
+
+		items = append(items, MapProjectionIssue{
+			ID:         id,
+			Raw:        raw,
+			Tags:       tags,
+			Status:     normalizeIssueStatus(IssueStatus(status)),
+			AssignedTo: strings.TrimSpace(assignedTo),
+			TagScores:  tagScores,
+			Embedding:  embedding,
+		})
+	}
+	if err := rows.Err(); err != nil {
+		return nil, nil, fmt.Errorf("iterate issues for map projection: %w", err)
 	}
 
 	linkRows, err := s.db.QueryContext(
@@ -231,8 +270,6 @@ func (s *PostgresStore) LoadMapProjectionData(ctx context.Context) ([]Issue, []T
 	}
 
 	for i := range items {
-		items[i].Discussion = nil
-		items[i].Operations = nil
 		items[i].Links = cloneIssueLinks(linksByIssue[items[i].ID])
 	}
 
@@ -241,7 +278,7 @@ func (s *PostgresStore) LoadMapProjectionData(ctx context.Context) ([]Issue, []T
 		return nil, nil, err
 	}
 
-	return cloneIssues(items), tags, nil
+	return cloneMapProjectionIssues(items), tags, nil
 }
 
 func (s *PostgresStore) GetMapProjection(ctx context.Context, revision uint64) ([]byte, error) {

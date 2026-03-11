@@ -18,11 +18,11 @@ type LinkIssues struct {
 }
 
 type LinkIssuesHandler struct {
-	Store  issues.Store
-	Events issues.EventStore
+	Runner *CommandRunner
+	Events issues.EventPublisher
 }
 
-func (h LinkIssuesHandler) Handle(ctx context.Context, input LinkIssues) (issues.IssueOperationResult, error) {
+func (h LinkIssuesHandler) Handle(ctx context.Context, input LinkIssues) (result issues.IssueOperationResult, err error) {
 	sourceID := strings.TrimSpace(input.SourceID)
 	targetID := strings.TrimSpace(input.TargetID)
 	if sourceID == "" || targetID == "" {
@@ -33,11 +33,21 @@ func (h LinkIssuesHandler) Handle(ctx context.Context, input LinkIssues) (issues
 		return issues.IssueOperationResult{}, fmt.Errorf("link type is required")
 	}
 
-	source, err := h.Store.Get(ctx, sourceID)
+	uow, finish, err := Begin(ctx, h.Runner)
 	if err != nil {
 		return issues.IssueOperationResult{}, err
 	}
-	target, err := h.Store.Get(ctx, targetID)
+
+	var linkEvent issues.Event
+	defer func() {
+		FinishAndPublish(&err, finish, ctx, h.Events, linkEvent)
+	}()
+
+	source, err := uow.Get(ctx, sourceID)
+	if err != nil {
+		return issues.IssueOperationResult{}, err
+	}
+	target, err := uow.Get(ctx, targetID)
 	if err != nil {
 		return issues.IssueOperationResult{}, err
 	}
@@ -60,11 +70,11 @@ func (h LinkIssuesHandler) Handle(ctx context.Context, input LinkIssues) (issues
 		},
 	}
 
-	if err := h.Store.SaveOperation(ctx, operation); err != nil {
+	if err := uow.SaveOperation(ctx, operation); err != nil {
 		return issues.IssueOperationResult{}, err
 	}
 
-	if err := h.Store.SaveLink(ctx, issues.IssueLink{
+	if err := uow.SaveLink(ctx, issues.IssueLink{
 		ID:            fmt.Sprintf("%s-link-000001", opID),
 		Type:          linkType,
 		SourceIssueID: sourceID,
@@ -77,20 +87,19 @@ func (h LinkIssuesHandler) Handle(ctx context.Context, input LinkIssues) (issues
 		return issues.IssueOperationResult{}, err
 	}
 
-	if h.Events != nil {
-		_ = h.Events.RecordEvent(ctx, issues.Event{
-			ID:        opID,
-			Kind:      "link",
-			IssueID:   sourceID,
-			CreatedBy: actor,
-			CreatedAt: createdAt,
-			Body:      note,
-			Participants: []issues.EventParticipant{
-				{IssueID: sourceID, Role: "source"},
-				{IssueID: targetID, Role: "target"},
-			},
-		})
+	linkEvent = issues.Event{
+		ID:        opID,
+		Kind:      "link",
+		IssueID:   sourceID,
+		CreatedBy: actor,
+		CreatedAt: createdAt,
+		Body:      note,
+		Participants: []issues.EventParticipant{
+			{IssueID: sourceID, Role: "source"},
+			{IssueID: targetID, Role: "target"},
+		},
 	}
+	_ = uow.RecordEvent(ctx, linkEvent)
 
 	// Hydrate operation with current issue references
 	allIssues := map[string]issues.Issue{

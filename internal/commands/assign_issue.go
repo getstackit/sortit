@@ -3,7 +3,6 @@ package commands
 import (
 	"context"
 	"strings"
-	"time"
 
 	"splat/internal/issues"
 )
@@ -14,41 +13,49 @@ type AssignIssue struct {
 }
 
 type AssignIssueHandler struct {
-	Store  issues.Store
-	Events issues.EventStore
+	Runner *CommandRunner
+	Events issues.EventPublisher
 }
 
-func (h AssignIssueHandler) Handle(ctx context.Context, input AssignIssue) (issues.Issue, error) {
+func (h AssignIssueHandler) Handle(ctx context.Context, input AssignIssue) (assigned issues.Issue, err error) {
 	id := strings.TrimSpace(input.ID)
 	assignee := strings.TrimSpace(input.AssignedTo)
 
-	issue, err := h.Store.Get(ctx, id)
+	uow, finish, err := Begin(ctx, h.Runner)
 	if err != nil {
 		return issues.Issue{}, err
 	}
 
-	if err := h.Store.UpdateIssueFields(ctx, id, issues.IssueFieldUpdate{
+	var assignedEvent issues.Event
+	defer func() {
+		FinishAndPublish(&err, finish, ctx, h.Events, assignedEvent)
+	}()
+
+	issue, err := uow.Get(ctx, id)
+	if err != nil {
+		return issues.Issue{}, err
+	}
+
+	if err := uow.UpdateIssueFields(ctx, id, issues.IssueFieldUpdate{
 		AssignedTo: &assignee,
 	}); err != nil {
 		return issues.Issue{}, err
 	}
 
-	assignedAt := time.Now().UTC()
 	post := issues.NewDiscussionPost(id, issue.Discussion, issues.AssignIssuePost(assignee), "", "assigned")
-	if err := h.Store.SaveIssuePost(ctx, post); err != nil {
+	if err := uow.SaveIssuePost(ctx, post); err != nil {
 		return issues.Issue{}, err
 	}
 
-	if h.Events != nil {
-		_ = h.Events.RecordEvent(ctx, issues.Event{
-			ID:        post.ID,
-			Kind:      "assigned",
-			IssueID:   id,
-			CreatedBy: post.CreatedBy,
-			CreatedAt: assignedAt,
-			Body:      issues.AssignIssuePost(assignee),
-		})
+	assignedEvent = issues.Event{
+		ID:        post.ID,
+		Kind:      "assigned",
+		IssueID:   id,
+		CreatedBy: post.CreatedBy,
+		CreatedAt: post.CreatedAt,
+		Body:      issues.AssignIssuePost(assignee),
 	}
+	_ = uow.RecordEvent(ctx, assignedEvent)
 
-	return h.Store.Get(ctx, id)
+	return uow.Get(ctx, id)
 }

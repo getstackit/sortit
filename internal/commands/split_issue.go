@@ -24,23 +24,18 @@ type SplitIssue struct {
 }
 
 type SplitIssueHandler struct {
-	Store    issues.Store
+	Runner   *CommandRunner
 	Enricher *services.IssueEnricher
-	Events   issues.EventStore
+	Events   issues.EventPublisher
 }
 
-func (h SplitIssueHandler) Handle(ctx context.Context, input SplitIssue) (issues.IssueOperationResult, error) {
+func (h SplitIssueHandler) Handle(ctx context.Context, input SplitIssue) (result issues.IssueOperationResult, err error) {
 	sourceID := strings.TrimSpace(input.SourceID)
 	if sourceID == "" {
 		return issues.IssueOperationResult{}, issues.ErrNotFound
 	}
 	if len(input.Children) == 0 {
 		return issues.IssueOperationResult{}, fmt.Errorf("at least one child issue is required")
-	}
-
-	source, err := h.Store.Get(ctx, sourceID)
-	if err != nil {
-		return issues.IssueOperationResult{}, err
 	}
 
 	actor := issues.DefaultActor(input.CreatedBy)
@@ -61,9 +56,11 @@ func (h SplitIssueHandler) Handle(ctx context.Context, input SplitIssue) (issues
 		}},
 	}
 
-	createdIssues := make([]issues.Issue, 0, len(input.Children))
-	touched := []issues.IssueReference{issues.IssueReferenceFrom(source)}
-	allIssues := map[string]issues.Issue{sourceID: source}
+	type childIssuePlan struct {
+		issues.Issue
+		index int
+	}
+	childPlans := make([]childIssuePlan, 0, len(input.Children))
 
 	for index, child := range input.Children {
 		enriched, err := h.Enricher.AnalyzeCreateInput(ctx, issues.CreateInput{
@@ -85,20 +82,52 @@ func (h SplitIssueHandler) Handle(ctx context.Context, input SplitIssue) (issues
 		childIssue := issues.BuildNewIssue(childID, enriched)
 		childIssue.CreatedAt = createdAt
 
-		if err := h.Store.SaveIssue(ctx, childIssue); err != nil {
+		operation.Participants = append(operation.Participants, issues.IssueOperationParticipant{
+			IssueID: childID,
+			Role:    fmt.Sprintf("child:%d", index+1),
+		})
+		childPlans = append(childPlans, childIssuePlan{
+			Issue: childIssue,
+			index: index,
+		})
+	}
+
+	uow, finish, err := Begin(ctx, h.Runner)
+	if err != nil {
+		return issues.IssueOperationResult{}, err
+	}
+
+	var splitEvent issues.Event
+	defer func() {
+		FinishAndPublish(&err, finish, ctx, h.Events, splitEvent)
+	}()
+
+	source, err := uow.Get(ctx, sourceID)
+	if err != nil {
+		return issues.IssueOperationResult{}, err
+	}
+
+	createdIssues := make([]issues.Issue, 0, len(childPlans))
+	touched := []issues.IssueReference{issues.IssueReferenceFrom(source)}
+	allIssues := map[string]issues.Issue{sourceID: source}
+
+	for _, childPlan := range childPlans {
+		childIssue := childPlan.Issue
+
+		if err := uow.SaveIssue(ctx, childIssue); err != nil {
 			return issues.IssueOperationResult{}, err
 		}
 
 		createdIssues = append(createdIssues, childIssue)
 		touched = append(touched, issues.IssueReferenceFrom(childIssue))
-		allIssues[childID] = childIssue
+		allIssues[childIssue.ID] = childIssue
 
-		// Create parent/child links
-		if err := h.Store.SaveLink(ctx, issues.IssueLink{
-			ID:            fmt.Sprintf("%s-link-%06d", opID, index*2+1),
+		// Create parent/child links.
+		if err := uow.SaveLink(ctx, issues.IssueLink{
+			ID:            fmt.Sprintf("%s-link-%06d", opID, childPlan.index*2+1),
 			Type:          issues.IssueLinkTypeParentOf,
 			SourceIssueID: sourceID,
-			TargetIssueID: childID,
+			TargetIssueID: childIssue.ID,
 			CreatedBy:     actor,
 			CreatedAt:     createdAt,
 			Note:          note,
@@ -106,10 +135,10 @@ func (h SplitIssueHandler) Handle(ctx context.Context, input SplitIssue) (issues
 		}); err != nil {
 			return issues.IssueOperationResult{}, err
 		}
-		if err := h.Store.SaveLink(ctx, issues.IssueLink{
-			ID:            fmt.Sprintf("%s-link-%06d", opID, index*2+2),
+		if err := uow.SaveLink(ctx, issues.IssueLink{
+			ID:            fmt.Sprintf("%s-link-%06d", opID, childPlan.index*2+2),
 			Type:          issues.IssueLinkTypeChildOf,
-			SourceIssueID: childID,
+			SourceIssueID: childIssue.ID,
 			TargetIssueID: sourceID,
 			CreatedBy:     actor,
 			CreatedAt:     createdAt,
@@ -118,16 +147,11 @@ func (h SplitIssueHandler) Handle(ctx context.Context, input SplitIssue) (issues
 		}); err != nil {
 			return issues.IssueOperationResult{}, err
 		}
-
-		operation.Participants = append(operation.Participants, issues.IssueOperationParticipant{
-			IssueID: childID,
-			Role:    fmt.Sprintf("child:%d", index+1),
-		})
 	}
 
 	if input.CloseSource {
 		status := issues.StatusClosed
-		if err := h.Store.UpdateIssueFields(ctx, sourceID, issues.IssueFieldUpdate{
+		if err := uow.UpdateIssueFields(ctx, sourceID, issues.IssueFieldUpdate{
 			Status:   &status,
 			ClosedAt: &createdAt,
 			ClosedBy: &actor,
@@ -141,28 +165,27 @@ func (h SplitIssueHandler) Handle(ctx context.Context, input SplitIssue) (issues
 		allIssues[sourceID] = source
 	}
 
-	if err := h.Store.SaveOperation(ctx, operation); err != nil {
+	if err := uow.SaveOperation(ctx, operation); err != nil {
 		return issues.IssueOperationResult{}, err
 	}
 
-	if h.Events != nil {
-		participants := make([]issues.EventParticipant, 0, len(operation.Participants))
-		for _, p := range operation.Participants {
-			participants = append(participants, issues.EventParticipant{
-				IssueID: p.IssueID,
-				Role:    p.Role,
-			})
-		}
-		_ = h.Events.RecordEvent(ctx, issues.Event{
-			ID:           opID,
-			Kind:         "split",
-			IssueID:      sourceID,
-			CreatedBy:    actor,
-			CreatedAt:    createdAt,
-			Body:         note,
-			Participants: participants,
+	participants := make([]issues.EventParticipant, 0, len(operation.Participants))
+	for _, p := range operation.Participants {
+		participants = append(participants, issues.EventParticipant{
+			IssueID: p.IssueID,
+			Role:    p.Role,
 		})
 	}
+	splitEvent = issues.Event{
+		ID:           opID,
+		Kind:         "split",
+		IssueID:      sourceID,
+		CreatedBy:    actor,
+		CreatedAt:    createdAt,
+		Body:         note,
+		Participants: participants,
+	}
+	_ = uow.RecordEvent(ctx, splitEvent)
 
 	return issues.IssueOperationResult{
 		Operation:     issues.HydrateOperation(operation, allIssues),
