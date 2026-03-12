@@ -117,6 +117,35 @@ func subsetProjectionByStatus(projection issuemap.MapProjection, filter IssueSta
 	return issuemap.SubsetMapProjection(projection, ids)
 }
 
+func overlayProjectionIssueMetadata(
+	projection issuemap.MapProjection,
+	items []issues.Issue,
+) issuemap.MapProjection {
+	if len(projection.MapIssues) == 0 || len(items) == 0 {
+		return projection
+	}
+
+	itemsByID := make(map[string]issues.Issue, len(items))
+	for _, item := range items {
+		itemsByID[item.ID] = item
+	}
+
+	mapIssues := append([]issuemap.MapIssue(nil), projection.MapIssues...)
+	for i, mapIssue := range mapIssues {
+		item, ok := itemsByID[mapIssue.ID]
+		if !ok {
+			continue
+		}
+
+		mapIssues[i].Raw = item.Raw
+		mapIssues[i].Status = item.Status
+		mapIssues[i].AssignedTo = item.AssignedTo
+	}
+
+	projection.MapIssues = mapIssues
+	return projection
+}
+
 func paginateIssues(items []issues.Issue, limit, offset int) []issues.Issue {
 	if offset > 0 {
 		if offset >= len(items) {

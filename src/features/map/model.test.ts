@@ -1,4 +1,10 @@
-import { analyzeBatch, edgeRenderLimit, uniqueBlobColors } from "@/features/map/model";
+import {
+  analyzeBatch,
+  edgeRenderLimit,
+  issueLoading,
+  issueRadius,
+  uniqueBlobColors,
+} from "@/features/map/model";
 import type { MapIssue } from "@/features/map/types";
 
 const batchIssues: MapIssue[] = [
@@ -61,5 +67,12 @@ describe("map model", () => {
     const colors = uniqueBlobColors(["cluster-a", "cluster-b", "cluster-c"]);
 
     expect(new Set(Object.values(colors)).size).toBe(3);
+  });
+
+  it("can size an issue by a selected tag loading", () => {
+    expect(issueLoading(batchIssues[1].tags, "feature")).toBe(0);
+    expect(issueLoading(batchIssues[1].tags, "export")).toBe(0.75);
+    expect(issueRadius(batchIssues[1].tags, "export")).toBe(16.5);
+    expect(issueRadius(batchIssues[1].tags, "feature")).toBe(6);
   });
 });

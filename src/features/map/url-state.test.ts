@@ -11,6 +11,7 @@ describe("map url state", () => {
       analyze: "1",
       edgeThreshold: "0.65",
       status: "all",
+      sizeTag: "bug",
       issue: "ignored-when-batch-present",
     });
 
@@ -26,6 +27,7 @@ describe("map url state", () => {
       showBatchAnalysis: true,
       edgeThreshold: 0.65,
       showClosed: true,
+      bubbleSizeTag: "bug",
     });
   });
 

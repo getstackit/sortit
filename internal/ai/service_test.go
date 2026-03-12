@@ -39,3 +39,31 @@ func TestNormalizeScoresCanonicalizesAndDeduplicates(t *testing.T) {
 		t.Fatalf("unexpected suggested tag description %q", normalized[1].Description)
 	}
 }
+
+func TestNormalizeScoresRoundsRelevanceToTwoDecimals(t *testing.T) {
+	scores := []TagScore{
+		{Tag: "billing", Relevance: 0.666},
+		{Tag: "crash", Relevance: 1.234},
+		{Tag: "ux", Relevance: -0.014},
+	}
+
+	normalized := normalizeScores(scores, nil)
+	if len(normalized) != 3 {
+		t.Fatalf("expected 3 normalized tags, got %d", len(normalized))
+	}
+
+	values := map[string]float64{}
+	for _, score := range normalized {
+		values[score.Tag] = score.Relevance
+	}
+
+	if values["billing"] != 0.67 {
+		t.Fatalf("expected billing relevance 0.67, got %v", values["billing"])
+	}
+	if values["crash"] != 1 {
+		t.Fatalf("expected crash relevance 1, got %v", values["crash"])
+	}
+	if values["ux"] != 0 {
+		t.Fatalf("expected ux relevance 0, got %v", values["ux"])
+	}
+}

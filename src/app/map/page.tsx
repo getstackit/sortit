@@ -64,7 +64,6 @@ import {
   viewportQuery,
 } from "@/features/map/url-state";
 import { tagHref } from "@/lib/tags";
-import { cn } from "@/lib/utils";
 
 const PADDING = 60;
 const EMPTY_ISSUES: MapIssue[] = [];
@@ -104,10 +103,7 @@ function MapPageContent() {
   const pathname = usePathname();
   const searchParams = useSearchParams();
   const searchParamsString = searchParams.toString();
-  const urlState = useMemo(
-    () => parseMapURLState(searchParams),
-    [searchParamsString]
-  );
+  const urlState = useMemo(() => parseMapURLState(searchParams), [searchParams]);
   const baseQueryParamsRef = useRef(new URLSearchParams(searchParamsString));
   const [mapData, setMapData] = useState<MapData | null>(null);
   const [loading, setLoading] = useState(true);
@@ -116,6 +112,9 @@ function MapPageContent() {
   const deferredViewport = useDeferredValue(viewport);
   const [edgeThreshold, setEdgeThreshold] = useState(urlState.edgeThreshold);
   const [showClosed, setShowClosed] = useState(urlState.showClosed);
+  const [bubbleSizeTag, setBubbleSizeTag] = useState<string | null>(
+    urlState.bubbleSizeTag
+  );
   const [loadedEdgeKey, setLoadedEdgeKey] = useState("");
   const [hoveredId, setHoveredId] = useState<string | null>(null);
   const [selectedIdState, setSelectedId] = useState<string | null>(urlState.selectedId);
@@ -164,30 +163,37 @@ function MapPageContent() {
   useEffect(() => {
     baseQueryParamsRef.current = new URLSearchParams(searchParamsString);
 
-    setViewport((current) =>
-      viewportsEqual(current, urlState.viewport) ? current : urlState.viewport
-    );
-    setEdgeThreshold((current) =>
-      current === urlState.edgeThreshold ? current : urlState.edgeThreshold
-    );
-    setShowClosed((current) =>
-      current === urlState.showClosed ? current : urlState.showClosed
-    );
-    setSelectedId((current) =>
-      current === urlState.selectedId ? current : urlState.selectedId
-    );
-    setSelectedBatch((current) =>
-      issueIDSetsEqual(current, urlState.batchIds)
-        ? current
-        : new Set(urlState.batchIds)
-    );
-    setShowBatchAnalysis((current) =>
-      current === urlState.showBatchAnalysis ? current : urlState.showBatchAnalysis
-    );
+    startTransition(() => {
+      setViewport((current) =>
+        viewportsEqual(current, urlState.viewport) ? current : urlState.viewport
+      );
+      setEdgeThreshold((current) =>
+        current === urlState.edgeThreshold ? current : urlState.edgeThreshold
+      );
+      setShowClosed((current) =>
+        current === urlState.showClosed ? current : urlState.showClosed
+      );
+      setBubbleSizeTag((current) =>
+        current === urlState.bubbleSizeTag ? current : urlState.bubbleSizeTag
+      );
+      setSelectedId((current) =>
+        current === urlState.selectedId ? current : urlState.selectedId
+      );
+      setSelectedBatch((current) =>
+        issueIDSetsEqual(current, urlState.batchIds)
+          ? current
+          : new Set(urlState.batchIds)
+      );
+      setShowBatchAnalysis((current) =>
+        current === urlState.showBatchAnalysis ? current : urlState.showBatchAnalysis
+      );
+    });
   }, [
+    searchParams,
     searchParamsString,
     urlState.batchIds,
     urlState.edgeThreshold,
+    urlState.bubbleSizeTag,
     urlState.selectedId,
     urlState.showBatchAnalysis,
     urlState.showClosed,
@@ -367,6 +373,7 @@ function MapPageContent() {
     params.delete("analyze");
     params.delete("edgeThreshold");
     params.delete("status");
+    params.delete("sizeTag");
 
     const viewportParams = new URLSearchParams(viewportQuery(viewport));
     for (const [key, value] of viewportParams.entries()) {
@@ -375,6 +382,9 @@ function MapPageContent() {
     params.set("edgeThreshold", edgeThreshold.toFixed(2));
     if (showClosed) {
       params.set("status", "all");
+    }
+    if (bubbleSizeTag) {
+      params.set("sizeTag", bubbleSizeTag);
     }
 
     if (selectedBatch.size > 0) {
@@ -395,6 +405,7 @@ function MapPageContent() {
     }
   }, [
     edgeThreshold,
+    bubbleSizeTag,
     pathname,
     selectedBatch,
     selectedBatchKey,
@@ -539,6 +550,43 @@ function MapPageContent() {
     [issues, selectedBatch]
   );
   const batchAnalysis = useMemo(() => analyzeBatch(batchIssues), [batchIssues]);
+  const bubbleSizeOptions = useMemo(() => {
+    const aggregate = new Map<string, { total: number; count: number }>();
+
+    for (const issue of issues) {
+      for (const { tag, relevance } of issue.tags) {
+        const current = aggregate.get(tag) ?? { total: 0, count: 0 };
+        current.total += relevance;
+        current.count += 1;
+        aggregate.set(tag, current);
+      }
+    }
+
+    const options = Array.from(aggregate.entries())
+      .map(([tag, value]) => ({
+        tag,
+        average: value.total / value.count,
+        count: value.count,
+      }))
+      .sort((left, right) => {
+        if (right.count !== left.count) {
+          return right.count - left.count;
+        }
+        if (right.average !== left.average) {
+          return right.average - left.average;
+        }
+        return left.tag.localeCompare(right.tag);
+      });
+
+    if (
+      bubbleSizeTag &&
+      !options.some((option) => option.tag === bubbleSizeTag)
+    ) {
+      options.unshift({ tag: bubbleSizeTag, average: 0, count: 0 });
+    }
+
+    return options;
+  }, [bubbleSizeTag, issues]);
 
   useEffect(() => {
     if (!showBatchAnalysis || batchIssues.length < 2) {
@@ -1146,7 +1194,7 @@ function MapPageContent() {
   const staticNodeData = useMemo(() => {
     return visibleIssues.map((issue) => {
       const color = TAG_COLORS[dominantTag(issue.tags)] ?? "#94a3b8";
-      const radius = issueRadius(issue.tags);
+      const radius = issueRadius(issue.tags, bubbleSizeTag);
       const isActive = issue.id === hoveredId || issue.id === selectedId;
       const isNeighbor = neighborIds.has(issue.id);
       const highlighted = isHighlighted(issue.id);
@@ -1224,6 +1272,7 @@ function MapPageContent() {
     selectedBatch,
     selectedId,
     isHighlighted,
+    bubbleSizeTag,
     visibleIssues,
   ]);
 
@@ -1328,6 +1377,25 @@ function MapPageContent() {
                 className="h-1.5 w-28 accent-foreground"
                 aria-label="Similarity edge threshold"
               />
+            </label>
+            <label className="flex items-center gap-2 text-[11px] text-muted-foreground">
+              <span>Bubble size</span>
+              <select
+                value={bubbleSizeTag ?? ""}
+                onChange={(event) => {
+                  const nextValue = event.target.value.trim();
+                  setBubbleSizeTag(nextValue === "" ? null : nextValue);
+                }}
+                className="h-8 rounded-md border border-border/60 bg-background px-2 text-[11px] text-foreground"
+                aria-label="Bubble size tag"
+              >
+                <option value="">Strongest tag</option>
+                {bubbleSizeOptions.map((option) => (
+                  <option key={option.tag} value={option.tag}>
+                    {option.tag}
+                  </option>
+                ))}
+              </select>
             </label>
             <button
               type="button"

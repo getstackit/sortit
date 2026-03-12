@@ -499,12 +499,14 @@ describe("MapPage", () => {
 
     const showClosedToggle = await screen.findByLabelText("Show closed issues");
     const edgeThresholdSlider = screen.getByLabelText("Similarity edge threshold");
+    const bubbleSizeSelect = screen.getByLabelText("Bubble size tag");
 
     expect(showClosedToggle).not.toBeChecked();
     expect(edgeThresholdSlider).toHaveValue("0.4");
+    expect(bubbleSizeSelect).toHaveValue("");
 
     mockSearchParams = new URLSearchParams(
-      "status=all&edgeThreshold=0.75&xMin=0.1&xMax=0.6&yMin=0.2&yMax=0.7"
+      "status=all&edgeThreshold=0.75&sizeTag=feature&xMin=0.1&xMax=0.6&yMin=0.2&yMax=0.7"
     );
     rerender(<MapPage />);
 
@@ -513,5 +515,48 @@ describe("MapPage", () => {
     });
 
     expect(screen.getByLabelText("Similarity edge threshold")).toHaveValue("0.75");
+    expect(screen.getByLabelText("Bubble size tag")).toHaveValue("feature");
+  });
+
+  it("sorts bubble size tags by popularity", async () => {
+    render(<MapPage />);
+
+    const bubbleSizeSelect = await screen.findByLabelText("Bubble size tag");
+    const optionLabels = Array.from(
+      bubbleSizeSelect.querySelectorAll("option")
+    ).map((option) => option.textContent);
+
+    expect(optionLabels).toEqual(["Strongest tag", "ui", "bug", "feature"]);
+  });
+
+  it("sizes issue nodes by the selected tag loading", async () => {
+    const user = userEvent.setup();
+    const { container } = render(<MapPage />);
+
+    await waitFor(() => {
+      expect(container.querySelector("svg")).toBeInTheDocument();
+    });
+
+    const issueOneCircle = container.querySelector(
+      "[data-issue='issue-001'] circle:last-of-type"
+    );
+    const issueTwoCircle = container.querySelector(
+      "[data-issue='issue-002'] circle:last-of-type"
+    );
+
+    expect(issueOneCircle).toHaveAttribute("r", "18.6");
+    expect(issueTwoCircle).toHaveAttribute("r", "17.200000000000003");
+
+    await user.selectOptions(screen.getByLabelText("Bubble size tag"), "feature");
+
+    await waitFor(() => {
+      expect(
+        container.querySelector("[data-issue='issue-001'] circle:last-of-type")
+      ).toHaveAttribute("r", "6");
+    });
+
+    expect(
+      container.querySelector("[data-issue='issue-002'] circle:last-of-type")
+    ).toHaveAttribute("r", "17.200000000000003");
   });
 });

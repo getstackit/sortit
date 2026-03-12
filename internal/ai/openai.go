@@ -293,8 +293,11 @@ func buildOpenAITaggingPrompt(text string, tags []Tag) string {
 	var builder strings.Builder
 	builder.WriteString("Classify the issue against the supplied taxonomy.\n")
 	builder.WriteString("Consider issue type, failure mode, affected surface, platform, and user workflow.\n")
-	builder.WriteString("Reuse supplied tags when they fit. Suggest at most 2 new tags only if an important concept is missing from the taxonomy.\n")
-	builder.WriteString("When suggesting a new tag, prefer a concrete application surface, subsystem, or feature area over broad buckets like backend, frontend, or ui.\n\n")
+	builder.WriteString("The taxonomy spans multiple axes such as kind, failure mode, surface, platform, experience, and implementation layer. Use the best matching tags across those axes when the issue supports them.\n")
+	builder.WriteString("Reuse supplied tags when they fit.\n")
+	builder.WriteString("Only suggest a new tag if an important residual concept remains after choosing the best existing tags.\n")
+	builder.WriteString("Prefer a concrete reusable surface, subsystem, workflow, or artifact tag over broad buckets like backend, frontend, or ui.\n")
+	builder.WriteString("Do not suggest a tag that is already implied by a combination of existing tags.\n\n")
 	builder.WriteString("Issue text:\n")
 	builder.WriteString(text)
 	builder.WriteString("\n\nSupplied taxonomy (reuse these exact labels when applicable):\n")
@@ -315,14 +318,22 @@ func buildOpenAITaggingSystemPrompt() string {
 		"tags must be an array of objects sorted by descending relevance. " +
 		"Each object must include tag and relevance. " +
 		"Suggested tags may also include suggested=true and description. " +
-		"Relevance must be between 0 and 1. Omit tags below 0.05 relevance. " +
-		"Prefer supplied taxonomy tags whenever they reasonably fit. " +
-		"Prefer specific application surface tags over broad buckets like backend, frontend, or ui when a sharper reusable label exists. " +
-		"Use multiple existing tags before inventing a new one. " +
-		"Suggest a new tag only when a materially important concept cannot be expressed well by the supplied taxonomy. " +
-		"Do not suggest synonyms, spelling variants, or narrower/broader restatements of existing tags. " +
-		"Suggested tags must be short, lowercase, reusable across related issues, and may be application-specific when they name a concrete subsystem or surface. " +
-		"Return at most 2 suggested tags, and every suggested tag must include a short description."
+		"Relevance must be between 0 and 1 inclusive, using up to 2 decimal places. " +
+		"Omit tags below 0.08 relevance. " +
+		"Use supplied taxonomy tags by default. " +
+		"The taxonomy may include multiple axes such as issue kind, failure mode, affected surface, platform, experience, and implementation layer. " +
+		"Use the best supported tags across those axes instead of inventing cross-product tags. " +
+		"Treat suggested tags as rare taxonomy expansions, not labels for one issue. " +
+		"Default to zero suggested tags. " +
+		"First assign the best existing tags. " +
+		"Then identify whether one materially important residual concept is not already expressed by any combination of 1 to 3 existing tags. " +
+		"Only suggest a new tag when that residual concept is central to the issue, likely to recur across future issues, specific enough to name a concrete surface, subsystem, workflow, or artifact, and orthogonal to the existing taxonomy rather than a predictable co-occurrence. " +
+		"Do not suggest synonyms, spelling variants, parent or child categories, narrower or broader restatements, platform-specific variants, or tags that merely restate issue type, browser, platform, frontend, backend, ui, ux, performance, or crash when those dimensions are already covered by existing tags. " +
+		"Prefer combinations of existing tags over inventing a new one. " +
+		"Prefer one strong suggested tag over two weak ones. " +
+		"Suggested tags must be short, lowercase, reusable, and corpus-shaping. " +
+		"Every suggested tag must include a description that states what it captures and what it excludes. " +
+		"Return at most 1 suggested tag unless 2 independent missing concepts are both central."
 }
 
 func buildOpenAICanonicalizationPrompt(posts []string) string {

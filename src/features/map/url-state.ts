@@ -124,6 +124,16 @@ function parseShowClosedParam(params: Pick<URLSearchParams, "get">) {
   return params.get("status") === "all";
 }
 
+function parseBubbleSizeTagParam(params: Pick<URLSearchParams, "get">) {
+  const value = params.get("sizeTag");
+  if (!value) {
+    return null;
+  }
+
+  const normalized = value.trim();
+  return normalized === "" ? null : normalized;
+}
+
 export function parseMapURLState(
   params: Pick<URLSearchParams, "get">
 ): MapURLState {
@@ -136,5 +146,6 @@ export function parseMapURLState(
     showBatchAnalysis: batchIds.length > 1 && params.get("analyze") === "1",
     edgeThreshold: parseEdgeThresholdParam(params),
     showClosed: parseShowClosedParam(params),
+    bubbleSizeTag: parseBubbleSizeTagParam(params),
   };
 }

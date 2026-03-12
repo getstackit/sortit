@@ -26,6 +26,11 @@ func (h MapHandler) Handle(ctx context.Context, input MapQuery) (issuemap.MapRes
 		if err != nil {
 			return issuemap.MapResponse{}, err
 		}
+		storeIssues, err := h.IssueStore.List(ctx)
+		if err != nil {
+			return issuemap.MapResponse{}, err
+		}
+		projection = overlayProjectionIssueMetadata(projection, storeIssues)
 		projection = subsetProjectionByStatus(projection, input.StatusFilter)
 		threshold := issuemapDefaultThreshold(input.EdgeThreshold)
 		return issuemap.BuildMapFromProjection(projection, input.Viewport, threshold)

@@ -269,19 +269,19 @@ type IssueFieldUpdate struct {
 
 func DefaultTags() []Tag {
 	return []Tag{
-		{Name: "bug", Description: "software defect or incorrect behavior"},
-		{Name: "crash", Description: "hard failure, freeze, or abrupt termination"},
-		{Name: "feature", Description: "request for a new capability"},
-		{Name: "idea", Description: "early concept, exploration, or brainstorming"},
-		{Name: "improvement", Description: "refinement to an existing workflow or capability"},
-		{Name: "ui", Description: "visual interface, layout, or component presentation"},
-		{Name: "ux", Description: "usability, clarity, friction, or flow quality"},
-		{Name: "frontend", Description: "client-side app behavior in the browser"},
-		{Name: "performance", Description: "speed, latency, efficiency, or scaling concerns"},
-		{Name: "safari", Description: "Safari or WebKit-specific behavior"},
-		{Name: "onboarding", Description: "first-run setup, signup, invite, or initial activation flow"},
-		{Name: "search", Description: "querying, filtering, ranking, or finding content"},
-		{Name: "export", Description: "download, file generation, sharing, or data extraction"},
+		{Name: "bug", Description: "software defect or incorrect behavior. Excludes net-new capabilities or broad product improvements."},
+		{Name: "crash", Description: "hard failure, freeze, panic, or abrupt termination. Excludes slow or degraded behavior without a hard stop."},
+		{Name: "feature", Description: "request for a new capability or supported workflow. Excludes fixes and refinements to existing behavior."},
+		{Name: "idea", Description: "early concept, exploration, or speculative direction. Excludes concrete scoped feature requests ready for delivery."},
+		{Name: "improvement", Description: "refinement to an existing workflow, feature, or system behavior. Excludes net-new capabilities and clear defects."},
+		{Name: "ui", Description: "visual presentation, layout, styling, readability, or component rendering. Excludes task-flow friction and non-visual runtime behavior."},
+		{Name: "ux", Description: "usability, clarity, discoverability, feedback, or task-flow friction. Excludes purely visual presentation defects and implementation failures."},
+		{Name: "frontend", Description: "client-side application logic, browser runtime behavior, or rendering implementation. Excludes pure design concerns unless there is a concrete client behavior problem."},
+		{Name: "performance", Description: "latency, throughput, responsiveness, resource usage, or scaling behavior. Excludes hard failures, incorrect output, and purely visual issues."},
+		{Name: "safari", Description: "Safari or WebKit-specific compatibility or runtime behavior. Excludes browser-agnostic issues."},
+		{Name: "onboarding", Description: "first-run setup, signup, invite, workspace creation, or initial activation flow. Excludes routine use after setup is complete."},
+		{Name: "search", Description: "query entry, filtering, ranking, result retrieval, or finding content. Excludes unrelated navigation unless search behavior is central."},
+		{Name: "export", Description: "download, file generation, sharing, or data extraction workflows. Excludes general browsing unless data leaves the product."},
 	}
 }
 

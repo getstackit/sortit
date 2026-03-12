@@ -34,6 +34,21 @@ func TestProjectionInvalidationListenerInvalidatesOnEvent(t *testing.T) {
 	}
 }
 
+func TestProjectionInvalidationListenerSkipsNonStructuralEvents(t *testing.T) {
+	t.Parallel()
+
+	invalidator := &recordingProjectionInvalidator{}
+	listener := projectionInvalidationListener(invalidator)
+
+	for _, kind := range []string{"assigned", "closed", "progress", "reopened"} {
+		listener(context.Background(), issues.Event{Kind: kind, IssueID: "issue-123"})
+	}
+
+	if invalidator.calls != 0 {
+		t.Fatalf("expected 0 invalidation calls, got %d", invalidator.calls)
+	}
+}
+
 func TestProjectionInvalidationListenerReturnsNilWithoutInvalidator(t *testing.T) {
 	t.Parallel()
 

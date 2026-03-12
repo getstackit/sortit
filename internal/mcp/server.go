@@ -26,6 +26,7 @@ type ServerConfig struct {
 	CombineIssues    commands.CombineIssuesHandler
 	LinkIssues       commands.LinkIssuesHandler
 	GetIssue         queries.GetIssueHandler
+	ListTags         queries.ListTagsHandler
 	SearchIssues     queries.SearchIssuesHandler
 	ExploreIssue     queries.ExploreIssueHandler
 	GetPersonProfile queries.GetPersonProfileHandler
@@ -51,6 +52,7 @@ func NewHandler(cfg ServerConfig) http.Handler {
 		combineIssues:    cfg.CombineIssues,
 		linkIssues:       cfg.LinkIssues,
 		getIssue:         cfg.GetIssue,
+		listTags:         cfg.ListTags,
 		searchIssues:     cfg.SearchIssues,
 		exploreIssue:     cfg.ExploreIssue,
 		getPersonProfile: cfg.GetPersonProfile,
@@ -109,6 +111,13 @@ func NewHandler(cfg ServerConfig) http.Handler {
 			),
 		),
 		h.handleGetIssue,
+	)
+
+	s.AddTool(
+		mcp.NewTool("list_tags",
+			mcp.WithDescription("List stored Splat tags with descriptions, creation timestamps, and embeddings when available."),
+		),
+		h.handleListTags,
 	)
 
 	s.AddTool(
@@ -299,6 +308,7 @@ type handlers struct {
 	combineIssues    commands.CombineIssuesHandler
 	linkIssues       commands.LinkIssuesHandler
 	getIssue         queries.GetIssueHandler
+	listTags         queries.ListTagsHandler
 	searchIssues     queries.SearchIssuesHandler
 	exploreIssue     queries.ExploreIssueHandler
 	getPersonProfile queries.GetPersonProfileHandler
@@ -334,6 +344,15 @@ func (h *handlers) handleGetIssue(ctx context.Context, req mcp.CallToolRequest) 
 	}
 
 	return jsonResult(issue)
+}
+
+func (h *handlers) handleListTags(ctx context.Context, _ mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+	tags, err := h.listTags.Handle(ctx)
+	if err != nil {
+		return toolResultError(err), nil
+	}
+
+	return jsonResult(tags)
 }
 
 func (h *handlers) handleSearchIssues(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {

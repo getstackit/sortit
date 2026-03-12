@@ -109,7 +109,7 @@ func normalizeScores(scores []TagScore, taxonomy []Tag) []TagScore {
 		relevance := minFloat(1, maxFloat(0, score.Relevance))
 		normalized := TagScore{
 			Tag:         tagName,
-			Relevance:   math.Round(relevance*1000) / 1000,
+			Relevance:   math.Round(relevance*100) / 100,
 			Suggested:   score.Suggested,
 			Description: strings.TrimSpace(score.Description),
 		}

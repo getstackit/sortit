@@ -60,3 +60,19 @@ func TestComputePositionsSingleTagUsesFallbackLayout(t *testing.T) {
 		t.Fatalf("expected distinct fallback positions, got %d unique positions", len(seen))
 	}
 }
+
+func TestNormalizeRobustClipsOutliersBeforeScaling(t *testing.T) {
+	vals := []float64{0, 1, 2, 3, 100}
+
+	normalizeRobust(vals, 0.05, 0.95)
+
+	if vals[0] != 0.05 {
+		t.Fatalf("expected lower bound to map to 0.05, got %v", vals[0])
+	}
+	if vals[3] >= 0.8 {
+		t.Fatalf("expected inlier values to avoid being crushed by outlier, got %v", vals[3])
+	}
+	if vals[4] != 0.95 {
+		t.Fatalf("expected clipped outlier to map to 0.95, got %v", vals[4])
+	}
+}

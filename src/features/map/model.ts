@@ -28,6 +28,8 @@ export const MIN_RENDERED_AMBIENT_EDGES = 24;
 export const RENDERED_EDGE_RATIO = 0.2;
 export const MAX_RENDERED_AMBIENT_EDGES = 180;
 export const MAX_RENDERED_SELECTED_EDGES = 40;
+export const DEFAULT_ISSUE_RADIUS = 6;
+export const ISSUE_RADIUS_SCALE = 14;
 
 export function dominantTag(tags: TagRelevance[]): string {
   if (tags.length === 0) {
@@ -39,13 +41,26 @@ export function dominantTag(tags: TagRelevance[]): string {
   ).tag;
 }
 
-export function issueRadius(tags: TagRelevance[]): number {
+export function issueLoading(
+  tags: TagRelevance[],
+  bubbleSizeTag?: string | null
+) {
   if (tags.length === 0) {
-    return 6;
+    return 0;
   }
 
-  const maxRelevance = Math.max(...tags.map((tag) => tag.relevance));
-  return 6 + maxRelevance * 14;
+  if (!bubbleSizeTag) {
+    return Math.max(...tags.map((tag) => tag.relevance));
+  }
+
+  return tags.find((tag) => tag.tag === bubbleSizeTag)?.relevance ?? 0;
+}
+
+export function issueRadius(
+  tags: TagRelevance[],
+  bubbleSizeTag?: string | null
+): number {
+  return DEFAULT_ISSUE_RADIUS + issueLoading(tags, bubbleSizeTag) * ISSUE_RADIUS_SCALE;
 }
 
 export function pointInPolygon(

@@ -206,6 +206,7 @@ func (s *Server) Handler() http.Handler {
 		CombineIssues:    s.combineIssues,
 		LinkIssues:       s.linkIssues,
 		GetIssue:         s.getIssue,
+		ListTags:         s.listTags,
 		SearchIssues:     s.searchIssues,
 		ExploreIssue:     s.exploreIssue,
 		GetPersonProfile: s.getPersonProfile,
@@ -421,6 +422,10 @@ func projectionInvalidationListener(
 	}
 
 	return func(ctx context.Context, event issues.Event) {
+		if !shouldInvalidateMapProjection(event.Kind) {
+			return
+		}
+
 		if err := invalidator.InvalidateMapProjections(ctx); err != nil {
 			log.Printf(
 				"failed to invalidate map projections after %s event for issue %s: %v",
@@ -429,6 +434,15 @@ func projectionInvalidationListener(
 				err,
 			)
 		}
+	}
+}
+
+func shouldInvalidateMapProjection(eventKind string) bool {
+	switch eventKind {
+	case "assigned", "closed", "progress", "reopened":
+		return false
+	default:
+		return true
 	}
 }
 

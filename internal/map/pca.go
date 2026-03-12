@@ -3,6 +3,7 @@ package issuemap
 import (
 	"fmt"
 	"math"
+	"slices"
 
 	"gonum.org/v1/gonum/mat"
 
@@ -96,7 +97,8 @@ func ComputePositions(issues []issues.Issue, tags []string, tagEmbeddings map[st
 	var P mat.Dense
 	P.Mul(&Xprime, V2)
 
-	// Min-max normalize to [0.05, 0.95]
+	// Normalize to [0.05, 0.95] with outlier clipping so new extremes
+	// are less likely to rescale the entire map.
 	positions := make(map[string]Position, n)
 	xs := make([]float64, n)
 	ys := make([]float64, n)
@@ -105,8 +107,8 @@ func ComputePositions(issues []issues.Issue, tags []string, tagEmbeddings map[st
 		ys[i] = P.At(i, 1)
 	}
 
-	normalize(xs, 0.05, 0.95)
-	normalize(ys, 0.05, 0.95)
+	normalizeRobust(xs, 0.05, 0.95)
+	normalizeRobust(ys, 0.05, 0.95)
 
 	// Sign convention: if first point has negative projected x before normalization, flip
 	// We apply after normalize by checking if the order looks inverted
@@ -128,7 +130,37 @@ func ComputePositions(issues []issues.Issue, tags []string, tagEmbeddings map[st
 	return positions, nil
 }
 
-func normalize(vals []float64, lo, hi float64) {
+func normalizeRobust(vals []float64, lo, hi float64) {
+	if len(vals) == 0 {
+		return
+	}
+
+	sorted := append([]float64(nil), vals...)
+	slices.Sort(sorted)
+
+	q1 := percentile(sorted, 0.25)
+	q3 := percentile(sorted, 0.75)
+	iqr := q3 - q1
+	if iqr <= 0 {
+		normalizeMinMax(vals, lo, hi)
+		return
+	}
+
+	minV, maxV := sorted[0], sorted[len(sorted)-1]
+	lower := math.Max(minV, q1-(1.5*iqr))
+	upper := math.Min(maxV, q3+(1.5*iqr))
+	if upper <= lower {
+		normalizeMinMax(vals, lo, hi)
+		return
+	}
+
+	for i, v := range vals {
+		clamped := min(max(v, lower), upper)
+		vals[i] = lo + ((clamped - lower) / (upper - lower) * (hi - lo))
+	}
+}
+
+func normalizeMinMax(vals []float64, lo, hi float64) {
 	minV, maxV := vals[0], vals[0]
 	for _, v := range vals[1:] {
 		minV = math.Min(minV, v)
@@ -145,6 +177,31 @@ func normalize(vals []float64, lo, hi float64) {
 	for i, v := range vals {
 		vals[i] = lo + (v-minV)/span*(hi-lo)
 	}
+}
+
+func percentile(sorted []float64, p float64) float64 {
+	if len(sorted) == 0 {
+		return 0
+	}
+	if len(sorted) == 1 {
+		return sorted[0]
+	}
+	if p <= 0 {
+		return sorted[0]
+	}
+	if p >= 1 {
+		return sorted[len(sorted)-1]
+	}
+
+	index := p * float64(len(sorted)-1)
+	lower := int(math.Floor(index))
+	upper := int(math.Ceil(index))
+	if lower == upper {
+		return sorted[lower]
+	}
+
+	weight := index - float64(lower)
+	return sorted[lower] + (sorted[upper]-sorted[lower])*weight
 }
 
 // buildTagCovariance computes a T×T matrix where entry (i,j) is the cosine

@@ -118,6 +118,35 @@ func TestHandleGetIssueNotFound(t *testing.T) {
 	}
 }
 
+func TestHandleListTags(t *testing.T) {
+	t.Parallel()
+
+	handler := newTestHandlers()
+	createTestIssue(t, handler, "Safari crashes when exporting a PDF", "Casey")
+
+	result, err := handler.handleListTags(context.Background(), toolRequest(nil))
+	if err != nil {
+		t.Fatalf("handleListTags returned error: %v", err)
+	}
+	if result.IsError {
+		t.Fatalf("expected success result, got error: %s", firstText(result))
+	}
+
+	tags, ok := result.StructuredContent.([]issues.Tag)
+	if !ok {
+		t.Fatalf("expected []issues.Tag structured content, got %T", result.StructuredContent)
+	}
+	if len(tags) == 0 {
+		t.Fatal("expected stored tags")
+	}
+	if tags[0].Name == "" {
+		t.Fatalf("expected tag name, got %#v", tags[0])
+	}
+	if firstText(result) == "" {
+		t.Fatal("expected text fallback in MCP result")
+	}
+}
+
 func TestHandleSearchIssues(t *testing.T) {
 	t.Parallel()
 
@@ -458,6 +487,7 @@ func newTestHandlers() *handlers {
 		combineIssues:    commands.CombineIssuesHandler{Runner: runner, Store: store, Enricher: enricher, Events: eventBus},
 		linkIssues:       commands.LinkIssuesHandler{Runner: runner, Events: eventBus},
 		getIssue:         queries.GetIssueHandler{Store: store},
+		listTags:         queries.ListTagsHandler{Catalog: catalog},
 		searchIssues:     queries.SearchIssuesHandler{Analyzer: analyzer, Catalog: catalog, Store: store},
 		exploreIssue:     queries.ExploreIssueHandler{Store: store, Catalog: catalog},
 		getPersonProfile: queries.GetPersonProfileHandler{Store: store},

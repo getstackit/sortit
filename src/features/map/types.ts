@@ -97,4 +97,5 @@ export type MapURLState = {
   showBatchAnalysis: boolean;
   edgeThreshold: number;
   showClosed: boolean;
+  bubbleSizeTag: string | null;
 };

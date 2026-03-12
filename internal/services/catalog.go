@@ -126,7 +126,9 @@ func (s *CatalogService) EnsureStoredTags(ctx context.Context, tags []issues.Tag
 		}
 
 		existingTag, exists := existingByName[name]
+		descriptionChanged := false
 		if exists {
+			descriptionChanged = tag.Description != "" && tag.Description != existingTag.Description
 			if tag.Description == "" {
 				tag.Description = existingTag.Description
 			}
@@ -140,6 +142,9 @@ func (s *CatalogService) EnsureStoredTags(ctx context.Context, tags []issues.Tag
 
 		if tag.CreatedAt.IsZero() {
 			tag.CreatedAt = time.Now().UTC()
+		}
+		if descriptionChanged && len(raw.Embedding) == 0 {
+			tag.Embedding = nil
 		}
 		if len(tag.Embedding) == 0 {
 			embedding, err := s.embedTag(ctx, tag)
