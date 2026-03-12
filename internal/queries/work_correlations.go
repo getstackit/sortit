@@ -33,8 +33,8 @@ type WorkCorrelationsHandler struct {
 }
 
 func (h WorkCorrelationsHandler) Handle(ctx context.Context, filter IssueStatusFilter) (WorkCorrelationsResult, error) {
-	if store, ok := h.Store.(filteredIssueLister); ok {
-		items, err := store.ListFiltered(ctx, issues.ListOptions{
+	if store, ok := h.Store.(peopleAnalyticsLister); ok {
+		items, err := store.ListPeopleAnalytics(ctx, issues.ListOptions{
 			Status: issueStatusFromFilter(filter),
 		})
 		if err != nil {
@@ -43,22 +43,32 @@ func (h WorkCorrelationsHandler) Handle(ctx context.Context, filter IssueStatusF
 		return buildWorkCorrelations(items, IssueStatusFilterAll), nil
 	}
 
+	if store, ok := h.Store.(filteredIssueLister); ok {
+		items, err := store.ListFiltered(ctx, issues.ListOptions{
+			Status: issueStatusFromFilter(filter),
+		})
+		if err != nil {
+			return WorkCorrelationsResult{}, err
+		}
+		return buildWorkCorrelations(peopleAnalyticsIssuesFromIssues(items), IssueStatusFilterAll), nil
+	}
+
 	if h.Store != nil {
 		allIssues, err := h.Store.List(ctx)
 		if err != nil {
 			return WorkCorrelationsResult{}, err
 		}
-		return buildWorkCorrelations(allIssues, filter), nil
+		return buildWorkCorrelations(peopleAnalyticsIssuesFromIssues(allIssues), filter), nil
 	}
 
 	return WorkCorrelationsResult{Correlations: []PersonCorrelation{}}, nil
 }
 
-func buildWorkCorrelations(allIssues []issues.Issue, filter IssueStatusFilter) WorkCorrelationsResult {
-	allIssues = FilterIssuesByStatus(allIssues, filter)
+func buildWorkCorrelations(allIssues []issues.PeopleAnalyticsIssue, filter IssueStatusFilter) WorkCorrelationsResult {
+	allIssues = filterPeopleAnalyticsByStatus(allIssues, filter)
 
 	// Group issues by assignee
-	byPerson := make(map[string][]issues.Issue)
+	byPerson := make(map[string][]issues.PeopleAnalyticsIssue)
 	for _, issue := range allIssues {
 		if issue.AssignedTo == "" {
 			continue
@@ -73,7 +83,7 @@ func buildWorkCorrelations(allIssues []issues.Issue, filter IssueStatusFilter) W
 
 	type personData struct {
 		name       string
-		issues     []issues.Issue
+		issues     []issues.PeopleAnalyticsIssue
 		tagProfile []TagRelevance
 		embedding  []float64
 	}
@@ -124,7 +134,7 @@ func buildWorkCorrelations(allIssues []issues.Issue, filter IssueStatusFilter) W
 	return WorkCorrelationsResult{Correlations: correlations}
 }
 
-func meanTagProfile(matched []issues.Issue) []TagRelevance {
+func meanTagProfile(matched []issues.PeopleAnalyticsIssue) []TagRelevance {
 	if len(matched) == 0 {
 		return []TagRelevance{}
 	}
@@ -156,7 +166,7 @@ func meanTagProfile(matched []issues.Issue) []TagRelevance {
 	return profile
 }
 
-func meanEmbedding(matched []issues.Issue) []float64 {
+func meanEmbedding(matched []issues.PeopleAnalyticsIssue) []float64 {
 	if len(matched) == 0 {
 		return nil
 	}
@@ -256,6 +266,47 @@ func sharedTags(a, b []TagRelevance) []string {
 		return []string{}
 	}
 	return shared
+}
+
+func peopleAnalyticsIssuesFromIssues(items []issues.Issue) []issues.PeopleAnalyticsIssue {
+	if len(items) == 0 {
+		return nil
+	}
+
+	out := make([]issues.PeopleAnalyticsIssue, 0, len(items))
+	for _, item := range items {
+		out = append(out, issues.PeopleAnalyticsIssue{
+			Status:     item.Status,
+			AssignedTo: item.AssignedTo,
+			TagScores:  append([]issues.TagRelevance(nil), item.TagScores...),
+			Embedding:  append([]float64(nil), item.Embedding...),
+		})
+	}
+	return out
+}
+
+func filterPeopleAnalyticsByStatus(items []issues.PeopleAnalyticsIssue, filter IssueStatusFilter) []issues.PeopleAnalyticsIssue {
+	if filter == "" {
+		filter = IssueStatusFilterOpen
+	}
+	if filter == IssueStatusFilterAll {
+		return items
+	}
+
+	filtered := make([]issues.PeopleAnalyticsIssue, 0, len(items))
+	for _, item := range items {
+		status := item.Status
+		if status == "" {
+			status = issues.StatusOpen
+		}
+		if filter == IssueStatusFilterOpen && status == issues.StatusOpen {
+			filtered = append(filtered, item)
+		}
+		if filter == IssueStatusFilterClosed && status == issues.StatusClosed {
+			filtered = append(filtered, item)
+		}
+	}
+	return filtered
 }
 
 func roundTo2(v float64) float64 {

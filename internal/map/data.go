@@ -6,7 +6,7 @@ import (
 	"splat/internal/issues"
 )
 
-const embeddingDimensions = 24
+const embeddingDimensions = 64
 
 type tagSpec struct {
 	Name        string

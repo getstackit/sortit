@@ -41,6 +41,10 @@ type DebugAnalyzeIssueHandler struct {
 	Store    issues.Store
 }
 
+type issueEmbeddingSimilarityLister interface {
+	ListIssueEmbeddingSimilarities(context.Context, []float64, int) ([]issues.IssueEmbeddingSimilarity, int, float64, error)
+}
+
 func (h DebugAnalyzeIssueHandler) Handle(ctx context.Context, input DebugAnalyzeIssue) (DebugAnalyzeIssueResult, error) {
 	tags, err := h.Catalog.IssueTaxonomy(ctx, input.Tags)
 	if err != nil {
@@ -69,6 +73,25 @@ func (h DebugAnalyzeIssueHandler) Handle(ctx context.Context, input DebugAnalyze
 }
 
 func (h DebugAnalyzeIssueHandler) issueEmbeddingSimilarities(ctx context.Context, query []float64) ([]DebugIssueSimilarity, int, float64, error) {
+	if similarityStore, ok := h.Store.(issueEmbeddingSimilarityLister); ok {
+		items, compared, average, err := similarityStore.ListIssueEmbeddingSimilarities(ctx, query, 8)
+		if err != nil {
+			return nil, 0, 0, err
+		}
+		if items != nil {
+			similarities := make([]DebugIssueSimilarity, 0, len(items))
+			for _, item := range items {
+				similarities = append(similarities, DebugIssueSimilarity{
+					ID:         item.ID,
+					Raw:        item.Raw,
+					Tags:       append([]string(nil), item.Tags...),
+					Similarity: item.Similarity,
+				})
+			}
+			return similarities, compared, average, nil
+		}
+	}
+
 	var storeIssues []issues.Issue
 	if h.Store != nil {
 		items, err := h.Store.List(ctx)

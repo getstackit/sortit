@@ -630,6 +630,146 @@ func TestPostgresStoreLoadMapProjectionDataReturnsLinkedIssuesAndTags(t *testing
 	}
 }
 
+func TestPostgresStoreListIssueMetadata(t *testing.T) {
+	store := newPostgresTestStore(t)
+	ctx := context.Background()
+
+	issue := BuildNewIssue(NewIssueID(), CreateInput{
+		Raw:       "Projection overlay metadata only",
+		CreatedBy: "Casey",
+		TagScores: []TagRelevance{{Tag: "backend", Relevance: 0.9}},
+		Embedding: []float64{0.2, 0.8},
+	})
+	issue.AssignedTo = "Jordan"
+	if err := store.SaveIssue(ctx, issue); err != nil {
+		t.Fatalf("save issue: %v", err)
+	}
+
+	items, err := store.ListIssueMetadata(ctx)
+	if err != nil {
+		t.Fatalf("list issue metadata: %v", err)
+	}
+	if len(items) != 1 {
+		t.Fatalf("expected 1 metadata issue, got %d", len(items))
+	}
+	if items[0].ID != issue.ID {
+		t.Fatalf("expected issue %q, got %q", issue.ID, items[0].ID)
+	}
+	if items[0].Raw != issue.Raw {
+		t.Fatalf("expected raw %q, got %q", issue.Raw, items[0].Raw)
+	}
+	if items[0].Status != issue.Status {
+		t.Fatalf("expected status %q, got %q", issue.Status, items[0].Status)
+	}
+	if items[0].AssignedTo != issue.AssignedTo {
+		t.Fatalf("expected assignee %q, got %q", issue.AssignedTo, items[0].AssignedTo)
+	}
+	if len(items[0].Embedding) != 0 {
+		t.Fatalf("expected metadata path to omit embeddings, got %#v", items[0].Embedding)
+	}
+	if len(items[0].TagScores) != 0 {
+		t.Fatalf("expected metadata path to omit tag scores, got %#v", items[0].TagScores)
+	}
+}
+
+func TestPostgresStoreListPeopleAnalytics(t *testing.T) {
+	store := newPostgresTestStore(t)
+	ctx := context.Background()
+
+	openIssue := BuildNewIssue(NewIssueID(), CreateInput{
+		Raw:       "Open issue for Avery",
+		CreatedBy: "Casey",
+		TagScores: []TagRelevance{{Tag: "search", Relevance: 0.9}},
+		Embedding: []float64{0.8, 0.2},
+	})
+	openIssue.AssignedTo = "Avery"
+
+	closedIssue := BuildNewIssue(NewIssueID(), CreateInput{
+		Raw:       "Closed issue for Jordan",
+		CreatedBy: "Jordan",
+		TagScores: []TagRelevance{{Tag: "backend", Relevance: 0.7}},
+		Embedding: []float64{0.1, 0.9},
+	})
+	closedIssue.AssignedTo = "Jordan"
+	closedStatus := StatusClosed
+	closedAt := time.Now().UTC()
+	closedBy := "Jordan"
+
+	if err := store.SaveIssue(ctx, openIssue); err != nil {
+		t.Fatalf("save open issue: %v", err)
+	}
+	if err := store.SaveIssue(ctx, closedIssue); err != nil {
+		t.Fatalf("save closed issue: %v", err)
+	}
+	if err := store.UpdateIssueFields(ctx, closedIssue.ID, IssueFieldUpdate{
+		Status:   &closedStatus,
+		ClosedAt: &closedAt,
+		ClosedBy: &closedBy,
+	}); err != nil {
+		t.Fatalf("close issue: %v", err)
+	}
+
+	items, err := store.ListPeopleAnalytics(ctx, ListOptions{
+		Status:     StatusClosed,
+		AssignedTo: "Jordan",
+	})
+	if err != nil {
+		t.Fatalf("list people analytics: %v", err)
+	}
+	if len(items) != 1 {
+		t.Fatalf("expected 1 analytics issue, got %d", len(items))
+	}
+	if items[0].AssignedTo != "Jordan" {
+		t.Fatalf("expected assignee Jordan, got %q", items[0].AssignedTo)
+	}
+	if items[0].Status != StatusClosed {
+		t.Fatalf("expected closed status, got %q", items[0].Status)
+	}
+	if len(items[0].TagScores) != 1 || items[0].TagScores[0].Tag != "backend" {
+		t.Fatalf("unexpected tag scores: %#v", items[0].TagScores)
+	}
+	if len(items[0].Embedding) != 2 {
+		t.Fatalf("expected persisted embedding, got %#v", items[0].Embedding)
+	}
+}
+
+func TestPostgresStoreListCompareIssues(t *testing.T) {
+	store := newPostgresTestStore(t)
+	ctx := context.Background()
+
+	first := BuildNewIssue(NewIssueID(), CreateInput{
+		Raw:       "First compare issue",
+		CreatedBy: "Casey",
+		Embedding: []float64{1, 0},
+	})
+	second := BuildNewIssue(NewIssueID(), CreateInput{
+		Raw:       "Second compare issue",
+		CreatedBy: "Jordan",
+		Embedding: []float64{0.6, 0.8},
+	})
+
+	if err := store.SaveIssue(ctx, first); err != nil {
+		t.Fatalf("save first issue: %v", err)
+	}
+	if err := store.SaveIssue(ctx, second); err != nil {
+		t.Fatalf("save second issue: %v", err)
+	}
+
+	items, err := store.ListCompareIssues(ctx, []string{second.ID, first.ID})
+	if err != nil {
+		t.Fatalf("list compare issues: %v", err)
+	}
+	if len(items) != 2 {
+		t.Fatalf("expected 2 compare issues, got %d", len(items))
+	}
+	if items[0].ID != second.ID || items[1].ID != first.ID {
+		t.Fatalf("expected compare issues in requested order, got %#v", items)
+	}
+	if len(items[0].Embedding) != 2 || len(items[1].Embedding) != 2 {
+		t.Fatalf("expected embeddings to be loaded, got %#v", items)
+	}
+}
+
 func TestPostgresStorePersistsIssueRelationshipsAndOperationHistory(t *testing.T) {
 	store := newPostgresTestStore(t)
 	ctx := context.Background()

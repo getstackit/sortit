@@ -18,7 +18,6 @@ import { useAuth } from "@/components/auth-provider";
 import { AppShell } from "@/components/app-shell";
 import {
   IssueMapCanvas,
-  type IssueMapCanvasCluster,
   type IssueMapCanvasLine,
   type IssueMapCanvasNode,
 } from "@/components/issue-map-canvas";
@@ -63,7 +62,9 @@ const EMPTY_MAP_EDGES: MapEdge[] = [];
 const EMPTY_MAP_CLUSTERS: MapCluster[] = [];
 const MINI_MAP_VIEWBOX_WIDTH = 640;
 const MINI_MAP_VIEWBOX_HEIGHT = 360;
-const MINI_MAP_PADDING = 18;
+const MINI_MAP_CENTER_X = MINI_MAP_VIEWBOX_WIDTH / 2;
+const MINI_MAP_CENTER_Y = MINI_MAP_VIEWBOX_HEIGHT / 2;
+const MINI_MAP_INNER_RADIUS = Math.min(MINI_MAP_VIEWBOX_WIDTH, MINI_MAP_VIEWBOX_HEIGHT) / 2 - 44;
 
 function formatDateTime(value: string) {
   return new Date(value).toLocaleString();
@@ -204,10 +205,14 @@ function clusterContainsIssue(cluster: MapCluster, issue: MapIssue) {
   );
 }
 
-function projectPoint(x: number, y: number, width: number, height: number) {
+function projectIssueNeighborhood(
+  dx: number,
+  dy: number,
+  scale: number
+) {
   return {
-    x: MINI_MAP_PADDING + x * (width - MINI_MAP_PADDING * 2),
-    y: height - MINI_MAP_PADDING - y * (height - MINI_MAP_PADDING * 2),
+    x: MINI_MAP_CENTER_X + dx * scale,
+    y: MINI_MAP_CENTER_Y - dy * scale,
   };
 }
 
@@ -317,6 +322,7 @@ export function IssueDetailPage({ issueID }: { issueID: string }) {
   }, [copyState]);
 
   const discussion = useMemo(() => fallbackDiscussion(issue), [issue]);
+  const issueTags = issue?.tags ?? [];
 
   const handleCopyIssue = useCallback(async () => {
     if (!issue) {
@@ -566,33 +572,40 @@ export function IssueDetailPage({ issueID }: { issueID: string }) {
     [semanticNeighbors]
   );
 
-  const clusterNeighborIds = useMemo(
-    () => new Set(clusterNeighbors.map((neighbor) => neighbor.issue.id)),
-    [clusterNeighbors]
-  );
+  const clusterPeers = useMemo<ClusterNeighbor[]>(() => {
+    return clusterNeighbors.filter((neighbor) => !semanticNeighborIds.has(neighbor.issue.id));
+  }, [clusterNeighbors, semanticNeighborIds]);
 
-  const miniMapClusters = useMemo<IssueMapCanvasCluster[]>(() => {
-    return mapClusters.map((cluster) => {
-      const center = projectPoint(
-        cluster.centerX,
-        cluster.centerY,
-        MINI_MAP_VIEWBOX_WIDTH,
-        MINI_MAP_VIEWBOX_HEIGHT
+  const neighborhoodIssues = useMemo(() => {
+    const entries = new Map<string, MapIssue>();
+    if (currentMapIssue) {
+      entries.set(currentMapIssue.id, currentMapIssue);
+    }
+
+    for (const { issue: neighbor } of semanticNeighbors) {
+      entries.set(neighbor.id, neighbor);
+    }
+
+    return Array.from(entries.values());
+  }, [currentMapIssue, semanticNeighbors]);
+
+  const neighborhoodScale = useMemo(() => {
+    if (!currentMapIssue) {
+      return 1;
+    }
+
+    let maxOffset = 0.1;
+
+    for (const entry of neighborhoodIssues) {
+      maxOffset = Math.max(
+        maxOffset,
+        Math.abs(entry.x - currentMapIssue.x),
+        Math.abs(entry.y - currentMapIssue.y)
       );
+    }
 
-      return {
-        key: `${cluster.label}-${cluster.centerX}-${cluster.centerY}`,
-        cx: center.x,
-        cy: center.y,
-        radius: Math.max(cluster.radius * (MINI_MAP_VIEWBOX_WIDTH - MINI_MAP_PADDING * 2), 10),
-        fill: cluster.color,
-        fillOpacity: currentClusters.includes(cluster) ? 0.18 : 0.08,
-        stroke: cluster.color,
-        strokeOpacity: currentClusters.includes(cluster) ? 0.5 : 0.18,
-        strokeWidth: currentClusters.includes(cluster) ? 1.6 : 1,
-      };
-    });
-  }, [currentClusters, mapClusters]);
+    return MINI_MAP_INNER_RADIUS / maxOffset;
+  }, [currentMapIssue, neighborhoodIssues]);
 
   const miniMapEdges = useMemo<IssueMapCanvasLine[]>(() => {
     if (!currentMapIssue) {
@@ -600,17 +613,11 @@ export function IssueDetailPage({ issueID }: { issueID: string }) {
     }
 
     return semanticNeighbors.map(({ issue: neighbor, similarity }) => {
-      const from = projectPoint(
-        currentMapIssue.x,
-        currentMapIssue.y,
-        MINI_MAP_VIEWBOX_WIDTH,
-        MINI_MAP_VIEWBOX_HEIGHT
-      );
-      const to = projectPoint(
-        neighbor.x,
-        neighbor.y,
-        MINI_MAP_VIEWBOX_WIDTH,
-        MINI_MAP_VIEWBOX_HEIGHT
+      const from = projectIssueNeighborhood(0, 0, neighborhoodScale);
+      const to = projectIssueNeighborhood(
+        neighbor.x - currentMapIssue.x,
+        neighbor.y - currentMapIssue.y,
+        neighborhoodScale
       );
 
       return {
@@ -624,40 +631,49 @@ export function IssueDetailPage({ issueID }: { issueID: string }) {
         strokeWidth: 1 + similarity * 1.6,
       };
     });
-  }, [currentMapIssue, semanticNeighbors]);
+  }, [currentMapIssue, neighborhoodScale, semanticNeighbors]);
 
   const miniMapNodes = useMemo<IssueMapCanvasNode[]>(() => {
-    return mapIssues.map((entry) => {
-      const point = projectPoint(
-        entry.x,
-        entry.y,
-        MINI_MAP_VIEWBOX_WIDTH,
-        MINI_MAP_VIEWBOX_HEIGHT
+    if (!currentMapIssue) {
+      return [];
+    }
+
+    return neighborhoodIssues.map((entry) => {
+      const point = projectIssueNeighborhood(
+        entry.x - currentMapIssue.x,
+        entry.y - currentMapIssue.y,
+        neighborhoodScale
       );
       const isCurrent = entry.id === currentMapIssue?.id;
       const isSemantic = semanticNeighborIds.has(entry.id);
-      const isCluster = clusterNeighborIds.has(entry.id);
+      const label =
+        isCurrent || isSemantic
+          ? formatIssueTitle(entry.raw, isCurrent ? 32 : 24)
+          : undefined;
 
       return {
         key: entry.id,
         cx: point.x,
         cy: point.y,
-        radius: isCurrent ? 6 : isSemantic || isCluster ? 4 : 2.5,
+        radius: isCurrent ? 7 : 4.5,
         fill: isCurrent
           ? "#0f172a"
-          : isSemantic && isCluster
-            ? "#c2410c"
-            : isSemantic
-              ? "#f59e0b"
-              : isCluster
-                ? "#2563eb"
-                : "#94a3b8",
-        fillOpacity: isCurrent ? 1 : isSemantic || isCluster ? 0.95 : 0.35,
+          : "#f59e0b",
+        fillOpacity: isCurrent ? 1 : 0.95,
         stroke: isCurrent ? "#ffffff" : undefined,
         strokeWidth: isCurrent ? 2 : 0,
+        label,
+        labelY: point.y - (isCurrent ? 18 : 14),
+        labelClassName: "text-[10px] font-semibold tracking-[0.01em]",
+        labelFillOpacity: isCurrent ? 1 : 0.72,
       };
     });
-  }, [clusterNeighborIds, currentMapIssue, mapIssues, semanticNeighborIds]);
+  }, [
+    currentMapIssue,
+    neighborhoodIssues,
+    neighborhoodScale,
+    semanticNeighborIds,
+  ]);
 
   const refinementIndices = useMemo(() => {
     const indices = new Map<string, number>();
@@ -831,8 +847,8 @@ export function IssueDetailPage({ issueID }: { issueID: string }) {
         actions={
           issue ? (
             <div className="flex flex-wrap items-center gap-2">
-              {issue.tags.length > 0 &&
-                issue.tags.map((tag) => (
+              {issueTags.length > 0 &&
+                issueTags.map((tag) => (
                   <Link
                     key={tag}
                     href={tagHref(tag)}
@@ -1007,26 +1023,16 @@ export function IssueDetailPage({ issueID }: { issueID: string }) {
                           Related context
                         </p>
                         <h3 className="mt-1 text-lg font-semibold tracking-tight">
-                          Map context and nearby issues
+                          Issue neighborhood
                         </h3>
                         <p className="mt-1 text-sm text-muted-foreground">
-                          Open issues are surfaced ahead of closed ones.
+                          Centered on this issue. The graphic focuses on strongest semantic matches, with the current issue fixed at the middle.
                         </p>
                       </div>
                       <div className="flex flex-wrap gap-1.5">
-                        <span className="app-chip">
-                          {currentClusters.length > 0
-                            ? `${currentClusters.length} cluster${currentClusters.length === 1 ? "" : "s"}`
-                            : "No cluster"}
-                        </span>
                         {semanticNeighbors.length > 0 && (
                           <span className="app-chip">
                             {semanticNeighbors.length} semantic
-                          </span>
-                        )}
-                        {clusterNeighbors.length > 0 && (
-                          <span className="app-chip">
-                            {clusterNeighbors.length} nearby
                           </span>
                         )}
                       </div>
@@ -1041,19 +1047,37 @@ export function IssueDetailPage({ issueID }: { issueID: string }) {
                           preserveAspectRatio="xMidYMid meet"
                           className="absolute inset-0 h-full w-full"
                           role="img"
-                          aria-label={`Mini map centered on ${currentMapIssue.id}`}
+                          aria-label={`Issue neighborhood for ${currentMapIssue.id}`}
                           background={
-                            <rect
-                              x="0"
-                              y="0"
-                              width={MINI_MAP_VIEWBOX_WIDTH}
-                              height={MINI_MAP_VIEWBOX_HEIGHT}
-                              rx="18"
-                              fill="currentColor"
-                              className="text-background"
-                            />
+                            <>
+                              <rect
+                                x="0"
+                                y="0"
+                                width={MINI_MAP_VIEWBOX_WIDTH}
+                                height={MINI_MAP_VIEWBOX_HEIGHT}
+                                rx="18"
+                                fill="currentColor"
+                                className="text-background"
+                              />
+                              <circle
+                                cx={MINI_MAP_CENTER_X}
+                                cy={MINI_MAP_CENTER_Y}
+                                r={58}
+                                fill="none"
+                                stroke="currentColor"
+                                strokeOpacity="0.08"
+                              />
+                              <circle
+                                cx={MINI_MAP_CENTER_X}
+                                cy={MINI_MAP_CENTER_Y}
+                                r={112}
+                                fill="none"
+                                stroke="currentColor"
+                                strokeOpacity="0.05"
+                                strokeDasharray="5 7"
+                              />
+                            </>
                           }
-                          clusters={miniMapClusters}
                           edges={miniMapEdges}
                           nodes={miniMapNodes}
                         />
@@ -1062,11 +1086,7 @@ export function IssueDetailPage({ issueID }: { issueID: string }) {
                       <div className="mt-3 flex flex-wrap gap-2 text-[11px] text-muted-foreground">
                         <span className="app-chip inline-flex items-center gap-1">
                           <span className="size-2 rounded-full bg-slate-900" />
-                          Current
-                        </span>
-                        <span className="app-chip inline-flex items-center gap-1">
-                          <span className="size-2 rounded-full bg-blue-600" />
-                          Cluster
+                          Current issue
                         </span>
                         <span className="app-chip inline-flex items-center gap-1">
                           <span className="size-2 rounded-full bg-amber-500" />
@@ -1109,13 +1129,13 @@ export function IssueDetailPage({ issueID }: { issueID: string }) {
                         </div>
                       )}
 
-                      {clusterNeighbors.length > 0 && (
+                      {clusterPeers.length > 0 && (
                         <div>
                           <p className="text-[11px] font-medium uppercase tracking-[0.14em] text-muted-foreground">
-                            Clustered nearby
+                            Same cluster
                           </p>
                           <div className="mt-2 space-y-1.5">
-                            {clusterNeighbors.map(({ issue: neighbor }) => (
+                            {clusterPeers.map(({ issue: neighbor }) => (
                               <Link
                                 key={neighbor.id}
                                 href={`/issues/${neighbor.id}`}

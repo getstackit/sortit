@@ -234,6 +234,25 @@ type SemanticSearchResult struct {
 	SemanticDistance float64
 }
 
+type IssueEmbeddingSimilarity struct {
+	ID         string
+	Raw        string
+	Tags       []string
+	Similarity float64
+}
+
+type PeopleAnalyticsIssue struct {
+	Status     IssueStatus
+	AssignedTo string
+	TagScores  []TagRelevance
+	Embedding  []float64
+}
+
+type CompareIssue struct {
+	ID        string
+	Embedding []float64
+}
+
 type IssueEnrichmentJob struct {
 	IssueID        string
 	TargetSequence int

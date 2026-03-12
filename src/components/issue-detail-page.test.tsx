@@ -510,6 +510,14 @@ describe("IssueDetailPage", () => {
           x: 0.58,
           y: 0.53,
         },
+        {
+          id: "issue-cluster-peer",
+          raw: "Open cluster peer",
+          status: "open",
+          tags: [{ tag: "export", relevance: 0.72 }],
+          x: 0.46,
+          y: 0.57,
+        },
       ],
       edges: [
         {
@@ -532,17 +540,17 @@ describe("IssueDetailPage", () => {
     renderIssueDetail("issue-related-context");
 
     expect(await screen.findByText("Related context")).toBeInTheDocument();
-    expect(screen.getByText("Map context and nearby issues")).toBeInTheDocument();
+    expect(screen.getByText("Issue neighborhood")).toBeInTheDocument();
     expect(screen.getByText("Semantic neighbors")).toBeInTheDocument();
-    expect(screen.getByText("Clustered nearby")).toBeInTheDocument();
+    expect(screen.getByText("Same cluster")).toBeInTheDocument();
     expect(
-      screen.getByRole("img", { name: "Mini map centered on issue-related-context" })
+      screen.getByRole("img", { name: "Issue neighborhood for issue-related-context" })
     ).toHaveAttribute("width", "100%");
     expect(
-      screen.getByRole("img", { name: "Mini map centered on issue-related-context" })
+      screen.getByRole("img", { name: "Issue neighborhood for issue-related-context" })
     ).toHaveAttribute("height", "100%");
     expect(
-      screen.getByRole("img", { name: "Mini map centered on issue-related-context" })
+      screen.getByRole("img", { name: "Issue neighborhood for issue-related-context" })
     ).toHaveAttribute("viewBox", "0 0 640 360");
   });
 

@@ -20,7 +20,7 @@ func (h EdgeHandler) Handle(ctx context.Context, input MapQuery) (issuemap.EdgeR
 		if err != nil {
 			return issuemap.EdgeResponse{}, err
 		}
-		storeIssues, err := h.IssueStore.List(ctx)
+		storeIssues, err := listProjectionIssueMetadata(ctx, h.IssueStore)
 		if err != nil {
 			return issuemap.EdgeResponse{}, err
 		}

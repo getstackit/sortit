@@ -21,10 +21,25 @@ type GetPersonProfileHandler struct {
 	Store issues.Store
 }
 
+type peopleAnalyticsLister interface {
+	ListPeopleAnalytics(context.Context, issues.ListOptions) ([]issues.PeopleAnalyticsIssue, error)
+}
+
 func (h GetPersonProfileHandler) Handle(ctx context.Context, person string, filter IssueStatusFilter) (PersonTagProfile, error) {
 	person = strings.TrimSpace(person)
 	if person == "" {
 		return PersonTagProfile{}, nil
+	}
+
+	if store, ok := h.Store.(peopleAnalyticsLister); ok {
+		items, err := store.ListPeopleAnalytics(ctx, issues.ListOptions{
+			Status:     issueStatusFromFilter(filter),
+			AssignedTo: person,
+		})
+		if err != nil {
+			return PersonTagProfile{}, err
+		}
+		return buildPersonTagProfile(items, person, IssueStatusFilterAll), nil
 	}
 
 	if store, ok := h.Store.(filteredIssueLister); ok {
@@ -35,7 +50,7 @@ func (h GetPersonProfileHandler) Handle(ctx context.Context, person string, filt
 		if err != nil {
 			return PersonTagProfile{}, err
 		}
-		return buildPersonTagProfile(items, person, IssueStatusFilterAll), nil
+		return buildPersonTagProfile(peopleAnalyticsIssuesFromIssues(items), person, IssueStatusFilterAll), nil
 	}
 
 	if h.Store != nil {
@@ -43,16 +58,16 @@ func (h GetPersonProfileHandler) Handle(ctx context.Context, person string, filt
 		if err != nil {
 			return PersonTagProfile{}, err
 		}
-		return buildPersonTagProfile(allIssues, person, filter), nil
+		return buildPersonTagProfile(peopleAnalyticsIssuesFromIssues(allIssues), person, filter), nil
 	}
 
 	return PersonTagProfile{}, nil
 }
 
-func buildPersonTagProfile(allIssues []issues.Issue, person string, filter IssueStatusFilter) PersonTagProfile {
-	allIssues = FilterIssuesByStatus(allIssues, filter)
+func buildPersonTagProfile(allIssues []issues.PeopleAnalyticsIssue, person string, filter IssueStatusFilter) PersonTagProfile {
+	allIssues = filterPeopleAnalyticsByStatus(allIssues, filter)
 
-	var matched []issues.Issue
+	var matched []issues.PeopleAnalyticsIssue
 	for _, issue := range allIssues {
 		if strings.EqualFold(issue.AssignedTo, person) {
 			matched = append(matched, issue)

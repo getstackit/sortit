@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"math"
 	"slices"
 	"strconv"
 	"strings"
@@ -88,6 +89,229 @@ func (s *PostgresStore) List(ctx context.Context) ([]Issue, error) {
 	}
 	items = applyIssueEnrichmentStates(items, states)
 	return cloneIssues(items), nil
+}
+
+func (s *PostgresStore) ListIssueMetadata(ctx context.Context) ([]Issue, error) {
+	rows, err := s.db.QueryContext(
+		ctx,
+		`SELECT id, raw, status, assigned_to
+		 FROM issues
+		 ORDER BY created_at_unix_nano DESC, id ASC`,
+	)
+	if err != nil {
+		return nil, fmt.Errorf("list issue metadata: %w", err)
+	}
+	defer rows.Close()
+
+	items := make([]Issue, 0)
+	for rows.Next() {
+		var (
+			id         string
+			raw        string
+			status     string
+			assignedTo string
+		)
+		if err := rows.Scan(&id, &raw, &status, &assignedTo); err != nil {
+			return nil, fmt.Errorf("scan issue metadata: %w", err)
+		}
+		items = append(items, Issue{
+			ID:         id,
+			Raw:        raw,
+			Status:     normalizeIssueStatus(IssueStatus(status)),
+			AssignedTo: strings.TrimSpace(assignedTo),
+		})
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("iterate issue metadata: %w", err)
+	}
+
+	return cloneIssues(items), nil
+}
+
+func (s *PostgresStore) ListIssueEmbeddingSimilarities(
+	ctx context.Context,
+	query []float64,
+	limit int,
+) ([]IssueEmbeddingSimilarity, int, float64, error) {
+	if len(query) == 0 {
+		return []IssueEmbeddingSimilarity{}, 0, 0, nil
+	}
+	if limit <= 0 {
+		limit = 8
+	}
+
+	vectorLiteral, err := formatVectorLiteral(query)
+	if err != nil {
+		return nil, 0, 0, fmt.Errorf("format query embedding: %w", err)
+	}
+
+	var (
+		compared int
+		average  float64
+	)
+	if err := s.db.QueryRowContext(
+		ctx,
+		`SELECT COUNT(*),
+		        COALESCE(AVG(1 - (embedding_vector <=> $1::vector)), 0)
+		 FROM issues
+		 WHERE embedding_vector IS NOT NULL
+		   AND vector_dims(embedding_vector) = $2`,
+		vectorLiteral,
+		len(query),
+	).Scan(&compared, &average); err != nil {
+		return nil, 0, 0, fmt.Errorf("load issue embedding similarity stats: %w", err)
+	}
+
+	rows, err := s.db.QueryContext(
+		ctx,
+		`SELECT id, raw, tags_json, (1 - (embedding_vector <=> $1::vector)) AS similarity
+		 FROM issues
+		 WHERE embedding_vector IS NOT NULL
+		   AND vector_dims(embedding_vector) = $2
+		 ORDER BY embedding_vector <=> $1::vector ASC, created_at_unix_nano DESC, id ASC
+		 LIMIT $3`,
+		vectorLiteral,
+		len(query),
+		limit,
+	)
+	if err != nil {
+		return nil, 0, 0, fmt.Errorf("list issue embedding similarities: %w", err)
+	}
+	defer rows.Close()
+
+	items := make([]IssueEmbeddingSimilarity, 0, limit)
+	for rows.Next() {
+		var (
+			id       string
+			raw      string
+			tagsJSON json.RawMessage
+			score    float64
+		)
+		if err := rows.Scan(&id, &raw, &tagsJSON, &score); err != nil {
+			return nil, 0, 0, fmt.Errorf("scan issue embedding similarity: %w", err)
+		}
+		tags, err := unmarshalJSONB[[]string](tagsJSON)
+		if err != nil {
+			return nil, 0, 0, fmt.Errorf("decode tags for %q: %w", id, err)
+		}
+		items = append(items, IssueEmbeddingSimilarity{
+			ID:         id,
+			Raw:        raw,
+			Tags:       tags,
+			Similarity: math.Round(score*100) / 100,
+		})
+	}
+	if err := rows.Err(); err != nil {
+		return nil, 0, 0, fmt.Errorf("iterate issue embedding similarities: %w", err)
+	}
+
+	return items, compared, math.Round(average*100) / 100, nil
+}
+
+func (s *PostgresStore) ListPeopleAnalytics(ctx context.Context, opts ListOptions) ([]PeopleAnalyticsIssue, error) {
+	params := normalizeListIssuesFilteredParams(listIssuesFilteredParams{
+		status:     opts.Status,
+		assignedTo: opts.AssignedTo,
+	})
+
+	rows, err := s.db.QueryContext(
+		ctx,
+		`SELECT status, assigned_to, tag_scores_json, embedding_json
+		 FROM issues
+		 WHERE (NOT $1::bool OR status = $2::text)
+		   AND (NOT $3::bool OR LOWER(assigned_to) = LOWER($4::text))
+		 ORDER BY created_at_unix_nano DESC, id ASC`,
+		params.filterStatus,
+		params.statusValue,
+		params.filterAssignedTo,
+		params.assignedToValue,
+	)
+	if err != nil {
+		return nil, fmt.Errorf("list people analytics issues: %w", err)
+	}
+	defer rows.Close()
+
+	items := make([]PeopleAnalyticsIssue, 0)
+	for rows.Next() {
+		var (
+			status        string
+			assignedTo    string
+			tagScoresJSON json.RawMessage
+			embeddingJSON json.RawMessage
+		)
+		if err := rows.Scan(&status, &assignedTo, &tagScoresJSON, &embeddingJSON); err != nil {
+			return nil, fmt.Errorf("scan people analytics issue: %w", err)
+		}
+		tagScores, err := unmarshalJSONB[[]TagRelevance](tagScoresJSON)
+		if err != nil {
+			return nil, fmt.Errorf("decode people analytics tag scores: %w", err)
+		}
+		embedding, err := unmarshalJSONB[[]float64](embeddingJSON)
+		if err != nil {
+			return nil, fmt.Errorf("decode people analytics embedding: %w", err)
+		}
+		items = append(items, PeopleAnalyticsIssue{
+			Status:     normalizeIssueStatus(IssueStatus(status)),
+			AssignedTo: strings.TrimSpace(assignedTo),
+			TagScores:  append([]TagRelevance(nil), tagScores...),
+			Embedding:  append([]float64(nil), embedding...),
+		})
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("iterate people analytics issues: %w", err)
+	}
+
+	return items, nil
+}
+
+func (s *PostgresStore) ListCompareIssues(ctx context.Context, ids []string) ([]CompareIssue, error) {
+	if len(ids) == 0 {
+		return []CompareIssue{}, nil
+	}
+
+	rows, err := s.db.QueryContext(
+		ctx,
+		`SELECT id, embedding_json
+		 FROM issues
+		 WHERE id = ANY($1)`,
+		ids,
+	)
+	if err != nil {
+		return nil, fmt.Errorf("list compare issues: %w", err)
+	}
+	defer rows.Close()
+
+	byID := make(map[string]CompareIssue, len(ids))
+	for rows.Next() {
+		var (
+			id            string
+			embeddingJSON json.RawMessage
+		)
+		if err := rows.Scan(&id, &embeddingJSON); err != nil {
+			return nil, fmt.Errorf("scan compare issue: %w", err)
+		}
+		embedding, err := unmarshalJSONB[[]float64](embeddingJSON)
+		if err != nil {
+			return nil, fmt.Errorf("decode compare issue embedding for %q: %w", id, err)
+		}
+		byID[id] = CompareIssue{
+			ID:        id,
+			Embedding: append([]float64(nil), embedding...),
+		}
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("iterate compare issues: %w", err)
+	}
+
+	items := make([]CompareIssue, 0, len(ids))
+	for _, id := range ids {
+		item, ok := byID[id]
+		if !ok {
+			return nil, ErrNotFound
+		}
+		items = append(items, item)
+	}
+	return items, nil
 }
 
 func (s *PostgresStore) ListFiltered(ctx context.Context, opts ListOptions) ([]Issue, error) {

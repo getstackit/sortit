@@ -30,18 +30,18 @@ type CompareIssuesHandler struct {
 	Store issues.Store
 }
 
+type compareIssueLister interface {
+	ListCompareIssues(context.Context, []string) ([]issues.CompareIssue, error)
+}
+
 func (h CompareIssuesHandler) Handle(ctx context.Context, input CompareIssues) (CompareIssuesResult, error) {
-	selected := make([]issues.Issue, 0, len(input.IDs))
-	if h.Store != nil {
-		for _, id := range input.IDs {
-			issue, err := h.Store.Get(ctx, id)
-			if err != nil {
-				return CompareIssuesResult{}, err
-			}
-			selected = append(selected, issue)
-		}
-	} else {
+	if h.Store == nil {
 		return CompareIssuesResult{}, issues.ErrNotFound
+	}
+
+	selected, err := h.compareIssues(ctx, input.IDs)
+	if err != nil {
+		return CompareIssuesResult{}, err
 	}
 
 	pairs, average := compareIssueEmbeddings(selected)
@@ -52,7 +52,26 @@ func (h CompareIssuesHandler) Handle(ctx context.Context, input CompareIssues) (
 	}, nil
 }
 
-func compareIssueEmbeddings(items []issues.Issue) ([]PairwiseIssueSimilarity, float64) {
+func (h CompareIssuesHandler) compareIssues(ctx context.Context, ids []string) ([]issues.CompareIssue, error) {
+	if compareStore, ok := h.Store.(compareIssueLister); ok {
+		return compareStore.ListCompareIssues(ctx, ids)
+	}
+
+	items := make([]issues.CompareIssue, 0, len(ids))
+	for _, id := range ids {
+		issue, err := h.Store.Get(ctx, id)
+		if err != nil {
+			return nil, err
+		}
+		items = append(items, issues.CompareIssue{
+			ID:        issue.ID,
+			Embedding: append([]float64(nil), issue.Embedding...),
+		})
+	}
+	return items, nil
+}
+
+func compareIssueEmbeddings(items []issues.CompareIssue) ([]PairwiseIssueSimilarity, float64) {
 	pairs := make([]PairwiseIssueSimilarity, 0, len(items)*(len(items)-1)/2)
 	total := 0.0
 

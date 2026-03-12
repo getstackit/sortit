@@ -26,7 +26,7 @@ func (h MapHandler) Handle(ctx context.Context, input MapQuery) (issuemap.MapRes
 		if err != nil {
 			return issuemap.MapResponse{}, err
 		}
-		storeIssues, err := h.IssueStore.List(ctx)
+		storeIssues, err := listProjectionIssueMetadata(ctx, h.IssueStore)
 		if err != nil {
 			return issuemap.MapResponse{}, err
 		}

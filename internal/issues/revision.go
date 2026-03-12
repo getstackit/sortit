@@ -114,6 +114,22 @@ type observedMapProjectionStore interface {
 	LoadMapProjectionData(context.Context) ([]MapProjectionIssue, []Tag, error)
 }
 
+type observedIssueMetadataStore interface {
+	ListIssueMetadata(context.Context) ([]Issue, error)
+}
+
+type observedIssueEmbeddingSimilarityStore interface {
+	ListIssueEmbeddingSimilarities(context.Context, []float64, int) ([]IssueEmbeddingSimilarity, int, float64, error)
+}
+
+type observedPeopleAnalyticsStore interface {
+	ListPeopleAnalytics(context.Context, ListOptions) ([]PeopleAnalyticsIssue, error)
+}
+
+type observedCompareIssueStore interface {
+	ListCompareIssues(context.Context, []string) ([]CompareIssue, error)
+}
+
 func (s *ObservedStore) ListTags(ctx context.Context) ([]Tag, error) {
 	tagStore, ok := s.base.(observedTagStore)
 	if !ok {
@@ -165,4 +181,68 @@ func (s *ObservedStore) LoadMapProjectionData(ctx context.Context) ([]MapProject
 		return nil, nil, err
 	}
 	return MapProjectionIssuesFromIssues(detailed), tags, nil
+}
+
+func (s *ObservedStore) ListIssueMetadata(ctx context.Context) ([]Issue, error) {
+	metadataStore, ok := s.base.(observedIssueMetadataStore)
+	if !ok {
+		return s.base.List(ctx)
+	}
+	return metadataStore.ListIssueMetadata(ctx)
+}
+
+func (s *ObservedStore) ListIssueEmbeddingSimilarities(
+	ctx context.Context,
+	query []float64,
+	limit int,
+) ([]IssueEmbeddingSimilarity, int, float64, error) {
+	similarityStore, ok := s.base.(observedIssueEmbeddingSimilarityStore)
+	if !ok {
+		return nil, 0, 0, nil
+	}
+	return similarityStore.ListIssueEmbeddingSimilarities(ctx, query, limit)
+}
+
+func (s *ObservedStore) ListPeopleAnalytics(
+	ctx context.Context,
+	opts ListOptions,
+) ([]PeopleAnalyticsIssue, error) {
+	analyticsStore, ok := s.base.(observedPeopleAnalyticsStore)
+	if !ok {
+		items, err := s.base.List(ctx)
+		if err != nil {
+			return nil, err
+		}
+		analytics := make([]PeopleAnalyticsIssue, 0, len(items))
+		for _, item := range items {
+			analytics = append(analytics, PeopleAnalyticsIssue{
+				Status:     item.Status,
+				AssignedTo: item.AssignedTo,
+				TagScores:  append([]TagRelevance(nil), item.TagScores...),
+				Embedding:  append([]float64(nil), item.Embedding...),
+			})
+		}
+		return analytics, nil
+	}
+	return analyticsStore.ListPeopleAnalytics(ctx, opts)
+}
+
+func (s *ObservedStore) ListCompareIssues(ctx context.Context, ids []string) ([]CompareIssue, error) {
+	compareStore, ok := s.base.(observedCompareIssueStore)
+	if ok {
+		return compareStore.ListCompareIssues(ctx, ids)
+	}
+
+	items := make([]CompareIssue, 0, len(ids))
+	for _, id := range ids {
+		issue, err := s.base.Get(ctx, id)
+		if err != nil {
+			return nil, err
+		}
+		items = append(items, CompareIssue{
+			ID:        issue.ID,
+			Embedding: append([]float64(nil), issue.Embedding...),
+		})
+	}
+	return items, nil
 }

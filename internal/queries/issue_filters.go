@@ -21,6 +21,10 @@ type filteredIssueLister interface {
 	ListFiltered(context.Context, issues.ListOptions) ([]issues.Issue, error)
 }
 
+type issueMetadataLister interface {
+	ListIssueMetadata(context.Context) ([]issues.Issue, error)
+}
+
 func FilterIssuesByStatus(items []issues.Issue, filter IssueStatusFilter) []issues.Issue {
 	if filter == "" {
 		filter = IssueStatusFilterOpen
@@ -157,6 +161,13 @@ func paginateIssues(items []issues.Issue, limit, offset int) []issues.Issue {
 		items = items[:limit]
 	}
 	return items
+}
+
+func listProjectionIssueMetadata(ctx context.Context, store issues.Store) ([]issues.Issue, error) {
+	if metadataStore, ok := store.(issueMetadataLister); ok {
+		return metadataStore.ListIssueMetadata(ctx)
+	}
+	return store.List(ctx)
 }
 
 func issueMatchesTags(item issues.Issue, required map[string]struct{}) bool {
