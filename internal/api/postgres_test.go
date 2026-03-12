@@ -56,3 +56,11 @@ func apiHarness(t *testing.T) *testpostgres.Harness {
 	}
 	return apiPostgresHarness.harness
 }
+
+func processPendingEnrichment(t *testing.T, server *Server) {
+	t.Helper()
+
+	if err := server.ProcessPendingEnrichment(context.Background()); err != nil {
+		t.Fatalf("process pending enrichment: %v", err)
+	}
+}

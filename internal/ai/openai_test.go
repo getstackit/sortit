@@ -1,6 +1,7 @@
 package ai
 
 import (
+	"net/http"
 	"strings"
 	"testing"
 )
@@ -47,5 +48,70 @@ func TestBuildOpenAITaggingSystemPromptAllowsConstrainedSuggestions(t *testing.T
 		if !strings.Contains(prompt, expected) {
 			t.Fatalf("expected system prompt to contain %q", expected)
 		}
+	}
+}
+
+func TestOpenAIModelDefaults(t *testing.T) {
+	cfg := OpenAIConfig{
+		APIKey:     "test-key",
+		HTTPClient: http.DefaultClient,
+	}
+
+	tagger, err := NewOpenAITagger(cfg)
+	if err != nil {
+		t.Fatalf("NewOpenAITagger returned error: %v", err)
+	}
+	if tagger.Model() != defaultOpenAITagModel {
+		t.Fatalf("expected default tag model %q, got %q", defaultOpenAITagModel, tagger.Model())
+	}
+
+	canonicalizer, err := NewOpenAICanonicalizer(cfg)
+	if err != nil {
+		t.Fatalf("NewOpenAICanonicalizer returned error: %v", err)
+	}
+	if canonicalizer.model != defaultOpenAICanonicalModel {
+		t.Fatalf("expected default canonical model %q, got %q", defaultOpenAICanonicalModel, canonicalizer.model)
+	}
+
+	embedder, err := NewOpenAIEmbedder(cfg)
+	if err != nil {
+		t.Fatalf("NewOpenAIEmbedder returned error: %v", err)
+	}
+	if embedder.Model() != defaultOpenAIEmbeddingModel {
+		t.Fatalf("expected default embedding model %q, got %q", defaultOpenAIEmbeddingModel, embedder.Model())
+	}
+}
+
+func TestOpenAIModelOverrides(t *testing.T) {
+	cfg := OpenAIConfig{
+		APIKey:         "test-key",
+		TagModel:       "gpt-test-tag",
+		CanonicalModel: "gpt-test-canonical",
+		EmbeddingModel: "text-embedding-test",
+		HTTPClient:     http.DefaultClient,
+	}
+
+	tagger, err := NewOpenAITagger(cfg)
+	if err != nil {
+		t.Fatalf("NewOpenAITagger returned error: %v", err)
+	}
+	if tagger.Model() != cfg.TagModel {
+		t.Fatalf("expected tag model %q, got %q", cfg.TagModel, tagger.Model())
+	}
+
+	canonicalizer, err := NewOpenAICanonicalizer(cfg)
+	if err != nil {
+		t.Fatalf("NewOpenAICanonicalizer returned error: %v", err)
+	}
+	if canonicalizer.model != cfg.CanonicalModel {
+		t.Fatalf("expected canonical model %q, got %q", cfg.CanonicalModel, canonicalizer.model)
+	}
+
+	embedder, err := NewOpenAIEmbedder(cfg)
+	if err != nil {
+		t.Fatalf("NewOpenAIEmbedder returned error: %v", err)
+	}
+	if embedder.Model() != cfg.EmbeddingModel {
+		t.Fatalf("expected embedding model %q, got %q", cfg.EmbeddingModel, embedder.Model())
 	}
 }

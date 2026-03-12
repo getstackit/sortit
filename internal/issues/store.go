@@ -23,21 +23,32 @@ const (
 	StatusClosed IssueStatus = "closed"
 )
 
+type IssueEnrichmentStatus string
+
+const (
+	EnrichmentStatusComplete IssueEnrichmentStatus = "complete"
+	EnrichmentStatusPending  IssueEnrichmentStatus = "pending"
+	EnrichmentStatusFailed   IssueEnrichmentStatus = "failed"
+)
+
 type Issue struct {
-	ID         string           `json:"id"`
-	Raw        string           `json:"raw"`
-	Tags       []string         `json:"tags"`
-	CreatedBy  string           `json:"createdBy"`
-	CreatedAt  time.Time        `json:"createdAt"`
-	Status     IssueStatus      `json:"status"`
-	ClosedAt   *time.Time       `json:"closedAt"`
-	ClosedBy   string           `json:"closedBy,omitempty"`
-	AssignedTo string           `json:"assignedTo,omitempty"`
-	Discussion []IssuePost      `json:"discussion,omitempty"`
-	Links      []IssueLink      `json:"links,omitempty"`
-	Operations []IssueOperation `json:"operations,omitempty"`
-	TagScores  []TagRelevance   `json:"tagScores"`
-	Embedding  []float64        `json:"-"`
+	ID                       string                `json:"id"`
+	Raw                      string                `json:"raw"`
+	Tags                     []string              `json:"tags"`
+	CreatedBy                string                `json:"createdBy"`
+	CreatedAt                time.Time             `json:"createdAt"`
+	Status                   IssueStatus           `json:"status"`
+	ClosedAt                 *time.Time            `json:"closedAt"`
+	ClosedBy                 string                `json:"closedBy,omitempty"`
+	AssignedTo               string                `json:"assignedTo,omitempty"`
+	Discussion               []IssuePost           `json:"discussion,omitempty"`
+	Links                    []IssueLink           `json:"links,omitempty"`
+	Operations               []IssueOperation      `json:"operations,omitempty"`
+	TagScores                []TagRelevance        `json:"tagScores"`
+	EnrichmentStatus         IssueEnrichmentStatus `json:"enrichmentStatus"`
+	EnrichmentError          string                `json:"enrichmentError,omitempty"`
+	EnrichmentTargetSequence int                   `json:"enrichmentTargetSequence"`
+	Embedding                []float64             `json:"-"`
 }
 
 // MapProjectionIssue contains only the fields needed to rebuild the map
@@ -223,6 +234,12 @@ type SemanticSearchResult struct {
 	SemanticDistance float64
 }
 
+type IssueEnrichmentJob struct {
+	IssueID        string
+	TargetSequence int
+	AttemptCount   int
+}
+
 type Store interface {
 	// Reads
 	List(context.Context) ([]Issue, error)
@@ -234,6 +251,16 @@ type Store interface {
 	UpdateIssueFields(ctx context.Context, id string, fields IssueFieldUpdate) error
 	SaveOperation(ctx context.Context, op IssueOperation) error
 	SaveLink(ctx context.Context, link IssueLink) error
+}
+
+type EnrichmentJobWriter interface {
+	EnqueueIssueEnrichment(ctx context.Context, issueID string, targetSequence int) error
+	CompleteIssueEnrichment(ctx context.Context, issueID string, targetSequence int) error
+	RetryIssueEnrichment(ctx context.Context, issueID string, targetSequence int, nextAttemptAt time.Time) error
+}
+
+type EnrichmentJobClaimer interface {
+	ClaimNextIssueEnrichment(ctx context.Context, leaseDuration time.Duration) (IssueEnrichmentJob, bool, error)
 }
 
 // MapProjectionStore optionally provides a bulk read path tailored for
@@ -257,14 +284,17 @@ type SemanticSearchStore interface {
 
 // IssueFieldUpdate describes which fields to update on an issue.
 type IssueFieldUpdate struct {
-	Raw        *string
-	Tags       []string
-	TagScores  []TagRelevance
-	Embedding  []float64
-	Status     *IssueStatus
-	ClosedAt   *time.Time
-	ClosedBy   *string
-	AssignedTo *string
+	Raw                      *string
+	Tags                     []string
+	TagScores                []TagRelevance
+	Embedding                []float64
+	Status                   *IssueStatus
+	ClosedAt                 *time.Time
+	ClosedBy                 *string
+	AssignedTo               *string
+	EnrichmentStatus         *IssueEnrichmentStatus
+	EnrichmentError          *string
+	EnrichmentTargetSequence *int
 }
 
 func DefaultTags() []Tag {
@@ -286,18 +316,25 @@ func DefaultTags() []Tag {
 }
 
 type InMemoryStore struct {
-	mu         sync.RWMutex
-	issues     []Issue
-	discussion map[string][]IssuePost
-	links      []IssueLink
-	operations []IssueOperation
-	events     []Event
+	mu             sync.RWMutex
+	issues         []Issue
+	discussion     map[string][]IssuePost
+	links          []IssueLink
+	operations     []IssueOperation
+	events         []Event
+	enrichmentJobs map[string]inMemoryEnrichmentJob
+}
+
+type inMemoryEnrichmentJob struct {
+	IssueEnrichmentJob
+	AvailableAt time.Time
 }
 
 func NewInMemoryStore(seed []Issue) *InMemoryStore {
 	store := &InMemoryStore{
-		issues:     cloneIssues(seed),
-		discussion: make(map[string][]IssuePost, len(seed)),
+		issues:         cloneIssues(seed),
+		discussion:     make(map[string][]IssuePost, len(seed)),
+		enrichmentJobs: make(map[string]inMemoryEnrichmentJob),
 	}
 
 	for _, issue := range store.issues {
@@ -361,6 +398,7 @@ func (s *InMemoryStore) Replace(_ context.Context, next []Issue) error {
 	s.links = nil
 	s.operations = nil
 	s.events = nil
+	s.enrichmentJobs = make(map[string]inMemoryEnrichmentJob)
 	for _, issue := range items {
 		s.discussion[issue.ID] = initialDiscussion(issue)
 	}
@@ -437,24 +475,51 @@ func displayTags(explicitTags []string, scores []TagRelevance) []string {
 	return out
 }
 
+func normalizeIssueEnrichment(issue Issue) Issue {
+	issue.EnrichmentStatus = normalizeIssueEnrichmentStatus(issue.EnrichmentStatus)
+	if issue.EnrichmentStatus == "" {
+		issue.EnrichmentStatus = EnrichmentStatusComplete
+	}
+	if issue.EnrichmentTargetSequence <= 0 {
+		issue.EnrichmentTargetSequence = max(1, len(issue.Discussion))
+	}
+	if issue.EnrichmentStatus == EnrichmentStatusComplete {
+		issue.EnrichmentError = ""
+	}
+	return issue
+}
+
+func normalizeIssueEnrichmentStatus(status IssueEnrichmentStatus) IssueEnrichmentStatus {
+	switch status {
+	case EnrichmentStatusPending, EnrichmentStatusFailed:
+		return status
+	default:
+		return EnrichmentStatusComplete
+	}
+}
+
 func cloneIssues(input []Issue) []Issue {
 	items := make([]Issue, len(input))
 	for i, issue := range input {
+		issue = normalizeIssueEnrichment(issue)
 		items[i] = Issue{
-			ID:         issue.ID,
-			Raw:        issue.Raw,
-			Tags:       append([]string(nil), issue.Tags...),
-			CreatedBy:  issue.CreatedBy,
-			CreatedAt:  issue.CreatedAt,
-			Status:     normalizeIssueStatus(issue.Status),
-			ClosedAt:   cloneTimePtr(issue.ClosedAt),
-			ClosedBy:   issue.ClosedBy,
-			AssignedTo: issue.AssignedTo,
-			Discussion: cloneIssuePosts(issue.Discussion),
-			Links:      cloneIssueLinks(issue.Links),
-			Operations: cloneIssueOperations(issue.Operations),
-			TagScores:  copyTagScores(issue.TagScores),
-			Embedding:  copyEmbedding(issue.Embedding),
+			ID:                       issue.ID,
+			Raw:                      issue.Raw,
+			Tags:                     append([]string(nil), issue.Tags...),
+			CreatedBy:                issue.CreatedBy,
+			CreatedAt:                issue.CreatedAt,
+			Status:                   normalizeIssueStatus(issue.Status),
+			ClosedAt:                 cloneTimePtr(issue.ClosedAt),
+			ClosedBy:                 issue.ClosedBy,
+			AssignedTo:               issue.AssignedTo,
+			Discussion:               cloneIssuePosts(issue.Discussion),
+			Links:                    cloneIssueLinks(issue.Links),
+			Operations:               cloneIssueOperations(issue.Operations),
+			TagScores:                copyTagScores(issue.TagScores),
+			EnrichmentStatus:         issue.EnrichmentStatus,
+			EnrichmentError:          issue.EnrichmentError,
+			EnrichmentTargetSequence: issue.EnrichmentTargetSequence,
+			Embedding:                copyEmbedding(issue.Embedding),
 		}
 	}
 	return items
@@ -518,6 +583,18 @@ func cloneIssueLinks(input []IssueLink) []IssueLink {
 		}
 	}
 	return items
+}
+
+func issueIDs(items []Issue) []string {
+	ids := make([]string, 0, len(items))
+	for _, item := range items {
+		id := strings.TrimSpace(item.ID)
+		if id == "" {
+			continue
+		}
+		ids = append(ids, id)
+	}
+	return ids
 }
 
 func cloneIssueOperations(input []IssueOperation) []IssueOperation {

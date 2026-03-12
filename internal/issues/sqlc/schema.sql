@@ -15,7 +15,10 @@ CREATE TABLE issues (
     tag_scores_json JSONB NOT NULL DEFAULT '[]',
     embedding_json JSONB NOT NULL DEFAULT '[]',
     embedding_vector vector,
-    assigned_to TEXT NOT NULL DEFAULT ''
+    assigned_to TEXT NOT NULL DEFAULT '',
+    enrichment_status TEXT NOT NULL DEFAULT 'complete',
+    enrichment_error TEXT NOT NULL DEFAULT '',
+    enrichment_target_sequence BIGINT NOT NULL DEFAULT 1
 );
 
 CREATE INDEX issues_status_idx ON issues(status);
@@ -39,6 +42,19 @@ CREATE TABLE issue_posts (
 
 CREATE INDEX issue_posts_issue_id_sequence_idx
 ON issue_posts(issue_id, sequence);
+
+CREATE TABLE issue_enrichment_jobs (
+    issue_id TEXT PRIMARY KEY,
+    target_sequence BIGINT NOT NULL,
+    lease_expires_at_unix_nano BIGINT NOT NULL DEFAULT 0,
+    attempt_count BIGINT NOT NULL DEFAULT 0,
+    created_at_unix_nano BIGINT NOT NULL,
+    updated_at_unix_nano BIGINT NOT NULL,
+    FOREIGN KEY(issue_id) REFERENCES issues(id) ON DELETE CASCADE
+);
+
+CREATE INDEX issue_enrichment_jobs_lease_idx
+ON issue_enrichment_jobs(lease_expires_at_unix_nano, updated_at_unix_nano, issue_id);
 
 CREATE TABLE issue_operations (
     id TEXT PRIMARY KEY,

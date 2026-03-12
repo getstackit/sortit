@@ -3,11 +3,13 @@ package issues
 import (
 	"context"
 	"strings"
+	"time"
 )
 
 func (s *InMemoryStore) SaveIssue(_ context.Context, issue Issue) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	issue = normalizeIssueEnrichment(issue)
 
 	// Check if issue already exists (update)
 	for index, existing := range s.issues {
@@ -78,8 +80,17 @@ func (s *InMemoryStore) UpdateIssueFields(_ context.Context, id string, fields I
 		if fields.AssignedTo != nil {
 			issue.AssignedTo = *fields.AssignedTo
 		}
+		if fields.EnrichmentStatus != nil {
+			issue.EnrichmentStatus = *fields.EnrichmentStatus
+		}
+		if fields.EnrichmentError != nil {
+			issue.EnrichmentError = *fields.EnrichmentError
+		}
+		if fields.EnrichmentTargetSequence != nil {
+			issue.EnrichmentTargetSequence = *fields.EnrichmentTargetSequence
+		}
 
-		s.issues[index] = issue
+		s.issues[index] = normalizeIssueEnrichment(issue)
 		return nil
 	}
 
@@ -102,3 +113,74 @@ func (s *InMemoryStore) SaveLink(_ context.Context, link IssueLink) error {
 	return nil
 }
 
+func (s *InMemoryStore) EnqueueIssueEnrichment(_ context.Context, issueID string, targetSequence int) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	current := s.enrichmentJobs[issueID]
+	if current.TargetSequence > targetSequence {
+		targetSequence = current.TargetSequence
+	}
+	current.IssueID = strings.TrimSpace(issueID)
+	current.TargetSequence = targetSequence
+	current.AvailableAt = time.Time{}
+	s.enrichmentJobs[issueID] = current
+	return nil
+}
+
+func (s *InMemoryStore) ClaimNextIssueEnrichment(_ context.Context, leaseDuration time.Duration) (IssueEnrichmentJob, bool, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	now := time.Now().UTC()
+	var (
+		selected inMemoryEnrichmentJob
+		found    bool
+	)
+	for _, job := range s.enrichmentJobs {
+		if !job.AvailableAt.IsZero() && job.AvailableAt.After(now) {
+			continue
+		}
+		if !found || job.AvailableAt.Before(selected.AvailableAt) || selected.AvailableAt.IsZero() {
+			selected = job
+			found = true
+		}
+	}
+	if !found {
+		return IssueEnrichmentJob{}, false, nil
+	}
+
+	selected.AttemptCount++
+	selected.AvailableAt = now.Add(leaseDuration)
+	s.enrichmentJobs[selected.IssueID] = selected
+	return selected.IssueEnrichmentJob, true, nil
+}
+
+func (s *InMemoryStore) CompleteIssueEnrichment(_ context.Context, issueID string, targetSequence int) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	job, ok := s.enrichmentJobs[issueID]
+	if ok && job.TargetSequence == targetSequence {
+		delete(s.enrichmentJobs, issueID)
+	}
+	return nil
+}
+
+func (s *InMemoryStore) RetryIssueEnrichment(
+	_ context.Context,
+	issueID string,
+	targetSequence int,
+	nextAttemptAt time.Time,
+) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	job, ok := s.enrichmentJobs[issueID]
+	if !ok || job.TargetSequence != targetSequence {
+		return nil
+	}
+	job.AvailableAt = nextAttemptAt.UTC()
+	s.enrichmentJobs[issueID] = job
+	return nil
+}

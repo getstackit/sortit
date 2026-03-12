@@ -64,19 +64,23 @@ func ApplyRefinement(issue *Issue, canonicalRaw string, input RefineInput) {
 	issue.Tags = displayTags(input.Tags, input.TagScores)
 	issue.TagScores = copyTagScores(input.TagScores)
 	issue.Embedding = copyEmbedding(input.Embedding)
+	issue.EnrichmentStatus = EnrichmentStatusComplete
+	issue.EnrichmentError = ""
 }
 
 // BuildNewIssue creates a new Issue from CreateInput with proper defaults.
 func BuildNewIssue(id string, input CreateInput) Issue {
 	issue := Issue{
-		ID:        id,
-		Raw:       strings.TrimSpace(input.Raw),
-		Tags:      displayTags(input.Tags, input.TagScores),
-		CreatedBy: defaultActor(input.CreatedBy),
-		CreatedAt: time.Now().UTC(),
-		Status:    StatusOpen,
-		TagScores: copyTagScores(input.TagScores),
-		Embedding: copyEmbedding(input.Embedding),
+		ID:                       id,
+		Raw:                      strings.TrimSpace(input.Raw),
+		Tags:                     displayTags(input.Tags, input.TagScores),
+		CreatedBy:                defaultActor(input.CreatedBy),
+		CreatedAt:                time.Now().UTC(),
+		Status:                   StatusOpen,
+		TagScores:                copyTagScores(input.TagScores),
+		EnrichmentStatus:         EnrichmentStatusComplete,
+		EnrichmentTargetSequence: 1,
+		Embedding:                copyEmbedding(input.Embedding),
 	}
 	issue.Discussion = initialDiscussion(issue)
 	return issue

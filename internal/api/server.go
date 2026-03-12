@@ -34,6 +34,9 @@ type Server struct {
 	startedAt           time.Time
 	revisions           *issues.RevisionTracker
 	mapProjectionLoader *queries.MapProjectionLoader
+	enrichmentWorker    *services.IssueEnrichmentWorker
+	enrichmentCancel    context.CancelFunc
+	enrichmentDone      chan struct{}
 	createIssue         commands.CreateIssueHandler
 	refineIssue         commands.RefineIssueHandler
 	progressIssue       commands.ProgressIssueHandler
@@ -84,6 +87,14 @@ func unitOfWorkBeginnerFromStore(store issues.Store) issues.UnitOfWorkBeginner {
 		return beginner
 	}
 	return nil
+}
+
+func enrichmentJobClaimerFromStore(store issues.Store) issues.EnrichmentJobClaimer {
+	claimer, ok := store.(issues.EnrichmentJobClaimer)
+	if !ok {
+		return nil
+	}
+	return claimer
 }
 
 type healthResponse struct {
@@ -247,6 +258,17 @@ func (s *Server) Handler() http.Handler {
 
 func (s *Server) Start() error {
 	handler := s.Handler()
+	if s.enrichmentWorker != nil && s.enrichmentCancel == nil {
+		runCtx, cancel := context.WithCancel(context.Background())
+		s.enrichmentCancel = cancel
+		s.enrichmentDone = make(chan struct{})
+		go func() {
+			defer close(s.enrichmentDone)
+			if err := s.enrichmentWorker.Run(runCtx); err != nil && runCtx.Err() == nil {
+				log.Printf("issue enrichment worker stopped: %v", err)
+			}
+		}()
+	}
 
 	s.httpServer = &http.Server{
 		Addr:              fmt.Sprintf(":%d", s.config.Port),
@@ -259,10 +281,37 @@ func (s *Server) Start() error {
 }
 
 func (s *Server) Shutdown(ctx context.Context) error {
+	if s.enrichmentCancel != nil {
+		s.enrichmentCancel()
+		if s.enrichmentDone != nil {
+			select {
+			case <-s.enrichmentDone:
+			case <-ctx.Done():
+				return ctx.Err()
+			}
+		}
+		s.enrichmentCancel = nil
+		s.enrichmentDone = nil
+	}
 	if s.httpServer != nil {
 		return s.httpServer.Shutdown(ctx)
 	}
 	return nil
+}
+
+func (s *Server) ProcessPendingEnrichment(ctx context.Context) error {
+	if s.enrichmentWorker == nil {
+		return nil
+	}
+	for {
+		processed, err := s.enrichmentWorker.ProcessOne(ctx)
+		if err != nil {
+			return err
+		}
+		if !processed {
+			return nil
+		}
+	}
 }
 
 func (s *Server) handleHealth(w http.ResponseWriter, r *http.Request) {
@@ -312,22 +361,22 @@ func writeInternalError(w http.ResponseWriter, r *http.Request, message string, 
 }
 
 func NewServer(cfg ServerConfig) *Server {
-	store := cfg.IssueStore
-	if store == nil {
-		store = issues.NewInMemoryStore(nil)
+	baseStore := cfg.IssueStore
+	if baseStore == nil {
+		baseStore = issues.NewInMemoryStore(nil)
 	}
 	revisions := issues.NewRevisionTracker()
-	observed := issues.NewObservedStore(store, revisions)
-	store = observed
+	observed := issues.NewObservedStore(baseStore, revisions)
+	store := observed
 
 	// EventStore: available on ObservedStore which wraps both Store and EventStore
 	var events issues.EventStore = observed
 
 	// CommandRunner manages DB transaction lifecycle for command handlers.
-	uowBeginner := unitOfWorkBeginnerFromStore(cfg.IssueStore)
+	uowBeginner := unitOfWorkBeginnerFromStore(baseStore)
 	eventBus := issues.NewEventBus()
 	if listener := projectionInvalidationListener(
-		mapProjectionInvalidatorFromIssueStore(cfg.IssueStore),
+		mapProjectionInvalidatorFromIssueStore(baseStore),
 	); listener != nil {
 		eventBus.Subscribe(listener)
 	}
@@ -340,11 +389,29 @@ func NewServer(cfg ServerConfig) *Server {
 	commandAnalyzer := services.FallbackAnalyzer(cfg.Analyzer)
 	catalog := services.NewCatalogService(tagStore, commandAnalyzer)
 	enricher := services.NewIssueEnricher(commandAnalyzer, catalog)
+	var enrichmentWorker *services.IssueEnrichmentWorker
+	if claimer := enrichmentJobClaimerFromStore(baseStore); claimer != nil && uowBeginner != nil {
+		invalidator := mapProjectionInvalidatorFromIssueStore(baseStore)
+		enrichmentWorker = &services.IssueEnrichmentWorker{
+			Store:    baseStore,
+			DB:       uowBeginner,
+			Jobs:     claimer,
+			Enricher: enricher,
+			OnStateChange: func(ctx context.Context, applied bool) {
+				revisions.Bump()
+				if applied && invalidator != nil {
+					if err := invalidator.InvalidateMapProjections(ctx); err != nil {
+						log.Printf("failed to invalidate map projections after enrichment: %v", err)
+					}
+				}
+			},
+		}
+	}
 	mapProjectionLoader := &queries.MapProjectionLoader{
 		Store:       store,
 		Catalog:     catalog,
 		Revisions:   revisions,
-		Projections: mapProjectionStoreFromIssueStore(cfg.IssueStore),
+		Projections: mapProjectionStoreFromIssueStore(baseStore),
 	}
 
 	return &Server{
@@ -352,6 +419,7 @@ func NewServer(cfg ServerConfig) *Server {
 		startedAt:           time.Now().UTC(),
 		revisions:           revisions,
 		mapProjectionLoader: mapProjectionLoader,
+		enrichmentWorker:    enrichmentWorker,
 		createIssue: commands.CreateIssueHandler{
 			Runner:   runner,
 			Enricher: enricher,
@@ -395,14 +463,14 @@ func NewServer(cfg ServerConfig) *Server {
 		searchIssues: queries.SearchIssuesHandler{
 			Analyzer: commandAnalyzer,
 			Catalog:  catalog,
-			Store:    cfg.IssueStore,
+			Store:    baseStore,
 		},
 		searchUnified: queries.SearchUnifiedHandler{
 			Analyzer: commandAnalyzer,
 			Catalog:  catalog,
-			Store:    cfg.IssueStore,
+			Store:    baseStore,
 		},
-		exploreIssue:      queries.ExploreIssueHandler{Store: cfg.IssueStore, Catalog: catalog},
+		exploreIssue:      queries.ExploreIssueHandler{Store: baseStore, Catalog: catalog},
 		listTags:          queries.ListTagsHandler{Catalog: catalog},
 		getMap:            queries.MapHandler{IssueStore: store, Catalog: catalog, Projection: mapProjectionLoader},
 		getMapEdges:       queries.EdgeHandler{IssueStore: store, Catalog: catalog, Projection: mapProjectionLoader},

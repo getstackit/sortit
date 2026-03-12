@@ -14,7 +14,8 @@ import (
 
 const (
 	defaultOpenAIBaseURL        = "https://api.openai.com/v1"
-	defaultOpenAITagModel       = "gpt-4.1-mini"
+	defaultOpenAITagModel       = "gpt-5-mini"
+	defaultOpenAICanonicalModel = "gpt-4.1-mini"
 	defaultOpenAIEmbeddingModel = "text-embedding-3-small"
 )
 
@@ -22,6 +23,7 @@ type OpenAIConfig struct {
 	APIKey         string
 	BaseURL        string
 	TagModel       string
+	CanonicalModel string
 	EmbeddingModel string
 	HTTPClient     *http.Client
 }
@@ -114,7 +116,7 @@ func NewOpenAICanonicalizer(cfg OpenAIConfig) (*OpenAICanonicalizer, error) {
 	}
 	return &OpenAICanonicalizer{
 		client: client,
-		model:  withDefault(strings.TrimSpace(cfg.TagModel), defaultOpenAITagModel),
+		model:  withDefault(strings.TrimSpace(cfg.CanonicalModel), defaultOpenAICanonicalModel),
 	}, nil
 }
 

@@ -187,6 +187,9 @@ func TestIssuesEndpointCreatesIssue(t *testing.T) {
 	if len(created.Tags) != 1 || created.Tags[0] != "bug" {
 		t.Fatalf("expected sanitized tags, got %#v", created.Tags)
 	}
+	if created.EnrichmentStatus != issues.EnrichmentStatusPending {
+		t.Fatalf("expected pending enrichment status, got %q", created.EnrichmentStatus)
+	}
 	if len(created.Discussion) != 1 {
 		t.Fatalf("expected initial discussion post, got %#v", created.Discussion)
 	}
@@ -213,6 +216,15 @@ func TestIssuesEndpointCreatesIssue(t *testing.T) {
 	}
 	if len(stored) != 1 {
 		t.Fatalf("expected 1 stored issue, got %d", len(stored))
+	}
+	if stored[0].EnrichmentStatus != issues.EnrichmentStatusPending {
+		t.Fatalf("expected stored issue to remain pending before worker runs, got %q", stored[0].EnrichmentStatus)
+	}
+	processPendingEnrichment(t, server)
+
+	stored, err = store.List(context.Background())
+	if err != nil {
+		t.Fatalf("failed to list stored issues after enrichment: %v", err)
 	}
 	if len(stored[0].TagScores) == 0 {
 		t.Fatal("expected stored issue to include analyzed tag scores")
@@ -287,8 +299,11 @@ func TestIssuesEndpointRefinesIssue(t *testing.T) {
 	if refined.Discussion[1].Raw != "Customer says it only happens in Safari after tapping share twice" {
 		t.Fatalf("unexpected refinement raw: %q", refined.Discussion[1].Raw)
 	}
-	if refined.Raw == created.Raw {
-		t.Fatalf("expected canonical raw to update after refinement, got %q", refined.Raw)
+	if refined.Raw != created.Raw {
+		t.Fatalf("expected canonical raw to remain unchanged while enrichment is pending, got %q", refined.Raw)
+	}
+	if refined.EnrichmentStatus != issues.EnrichmentStatusPending {
+		t.Fatalf("expected pending refinement enrichment, got %q", refined.EnrichmentStatus)
 	}
 
 	getReq := httptest.NewRequest(http.MethodGet, "/api/issues/"+created.ID, nil)
@@ -305,6 +320,26 @@ func TestIssuesEndpointRefinesIssue(t *testing.T) {
 	}
 	if len(loaded.Discussion) != 2 {
 		t.Fatalf("expected persisted discussion posts, got %#v", loaded.Discussion)
+	}
+	if loaded.EnrichmentStatus != issues.EnrichmentStatusPending {
+		t.Fatalf("expected loaded issue to remain pending before worker runs, got %q", loaded.EnrichmentStatus)
+	}
+
+	processPendingEnrichment(t, server)
+
+	getRec = httptest.NewRecorder()
+	handler.ServeHTTP(getRec, getReq)
+	if getRec.Code != http.StatusOK {
+		t.Fatalf("expected 200 for issue lookup after enrichment, got %d", getRec.Code)
+	}
+	if err := json.NewDecoder(getRec.Body).Decode(&loaded); err != nil {
+		t.Fatalf("decode loaded issue after enrichment: %v", err)
+	}
+	if loaded.Raw == created.Raw {
+		t.Fatalf("expected canonical raw to update after enrichment, got %q", loaded.Raw)
+	}
+	if loaded.EnrichmentStatus != issues.EnrichmentStatusComplete {
+		t.Fatalf("expected completed enrichment status after worker runs, got %q", loaded.EnrichmentStatus)
 	}
 }
 

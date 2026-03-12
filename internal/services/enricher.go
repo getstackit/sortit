@@ -99,6 +99,77 @@ func (s *IssueEnricher) AnalyzeRefineInput(ctx context.Context, issue issues.Iss
 	}, nil
 }
 
+func (s *IssueEnricher) AnalyzePersistedIssue(
+	ctx context.Context,
+	issue issues.Issue,
+	targetSequence int,
+) (issues.IssueFieldUpdate, error) {
+	ctx, cancel := context.WithTimeout(ctx, issueEnrichmentTimeout)
+	defer cancel()
+
+	targetSequence = max(1, targetSequence)
+	discussionTexts := make([]string, 0, len(issue.Discussion))
+	for _, post := range issue.Discussion {
+		if post.Sequence > targetSequence {
+			continue
+		}
+		text := strings.TrimSpace(post.Raw)
+		if text == "" {
+			continue
+		}
+		discussionTexts = append(discussionTexts, text)
+	}
+	if len(discussionTexts) == 0 {
+		text := strings.TrimSpace(issue.Raw)
+		if text == "" {
+			return issues.IssueFieldUpdate{}, fmt.Errorf("issue raw is required")
+		}
+		discussionTexts = append(discussionTexts, text)
+	}
+
+	explicitTags := []string(nil)
+	if targetSequence <= 1 {
+		explicitTags = append([]string(nil), issue.Tags...)
+	}
+	taxonomy, err := s.catalog.IssueTaxonomy(ctx, explicitTags)
+	if err != nil {
+		return issues.IssueFieldUpdate{}, err
+	}
+
+	canonicalRaw := discussionTexts[0]
+	if targetSequence > 1 {
+		canonicalRaw, err = s.analyzer.CanonicalizeDiscussion(ctx, discussionTexts)
+		if err != nil {
+			return issues.IssueFieldUpdate{}, err
+		}
+		canonicalRaw = strings.TrimSpace(canonicalRaw)
+		if canonicalRaw == "" {
+			return issues.IssueFieldUpdate{}, fmt.Errorf("canonical raw is required")
+		}
+	}
+
+	analyzed, err := s.analyzer.AnalyzeIssueData(ctx, canonicalRaw, taxonomy)
+	if err != nil {
+		return issues.IssueFieldUpdate{}, err
+	}
+
+	if err := s.catalog.EnsureStoredTags(ctx, CatalogTagsFromAnalysis(taxonomy, explicitTags, analyzed.Tags)); err != nil {
+		return issues.IssueFieldUpdate{}, err
+	}
+
+	status := issues.EnrichmentStatusComplete
+	emptyError := ""
+	return issues.IssueFieldUpdate{
+		Raw:                      &canonicalRaw,
+		Tags:                     issues.DisplayTags(explicitTags, IssueTagScoresFromAnalysis(analyzed.Tags)),
+		TagScores:                IssueTagScoresFromAnalysis(analyzed.Tags),
+		Embedding:                Float32VectorToFloat64(analyzed.Embedding.Vector),
+		EnrichmentStatus:         &status,
+		EnrichmentError:          &emptyError,
+		EnrichmentTargetSequence: &targetSequence,
+	}, nil
+}
+
 func (s *IssueEnricher) AnalyzeCombineInput(
 	ctx context.Context,
 	sourceIssues []issues.Issue,

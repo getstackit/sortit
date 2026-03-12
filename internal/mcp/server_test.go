@@ -505,7 +505,32 @@ func createTestIssue(t *testing.T, handler *handlers, raw string, createdBy stri
 	if err != nil {
 		t.Fatalf("create issue: %v", err)
 	}
+	drainTestEnrichment(t, handler)
 	return issue
+}
+
+func drainTestEnrichment(t *testing.T, handler *handlers) {
+	t.Helper()
+
+	claimer, ok := handler.getIssue.Store.(issues.EnrichmentJobClaimer)
+	if !ok {
+		return
+	}
+	worker := &services.IssueEnrichmentWorker{
+		Store:    handler.getIssue.Store,
+		DB:       handler.createIssue.Runner.DB,
+		Jobs:     claimer,
+		Enricher: handler.createIssue.Enricher,
+	}
+	for {
+		processed, err := worker.ProcessOne(context.Background())
+		if err != nil {
+			t.Fatalf("process test enrichment: %v", err)
+		}
+		if !processed {
+			return
+		}
+	}
 }
 
 func toolRequest(arguments map[string]any) mcptypes.CallToolRequest {

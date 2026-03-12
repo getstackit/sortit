@@ -27,7 +27,7 @@ func (s *PostgresStore) BeginUnitOfWork(ctx context.Context) (UnitOfWork, error)
 }
 
 func (u *PostgresUnitOfWork) Commit() error   { return u.tx.Commit() }
-func (u *PostgresUnitOfWork) Rollback() error  { return u.tx.Rollback() }
+func (u *PostgresUnitOfWork) Rollback() error { return u.tx.Rollback() }
 
 // Store reads
 
@@ -44,6 +44,11 @@ func (u *PostgresUnitOfWork) List(ctx context.Context) ([]Issue, error) {
 		}
 		items = append(items, issue)
 	}
+	states, err := loadIssueEnrichmentStates(ctx, u.tx, issueIDs(items))
+	if err != nil {
+		return nil, err
+	}
+	items = applyIssueEnrichmentStates(items, states)
 	return cloneIssues(items), nil
 }
 
@@ -119,7 +124,15 @@ func (u *PostgresUnitOfWork) Get(ctx context.Context, id string) (Issue, error) 
 		operations = append(operations, operation)
 	}
 
-	return hydrateIssueWithDiscussion(issueRow, discussion, links, operations, issuesByID)
+	issue, err := hydrateIssueWithDiscussion(issueRow, discussion, links, operations, issuesByID)
+	if err != nil {
+		return Issue{}, err
+	}
+	states, err := loadIssueEnrichmentStates(ctx, u.tx, []string{id})
+	if err != nil {
+		return Issue{}, err
+	}
+	return applyIssueEnrichmentStates([]Issue{issue}, states)[0], nil
 }
 
 // Store writes
@@ -144,6 +157,9 @@ func (u *PostgresUnitOfWork) SaveIssue(ctx context.Context, issue Issue) error {
 		AssignedTo:        record.AssignedTo,
 	}); err != nil {
 		return fmt.Errorf("save issue: %w", err)
+	}
+	if err := updateIssueEnrichmentState(ctx, u.tx, record.ID, issueFieldUpdateForIssue(issue)); err != nil {
+		return err
 	}
 	if err := syncIssueEmbeddingVector(ctx, u.tx, record.ID, issue.Embedding); err != nil {
 		return err
@@ -208,6 +224,9 @@ func (u *PostgresUnitOfWork) UpdateIssueFields(ctx context.Context, id string, f
 		if err := syncIssueEmbeddingVector(ctx, u.tx, id, fields.Embedding); err != nil {
 			return err
 		}
+	}
+	if err := updateIssueEnrichmentState(ctx, u.tx, id, fields); err != nil {
+		return err
 	}
 
 	return nil
@@ -309,4 +328,3 @@ func (u *PostgresUnitOfWork) ListEvents(ctx context.Context, limit int, cursor s
 
 	return events, nextCursor, nil
 }
-

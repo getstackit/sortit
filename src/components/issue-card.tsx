@@ -52,6 +52,16 @@ export function IssueCard({ issue, href, className, compact }: IssueCardProps) {
       </p>
       <div className={cn("flex items-center gap-2", compact ? "mt-1.5" : "mt-3")}>
         <div className="flex flex-wrap gap-1.5">
+          {issue.enrichmentStatus === "pending" && (
+            <span className="rounded-full bg-amber-100 px-2 py-0.5 text-[11px] font-medium text-amber-700">
+              Analyzing
+            </span>
+          )}
+          {issue.enrichmentStatus === "failed" && (
+            <span className="rounded-full bg-rose-100 px-2 py-0.5 text-[11px] font-medium text-rose-700">
+              Analysis failed
+            </span>
+          )}
           {issue.status === "closed" && (
             <span className="rounded-full bg-slate-200 px-2 py-0.5 text-[11px] font-medium text-slate-700">
               Closed

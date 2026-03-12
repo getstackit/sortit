@@ -6,6 +6,7 @@ import {
   useCallback,
   useDeferredValue,
   useEffect,
+  useId,
   useMemo,
   useRef,
   useState,
@@ -99,7 +100,53 @@ function issueLabel(raw: string, maxLength: number) {
   return raw.length > maxLength ? `${raw.slice(0, maxLength)}...` : raw;
 }
 
+function isMapSidebarScrollTarget(target: EventTarget | null) {
+  if (target instanceof Element) {
+    return target.closest("[data-map-sidebar-scroll]") != null;
+  }
+
+  if (target instanceof Node) {
+    return target.parentElement?.closest("[data-map-sidebar-scroll]") != null;
+  }
+
+  return false;
+}
+
+function visibleIssueIDsForViewport(
+  issues: readonly MapIssue[],
+  viewport: Viewport
+) {
+  const visible: string[] = [];
+
+  for (const issue of issues) {
+    if (
+      issue.x >= viewport.xMin &&
+      issue.x <= viewport.xMax &&
+      issue.y >= viewport.yMin &&
+      issue.y <= viewport.yMax
+    ) {
+      visible.push(issue.id);
+    }
+  }
+
+  return visible;
+}
+
+function edgeDataKeyForViewport(
+  issues: readonly MapIssue[],
+  viewport: Viewport,
+  edgeThreshold: number,
+  showClosed: boolean
+) {
+  return [
+    showClosed ? "all" : "open",
+    edgeThreshold.toFixed(2),
+    visibleIssueIDsForViewport(issues, viewport).join(","),
+  ].join("|");
+}
+
 function MapPageContent() {
+  const canvasThemeID = useId().replace(/:/g, "");
   const pathname = usePathname();
   const searchParams = useSearchParams();
   const searchParamsString = searchParams.toString();
@@ -115,7 +162,7 @@ function MapPageContent() {
   const [bubbleSizeTag, setBubbleSizeTag] = useState<string | null>(
     urlState.bubbleSizeTag
   );
-  const [loadedEdgeKey, setLoadedEdgeKey] = useState("");
+  const [loadedEdgeDataKey, setLoadedEdgeDataKey] = useState("");
   const [hoveredId, setHoveredId] = useState<string | null>(null);
   const [selectedIdState, setSelectedId] = useState<string | null>(urlState.selectedId);
   const [lassoPoints, setLassoPoints] = useState<ScreenPoint[]>([]);
@@ -218,7 +265,14 @@ function MapPageContent() {
     fetchMapData(query, controller.signal)
       .then((data) => {
         setMapData(data);
-        setLoadedEdgeKey(query);
+        setLoadedEdgeDataKey(
+          edgeDataKeyForViewport(
+            data.issues,
+            urlState.viewport,
+            urlState.edgeThreshold,
+            urlState.showClosed
+          )
+        );
         setLoading(false);
       })
       .catch((caughtError: Error & { name?: string }) => {
@@ -244,7 +298,14 @@ function MapPageContent() {
     fetchMapData(query, controller.signal)
       .then((data) => {
         setMapData(data);
-        setLoadedEdgeKey(query);
+        setLoadedEdgeDataKey(
+          edgeDataKeyForViewport(
+            data.issues,
+            viewport,
+            edgeThreshold,
+            showClosed
+          )
+        );
         setError(null);
       })
       .catch((caughtError: Error & { name?: string }) => {
@@ -296,9 +357,16 @@ function MapPageContent() {
     () => mapQuery(viewport, edgeThreshold, showClosed),
     [edgeThreshold, showClosed, viewport]
   );
+  const issues = mapData?.issues ?? EMPTY_ISSUES;
+  const edges = mapData?.edges ?? EMPTY_EDGES;
+  const clusters = mapData?.clusters ?? EMPTY_CLUSTERS;
+  const edgeDataKey = useMemo(
+    () => edgeDataKeyForViewport(issues, viewport, edgeThreshold, showClosed),
+    [edgeThreshold, issues, showClosed, viewport]
+  );
 
   useEffect(() => {
-    if (!mapData || viewportKey === loadedEdgeKey) {
+    if (!mapData || edgeDataKey === loadedEdgeDataKey) {
       return;
     }
 
@@ -309,7 +377,7 @@ function MapPageContent() {
           setMapData((current) =>
             current ? { ...current, edges: data.edges } : current
           );
-          setLoadedEdgeKey(viewportKey);
+          setLoadedEdgeDataKey(edgeDataKey);
         })
         .catch((caughtError: Error & { name?: string }) => {
           if (caughtError.name === "AbortError") return;
@@ -321,16 +389,13 @@ function MapPageContent() {
       controller.abort();
       window.clearTimeout(timeoutId);
     };
-  }, [loadedEdgeKey, mapData, viewportKey]);
+  }, [edgeDataKey, loadedEdgeDataKey, mapData, viewportKey]);
 
-  const issues = mapData?.issues ?? EMPTY_ISSUES;
-  const edges = mapData?.edges ?? EMPTY_EDGES;
-  const clusters = mapData?.clusters ?? EMPTY_CLUSTERS;
   const closedIssueCount = useMemo(
     () => issues.filter((issue) => issue.status === "closed").length,
     [issues]
   );
-  const hasCurrentEdges = loadedEdgeKey === viewportKey;
+  const hasCurrentEdges = loadedEdgeDataKey === edgeDataKey;
   const currentEdges = hasCurrentEdges ? edges : EMPTY_EDGES;
   const validIssueIDs = useMemo(
     () => new Set(issues.map((issue) => issue.id)),
@@ -420,22 +485,16 @@ function MapPageContent() {
     [issues]
   );
 
-  const visibleIssueIds = useMemo(() => {
-    const visible = new Set<string>();
-
-    for (const issue of issues) {
-      if (
-        issue.x >= deferredViewport.xMin &&
-        issue.x <= deferredViewport.xMax &&
-        issue.y >= deferredViewport.yMin &&
-        issue.y <= deferredViewport.yMax
-      ) {
-        visible.add(issue.id);
-      }
-    }
-
-    return visible;
-  }, [issues, deferredViewport.xMax, deferredViewport.xMin, deferredViewport.yMax, deferredViewport.yMin]);
+  const visibleIssueIds = useMemo(
+    () => new Set(visibleIssueIDsForViewport(issues, deferredViewport)),
+    [
+      issues,
+      deferredViewport.xMax,
+      deferredViewport.xMin,
+      deferredViewport.yMax,
+      deferredViewport.yMin,
+    ]
+  );
 
   const visibleIssues = useMemo(
     () => issues.filter((issue) => visibleIssueIds.has(issue.id)),
@@ -696,6 +755,7 @@ function MapPageContent() {
   const clearAllSelections = useCallback(() => {
     clearSelection();
     setSelectedId(null);
+    setFilteredClusterLabel(null);
   }, [clearSelection]);
 
   const toScreen = useCallback((nx: number, ny: number) => {
@@ -749,6 +809,7 @@ function MapPageContent() {
     function onWheel(event: WheelEvent) {
       const svg = svgRef.current;
       if (!svg) return;
+      if (isMapSidebarScrollTarget(event.target)) return;
 
       event.preventDefault();
       event.stopPropagation();
@@ -951,9 +1012,10 @@ function MapPageContent() {
   const hasSelection = selectedId != null || selectedBatch.size > 0;
 
   const canvasGridLines = useMemo<IssueMapCanvasLine[]>(() => {
-    return [0.25, 0.5, 0.75].flatMap((value) => {
+    return [0.15, 0.3, 0.5, 0.7, 0.85].flatMap((value) => {
       const { sx } = toScreen(value, 0);
       const { sy } = toScreen(0, value);
+      const isCenterLine = value === 0.5;
 
       return [
         {
@@ -962,7 +1024,8 @@ function MapPageContent() {
           y1: PADDING,
           x2: sx,
           y2: dimensions.height - PADDING,
-          strokeOpacity: 0.06,
+          strokeOpacity: isCenterLine ? 0.14 : 0.07,
+          strokeWidth: isCenterLine ? 1.4 : 1,
         },
         {
           key: `grid-y-${value}`,
@@ -970,7 +1033,8 @@ function MapPageContent() {
           y1: sy,
           x2: dimensions.width - PADDING,
           y2: sy,
-          strokeOpacity: 0.06,
+          strokeOpacity: isCenterLine ? 0.14 : 0.07,
+          strokeWidth: isCenterLine ? 1.4 : 1,
         },
       ];
     });
@@ -1033,12 +1097,18 @@ function MapPageContent() {
           key: `blob-${clusterIndex}-${cluster.label}`,
           path,
           fill: color,
-          fillOpacity: isFiltered ? (isThisCluster ? 0.18 : 0.04) : 0.15,
+          fillOpacity: isFiltered ? (isThisCluster ? 0.18 : 0.035) : 0.13,
+          stroke: color,
+          strokeOpacity: isFiltered ? (isThisCluster ? 0.55 : 0.12) : 0.3,
+          strokeWidth: isFiltered ? (isThisCluster ? 2.2 : 1.1) : 1.4,
+          filter: `url(#map-blob-shadow-${canvasThemeID})`,
           label: cluster.label,
           labelX: centroidX,
-          labelY: topY - 55,
+          labelY: Math.max(topY - 28, PADDING - 12),
+          labelClassName: "text-[11px] font-semibold uppercase tracking-[0.2em]",
+          labelStrokeWidth: 7,
           labelFill: color,
-          labelFillOpacity: isFiltered ? (isThisCluster ? 0.8 : 0.2) : 0.6,
+          labelFillOpacity: isFiltered ? (isThisCluster ? 0.88 : 0.24) : 0.74,
           onClick: (e: React.MouseEvent<SVGGElement>) => {
             e.stopPropagation();
             setFilteredClusterLabel(
@@ -1049,7 +1119,14 @@ function MapPageContent() {
         };
       })
       .filter(Boolean) as IssueMapCanvasBlob[];
-  }, [visibleClusters, clusterMembers, issueIndex, toScreen, filteredClusterLabel]);
+  }, [
+    canvasThemeID,
+    visibleClusters,
+    clusterMembers,
+    issueIndex,
+    toScreen,
+    filteredClusterLabel,
+  ]);
 
   const filteredIssueIds = useMemo(() => {
     if (!filteredClusterLabel) return null;
@@ -1057,6 +1134,30 @@ function MapPageContent() {
     if (!members || members.length === 0) return null;
     return new Set(members);
   }, [filteredClusterLabel, clusterMembers]);
+
+  const visibleTagLegend = useMemo(() => {
+    const counts = new Map<string, number>();
+
+    for (const issue of visibleIssues) {
+      const tag = dominantTag(issue.tags);
+      counts.set(tag, (counts.get(tag) ?? 0) + 1);
+    }
+
+    return Array.from(counts.entries())
+      .map(([tag, count]) => ({
+        tag,
+        count,
+        color: TAG_COLORS[tag] ?? "#94a3b8",
+      }))
+      .sort((left, right) => {
+        if (right.count !== left.count) {
+          return right.count - left.count;
+        }
+
+        return left.tag.localeCompare(right.tag);
+      })
+      .slice(0, 5);
+  }, [visibleIssues]);
 
   const selectedCluster = useMemo(() => {
     if (!filteredClusterLabel) {
@@ -1141,7 +1242,15 @@ function MapPageContent() {
           (edge.target === selectedId && neighborIds.has(edge.source)));
       const bothHighlighted =
         isHighlighted(edge.source) && isHighlighted(edge.target);
-      const baseOpacity = 0.16 + edge.similarity * 0.26;
+      const similarityRange = Math.max(1 - edgeThreshold, 0.001);
+      const normalizedStrength = clamp(
+        (edge.similarity - edgeThreshold) / similarityRange,
+        0,
+        1
+      );
+      const strength = normalizedStrength ** 1.6;
+      const baseOpacity = 0.12 + strength * 0.7;
+      const baseWidth = 0.5 + strength * 5;
 
       return [
         {
@@ -1152,19 +1261,20 @@ function MapPageContent() {
           by: issueB.y,
           stroke: isNeighborLink ? selectedIssueColor : "currentColor",
           strokeOpacity: isNeighborLink
-            ? 0.5 + edge.similarity * 0.35
+            ? 0.45 + strength * 0.45
             : hasSelection
               ? bothHighlighted
-                ? Math.min(baseOpacity * 1.5, 0.72)
-                : baseOpacity * 0.45
+                ? Math.min(baseOpacity * 1.1, 0.88)
+                : baseOpacity * 0.35
               : baseOpacity,
           strokeWidth: isNeighborLink
-            ? 1 + edge.similarity * 3
-            : 0.5 + edge.similarity * 2.5,
+            ? baseWidth + 1
+            : baseWidth,
         },
       ];
     });
   }, [
+    edgeThreshold,
     hasSelection,
     issueIndex,
     neighborIds,
@@ -1248,23 +1358,37 @@ function MapPageContent() {
         y: issue.y,
         radius,
         fill: color,
-        fillOpacity: clusterDimmed ? 0.08 : dimmed ? 0.15 : isClosed ? (isActive ? 0.42 : 0.22) : isActive ? 0.9 : 0.6,
+        fillOpacity: clusterDimmed
+          ? 0.08
+          : dimmed
+            ? 0.16
+            : isClosed
+              ? isActive
+                ? 0.46
+                : 0.24
+              : isActive
+                ? 0.96
+                : 0.72,
+        filter:
+          isActive || selectedBatch.has(issue.id)
+            ? `url(#map-node-glow-${canvasThemeID})`
+            : undefined,
         stroke: color,
-        strokeWidth: isActive || isClosed ? 2 : 0,
-        strokeOpacity: 0.8,
+        strokeWidth: isActive ? 2.4 : isClosed ? 1.6 : 1.1,
+        strokeOpacity: clusterDimmed ? 0.14 : dimmed ? 0.28 : isClosed ? 0.58 : 0.88,
         strokeDasharray: isClosed ? "4 3" : undefined,
         rings,
         label:
           isActive || (isNeighbor && selectedId != null)
-            ? issue.raw.length > 40
-              ? `${issue.raw.slice(0, 40)}...`
-              : issue.raw
+            ? issueLabel(issue.raw, 40)
             : undefined,
         labelYOffset: radius + (isNeighbor && !isActive ? 10 : 8),
+        labelClassName: "text-[11px] font-semibold tracking-[0.01em]",
         labelFillOpacity: isNeighbor && !isActive ? 0.6 : 1,
       };
     });
   }, [
+    canvasThemeID,
     filteredIssueIds,
     hasSelection,
     hoveredId,
@@ -1287,6 +1411,7 @@ function MapPageContent() {
         radius: node.radius,
         fill: node.fill,
         fillOpacity: node.fillOpacity,
+        filter: node.filter,
         stroke: node.stroke,
         strokeWidth: node.strokeWidth,
         strokeOpacity: node.strokeOpacity,
@@ -1294,6 +1419,7 @@ function MapPageContent() {
         rings: node.rings,
         label: node.label,
         labelY: sy - node.labelYOffset,
+        labelClassName: node.labelClassName,
         labelFillOpacity: node.labelFillOpacity,
         className: "cursor-pointer",
       };
@@ -1436,8 +1562,59 @@ function MapPageContent() {
       <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
         <div
           ref={containerRef}
-          className="relative min-h-0 flex-1 overflow-hidden overscroll-none"
+          className="app-surface relative min-h-0 flex-1 overflow-hidden overscroll-none"
         >
+          <div className="pointer-events-none absolute left-5 top-5 z-10 max-w-sm space-y-3">
+            <div className="app-subtle-surface animate-fade-in-up px-4 py-3 shadow-sm">
+              <p className="text-[10px] font-semibold uppercase tracking-[0.24em] text-muted-foreground">
+                Semantic Projection
+              </p>
+              <p className="mt-2 text-[13px] leading-relaxed text-foreground/90">
+                Nearby issues share stronger structural similarity. Edges add
+                text-semantic relationships, and blobs show cluster neighborhoods.
+              </p>
+              <div className="mt-3 flex flex-wrap gap-2 text-[10px] text-muted-foreground">
+                <span className="inline-flex items-center gap-1.5 rounded-full border border-border/50 bg-background/80 px-2 py-1">
+                  <span className="h-2.5 w-2.5 rounded-full bg-sky-500/80" />
+                  Dominant tag
+                </span>
+                <span className="inline-flex items-center gap-1.5 rounded-full border border-border/50 bg-background/80 px-2 py-1">
+                  <span className="h-3 w-3 rounded-full border border-violet-500/70" />
+                  Assigned halo
+                </span>
+                <span className="inline-flex items-center gap-1.5 rounded-full border border-border/50 bg-background/80 px-2 py-1">
+                  <span className="h-3 w-3 rounded-full border border-foreground/40 border-dashed" />
+                  Closed issue
+                </span>
+              </div>
+            </div>
+          </div>
+
+          <div className="pointer-events-none absolute bottom-5 left-5 z-10 flex max-w-[min(42rem,calc(100%-10rem))] flex-wrap gap-2">
+            {visibleTagLegend.map(({ tag, count, color }) => (
+              <span
+                key={tag}
+                className="inline-flex items-center gap-2 rounded-full border border-border/50 bg-background/82 px-3 py-1.5 text-[11px] font-medium text-foreground shadow-sm backdrop-blur-sm"
+              >
+                <span
+                  className="h-2.5 w-2.5 rounded-full"
+                  style={{ backgroundColor: color }}
+                />
+                {tag}
+                <span className="text-muted-foreground">{count}</span>
+              </span>
+            ))}
+            <span className="inline-flex items-center rounded-full border border-border/50 bg-background/82 px-3 py-1.5 text-[11px] text-muted-foreground shadow-sm backdrop-blur-sm">
+              {selectedBatch.size > 1
+                ? `${selectedBatch.size} issues in batch`
+                : filteredClusterLabel
+                  ? `Filtering ${filteredClusterLabel}`
+                  : selectedId
+                    ? "Focused issue neighborhood"
+                    : `${visibleClusters.length} clusters in view`}
+            </span>
+          </div>
+
           <IssueMapCanvas
             ref={svgRef}
             width={dimensions.width}
@@ -1445,13 +1622,98 @@ function MapPageContent() {
             className="absolute inset-0 touch-none overscroll-none"
             style={{ cursor: isLassoing ? "crosshair" : "default" }}
             background={
-              <rect
-                x="0"
-                y="0"
-                width={dimensions.width}
-                height={dimensions.height}
-                fill="transparent"
-              />
+              <>
+                <defs>
+                  <radialGradient id={`map-glow-primary-${canvasThemeID}`} cx="18%" cy="16%" r="68%">
+                    <stop offset="0%" stopColor="var(--glow-color)" stopOpacity="0.18" />
+                    <stop offset="55%" stopColor="var(--glow-color)" stopOpacity="0.06" />
+                    <stop offset="100%" stopColor="var(--glow-color)" stopOpacity="0" />
+                  </radialGradient>
+                  <radialGradient id={`map-glow-secondary-${canvasThemeID}`} cx="84%" cy="78%" r="62%">
+                    <stop offset="0%" stopColor="var(--glow-color-current)" stopOpacity="0.14" />
+                    <stop offset="60%" stopColor="var(--glow-color-current)" stopOpacity="0.05" />
+                    <stop offset="100%" stopColor="var(--glow-color-current)" stopOpacity="0" />
+                  </radialGradient>
+                  <pattern
+                    id={`map-dot-grid-${canvasThemeID}`}
+                    width="30"
+                    height="30"
+                    patternUnits="userSpaceOnUse"
+                  >
+                    <circle cx="1.5" cy="1.5" r="1.5" fill="currentColor" fillOpacity="0.065" />
+                  </pattern>
+                  <filter
+                    id={`map-blob-shadow-${canvasThemeID}`}
+                    x="-20%"
+                    y="-20%"
+                    width="140%"
+                    height="140%"
+                  >
+                    <feDropShadow
+                      dx="0"
+                      dy="14"
+                      stdDeviation="18"
+                      floodColor="currentColor"
+                      floodOpacity="0.08"
+                    />
+                  </filter>
+                  <filter
+                    id={`map-node-glow-${canvasThemeID}`}
+                    x="-180%"
+                    y="-180%"
+                    width="360%"
+                    height="360%"
+                  >
+                    <feDropShadow
+                      dx="0"
+                      dy="0"
+                      stdDeviation="8"
+                      floodColor="currentColor"
+                      floodOpacity="0.18"
+                    />
+                  </filter>
+                </defs>
+                <rect
+                  x="0"
+                  y="0"
+                  width={dimensions.width}
+                  height={dimensions.height}
+                  fill="var(--background)"
+                />
+                <rect
+                  x="0"
+                  y="0"
+                  width={dimensions.width}
+                  height={dimensions.height}
+                  fill={`url(#map-glow-primary-${canvasThemeID})`}
+                />
+                <rect
+                  x="0"
+                  y="0"
+                  width={dimensions.width}
+                  height={dimensions.height}
+                  fill={`url(#map-glow-secondary-${canvasThemeID})`}
+                />
+                <rect
+                  x={PADDING}
+                  y={PADDING}
+                  width={Math.max(0, dimensions.width - PADDING * 2)}
+                  height={Math.max(0, dimensions.height - PADDING * 2)}
+                  rx="22"
+                  fill={`url(#map-dot-grid-${canvasThemeID})`}
+                  opacity="0.95"
+                />
+                <rect
+                  x={PADDING}
+                  y={PADDING}
+                  width={Math.max(0, dimensions.width - PADDING * 2)}
+                  height={Math.max(0, dimensions.height - PADDING * 2)}
+                  rx="22"
+                  fill="none"
+                  stroke="currentColor"
+                  strokeOpacity="0.1"
+                />
+              </>
             }
             onMouseDown={handleMouseDown}
             onMouseMove={handleMouseMove}
@@ -1487,7 +1749,10 @@ function MapPageContent() {
             }`}
           >
             {sidebarIssue && selectedBatch.size === 0 && (
-              <div className="flex h-full flex-col overflow-y-auto p-5">
+              <div
+                data-map-sidebar-scroll="true"
+                className="flex h-full flex-col overflow-y-auto overscroll-contain p-5"
+              >
                 <div className="flex items-start justify-between gap-3">
                   <div className="space-y-2">
                     <div className="flex flex-wrap items-center gap-2">
@@ -1624,7 +1889,10 @@ function MapPageContent() {
             }`}
           >
             {selectedCluster && selectedId == null && selectedBatch.size === 0 && (
-              <div className="flex h-full flex-col overflow-y-auto p-5">
+              <div
+                data-map-sidebar-scroll="true"
+                className="flex h-full flex-col overflow-y-auto overscroll-contain p-5"
+              >
                 <div className="flex items-start justify-between gap-3">
                   <div className="space-y-2">
                     <div className="flex flex-wrap items-center gap-2">
@@ -1718,7 +1986,10 @@ function MapPageContent() {
             }`}
           >
             {selectedBatch.size > 0 && (
-              <div className="flex h-full flex-col overflow-y-auto p-5">
+              <div
+                data-map-sidebar-scroll="true"
+                className="flex h-full flex-col overflow-y-auto overscroll-contain p-5"
+              >
                 <div className="flex items-center justify-between gap-3">
                   <div>
                     <p className="text-[13px] font-medium">

@@ -2,6 +2,7 @@ package commands
 
 import (
 	"context"
+	"fmt"
 
 	"splat/internal/issues"
 	"splat/internal/services"
@@ -25,17 +26,14 @@ func (h CreateIssueHandler) Handle(ctx context.Context, input CreateIssue) (crea
 	}
 
 	id := issues.NewIssueID()
-
-	enriched, err := h.Enricher.AnalyzeCreateInput(ctx, issues.CreateInput{
+	issue := issues.BuildNewIssue(id, issues.CreateInput{
 		Raw:       input.Raw,
 		Tags:      input.Tags,
 		CreatedBy: input.CreatedBy,
 	})
-	if err != nil {
-		return issues.Issue{}, err
-	}
-
-	issue := issues.BuildNewIssue(id, enriched)
+	issue.EnrichmentStatus = issues.EnrichmentStatusPending
+	issue.EnrichmentError = ""
+	issue.EnrichmentTargetSequence = 1
 	reportEvent := issue.ReportEvent()
 
 	uow, finish, err := Begin(ctx, h.Runner)
@@ -48,6 +46,13 @@ func (h CreateIssueHandler) Handle(ctx context.Context, input CreateIssue) (crea
 	})
 
 	if err := uow.SaveIssue(ctx, issue); err != nil {
+		return issues.Issue{}, err
+	}
+	jobStore, ok := uow.(issues.EnrichmentJobWriter)
+	if !ok {
+		return issues.Issue{}, fmt.Errorf("unit of work does not support issue enrichment jobs")
+	}
+	if err := jobStore.EnqueueIssueEnrichment(ctx, issue.ID, issue.EnrichmentTargetSequence); err != nil {
 		return issues.Issue{}, err
 	}
 

@@ -82,6 +82,11 @@ func (s *PostgresStore) List(ctx context.Context) ([]Issue, error) {
 		}
 		items = append(items, issue)
 	}
+	states, err := loadIssueEnrichmentStates(ctx, s.db, issueIDs(items))
+	if err != nil {
+		return nil, err
+	}
+	items = applyIssueEnrichmentStates(items, states)
 	return cloneIssues(items), nil
 }
 
@@ -105,6 +110,11 @@ func (s *PostgresStore) ListFiltered(ctx context.Context, opts ListOptions) ([]I
 		}
 		items = append(items, issue)
 	}
+	states, err := loadIssueEnrichmentStates(ctx, s.db, issueIDs(items))
+	if err != nil {
+		return nil, err
+	}
+	items = applyIssueEnrichmentStates(items, states)
 	return cloneIssues(items), nil
 }
 
@@ -164,6 +174,18 @@ func (s *PostgresStore) SearchIssues(ctx context.Context, opts SemanticSearchOpt
 			SemanticDistance: distance,
 		})
 	}
+	items := make([]Issue, 0, len(results))
+	for _, result := range results {
+		items = append(items, result.Issue)
+	}
+	states, err := loadIssueEnrichmentStates(ctx, s.db, issueIDs(items))
+	if err != nil {
+		return nil, err
+	}
+	items = applyIssueEnrichmentStates(items, states)
+	for i := range results {
+		results[i].Issue = items[i]
+	}
 
 	return results, nil
 }
@@ -174,7 +196,15 @@ func (s *PostgresStore) Get(ctx context.Context, id string) (Issue, error) {
 		return Issue{}, ErrNotFound
 	}
 
-	return s.getIssueWithDiscussion(ctx, s.queries, id)
+	issue, err := s.getIssueWithDiscussion(ctx, s.queries, id)
+	if err != nil {
+		return Issue{}, err
+	}
+	states, err := loadIssueEnrichmentStates(ctx, s.db, []string{id})
+	if err != nil {
+		return Issue{}, err
+	}
+	return applyIssueEnrichmentStates([]Issue{issue}, states)[0], nil
 }
 
 func (s *PostgresStore) LoadMapProjectionData(ctx context.Context) ([]MapProjectionIssue, []Tag, error) {
@@ -676,7 +706,7 @@ func issueFromQuery(row issuesdb.Issue) (Issue, error) {
 		closedBy = ""
 	}
 
-	return Issue{
+	return normalizeIssueEnrichment(Issue{
 		ID:         row.ID,
 		Raw:        row.Raw,
 		Tags:       tags,
@@ -688,7 +718,72 @@ func issueFromQuery(row issuesdb.Issue) (Issue, error) {
 		AssignedTo: strings.TrimSpace(row.AssignedTo),
 		TagScores:  tagScores,
 		Embedding:  embedding,
-	}, nil
+	}), nil
+}
+
+type issueEnrichmentStateRecord struct {
+	Status         IssueEnrichmentStatus
+	Error          string
+	TargetSequence int
+}
+
+func loadIssueEnrichmentStates(
+	ctx context.Context,
+	db issuesdb.DBTX,
+	ids []string,
+) (map[string]issueEnrichmentStateRecord, error) {
+	if len(ids) == 0 {
+		return map[string]issueEnrichmentStateRecord{}, nil
+	}
+
+	rows, err := db.QueryContext(
+		ctx,
+		`SELECT id, enrichment_status, enrichment_error, enrichment_target_sequence
+		 FROM issues
+		 WHERE id = ANY($1)`,
+		ids,
+	)
+	if err != nil {
+		return nil, fmt.Errorf("load issue enrichment states: %w", err)
+	}
+	defer rows.Close()
+
+	states := make(map[string]issueEnrichmentStateRecord, len(ids))
+	for rows.Next() {
+		var (
+			id             string
+			status         string
+			enrichmentErr  string
+			targetSequence int64
+		)
+		if err := rows.Scan(&id, &status, &enrichmentErr, &targetSequence); err != nil {
+			return nil, fmt.Errorf("scan issue enrichment state: %w", err)
+		}
+		states[id] = issueEnrichmentStateRecord{
+			Status:         normalizeIssueEnrichmentStatus(IssueEnrichmentStatus(status)),
+			Error:          strings.TrimSpace(enrichmentErr),
+			TargetSequence: int(targetSequence),
+		}
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("iterate issue enrichment states: %w", err)
+	}
+	return states, nil
+}
+
+func applyIssueEnrichmentStates(items []Issue, states map[string]issueEnrichmentStateRecord) []Issue {
+	for i := range items {
+		state, ok := states[items[i].ID]
+		if !ok {
+			items[i] = normalizeIssueEnrichment(items[i])
+			continue
+		}
+		items[i].EnrichmentStatus = state.Status
+		items[i].EnrichmentError = state.Error
+		items[i].EnrichmentTargetSequence = state.TargetSequence
+		items[i] = normalizeIssueEnrichment(items[i])
+	}
+	return items
 }
 
 func issueModelFromGetIssueRow(row issuesdb.GetIssueRow) issuesdb.Issue {

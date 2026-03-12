@@ -31,6 +31,9 @@ func (s *PostgresStore) SaveIssue(ctx context.Context, issue Issue) error {
 	}); err != nil {
 		return fmt.Errorf("save issue: %w", err)
 	}
+	if err := updateIssueEnrichmentState(ctx, s.db, record.ID, issueFieldUpdateForIssue(issue)); err != nil {
+		return err
+	}
 	if err := syncIssueEmbeddingVector(ctx, s.db, record.ID, issue.Embedding); err != nil {
 		return err
 	}
@@ -97,8 +100,22 @@ func (s *PostgresStore) UpdateIssueFields(ctx context.Context, id string, fields
 			return err
 		}
 	}
+	if err := updateIssueEnrichmentState(ctx, s.db, id, fields); err != nil {
+		return err
+	}
 
 	return nil
+}
+
+func issueFieldUpdateForIssue(issue Issue) IssueFieldUpdate {
+	status := normalizeIssueEnrichmentStatus(issue.EnrichmentStatus)
+	errText := strings.TrimSpace(issue.EnrichmentError)
+	target := issue.EnrichmentTargetSequence
+	return IssueFieldUpdate{
+		EnrichmentStatus:         &status,
+		EnrichmentError:          &errText,
+		EnrichmentTargetSequence: &target,
+	}
 }
 
 func buildRefinementRecord(id string, fields IssueFieldUpdate) (issuesdb.UpdateIssueRefinementParams, error) {
@@ -148,6 +165,44 @@ func syncIssueEmbeddingVector(ctx context.Context, db issuesdb.DBTX, issueID str
 		issueID,
 	); err != nil {
 		return fmt.Errorf("sync embedding vector for issue %q: %w", issueID, err)
+	}
+	return nil
+}
+
+func updateIssueEnrichmentState(ctx context.Context, db issuesdb.DBTX, issueID string, fields IssueFieldUpdate) error {
+	if fields.EnrichmentStatus == nil && fields.EnrichmentError == nil && fields.EnrichmentTargetSequence == nil {
+		return nil
+	}
+
+	var (
+		statusParam any
+		errorParam  any
+		targetParam any
+	)
+	if fields.EnrichmentStatus != nil {
+		status := string(normalizeIssueEnrichmentStatus(*fields.EnrichmentStatus))
+		statusParam = status
+	}
+	if fields.EnrichmentError != nil {
+		errorParam = strings.TrimSpace(*fields.EnrichmentError)
+	}
+	if fields.EnrichmentTargetSequence != nil {
+		targetParam = int64(*fields.EnrichmentTargetSequence)
+	}
+
+	if _, err := db.ExecContext(
+		ctx,
+		`UPDATE issues
+		 SET enrichment_status = COALESCE($1::text, enrichment_status),
+		     enrichment_error = COALESCE($2::text, enrichment_error),
+		     enrichment_target_sequence = COALESCE($3::bigint, enrichment_target_sequence)
+		 WHERE id = $4`,
+		statusParam,
+		errorParam,
+		targetParam,
+		issueID,
+	); err != nil {
+		return fmt.Errorf("update issue enrichment state for %q: %w", issueID, err)
 	}
 	return nil
 }

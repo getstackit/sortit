@@ -1,5 +1,5 @@
 import type { ReactNode } from "react";
-import { render, screen, waitFor } from "@testing-library/react";
+import { act, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import MapPage from "@/app/map/page";
 import type { MapData } from "@/features/map/types";
@@ -120,6 +120,7 @@ function makeMapData(overrides?: Partial<MapData>): MapData {
 
 beforeEach(() => {
   vi.clearAllMocks();
+  vi.useRealTimers();
   mockSearchParams = new URLSearchParams();
   mockFetchMapData.mockResolvedValue(makeMapData());
   mockFetchViewportEdges.mockResolvedValue({ edges: [] });
@@ -147,6 +148,57 @@ beforeEach(() => {
 });
 
 describe("MapPage", () => {
+  it("does not refetch edges when the viewport changes but visible issues stay the same", async () => {
+    mockSearchParams = new URLSearchParams(
+      "xMin=0.05&xMax=0.35&yMin=0.05&yMax=0.35"
+    );
+
+    const { rerender } = render(<MapPage />);
+
+    await waitFor(() => {
+      expect(screen.getByText("Map")).toBeInTheDocument();
+    });
+
+    expect(mockFetchViewportEdges).not.toHaveBeenCalled();
+
+    mockSearchParams = new URLSearchParams(
+      "xMin=0.06&xMax=0.34&yMin=0.06&yMax=0.34"
+    );
+    await act(async () => {
+      rerender(<MapPage />);
+      await new Promise((resolve) => setTimeout(resolve, 250));
+    });
+
+    expect(mockFetchViewportEdges).not.toHaveBeenCalled();
+  });
+
+  it("refetches edges when panning changes which issues are visible", async () => {
+    mockSearchParams = new URLSearchParams(
+      "xMin=0.05&xMax=0.35&yMin=0.05&yMax=0.35"
+    );
+
+    const { rerender } = render(<MapPage />);
+
+    await waitFor(() => {
+      expect(screen.getByText("Map")).toBeInTheDocument();
+    });
+
+    mockSearchParams = new URLSearchParams(
+      "xMin=0.75&xMax=0.88&yMin=0.75&yMax=0.88"
+    );
+    await act(async () => {
+      rerender(<MapPage />);
+    });
+
+    await waitFor(() => {
+      expect(mockFetchViewportEdges).toHaveBeenCalledTimes(1);
+    });
+    expect(mockFetchViewportEdges.mock.calls[0]?.[0]).toBe(
+      "xMin=0.7500&xMax=0.8800&yMin=0.7500&yMax=0.8800&edgeThreshold=0.40&status=open"
+    );
+    expect(mockFetchViewportEdges.mock.calls[0]?.[1]).toBeInstanceOf(AbortSignal);
+  });
+
   it("renders without crashing after data loads", async () => {
     const { container } = render(<MapPage />);
     await waitFor(() => {
@@ -317,6 +369,37 @@ describe("MapPage", () => {
     });
   });
 
+  it("clears the blob selection when the canvas is clicked", async () => {
+    const user = userEvent.setup();
+    const { container } = render(<MapPage />);
+
+    await waitFor(() => {
+      expect(container.querySelector("svg")).toBeInTheDocument();
+    });
+
+    const blobGroup = container.querySelector("path[stroke-linejoin='round']")?.parentElement;
+    expect(blobGroup).toBeInTheDocument();
+
+    await user.click(blobGroup!);
+
+    await waitFor(() => {
+      expect(screen.getByText("Cluster members")).toBeInTheDocument();
+      expect(screen.getByRole("button", { name: /Bug \/ Feature/i })).toBeInTheDocument();
+    });
+
+    const canvas = container.querySelector("svg");
+    expect(canvas).toBeInTheDocument();
+
+    await user.click(canvas!);
+
+    await waitFor(() => {
+      expect(screen.queryByText("Cluster members")).not.toBeInTheDocument();
+      expect(
+        screen.queryByRole("button", { name: /Bug \/ Feature/i })
+      ).not.toBeInTheDocument();
+    });
+  });
+
   it("shows cluster sidebar details and top-tag drilldown when a blob is clicked", async () => {
     const user = userEvent.setup();
     const { container } = render(<MapPage />);
@@ -381,6 +464,38 @@ describe("MapPage", () => {
     await waitFor(() => {
       expect(screen.getByText("Avery")).toBeInTheDocument();
     });
+  });
+
+  it("does not let sidebar wheel events fall through to the map", async () => {
+    const user = userEvent.setup();
+    const { container } = render(<MapPage />);
+
+    await waitFor(() => {
+      expect(container.querySelector("svg")).toBeInTheDocument();
+    });
+
+    const firstIssue = container.querySelector("[data-issue='issue-001']");
+    expect(firstIssue).toBeInTheDocument();
+
+    await user.click(firstIssue!);
+
+    const issueLink = await screen.findByRole("link", { name: "View issue" });
+    const sidebar = issueLink.closest("[data-map-sidebar-scroll]");
+
+    expect(sidebar).toBeInTheDocument();
+
+    const wheelEvent = new WheelEvent("wheel", {
+      bubbles: true,
+      cancelable: true,
+      clientX: 700,
+      clientY: 240,
+      deltaY: 120,
+    });
+
+    sidebar!.dispatchEvent(wheelEvent);
+
+    expect(wheelEvent.defaultPrevented).toBe(false);
+    expect(mockFetchViewportEdges).not.toHaveBeenCalled();
   });
 
   it("shows assigned counts and unassigned labels in the cluster sidebar", async () => {

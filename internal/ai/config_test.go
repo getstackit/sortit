@@ -44,3 +44,24 @@ func TestRunningUnderGoTest(t *testing.T) {
 		t.Fatal("expected test flag to be present under go test")
 	}
 }
+
+func TestCanonicalModelFallsBackToExplicitTagModel(t *testing.T) {
+	t.Setenv("OPENAI_TAG_MODEL", "gpt-test-tag")
+	t.Setenv("OPENAI_CANONICAL_MODEL", "")
+
+	tagModel := os.Getenv("OPENAI_TAG_MODEL")
+	canonicalModel := openAICanonicalModelFromEnv(tagModel)
+	if canonicalModel != tagModel {
+		t.Fatalf("expected canonical model fallback %q, got %q", tagModel, canonicalModel)
+	}
+}
+
+func TestCanonicalModelPrefersExplicitCanonicalModel(t *testing.T) {
+	t.Setenv("OPENAI_TAG_MODEL", "gpt-test-tag")
+	t.Setenv("OPENAI_CANONICAL_MODEL", "gpt-test-canonical")
+
+	canonicalModel := openAICanonicalModelFromEnv(os.Getenv("OPENAI_TAG_MODEL"))
+	if canonicalModel != "gpt-test-canonical" {
+		t.Fatalf("expected canonical model override %q, got %q", "gpt-test-canonical", canonicalModel)
+	}
+}

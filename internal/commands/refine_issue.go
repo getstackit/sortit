@@ -2,6 +2,7 @@ package commands
 
 import (
 	"context"
+	"fmt"
 
 	"splat/internal/issues"
 	"splat/internal/services"
@@ -21,22 +22,17 @@ type RefineIssueHandler struct {
 }
 
 func (h RefineIssueHandler) Handle(ctx context.Context, input RefineIssue) (refined issues.Issue, err error) {
+	postRaw, err := issues.ValidateRaw(input.Raw, "raw")
+	if err != nil {
+		return issues.Issue{}, err
+	}
+
 	current, err := h.Store.Get(ctx, input.ID)
 	if err != nil {
 		return issues.Issue{}, err
 	}
 
 	if err := issues.EnsureMutable(current); err != nil {
-		return issues.Issue{}, err
-	}
-
-	enriched, err := h.Enricher.AnalyzeRefineInput(ctx, current, input.Raw, input.CreatedBy)
-	if err != nil {
-		return issues.Issue{}, err
-	}
-
-	postRaw, canonicalRaw, err := issues.ValidateRefineInput(enriched)
-	if err != nil {
 		return issues.Issue{}, err
 	}
 
@@ -58,17 +54,26 @@ func (h RefineIssueHandler) Handle(ctx context.Context, input RefineIssue) (refi
 		return issues.Issue{}, err
 	}
 
-	post := issues.NewDiscussionPost(current.ID, current.Discussion, postRaw, enriched.CreatedBy, "refinement")
+	post := issues.NewDiscussionPost(current.ID, current.Discussion, postRaw, issues.DefaultActor(input.CreatedBy), "refinement")
 	if err := uow.SaveIssuePost(ctx, post); err != nil {
 		return issues.Issue{}, err
 	}
+	jobStore, ok := uow.(issues.EnrichmentJobWriter)
+	if !ok {
+		return issues.Issue{}, fmt.Errorf("unit of work does not support issue enrichment jobs")
+	}
+	pendingStatus := issues.EnrichmentStatusPending
+	emptyError := ""
+	targetSequence := post.Sequence
 
 	if err := uow.UpdateIssueFields(ctx, current.ID, issues.IssueFieldUpdate{
-		Raw:       &canonicalRaw,
-		Tags:      issues.DisplayTags(enriched.Tags, enriched.TagScores),
-		TagScores: enriched.TagScores,
-		Embedding: enriched.Embedding,
+		EnrichmentStatus:         &pendingStatus,
+		EnrichmentError:          &emptyError,
+		EnrichmentTargetSequence: &targetSequence,
 	}); err != nil {
+		return issues.Issue{}, err
+	}
+	if err := jobStore.EnqueueIssueEnrichment(ctx, current.ID, targetSequence); err != nil {
 		return issues.Issue{}, err
 	}
 

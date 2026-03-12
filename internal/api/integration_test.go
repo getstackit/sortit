@@ -124,6 +124,9 @@ func TestAPIIntegrationCreateLookupMapAndTagsWithMockAIBackend(t *testing.T) {
 		Raw:       "CSV export is too slow for large workspaces",
 		CreatedBy: "Jordan",
 	})
+	processPendingEnrichment(t, server)
+	first = getIssueViaAPI(t, handler, first.ID)
+	second = getIssueViaAPI(t, handler, second.ID)
 	assigned := assignIssueViaAPI(t, handler, first.ID, assignIssueRequest{
 		AssignedTo: "Avery",
 	})
@@ -341,6 +344,8 @@ func TestAPIIntegrationRefineIssueUpdatesCanonicalTagsAndDiscussion(t *testing.T
 		Raw:       "Maybe we should improve this workflow",
 		CreatedBy: "Casey",
 	})
+	processPendingEnrichment(t, server)
+	created = getIssueViaAPI(t, handler, created.ID)
 	if !slices.Equal(created.Tags, []string{"idea"}) {
 		t.Fatalf("unexpected tags before refinement: %#v", created.Tags)
 	}
@@ -349,6 +354,11 @@ func TestAPIIntegrationRefineIssueUpdatesCanonicalTagsAndDiscussion(t *testing.T
 		Raw:       "Customer reports export spins forever when downloading a CSV.",
 		CreatedBy: "Jordan",
 	})
+	if refined.EnrichmentStatus != issues.EnrichmentStatusPending {
+		t.Fatalf("expected pending refinement enrichment, got %q", refined.EnrichmentStatus)
+	}
+	processPendingEnrichment(t, server)
+	refined = getIssueViaAPI(t, handler, created.ID)
 	if len(refined.Discussion) != 2 {
 		t.Fatalf("expected 2 discussion posts, got %#v", refined.Discussion)
 	}

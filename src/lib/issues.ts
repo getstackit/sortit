@@ -2,6 +2,7 @@ import { apiURL } from "@/lib/api";
 import { getJSON, postJSON } from "@/lib/http";
 
 export type IssueStatus = "open" | "closed";
+export type IssueEnrichmentStatus = "complete" | "pending" | "failed";
 export type IssueListStatus = IssueStatus | "all";
 export type IssuePostKind =
   | "report"
@@ -106,6 +107,9 @@ export type IssueRecord = {
   discussion?: IssuePostRecord[];
   links?: IssueLinkRecord[];
   operations?: IssueOperationRecord[];
+  enrichmentStatus?: IssueEnrichmentStatus;
+  enrichmentError?: string;
+  enrichmentTargetSequence?: number;
 };
 
 type IssuesResponse = {

@@ -122,6 +122,12 @@ function statusClasses(status: IssueRecord["status"]) {
     : "bg-emerald-100 text-emerald-700";
 }
 
+function enrichmentClasses(status: IssueRecord["enrichmentStatus"]) {
+  return status === "failed"
+    ? "bg-rose-100 text-rose-700"
+    : "bg-amber-100 text-amber-700";
+}
+
 function compareIssueStatus(left: { status: IssueRecord["status"] }, right: { status: IssueRecord["status"] }) {
   if (left.status === right.status) {
     return 0;
@@ -738,6 +744,19 @@ export function IssueDetailPage({ issueID }: { issueID: string }) {
               >
                 {issue.status === "closed" ? "Closed" : "Open"}
               </span>
+              {issue.enrichmentStatus && issue.enrichmentStatus !== "complete" && (
+                <>
+                  <span className="mx-1 text-border">·</span>
+                  <span
+                    className={cn(
+                      "rounded-full px-2 py-0.5 text-[11px] font-medium",
+                      enrichmentClasses(issue.enrichmentStatus)
+                    )}
+                  >
+                    {issue.enrichmentStatus === "failed" ? "Analysis failed" : "Analyzing"}
+                  </span>
+                </>
+              )}
               <span className="mx-1 text-border">·</span>
               {assignEditing ? (
                 <span className="inline-flex items-center gap-1.5">
@@ -871,6 +890,16 @@ export function IssueDetailPage({ issueID }: { issueID: string }) {
             >
               <div className="space-y-6">
                 {actionError && <div className="app-status-warning">{actionError}</div>}
+                {issue.enrichmentStatus === "pending" && (
+                  <div className="app-status-warning">
+                    Background analysis is running. Tags, embeddings, and the canonical summary may still update.
+                  </div>
+                )}
+                {issue.enrichmentStatus === "failed" && (
+                  <div className="app-status-warning">
+                    Background analysis failed{issue.enrichmentError ? `: ${issue.enrichmentError}` : "."}
+                  </div>
+                )}
 
                 <section className="app-surface rounded-[1.75rem] p-6">
                   <div className="space-y-2">
@@ -881,7 +910,9 @@ export function IssueDetailPage({ issueID }: { issueID: string }) {
                       {formatIssueTitle(issue.raw, 140)}
                     </h2>
                     <p className="text-sm text-muted-foreground">
-                      Synthesized from discussion. New posts can update it.
+                      {issue.enrichmentStatus === "pending"
+                        ? "Showing the last completed summary while new discussion is analyzed."
+                        : "Synthesized from discussion. New posts can update it."}
                     </p>
                   </div>
 

@@ -39,9 +39,17 @@ export type IssueMapCanvasBlob = {
   path: string;
   fill: string;
   fillOpacity?: number;
+  stroke?: string;
+  strokeOpacity?: number;
+  strokeWidth?: number;
+  filter?: string;
   label?: string;
   labelX?: number;
   labelY?: number;
+  labelClassName?: string;
+  labelStroke?: string;
+  labelStrokeOpacity?: number;
+  labelStrokeWidth?: number;
   labelFill?: string;
   labelFillOpacity?: number;
   onClick?: MouseEventHandler<SVGGElement>;
@@ -65,6 +73,7 @@ export type IssueMapCanvasNode = {
   radius: number;
   fill: string;
   fillOpacity?: number;
+  filter?: string;
   stroke?: string;
   strokeOpacity?: number;
   strokeWidth?: number;
@@ -73,6 +82,9 @@ export type IssueMapCanvasNode = {
   label?: string;
   labelY?: number;
   labelClassName?: string;
+  labelStroke?: string;
+  labelStrokeOpacity?: number;
+  labelStrokeWidth?: number;
   labelFill?: string;
   labelFillOpacity?: number;
   className?: string;
@@ -142,6 +154,10 @@ export const IssueMapCanvas = forwardRef<SVGSVGElement, IssueMapCanvasProps>(
             d={blob.path}
             fill={blob.fill}
             fillOpacity={blob.fillOpacity ?? 0.15}
+            stroke={blob.stroke}
+            strokeOpacity={blob.strokeOpacity}
+            strokeWidth={blob.strokeWidth}
+            filter={blob.filter}
             strokeLinejoin="round"
           />
           {blob.label && (
@@ -149,7 +165,11 @@ export const IssueMapCanvas = forwardRef<SVGSVGElement, IssueMapCanvasProps>(
               x={blob.labelX}
               y={blob.labelY}
               textAnchor="middle"
-              className="text-[10px] font-medium"
+              className={cn("text-[10px] font-medium", blob.labelClassName)}
+              paintOrder="stroke"
+              stroke={blob.labelStroke ?? "var(--background)"}
+              strokeOpacity={blob.labelStrokeOpacity ?? 0.96}
+              strokeWidth={blob.labelStrokeWidth ?? 6}
               fill={blob.labelFill ?? blob.fill}
               fillOpacity={blob.labelFillOpacity ?? 0.7}
             >
@@ -227,6 +247,7 @@ export const IssueMapCanvas = forwardRef<SVGSVGElement, IssueMapCanvasProps>(
             r={node.radius}
             fill={node.fill}
             fillOpacity={node.fillOpacity ?? 1}
+            filter={node.filter}
             stroke={node.stroke}
             strokeOpacity={node.strokeOpacity}
             strokeWidth={node.strokeWidth}
@@ -238,6 +259,10 @@ export const IssueMapCanvas = forwardRef<SVGSVGElement, IssueMapCanvasProps>(
               y={node.labelY ?? node.cy - node.radius - 8}
               textAnchor="middle"
               className={cn("fill-foreground text-[11px] font-medium", node.labelClassName)}
+              paintOrder="stroke"
+              stroke={node.labelStroke ?? "var(--background)"}
+              strokeOpacity={node.labelStrokeOpacity ?? 0.96}
+              strokeWidth={node.labelStrokeWidth ?? 5}
               fill={node.labelFill}
               fillOpacity={node.labelFillOpacity ?? 1}
             >

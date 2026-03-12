@@ -17,10 +17,13 @@ func NewAnalyzerFromEnv() (*Analyzer, error) {
 	case "", "stub":
 		return NewAnalyzer(NewStubTagger(), NewStubEmbedder()), nil
 	case "openai":
+		tagModel := os.Getenv("OPENAI_TAG_MODEL")
+
 		cfg := OpenAIConfig{
 			APIKey:         os.Getenv("OPENAI_API_KEY"),
 			BaseURL:        os.Getenv("OPENAI_BASE_URL"),
-			TagModel:       os.Getenv("OPENAI_TAG_MODEL"),
+			TagModel:       tagModel,
+			CanonicalModel: openAICanonicalModelFromEnv(tagModel),
 			EmbeddingModel: os.Getenv("OPENAI_EMBED_MODEL"),
 		}
 
@@ -44,4 +47,14 @@ func NewAnalyzerFromEnv() (*Analyzer, error) {
 
 func runningUnderGoTest() bool {
 	return flag.Lookup("test.v") != nil
+}
+
+func openAICanonicalModelFromEnv(tagModel string) string {
+	canonicalModel := os.Getenv("OPENAI_CANONICAL_MODEL")
+	// Preserve the old "one model for both tasks" behavior when callers
+	// explicitly set only OPENAI_TAG_MODEL.
+	if strings.TrimSpace(canonicalModel) == "" && strings.TrimSpace(tagModel) != "" {
+		return tagModel
+	}
+	return canonicalModel
 }
