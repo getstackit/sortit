@@ -141,6 +141,65 @@ describe("TagsPage", () => {
     expect(screen.getByText("Generic bucket")).toBeInTheDocument();
     expect(screen.getAllByText("Invoices and account charges").length).toBeGreaterThan(0);
     expect(screen.getByText("Potential merges")).toBeInTheDocument();
-    expect(screen.getByText("Name variant")).toBeInTheDocument();
+    expect(screen.getAllByText("Name variant").length).toBeGreaterThan(0);
+  });
+
+  it("shows global consolidation candidates on the tag map", async () => {
+    vi.mocked(fetchTags).mockResolvedValue([
+      makeTag({
+        name: "frontend",
+        description: "Client-side runtime behavior",
+        createdAt: new Date("2026-03-07T12:00:00Z").toISOString(),
+        embedding: [1, 0],
+      }),
+      makeTag({
+        name: "front end",
+        description: "Spacing variant",
+        createdAt: new Date("2026-03-08T12:00:00Z").toISOString(),
+        embedding: [1, 0],
+      }),
+      makeTag({
+        name: "billing",
+        description: "Invoices and account charges",
+        embedding: [0, 1],
+      }),
+    ]);
+    vi.mocked(useIssues).mockReturnValue({
+      data: [
+        {
+          id: "issue-1",
+          raw: "Client issue",
+          tags: ["frontend", "front end"],
+          tagScores: [
+            { tag: "frontend", relevance: 0.96 },
+            { tag: "front end", relevance: 0.88 },
+          ],
+          createdBy: "Jonathan Goldman",
+          createdAt: new Date("2026-03-08T12:00:00Z").toISOString(),
+          status: "open",
+        },
+        {
+          id: "issue-2",
+          raw: "Another client issue",
+          tags: ["frontend", "front end"],
+          tagScores: [
+            { tag: "frontend", relevance: 0.91 },
+            { tag: "front end", relevance: 0.84 },
+          ],
+          createdBy: "Jonathan Goldman",
+          createdAt: new Date("2026-03-09T12:00:00Z").toISOString(),
+          status: "open",
+        },
+      ],
+      error: undefined,
+      isLoading: false,
+    } as ReturnType<typeof useIssues>);
+
+    render(<TagsPage />);
+
+    expect(await screen.findByText("Consolidation")).toBeInTheDocument();
+    expect(screen.getByText(/Consolidate/i)).toBeInTheDocument();
+    expect(screen.getByText("Name variant with overlapping issue coverage")).toBeInTheDocument();
+    expect(screen.getByText("2 shared issues")).toBeInTheDocument();
   });
 });

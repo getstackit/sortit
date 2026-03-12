@@ -15,6 +15,19 @@ export type MergeCandidate = {
   reason: string;
 };
 
+export type ConsolidationCandidate = {
+  canonicalName: string;
+  canonicalDescription: string;
+  aliasName: string;
+  aliasDescription: string;
+  similarity: number;
+  sharedIssueCount: number;
+  containment: number;
+  jaccard: number;
+  score: number;
+  reason: string;
+};
+
 const GENERIC_BUCKET_TAGS = new Set([
   "api",
   "backend",
@@ -25,6 +38,8 @@ const GENERIC_BUCKET_TAGS = new Set([
   "ui",
   "ux",
 ]);
+
+const CONSOLIDATION_MIN_RELEVANCE = 0.35;
 
 export function normalizeTagName(value: string) {
   return value.trim().toLowerCase();
@@ -191,4 +206,149 @@ export function buildMergeCandidates(
       similarity: candidate.similarity,
       reason: candidate.reason,
     }));
+}
+
+function relevantIssueIds(issues: IssueRecord[], tagName: string) {
+  const ids = new Set<string>();
+  for (const issue of issues) {
+    if (issueTagRelevance(issue, tagName) >= CONSOLIDATION_MIN_RELEVANCE) {
+      ids.add(issue.id);
+    }
+  }
+  return ids;
+}
+
+function setIntersectionSize(left: Set<string>, right: Set<string>) {
+  let count = 0;
+  const smaller = left.size <= right.size ? left : right;
+  const larger = smaller === left ? right : left;
+  for (const value of smaller) {
+    if (larger.has(value)) {
+      count += 1;
+    }
+  }
+  return count;
+}
+
+function compareCanonicalPreference(
+  left: { tag: TagRecord; issueCount: number },
+  right: { tag: TagRecord; issueCount: number }
+) {
+  if (left.issueCount !== right.issueCount) {
+    return right.issueCount - left.issueCount;
+  }
+
+  const leftCreated = new Date(left.tag.createdAt).getTime();
+  const rightCreated = new Date(right.tag.createdAt).getTime();
+  if (leftCreated !== rightCreated) {
+    return leftCreated - rightCreated;
+  }
+
+  if (left.tag.name.length !== right.tag.name.length) {
+    return left.tag.name.length - right.tag.name.length;
+  }
+
+  return left.tag.name.localeCompare(right.tag.name);
+}
+
+function consolidationReason(
+  lexicalVariant: boolean,
+  similarity: number,
+  sharedIssueCount: number,
+  containment: number
+) {
+  if (lexicalVariant && sharedIssueCount > 0) {
+    return "Name variant with overlapping issue coverage";
+  }
+  if (lexicalVariant) {
+    return "Name variant";
+  }
+  if (similarity >= 0.97 && containment >= 0.8) {
+    return "Near-synonym with almost identical issue coverage";
+  }
+  if (similarity >= 0.94 && sharedIssueCount >= 3) {
+    return "High semantic overlap with repeated co-occurrence";
+  }
+  return "Semantic overlap with shared issue coverage";
+}
+
+export function buildConsolidationCandidates(
+  tags: TagRecord[],
+  issues: IssueRecord[],
+  limit = 8
+): ConsolidationCandidate[] {
+  if (tags.length < 2) {
+    return [];
+  }
+
+  const normalizedTags = tags.map((tag) => ({
+    tag,
+    normalizedName: normalizeTagName(tag.name),
+    key: canonicalTagKey(tag.name),
+    issueIds: relevantIssueIds(issues, tag.name),
+  }));
+
+  const candidates: ConsolidationCandidate[] = [];
+
+  for (let leftIndex = 0; leftIndex < normalizedTags.length; leftIndex += 1) {
+    const left = normalizedTags[leftIndex];
+
+    for (let rightIndex = leftIndex + 1; rightIndex < normalizedTags.length; rightIndex += 1) {
+      const right = normalizedTags[rightIndex];
+      const lexicalVariant = left.key === right.key;
+      const similarity =
+        left.tag.embedding.length > 1 &&
+        left.tag.embedding.length === right.tag.embedding.length
+          ? cosineSimilarity(left.tag.embedding, right.tag.embedding)
+          : 0;
+      const sharedIssueCount = setIntersectionSize(left.issueIds, right.issueIds);
+      const unionCount = left.issueIds.size + right.issueIds.size - sharedIssueCount;
+      const jaccard = unionCount > 0 ? sharedIssueCount / unionCount : 0;
+      const containmentBase = Math.min(left.issueIds.size, right.issueIds.size);
+      const containment = containmentBase > 0 ? sharedIssueCount / containmentBase : 0;
+
+      const qualifies =
+        lexicalVariant ||
+        (similarity >= 0.97 && containment >= 0.6 && sharedIssueCount >= 2) ||
+        (similarity >= 0.94 && jaccard >= 0.5 && sharedIssueCount >= 3);
+
+      if (!qualifies) {
+        continue;
+      }
+
+      const preferred = [left, right].sort(compareCanonicalPreference);
+      const canonical = preferred[0];
+      const alias = preferred[1];
+      const score =
+        similarity * 0.55 +
+        containment * 0.25 +
+        jaccard * 0.15 +
+        (lexicalVariant ? 0.25 : 0);
+
+      candidates.push({
+        canonicalName: canonical.tag.name,
+        canonicalDescription: canonical.tag.description ?? "",
+        aliasName: alias.tag.name,
+        aliasDescription: alias.tag.description ?? "",
+        similarity,
+        sharedIssueCount,
+        containment,
+        jaccard,
+        score,
+        reason: consolidationReason(lexicalVariant, similarity, sharedIssueCount, containment),
+      });
+    }
+  }
+
+  return candidates
+    .sort((left, right) => {
+      if (right.score !== left.score) {
+        return right.score - left.score;
+      }
+      if (right.sharedIssueCount !== left.sharedIssueCount) {
+        return right.sharedIssueCount - left.sharedIssueCount;
+      }
+      return left.aliasName.localeCompare(right.aliasName);
+    })
+    .slice(0, limit);
 }

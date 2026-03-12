@@ -2,22 +2,19 @@
 
 import Link from "next/link";
 import { Fragment, useEffect, useMemo, useState } from "react";
-import { UMAP } from "umap-js";
 import { AppShell } from "@/components/app-shell";
 import { AppSidebar } from "@/components/app-sidebar";
 import { SiteHeader } from "@/components/site-header";
-import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useIssues } from "@/hooks/use-issues";
 import {
+  buildConsolidationCandidates,
   buildMergeCandidates,
   buildSpecificTagSuggestions,
   cosineSimilarity,
   isGenericBucketTag,
 } from "@/lib/tag-quality";
 import { fetchTags, tagHref, type TagRecord } from "@/lib/tags";
-
-type ProjectionMethod = "pca" | "umap";
 
 type TagPoint = {
   tag: TagRecord;
@@ -34,19 +31,14 @@ type TagEdge = {
 const SECTION_LINKS = [
   { id: "controls", title: "Controls" },
   { id: "projection", title: "Projection" },
+  { id: "consolidation", title: "Consolidation" },
   { id: "matrix", title: "Matrix" },
 ];
-
-const METHOD_LABELS: Record<ProjectionMethod, string> = {
-  pca: "PCA",
-  umap: "UMAP",
-};
 
 export default function TagsPage() {
   const [tags, setTags] = useState<TagRecord[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [method, setMethod] = useState<ProjectionMethod>("pca");
   const [edgeThreshold, setEdgeThreshold] = useState(0.72);
   const [selectedTagName, setSelectedTagName] = useState<string | null>(null);
   const {
@@ -90,8 +82,8 @@ export default function TagsPage() {
       : embeddedTags[0]?.name ?? null;
 
   const points = useMemo(
-    () => projectTags(embeddedTags, method),
-    [embeddedTags, method]
+    () => projectTags(embeddedTags),
+    [embeddedTags]
   );
 
   const pointsByName = useMemo(
@@ -133,6 +125,10 @@ export default function TagsPage() {
         : [],
     [issues, selectedPoint, tags]
   );
+  const consolidationCandidates = useMemo(
+    () => buildConsolidationCandidates(tags, issues),
+    [issues, tags]
+  );
 
   const similarityMatrix = useMemo(
     () => buildSimilarityMatrix(embeddedTags),
@@ -159,19 +155,8 @@ export default function TagsPage() {
                   Projection
                 </p>
                 <p className="mt-1 text-sm text-muted-foreground">
-                  PCA is more stable and interpretable. UMAP is better at revealing local nonlinear structure.
+                  Tag positions use PCA so the layout stays stable and readable as tags change over time.
                 </p>
-              </div>
-              <div className="flex flex-wrap gap-2">
-                {(["pca", "umap"] as ProjectionMethod[]).map((option) => (
-                  <Button
-                    key={option}
-                    variant={method === option ? "default" : "outline"}
-                    onClick={() => setMethod(option)}
-                  >
-                    {METHOD_LABELS[option]}
-                  </Button>
-                ))}
               </div>
             </div>
 
@@ -309,7 +294,7 @@ export default function TagsPage() {
                           className="rounded-full px-2 py-1 text-xs font-medium text-white shadow-sm"
                           style={{ backgroundColor: tagColor(selectedPoint.tag.name) }}
                         >
-                          {METHOD_LABELS[method]}
+                          PCA
                         </span>
                         <span className="rounded-full border border-border/60 bg-background px-2.5 py-1 text-xs font-medium text-muted-foreground">
                           {isGenericBucketTag(selectedPoint.tag.name)
@@ -438,12 +423,115 @@ export default function TagsPage() {
                   <p>
                     `PCA` preserves broad global axes and tends to move less when tags change.
                   </p>
-                  <p>
-                    `UMAP` emphasizes local neighborhoods and often reveals tighter semantic micro-clusters.
-                  </p>
                 </div>
               </div>
             </div>
+          </section>
+
+          <section
+            id="consolidation"
+            className="app-surface p-5"
+          >
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              <div>
+                <p className="text-xs font-medium uppercase tracking-[0.18em] text-muted-foreground">
+                  Consolidation
+                </p>
+                <p className="mt-1 text-sm text-muted-foreground">
+                  Candidate merges based on lexical variants, embedding similarity, and overlapping issue coverage.
+                </p>
+              </div>
+              <span className="app-chip">
+                {consolidationCandidates.length} candidates
+              </span>
+            </div>
+
+            {loading || issuesLoading ? (
+              <p className="mt-4 text-sm text-muted-foreground">
+                Loading tag consolidation signals...
+              </p>
+            ) : error || issuesError ? (
+              <p className="mt-4 text-sm text-muted-foreground">
+                Could not compute consolidation candidates from the current tag and issue data.
+              </p>
+            ) : consolidationCandidates.length === 0 ? (
+              <p className="mt-4 text-sm text-muted-foreground">
+                No strong consolidation candidates have surfaced yet.
+              </p>
+            ) : (
+              <div className="mt-4 grid gap-3 lg:grid-cols-2">
+                {consolidationCandidates.map((candidate) => (
+                  <div
+                    key={`${candidate.canonicalName}-${candidate.aliasName}`}
+                    className="app-subtle-surface rounded-2xl p-4"
+                  >
+                    <div className="flex items-start justify-between gap-3">
+                      <div>
+                        <p className="text-[11px] font-medium uppercase tracking-[0.14em] text-muted-foreground">
+                          Suggested consolidation
+                        </p>
+                        <p className="mt-2 text-sm leading-6">
+                          Consolidate{" "}
+                          <Link
+                            href={tagHref(candidate.aliasName)}
+                            className="font-semibold text-foreground underline decoration-border/70 underline-offset-4"
+                          >
+                            {candidate.aliasName}
+                          </Link>{" "}
+                          into{" "}
+                          <Link
+                            href={tagHref(candidate.canonicalName)}
+                            className="font-semibold text-foreground underline decoration-border/70 underline-offset-4"
+                          >
+                            {candidate.canonicalName}
+                          </Link>
+                          .
+                        </p>
+                        <p className="mt-2 text-xs text-muted-foreground">
+                          {candidate.reason}
+                        </p>
+                      </div>
+                      <span className="rounded-full border border-border/60 bg-background px-2.5 py-1 text-xs font-medium text-muted-foreground">
+                        {Math.round(candidate.score * 100)} score
+                      </span>
+                    </div>
+
+                    <div className="mt-4 grid gap-3 sm:grid-cols-2">
+                      <div>
+                        <p className="text-[11px] font-medium uppercase tracking-[0.14em] text-muted-foreground">
+                          Canonical tag
+                        </p>
+                        <p className="mt-1 text-sm font-medium">{candidate.canonicalName}</p>
+                        <p className="mt-1 text-xs text-muted-foreground">
+                          {candidate.canonicalDescription || "No description"}
+                        </p>
+                      </div>
+                      <div>
+                        <p className="text-[11px] font-medium uppercase tracking-[0.14em] text-muted-foreground">
+                          Alias candidate
+                        </p>
+                        <p className="mt-1 text-sm font-medium">{candidate.aliasName}</p>
+                        <p className="mt-1 text-xs text-muted-foreground">
+                          {candidate.aliasDescription || "No description"}
+                        </p>
+                      </div>
+                    </div>
+
+                    <div className="mt-4 flex flex-wrap gap-2 text-xs text-muted-foreground">
+                      <span className="rounded-full border border-border/60 bg-background px-2.5 py-1">
+                        {Math.round(candidate.similarity * 100)}% semantic similarity
+                      </span>
+                      <span className="rounded-full border border-border/60 bg-background px-2.5 py-1">
+                        {candidate.sharedIssueCount} shared issues
+                      </span>
+                      <span className="rounded-full border border-border/60 bg-background px-2.5 py-1">
+                        {Math.round(candidate.containment * 100)}% containment
+                      </span>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
           </section>
 
           <section
@@ -515,7 +603,7 @@ export default function TagsPage() {
   );
 }
 
-function projectTags(tags: TagRecord[], method: ProjectionMethod): TagPoint[] {
+function projectTags(tags: TagRecord[]): TagPoint[] {
   if (tags.length === 0) {
     return [];
   }
@@ -525,7 +613,7 @@ function projectTags(tags: TagRecord[], method: ProjectionMethod): TagPoint[] {
   }
 
   const vectors = tags.map((tag) => normalizeVector(tag.embedding));
-  const rawPoints = method === "umap" ? computeUMAP(vectors) : computePCA(vectors);
+  const rawPoints = computePCA(vectors);
   const normalized = normalizePoints(rawPoints, 120, 880, 100, 660);
 
   return tags.map((tag, index) => ({
@@ -552,20 +640,6 @@ function computePCA(vectors: number[][]): number[][] {
   }
 
   return centered.map((vector) => [dot(vector, first.vector), dot(vector, second.vector)]);
-}
-
-function computeUMAP(vectors: number[][]): number[][] {
-  try {
-    const umap = new UMAP({
-      nComponents: 2,
-      nNeighbors: Math.min(8, Math.max(3, vectors.length - 1)),
-      minDist: 0.18,
-      random: createSeededRandom(20260307),
-    });
-    return umap.fit(vectors) as number[][];
-  } catch {
-    return computePCA(vectors);
-  }
 }
 
 function buildEdges(tags: TagRecord[], threshold: number): TagEdge[] {
@@ -751,12 +825,4 @@ function heatmapColor(value: number) {
   return positive
     ? `hsl(168 65% ${92 - intensity * 0.38}%)`
     : `hsl(8 80% ${92 - intensity * 0.32}%)`;
-}
-
-function createSeededRandom(seed: number) {
-  let state = seed >>> 0;
-  return () => {
-    state = (1664525 * state + 1013904223) >>> 0;
-    return state / 0xffffffff;
-  };
 }

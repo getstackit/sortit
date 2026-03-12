@@ -1,4 +1,9 @@
-import { buildMergeCandidates, buildSpecificTagSuggestions, isGenericBucketTag } from "@/lib/tag-quality";
+import {
+  buildConsolidationCandidates,
+  buildMergeCandidates,
+  buildSpecificTagSuggestions,
+  isGenericBucketTag,
+} from "@/lib/tag-quality";
 import type { IssueRecord } from "@/lib/issues";
 import type { TagRecord } from "@/lib/tags";
 
@@ -73,5 +78,53 @@ describe("tag quality helpers", () => {
     expect(candidates[0]?.name).toBe("front end");
     expect(candidates[0]?.reason).toBe("Name variant");
     expect(candidates.some((candidate) => candidate.name === "client shell")).toBe(true);
+  });
+
+  it("finds consolidation candidates from lexical variants and shared issue coverage", () => {
+    const candidates = buildConsolidationCandidates(
+      [
+        makeTag({
+          name: "frontend",
+          description: "Client-side runtime behavior",
+          createdAt: new Date("2026-03-07T12:00:00Z").toISOString(),
+          embedding: [1, 0],
+        }),
+        makeTag({
+          name: "front end",
+          description: "Spacing variant",
+          createdAt: new Date("2026-03-08T12:00:00Z").toISOString(),
+          embedding: [1, 0],
+        }),
+        makeTag({
+          name: "billing",
+          description: "Invoices and account charges",
+          embedding: [0, 1],
+        }),
+      ],
+      [
+        makeIssue({
+          id: "issue-1",
+          tags: ["frontend", "front end"],
+          tagScores: [
+            { tag: "frontend", relevance: 0.95 },
+            { tag: "front end", relevance: 0.88 },
+          ],
+        }),
+        makeIssue({
+          id: "issue-2",
+          tags: ["frontend", "front end"],
+          tagScores: [
+            { tag: "frontend", relevance: 0.91 },
+            { tag: "front end", relevance: 0.82 },
+          ],
+        }),
+      ]
+    );
+
+    expect(candidates).toHaveLength(1);
+    expect(candidates[0]?.canonicalName).toBe("frontend");
+    expect(candidates[0]?.aliasName).toBe("front end");
+    expect(candidates[0]?.reason).toContain("Name variant");
+    expect(candidates[0]?.sharedIssueCount).toBe(2);
   });
 });
