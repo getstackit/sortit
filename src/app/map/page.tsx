@@ -1482,7 +1482,7 @@ function MapPageContent() {
                 checked={showClosed}
                 onCheckedChange={(checked) => {
                   setShowClosed(checked);
-                  setLoadedEdgeKey("");
+                  setLoadedEdgeDataKey("");
                 }}
                 aria-label="Show closed issues"
               />
@@ -1498,7 +1498,7 @@ function MapPageContent() {
                 value={edgeThreshold}
                 onChange={(event) => {
                   setEdgeThreshold(Number(event.target.value));
-                  setLoadedEdgeKey("");
+                  setLoadedEdgeDataKey("");
                 }}
                 className="h-1.5 w-28 accent-foreground"
                 aria-label="Similarity edge threshold"

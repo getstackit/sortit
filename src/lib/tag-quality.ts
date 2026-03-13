@@ -231,11 +231,11 @@ function setIntersectionSize(left: Set<string>, right: Set<string>) {
 }
 
 function compareCanonicalPreference(
-  left: { tag: TagRecord; issueCount: number },
-  right: { tag: TagRecord; issueCount: number }
+  left: { tag: TagRecord; issueIds: Set<string> },
+  right: { tag: TagRecord; issueIds: Set<string> }
 ) {
-  if (left.issueCount !== right.issueCount) {
-    return right.issueCount - left.issueCount;
+  if (left.issueIds.size !== right.issueIds.size) {
+    return right.issueIds.size - left.issueIds.size;
   }
 
   const leftCreated = new Date(left.tag.createdAt).getTime();

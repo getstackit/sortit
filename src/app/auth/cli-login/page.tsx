@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { Suspense, useEffect, useRef, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import { LoginScreen } from "@/components/login-screen";
 import { useAuth } from "@/components/auth-provider";
@@ -11,7 +11,17 @@ type CompletionState =
   | { status: "done"; tokenPrefix: string; displayName: string }
   | { status: "error"; message: string };
 
-export default function CLILoginPage() {
+function CLILoginPageFallback() {
+  return (
+    <div className="flex min-h-svh items-center justify-center bg-background px-4">
+      <div className="rounded-full border border-border/70 bg-card px-4 py-2 text-sm text-muted-foreground">
+        Loading Splat session...
+      </div>
+    </div>
+  );
+}
+
+function CLILoginPageContent() {
   const searchParams = useSearchParams();
   const loginID = searchParams.get("login_id")?.trim() ?? "";
   const { user, loading } = useAuth();
@@ -115,5 +125,13 @@ export default function CLILoginPage() {
         )}
       </div>
     </div>
+  );
+}
+
+export default function CLILoginPage() {
+  return (
+    <Suspense fallback={<CLILoginPageFallback />}>
+      <CLILoginPageContent />
+    </Suspense>
   );
 }
