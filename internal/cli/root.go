@@ -11,6 +11,7 @@ import (
 
 	"github.com/spf13/cobra"
 
+	"splat/internal/cli/integrations"
 	"splat/internal/commands"
 	"splat/internal/issues"
 	issuemap "splat/internal/map"
@@ -98,6 +99,7 @@ Date:    ` + date,
 	pf.StringVar(&opts.configPath, "config", opts.configPath, "Path to the CLI config file")
 
 	rootCmd.AddCommand(newAuthCmd(&opts))
+	rootCmd.AddCommand(integrations.NewAgentsCmd(version))
 	rootCmd.AddCommand(newIssueCmd(&opts))
 	rootCmd.AddCommand(newTagsCmd(&opts))
 	rootCmd.AddCommand(newPeopleCmd(&opts))
