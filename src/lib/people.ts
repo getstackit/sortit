@@ -1,4 +1,4 @@
-import { apiURL } from "@/lib/api";
+import { uiAPIURL } from "@/lib/api";
 import { getJSON } from "@/lib/http";
 
 export type TagRelevance = {
@@ -41,8 +41,8 @@ export async function fetchPersonProfile(
     params.set("status", status);
   }
   const query = params.toString();
-  const url = apiURL(
-    `/api/v1/people/${encodeURIComponent(person)}/profile${query ? `?${query}` : ""}`
+  const url = uiAPIURL(
+    `/people/${encodeURIComponent(person)}/profile${query ? `?${query}` : ""}`
   );
   return getJSON<PersonTagProfile>(url, { cache: "no-store", signal });
 }
@@ -56,6 +56,6 @@ export async function fetchWorkCorrelations(
     params.set("status", status);
   }
   const query = params.toString();
-  const url = apiURL(`/api/v1/people/correlations${query ? `?${query}` : ""}`);
+  const url = uiAPIURL(`/people/correlations${query ? `?${query}` : ""}`);
   return getJSON<WorkCorrelationsResult>(url, { cache: "no-store", signal });
 }

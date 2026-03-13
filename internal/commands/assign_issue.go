@@ -10,6 +10,7 @@ import (
 type AssignIssue struct {
 	ID         string
 	AssignedTo string
+	CreatedBy  string
 }
 
 type AssignIssueHandler struct {
@@ -42,7 +43,13 @@ func (h AssignIssueHandler) Handle(ctx context.Context, input AssignIssue) (assi
 		return issues.Issue{}, err
 	}
 
-	post := issues.NewDiscussionPost(id, issue.Discussion, issues.AssignIssuePost(assignee), "", "assigned")
+	post := issues.NewDiscussionPost(
+		id,
+		issue.Discussion,
+		issues.AssignIssuePost(assignee),
+		issues.DefaultActor(input.CreatedBy),
+		"assigned",
+	)
 	if err := uow.SaveIssuePost(ctx, post); err != nil {
 		return issues.Issue{}, err
 	}

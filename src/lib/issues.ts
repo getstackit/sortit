@@ -1,4 +1,4 @@
-import { apiURL } from "@/lib/api";
+import { uiAPIURL } from "@/lib/api";
 import { getJSON, postJSON } from "@/lib/http";
 
 export type IssueStatus = "open" | "closed";
@@ -168,7 +168,7 @@ export async function fetchIssues(
   params.set("status", status);
 
   const payload = await getJSON<IssuesResponse>(
-    apiURL(`/api/v1/issues?${params.toString()}`),
+    uiAPIURL(`/issues?${params.toString()}`),
     {
     cache: "no-store",
     signal,
@@ -181,7 +181,7 @@ export async function fetchIssue(
   id: string,
   signal?: AbortSignal
 ): Promise<IssueRecord> {
-  const payload = await getJSON<IssueRecord>(apiURL(`/api/v1/issues/${encodeURIComponent(id)}`), {
+  const payload = await getJSON<IssueRecord>(uiAPIURL(`/issues/${encodeURIComponent(id)}`), {
     cache: "no-store",
     signal,
   });
@@ -189,7 +189,7 @@ export async function fetchIssue(
 }
 
 export async function fetchRevision(signal?: AbortSignal): Promise<number> {
-  const payload = await getJSON<RevisionResponse>(apiURL("/api/v1/revision"), {
+  const payload = await getJSON<RevisionResponse>(uiAPIURL("/revision"), {
     cache: "no-store",
     signal,
   });
@@ -209,7 +209,7 @@ export async function searchIssues(
   }
 
   return getJSON<IssueSearchResponse>(
-    apiURL(`/api/v1/issues/search?${params.toString()}`),
+    uiAPIURL(`/issues/search?${params.toString()}`),
     {
       cache: "no-store",
       signal,
@@ -244,7 +244,7 @@ export function issueHrefFromText(value: string): string | null {
 }
 
 export async function createIssue(input: CreateIssueInput): Promise<IssueRecord> {
-  const payload = await postJSON<IssueRecord, CreateIssueInput>(apiURL("/api/v1/issues"), input);
+  const payload = await postJSON<IssueRecord, CreateIssueInput>(uiAPIURL("/issues"), input);
   return normalizeIssueRecord(payload);
 }
 
@@ -253,7 +253,7 @@ export async function closeIssue(
   input: CloseIssueInput = {}
 ): Promise<IssueRecord> {
   const payload = await postJSON<IssueRecord, CloseIssueInput>(
-    apiURL(`/api/v1/issues/${encodeURIComponent(id)}/close`),
+    uiAPIURL(`/issues/${encodeURIComponent(id)}/close`),
     input
   );
   return normalizeIssueRecord(payload);
@@ -261,7 +261,7 @@ export async function closeIssue(
 
 export async function reopenIssue(id: string): Promise<IssueRecord> {
   const payload = await postJSON<IssueRecord, Record<string, never>>(
-    apiURL(`/api/v1/issues/${encodeURIComponent(id)}/reopen`),
+    uiAPIURL(`/issues/${encodeURIComponent(id)}/reopen`),
     {}
   );
   return normalizeIssueRecord(payload);
@@ -272,7 +272,7 @@ export async function refineIssue(
   input: RefineIssueInput
 ): Promise<IssueRecord> {
   const payload = await postJSON<IssueRecord, RefineIssueInput>(
-    apiURL(`/api/v1/issues/${encodeURIComponent(id)}/refine`),
+    uiAPIURL(`/issues/${encodeURIComponent(id)}/refine`),
     input
   );
   return normalizeIssueRecord(payload);
@@ -283,7 +283,7 @@ export async function assignIssue(
   input: AssignIssueInput
 ): Promise<IssueRecord> {
   const payload = await postJSON<IssueRecord, AssignIssueInput>(
-    apiURL(`/api/v1/issues/${encodeURIComponent(id)}/assign`),
+    uiAPIURL(`/issues/${encodeURIComponent(id)}/assign`),
     input
   );
   return normalizeIssueRecord(payload);
@@ -294,7 +294,7 @@ export async function progressIssue(
   input: ProgressIssueInput
 ): Promise<IssueRecord> {
   const payload = await postJSON<IssueRecord, ProgressIssueInput>(
-    apiURL(`/api/v1/issues/${encodeURIComponent(id)}/progress`),
+    uiAPIURL(`/issues/${encodeURIComponent(id)}/progress`),
     input
   );
   return normalizeIssueRecord(payload);

@@ -24,8 +24,11 @@ description = "Check Go compilation"
 run = "go build ./apps/... ./internal/..."
 
 [tasks.test]
-description = "Run Go tests"
-run = "go test ./apps/... ./internal/..."
+description = "Run backend and frontend tests"
+run = """
+  go test ./apps/... ./internal/...
+  npm run test
+"""
 
 [tasks."db:backup"]
 description = "Backup the local PostgreSQL app database"
@@ -68,9 +71,16 @@ run = """
   go build -o bin/splat-server ./apps/server
 """
 
+[tasks."cli:build"]
+description = "Build the Splat CLI"
+run = """
+  mkdir -p bin
+  go build -o bin/splat ./apps/cli
+"""
+
 [tasks.build]
 description = "Build the frontend and backend"
-depends = ["server:build"]
+depends = ["server:build", "cli:build"]
 run = "npm run build"
 
 [tasks.dev]

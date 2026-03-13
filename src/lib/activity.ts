@@ -1,4 +1,4 @@
-import { apiURL } from "@/lib/api";
+import { uiAPIURL } from "@/lib/api";
 import { getJSON } from "@/lib/http";
 
 export type ActivityParticipantRecord = {
@@ -43,7 +43,7 @@ export async function fetchActivity(
   }
 
   return getJSON<ActivityResponse>(
-    apiURL(`/api/v1/activity?${params.toString()}`),
+    uiAPIURL(`/activity?${params.toString()}`),
     {
       cache: "no-store",
       signal,

@@ -1,4 +1,4 @@
-import { apiURL } from "@/lib/api";
+import { uiAPIURL } from "@/lib/api";
 import { getJSON } from "@/lib/http";
 
 export type TagRecord = {
@@ -13,7 +13,7 @@ type TagsResponse = {
 };
 
 export async function fetchTags(signal?: AbortSignal): Promise<TagRecord[]> {
-  const payload = await getJSON<TagsResponse>(apiURL("/api/v1/tags"), {
+  const payload = await getJSON<TagsResponse>(uiAPIURL("/tags"), {
     cache: "no-store",
     signal,
   });

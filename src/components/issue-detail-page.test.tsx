@@ -270,6 +270,35 @@ describe("IssueDetailPage", () => {
     ).toBeInTheDocument();
   });
 
+  it("renders incoming directed link labels from the current issue perspective", async () => {
+    vi.mocked(fetchIssue).mockResolvedValue(
+      makeIssue({
+        links: [
+          {
+            id: "issue-link-1",
+            type: "parent_of",
+            sourceIssueId: "issue-456",
+            targetIssueId: "issue-123",
+            direction: "incoming",
+            createdBy: "Casey",
+            createdAt: new Date("2026-03-08T12:15:00Z").toISOString(),
+            relatedIssue: {
+              id: "issue-456",
+              raw: "Parent umbrella issue",
+              status: "open",
+            },
+          },
+        ],
+      })
+    );
+
+    renderIssueDetail("issue-123");
+
+    expect(await screen.findByText("Related issues")).toBeInTheDocument();
+    expect(screen.getByText("Child of")).toBeInTheDocument();
+    expect(screen.queryByText("Parent of")).not.toBeInTheDocument();
+  });
+
   it("posts a refinement and refreshes the canonical summary", async () => {
     const initialIssue = makeIssue();
     const refinedIssue = makeIssue({

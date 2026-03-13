@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"splat/internal/ai"
+	"splat/internal/commands"
 	"splat/internal/issues"
 	issuemap "splat/internal/map"
 )
@@ -123,6 +124,76 @@ func TestIssuesEndpointGetsIssueByID(t *testing.T) {
 	}
 	if len(payload.Discussion) != 1 {
 		t.Fatalf("expected initial discussion history, got %#v", payload.Discussion)
+	}
+}
+
+func TestIssueLinkRejectsSelfLinks(t *testing.T) {
+	store := newPostgresIssueStore(t, nil)
+	source := issues.BuildNewIssue(issues.NewIssueID(), issues.CreateInput{
+		Raw:       "Search ranking regressed",
+		CreatedBy: "Casey",
+	})
+	if err := store.SaveIssue(context.Background(), source); err != nil {
+		t.Fatalf("save source issue: %v", err)
+	}
+
+	server := NewServer(ServerConfig{
+		CORSOrigins: []string{"http://localhost:3000"},
+		APIPrefixes: []string{"/api"},
+		IssueStore:  store,
+	})
+
+	req := httptest.NewRequest(
+		http.MethodPost,
+		"/api/issues/link",
+		strings.NewReader(`{"sourceId":"`+source.ID+`","targetId":"`+source.ID+`","type":"related_to"}`),
+	)
+	req.Header.Set("Content-Type", "application/json")
+	rec := httptest.NewRecorder()
+
+	server.Handler().ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("expected 400 for self link, got %d", rec.Code)
+	}
+}
+
+func TestIssueLinkRejectsDuplicateLogicalLinks(t *testing.T) {
+	store := newPostgresIssueStore(t, nil)
+	source := issues.BuildNewIssue(issues.NewIssueID(), issues.CreateInput{
+		Raw:       "Search ranking regressed",
+		CreatedBy: "Casey",
+	})
+	target := issues.BuildNewIssue(issues.NewIssueID(), issues.CreateInput{
+		Raw:       "Map viewport edges missing",
+		CreatedBy: "Jordan",
+	})
+	if err := store.SaveIssue(context.Background(), source); err != nil {
+		t.Fatalf("save source issue: %v", err)
+	}
+	if err := store.SaveIssue(context.Background(), target); err != nil {
+		t.Fatalf("save target issue: %v", err)
+	}
+
+	server := NewServer(ServerConfig{
+		CORSOrigins: []string{"http://localhost:3000"},
+		APIPrefixes: []string{"/api"},
+		IssueStore:  store,
+	})
+
+	body := `{"sourceId":"` + source.ID + `","targetId":"` + target.ID + `","type":"related_to"}`
+	for i := 0; i < 2; i++ {
+		req := httptest.NewRequest(http.MethodPost, "/api/issues/link", strings.NewReader(body))
+		req.Header.Set("Content-Type", "application/json")
+		rec := httptest.NewRecorder()
+		server.Handler().ServeHTTP(rec, req)
+
+		if i == 0 && rec.Code != http.StatusCreated {
+			t.Fatalf("expected 201 for first link, got %d", rec.Code)
+		}
+		if i == 1 && rec.Code != http.StatusConflict {
+			t.Fatalf("expected 409 for duplicate link, got %d", rec.Code)
+		}
 	}
 }
 
@@ -929,6 +1000,170 @@ func TestIssuesEndpointSearchRequiresQuery(t *testing.T) {
 	}
 }
 
+func TestIssuesEndpointSearchSupportsMCPParityFilters(t *testing.T) {
+	seed := []issues.Issue{
+		{
+			ID:         "issue-old",
+			Raw:        "Older frontend issue for Casey",
+			CreatedBy:  "Casey",
+			CreatedAt:  issues.FixtureIssues()[4].CreatedAt,
+			Status:     issues.StatusOpen,
+			AssignedTo: "Casey",
+			TagScores: []issues.TagRelevance{
+				{Tag: "frontend", Relevance: 0.92},
+			},
+			Embedding: []float64{1, 0, 0},
+		},
+		{
+			ID:         "issue-new",
+			Raw:        "Newer frontend issue for Casey",
+			CreatedBy:  "Jordan",
+			CreatedAt:  issues.FixtureIssues()[0].CreatedAt,
+			Status:     issues.StatusOpen,
+			AssignedTo: "Casey",
+			TagScores: []issues.TagRelevance{
+				{Tag: "frontend", Relevance: 0.95},
+			},
+			Embedding: []float64{1, 0, 0},
+		},
+		{
+			ID:         "issue-backend",
+			Raw:        "Backend issue assigned elsewhere",
+			CreatedBy:  "Jordan",
+			CreatedAt:  issues.FixtureIssues()[1].CreatedAt,
+			Status:     issues.StatusOpen,
+			AssignedTo: "Riley",
+			TagScores: []issues.TagRelevance{
+				{Tag: "backend", Relevance: 0.98},
+			},
+			Embedding: []float64{0, 1, 0},
+		},
+	}
+	store := issues.NewInMemoryStore(seed)
+
+	server := NewServer(ServerConfig{
+		CORSOrigins: []string{"http://localhost:3000"},
+		APIPrefixes: []string{"/api"},
+		Analyzer: ai.NewAnalyzer(&fakeTagger{
+			scores: []ai.TagScore{
+				{Tag: "frontend", Relevance: 0.97},
+			},
+		}, &fakeEmbedder{
+			result: ai.EmbeddingResult{
+				Vector: []float32{1, 0, 0},
+				Info: ai.EmbeddingInfo{
+					Dimensions:          3,
+					Preview:             []float32{1, 0, 0},
+					ChunkCount:          1,
+					EstimatedTokenCount: 2,
+					PooledFromChunks:    false,
+				},
+			},
+		}),
+		IssueStore: store,
+	})
+
+	req := httptest.NewRequest(
+		http.MethodGet,
+		"/api/issues/search?q=frontend&status=all&assigned_to=Casey&tags=frontend&sort_by=created_at&limit=1",
+		nil,
+	)
+	rec := httptest.NewRecorder()
+	server.Handler().ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200 for filtered search, got %d", rec.Code)
+	}
+
+	var payload issuemap.SearchResponse
+	if err := json.NewDecoder(rec.Body).Decode(&payload); err != nil {
+		t.Fatalf("decode filtered search response: %v", err)
+	}
+
+	if len(payload.RelatedIssues) != 1 {
+		t.Fatalf("expected one filtered result, got %+v", payload.RelatedIssues)
+	}
+	if payload.RelatedIssues[0].ID != "issue-new" {
+		t.Fatalf("expected newest filtered issue first, got %+v", payload.RelatedIssues)
+	}
+}
+
+func TestIssuesEndpointBatchMutationRoutes(t *testing.T) {
+	store := newPostgresIssueStore(t, nil)
+	server := NewServer(ServerConfig{
+		CORSOrigins: []string{"http://localhost:3000"},
+		APIPrefixes: []string{"/api"},
+		IssueStore:  store,
+	})
+	handler := server.Handler()
+
+	create := func(raw string) issues.Issue {
+		t.Helper()
+
+		req := httptest.NewRequest(http.MethodPost, "/api/issues", strings.NewReader(`{"raw":"`+raw+`"}`))
+		req.Header.Set("Content-Type", "application/json")
+		rec := httptest.NewRecorder()
+		handler.ServeHTTP(rec, req)
+		if rec.Code != http.StatusCreated {
+			t.Fatalf("expected 201 for issue create, got %d", rec.Code)
+		}
+
+		var created issues.Issue
+		if err := json.NewDecoder(rec.Body).Decode(&created); err != nil {
+			t.Fatalf("decode create response: %v", err)
+		}
+		return created
+	}
+
+	first := create("first batch issue")
+	second := create("second batch issue")
+
+	refineReq := httptest.NewRequest(
+		http.MethodPost,
+		"/api/issues/refine",
+		strings.NewReader(`{"ids":["`+first.ID+`","`+second.ID+`"],"raw":"Shared refinement","createdBy":"Jordan"}`),
+	)
+	refineReq.Header.Set("Content-Type", "application/json")
+	refineRec := httptest.NewRecorder()
+	handler.ServeHTTP(refineRec, refineReq)
+
+	if refineRec.Code != http.StatusOK {
+		t.Fatalf("expected 200 for batch refine, got %d", refineRec.Code)
+	}
+
+	var refined commands.IssueMutationResult
+	if err := json.NewDecoder(refineRec.Body).Decode(&refined); err != nil {
+		t.Fatalf("decode batch refine response: %v", err)
+	}
+	if refined.Summary.Requested != 2 || refined.Summary.Succeeded != 2 || refined.Summary.Failed != 0 {
+		t.Fatalf("unexpected batch refine summary: %+v", refined.Summary)
+	}
+
+	assignReq := httptest.NewRequest(
+		http.MethodPost,
+		"/api/issues/assign",
+		strings.NewReader(`{"ids":["`+first.ID+`","missing-issue"],"assignedTo":"Casey","createdBy":"Jordan"}`),
+	)
+	assignReq.Header.Set("Content-Type", "application/json")
+	assignRec := httptest.NewRecorder()
+	handler.ServeHTTP(assignRec, assignReq)
+
+	if assignRec.Code != http.StatusOK {
+		t.Fatalf("expected 200 for batch assign, got %d", assignRec.Code)
+	}
+
+	var assigned commands.IssueMutationResult
+	if err := json.NewDecoder(assignRec.Body).Decode(&assigned); err != nil {
+		t.Fatalf("decode batch assign response: %v", err)
+	}
+	if assigned.Summary.Requested != 2 || assigned.Summary.Succeeded != 1 || assigned.Summary.Failed != 1 {
+		t.Fatalf("unexpected batch assign summary: %+v", assigned.Summary)
+	}
+	if len(assigned.Succeeded) != 1 || assigned.Succeeded[0].AssignedTo != "Casey" {
+		t.Fatalf("expected successful assignment result, got %+v", assigned.Succeeded)
+	}
+}
+
 func TestIssuesEndpointExploreRejectsInvalidLimit(t *testing.T) {
 	server := NewServer(ServerConfig{
 		CORSOrigins: []string{"http://localhost:3000"},
@@ -1050,7 +1285,7 @@ func TestIssuesCompareEndpointReturnsEmbeddingSimilarity(t *testing.T) {
 
 	req := httptest.NewRequest(
 		http.MethodPost,
-		"/api/issues/compare",
+		"/api/ui/issues/compare",
 		bytes.NewBufferString(`{"ids":["issue-a","issue-b"]}`),
 	)
 	req.Header.Set("Content-Type", "application/json")

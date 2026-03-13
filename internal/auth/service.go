@@ -9,8 +9,9 @@ import (
 )
 
 const (
-	sessionCookieName = "splat_session"
-	oauthStateCookie  = "splat_oauth_state"
+	sessionCookieName   = "splat_session"
+	oauthStateCookie    = "splat_oauth_state"
+	oauthReturnToCookie = "splat_oauth_return_to"
 )
 
 type ServiceConfig struct {
@@ -25,6 +26,7 @@ type Service struct {
 	provider   OAuthProvider
 	webOrigin  string
 	sessionTTL time.Duration
+	cliLogins  *cliLoginManager
 }
 
 func NewService(cfg ServiceConfig) (*Service, error) {
@@ -43,6 +45,7 @@ func NewService(cfg ServiceConfig) (*Service, error) {
 		provider:   cfg.Provider,
 		webOrigin:  strings.TrimRight(strings.TrimSpace(cfg.WebOrigin), "/"),
 		sessionTTL: sessionTTL,
+		cliLogins:  newCLILoginManager(),
 	}, nil
 }
 
@@ -51,6 +54,8 @@ func (s *Service) BeginGitHubLogin(w http.ResponseWriter, r *http.Request, callb
 	if err != nil {
 		return err
 	}
+
+	setOAuthReturnToCookie(w, r, sanitizeReturnTo(r.URL.Query().Get("return_to")))
 
 	http.SetCookie(w, &http.Cookie{
 		Name:     oauthStateCookie,
@@ -67,41 +72,65 @@ func (s *Service) BeginGitHubLogin(w http.ResponseWriter, r *http.Request, callb
 }
 
 func (s *Service) CompleteGitHubLogin(w http.ResponseWriter, r *http.Request, callbackPath string) error {
+	user, err := s.completeOAuthLogin(r, callbackPath)
+	if err != nil {
+		return err
+	}
+	returnTo := readOAuthReturnTo(r)
+	if err := s.setSessionCookie(w, r, user.ID); err != nil {
+		return err
+	}
+	clearOAuthReturnToCookie(w, r)
+	http.Redirect(w, r, redirectTarget(s.webOrigin, returnTo), http.StatusFound)
+	return nil
+}
+
+func (s *Service) CompleteGitHubCLILogin(w http.ResponseWriter, r *http.Request, callbackPath, loginID string) (User, CLILoginResult, error) {
+	user, err := s.completeOAuthLogin(r, callbackPath)
+	if err != nil {
+		return User{}, CLILoginResult{}, err
+	}
+	if err := s.setSessionCookie(w, r, user.ID); err != nil {
+		return User{}, CLILoginResult{}, err
+	}
+	result, err := s.CompleteCLILogin(r.Context(), loginID, user)
+	if err != nil {
+		return User{}, CLILoginResult{}, err
+	}
+	return user, result, nil
+}
+
+func (s *Service) completeOAuthLogin(r *http.Request, callbackPath string) (User, error) {
 	code := strings.TrimSpace(r.URL.Query().Get("code"))
 	state := strings.TrimSpace(r.URL.Query().Get("state"))
 	if code == "" || state == "" {
-		return fmt.Errorf("code and state are required")
+		return User{}, fmt.Errorf("code and state are required")
 	}
 
 	stateCookie, err := r.Cookie(oauthStateCookie)
 	if err != nil || strings.TrimSpace(stateCookie.Value) == "" {
-		return ErrUnauthorized
+		return User{}, ErrUnauthorized
 	}
 	if state != strings.TrimSpace(stateCookie.Value) {
-		return ErrUnauthorized
+		return User{}, ErrUnauthorized
 	}
-
-	http.SetCookie(w, &http.Cookie{
-		Name:     oauthStateCookie,
-		Value:    "",
-		Path:     "/",
-		HttpOnly: true,
-		SameSite: http.SameSiteLaxMode,
-		Secure:   isSecureRequest(r),
-		MaxAge:   -1,
-	})
 
 	oauthUser, err := s.provider.Exchange(r.Context(), code, callbackURL(r, callbackPath))
 	if err != nil {
-		return err
+		return User{}, err
 	}
 
 	user, err := s.store.UpsertOAuthUser(r.Context(), oauthUser)
 	if err != nil {
-		return err
+		return User{}, err
 	}
+	return user, nil
+}
 
-	rawSession, err := s.store.CreateSession(r.Context(), user.ID, time.Now().UTC().Add(s.sessionTTL))
+func (s *Service) setSessionCookie(w http.ResponseWriter, r *http.Request, userID string) error {
+	clearOAuthStateCookie(w, r)
+
+	rawSession, err := s.store.CreateSession(r.Context(), userID, time.Now().UTC().Add(s.sessionTTL))
 	if err != nil {
 		return err
 	}
@@ -115,8 +144,6 @@ func (s *Service) CompleteGitHubLogin(w http.ResponseWriter, r *http.Request, ca
 		Secure:   isSecureRequest(r),
 		MaxAge:   int(s.sessionTTL.Seconds()),
 	})
-
-	http.Redirect(w, r, redirectTarget(s.webOrigin), http.StatusFound)
 	return nil
 }
 
@@ -171,6 +198,10 @@ func (s *Service) RevokeAPIToken(ctx context.Context, principal Principal, token
 	return s.store.RevokeAPIToken(ctx, principal.UserID, tokenID)
 }
 
+func (s *Service) WebOrigin() string {
+	return s.webOrigin
+}
+
 func callbackURL(r *http.Request, callbackPath string) string {
 	scheme := "http"
 	if isSecureRequest(r) {
@@ -183,11 +214,81 @@ func callbackURL(r *http.Request, callbackPath string) string {
 	return fmt.Sprintf("%s://%s%s", scheme, host, callbackPath)
 }
 
-func redirectTarget(webOrigin string) string {
+func redirectTarget(webOrigin, returnTo string) string {
+	returnTo = sanitizeReturnTo(returnTo)
+	if returnTo != "" {
+		if strings.HasPrefix(returnTo, "http://") || strings.HasPrefix(returnTo, "https://") {
+			return returnTo
+		}
+		if webOrigin != "" {
+			return webOrigin + returnTo
+		}
+		return returnTo
+	}
 	if webOrigin == "" {
 		return "/"
 	}
 	return webOrigin + "/"
+}
+
+func clearOAuthStateCookie(w http.ResponseWriter, r *http.Request) {
+	http.SetCookie(w, &http.Cookie{
+		Name:     oauthStateCookie,
+		Value:    "",
+		Path:     "/",
+		HttpOnly: true,
+		SameSite: http.SameSiteLaxMode,
+		Secure:   isSecureRequest(r),
+		MaxAge:   -1,
+	})
+}
+
+func setOAuthReturnToCookie(w http.ResponseWriter, r *http.Request, returnTo string) {
+	if returnTo == "" {
+		clearOAuthReturnToCookie(w, r)
+		return
+	}
+
+	http.SetCookie(w, &http.Cookie{
+		Name:     oauthReturnToCookie,
+		Value:    returnTo,
+		Path:     "/",
+		HttpOnly: true,
+		SameSite: http.SameSiteLaxMode,
+		Secure:   isSecureRequest(r),
+		MaxAge:   int((10 * time.Minute).Seconds()),
+	})
+}
+
+func clearOAuthReturnToCookie(w http.ResponseWriter, r *http.Request) {
+	http.SetCookie(w, &http.Cookie{
+		Name:     oauthReturnToCookie,
+		Value:    "",
+		Path:     "/",
+		HttpOnly: true,
+		SameSite: http.SameSiteLaxMode,
+		Secure:   isSecureRequest(r),
+		MaxAge:   -1,
+	})
+}
+
+func readOAuthReturnTo(r *http.Request) string {
+	cookie, err := r.Cookie(oauthReturnToCookie)
+	if err != nil {
+		return ""
+	}
+	return sanitizeReturnTo(cookie.Value)
+}
+
+func sanitizeReturnTo(value string) string {
+	value = strings.TrimSpace(value)
+	if value == "" {
+		return ""
+	}
+	if strings.HasPrefix(value, "/") {
+		return value
+	}
+	return ""
 }
 
 func isSecureRequest(r *http.Request) bool {

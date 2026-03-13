@@ -111,7 +111,16 @@ describe("PeoplePage", () => {
 
     render(<PeoplePage />);
 
-    expect(screen.getByText("2 issues assigned")).toBeInTheDocument();
+    expect(screen.getByText("1 issue assigned")).toBeInTheDocument();
+    expect(screen.getByText("open issue")).toBeInTheDocument();
+    expect(screen.queryByText("closed issue")).not.toBeInTheDocument();
+
+    await user.click(screen.getByRole("button", { name: "All" }));
+
+    await waitFor(() => {
+      expect(screen.getByText("2 issues assigned")).toBeInTheDocument();
+    });
+    expect(screen.getByText("closed issue")).toBeInTheDocument();
 
     await user.click(screen.getByRole("button", { name: "Closed" }));
 
@@ -127,7 +136,7 @@ describe("PeoplePage", () => {
 
     expect(screen.getByText("Assigned issues")).toBeInTheDocument();
     expect(screen.getByText("open issue")).toBeInTheDocument();
-    expect(screen.getByText("closed issue")).toBeInTheDocument();
+    expect(screen.queryByText("closed issue")).not.toBeInTheDocument();
   });
 
   it("shows the closed factor timeline section", () => {

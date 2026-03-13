@@ -86,7 +86,7 @@ func TestUnifiedSearchEndpointReturnsIssuesAndRelatedTags(t *testing.T) {
 		IssueStore: store,
 	})
 
-	req := httptest.NewRequest(http.MethodGet, "/api/search?q=safari%20pdf%20export&limit=2", nil)
+	req := httptest.NewRequest(http.MethodGet, "/api/ui/search?q=safari%20pdf%20export&limit=2", nil)
 	rec := httptest.NewRecorder()
 	server.Handler().ServeHTTP(rec, req)
 

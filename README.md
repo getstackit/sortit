@@ -96,6 +96,8 @@ This repo pins npm to the `linked` install strategy via `.npmrc` so frontend dep
 
 - Web UI: `http://localhost:3000`
 - API: `http://localhost:8081`
+- UI API namespace: `http://localhost:8081/api/ui`
+- Dedicated API namespace: `http://localhost:8081/api/v1`
 - MCP: `http://localhost:8081/mcp`
 - PostgreSQL: `postgres://splat:splat@localhost:5432/splat?sslmode=disable`
 
@@ -104,6 +106,14 @@ In local development, keep your hostname consistent across the browser, `SPLAT_W
 For the full GitHub auth, API token, and MCP client setup, see [docs/local-auth-mcp.md](docs/local-auth-mcp.md).
 
 The Go API persists all data in PostgreSQL. Set `SPLAT_DATABASE_URL` or pass `-database-url` to the server. Tests run in disposable Testcontainers-managed databases. Local Postgres can be backed up with `mise run db:backup`, which writes a custom-format dump into `backups/postgres/`.
+
+For the CLI, authenticate by running:
+
+```bash
+go run ./apps/cli auth login
+```
+
+That opens the Splat UI, uses your Splat session to mint a personal API token, and stores it in your local CLI config.
 
 Optional AI configuration:
 

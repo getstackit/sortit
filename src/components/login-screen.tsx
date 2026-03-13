@@ -1,9 +1,13 @@
 "use client";
 
 import { LogInIcon } from "lucide-react";
-import { apiURL } from "@/lib/api";
+import { uiAPIURL } from "@/lib/api";
 
-export function LoginScreen() {
+export function LoginScreen({ returnTo }: { returnTo?: string } = {}) {
+  const href = returnTo
+    ? `${uiAPIURL("/auth/github/start")}?return_to=${encodeURIComponent(returnTo)}`
+    : uiAPIURL("/auth/github/start");
+
   return (
     <div className="relative isolate flex min-h-svh items-center justify-center overflow-hidden px-4 py-12">
       <div className="absolute inset-0 bg-[radial-gradient(circle_at_top_left,color-mix(in_oklab,var(--gradient-start)_20%,transparent)_0%,transparent_36%),radial-gradient(circle_at_bottom_right,color-mix(in_oklab,var(--gradient-end)_18%,transparent)_0%,transparent_34%),linear-gradient(180deg,color-mix(in_oklab,var(--background)_92%,white_8%)_0%,var(--background)_100%)]" />
@@ -27,7 +31,7 @@ export function LoginScreen() {
         </p>
 
         <a
-          href={apiURL("/api/v1/auth/github/start")}
+          href={href}
           className="mt-8 inline-flex w-full items-center justify-center gap-2 rounded-2xl border border-border/60 bg-foreground px-4 py-3 text-sm font-medium text-background transition-transform hover:-translate-y-0.5"
         >
           <LogInIcon className="size-4" />

@@ -151,7 +151,7 @@ func TestAPIIntegrationCreateLookupMapAndTagsWithMockAIBackend(t *testing.T) {
 		t.Fatalf("unexpected second issue payload: %+v", storedSecond)
 	}
 
-	mapReq := httptest.NewRequest(http.MethodGet, "/api/map", nil)
+	mapReq := httptest.NewRequest(http.MethodGet, "/api/ui/map", nil)
 	mapRec := httptest.NewRecorder()
 	handler.ServeHTTP(mapRec, mapReq)
 
@@ -179,7 +179,7 @@ func TestAPIIntegrationCreateLookupMapAndTagsWithMockAIBackend(t *testing.T) {
 		t.Fatalf("expected first map issue assignee Avery, got %q", firstMapIssue.AssignedTo)
 	}
 
-	tagsReq := httptest.NewRequest(http.MethodGet, "/api/tags", nil)
+	tagsReq := httptest.NewRequest(http.MethodGet, "/api/ui/tags", nil)
 	tagsRec := httptest.NewRecorder()
 	handler.ServeHTTP(tagsRec, tagsReq)
 
@@ -287,7 +287,7 @@ func TestAPIIntegrationCreateAndCloseIssue(t *testing.T) {
 		t.Fatalf("expected closed list item status closed, got %q", payload.Issues[0].Status)
 	}
 
-	openMapReq := httptest.NewRequest(http.MethodGet, "/api/map?status=open", nil)
+	openMapReq := httptest.NewRequest(http.MethodGet, "/api/ui/map?status=open", nil)
 	openMapRec := httptest.NewRecorder()
 	handler.ServeHTTP(openMapRec, openMapReq)
 
@@ -303,7 +303,7 @@ func TestAPIIntegrationCreateAndCloseIssue(t *testing.T) {
 		t.Fatalf("expected closed issue to be hidden from open map, got %d issues", len(openMapPayload.Issues))
 	}
 
-	allMapReq := httptest.NewRequest(http.MethodGet, "/api/map?status=all", nil)
+	allMapReq := httptest.NewRequest(http.MethodGet, "/api/ui/map?status=all", nil)
 	allMapRec := httptest.NewRecorder()
 	handler.ServeHTTP(allMapRec, allMapReq)
 

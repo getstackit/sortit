@@ -29,8 +29,8 @@ function localAPIOrigin() {
 }
 
 export function apiURL(path: string) {
-  const explicitOrigin = explicitAPIOrigin();
-  if (explicitOrigin) {
+ const explicitOrigin = explicitAPIOrigin();
+ if (explicitOrigin) {
     return `${explicitOrigin}${path}`;
   }
 
@@ -39,4 +39,19 @@ export function apiURL(path: string) {
   }
 
   return path;
+}
+
+function joinAPIPath(prefix: string, path: string) {
+  if (!path.startsWith("/")) {
+    return `${prefix}/${path}`;
+  }
+  return `${prefix}${path}`;
+}
+
+export function uiAPIURL(path: string) {
+  return apiURL(joinAPIPath("/api/ui", path));
+}
+
+export function versionedAPIURL(path: string) {
+  return apiURL(joinAPIPath("/api/v1", path));
 }

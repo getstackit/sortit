@@ -1,5 +1,5 @@
-import { apiURL } from "@/lib/api";
-import { getJSON, postJSON } from "@/lib/http";
+import { uiAPIURL } from "@/lib/api";
+import { getJSON, HTTPError, postJSON } from "@/lib/http";
 import type {
   BatchEmbeddingAnalysis,
   EdgeData,
@@ -10,7 +10,7 @@ export function fetchMapData(
   query: string,
   signal?: AbortSignal
 ) {
-  return getJSON<MapData>(apiURL(`/api/v1/map?${query}`), {
+  return getJSON<MapData>(uiAPIURL(`/map?${query}`), {
     cache: "no-store",
     signal,
   });
@@ -21,11 +21,11 @@ export async function fetchViewportEdges(
   signal: AbortSignal
 ) {
   try {
-    return await getJSON<EdgeData>(apiURL(`/api/v1/map/edges?${viewportKey}`), {
+    return await getJSON<EdgeData>(uiAPIURL(`/map/edges?${viewportKey}`), {
       signal,
     });
   } catch (error) {
-    if (!(error instanceof Error) || error.message !== "Request failed with 404") {
+    if (!(error instanceof HTTPError) || error.status !== 404) {
       throw error;
     }
 
@@ -39,7 +39,7 @@ export function compareIssueEmbeddings(
   signal: AbortSignal
 ) {
   return postJSON<BatchEmbeddingAnalysis, { ids: string[] }>(
-    apiURL("/api/v1/issues/compare"),
+    uiAPIURL("/issues/compare"),
     { ids },
     { signal }
   );

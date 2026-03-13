@@ -130,82 +130,9 @@ func (s *Server) Handler() http.Handler {
 	publicAPIRoutes := make(map[string]struct{})
 
 	for _, prefix := range normalizeAPIPrefixes(s.config.APIPrefixes) {
-		healthRoute := path.Join(prefix, "health")
-		authGitHubStartRoute := path.Join(prefix, "auth", "github", "start")
-		authGitHubCallbackRoute := path.Join(prefix, "auth", "github", "callback")
-		authSessionRoute := path.Join(prefix, "auth", "session")
-		authLogoutRoute := path.Join(prefix, "auth", "logout")
-		authTokensRoute := path.Join(prefix, "auth", "tokens")
-		authTokenItemSubtreeRoute := authTokenItemRoute(prefix)
-		issuesRoute := path.Join(prefix, "issues")
-		activityRoute := path.Join(prefix, "activity")
-		issuesCompareRoute := path.Join(prefix, "issues", "compare")
-		issuesCombineRoute := path.Join(prefix, "issues", "combine")
-		issuesLinkRoute := path.Join(prefix, "issues", "link")
-		issuesSearchRoute := path.Join(prefix, "issues", "search")
-		searchRoute := path.Join(prefix, "search")
-		issueItemSubtreeRoute := issueItemRoute(prefix)
-		tagsRoute := path.Join(prefix, "tags")
-		revisionRoute := path.Join(prefix, "revision")
-		mapRoute := path.Join(prefix, "map")
-		mapEdgesRoute := path.Join(prefix, "map", "edges")
-		debugAnalyzeRoute := path.Join(prefix, "debug", "issues", "analyze")
-		debugInvalidateMapProjectionRoute := path.Join(prefix, "debug", "map-projection", "invalidate")
-		peopleSubtreeRoute := path.Join(prefix, "people") + "/"
-		peopleCorrelationsRoute := path.Join(prefix, "people", "correlations")
-		apiRoutes[healthRoute] = struct{}{}
-		apiRoutes[issuesRoute] = struct{}{}
-		apiRoutes[activityRoute] = struct{}{}
-		apiRoutes[issuesCompareRoute] = struct{}{}
-		apiRoutes[issuesCombineRoute] = struct{}{}
-		apiRoutes[issuesLinkRoute] = struct{}{}
-		apiRoutes[issuesSearchRoute] = struct{}{}
-		apiRoutes[searchRoute] = struct{}{}
-		apiRoutes[issueItemSubtreeRoute] = struct{}{}
-		apiRoutes[tagsRoute] = struct{}{}
-		apiRoutes[revisionRoute] = struct{}{}
-		apiRoutes[mapRoute] = struct{}{}
-		apiRoutes[mapEdgesRoute] = struct{}{}
-		apiRoutes[peopleSubtreeRoute] = struct{}{}
-		apiRoutes[peopleCorrelationsRoute] = struct{}{}
-		apiRoutes[debugAnalyzeRoute] = struct{}{}
-		apiRoutes[debugInvalidateMapProjectionRoute] = struct{}{}
-		apiRoutes[authGitHubStartRoute] = struct{}{}
-		apiRoutes[authGitHubCallbackRoute] = struct{}{}
-		apiRoutes[authSessionRoute] = struct{}{}
-		apiRoutes[authLogoutRoute] = struct{}{}
-		apiRoutes[authTokensRoute] = struct{}{}
-		apiRoutes[authTokenItemSubtreeRoute] = struct{}{}
-		publicAPIRoutes[healthRoute] = struct{}{}
-		publicAPIRoutes[authGitHubStartRoute] = struct{}{}
-		publicAPIRoutes[authGitHubCallbackRoute] = struct{}{}
-		publicAPIRoutes[authSessionRoute] = struct{}{}
-		publicAPIRoutes[authLogoutRoute] = struct{}{}
-
-		apiMux.HandleFunc(healthRoute, s.handleHealth)
-		apiMux.HandleFunc(authGitHubStartRoute, s.handleAuthGitHubStart)
-		apiMux.HandleFunc(authGitHubCallbackRoute, s.handleAuthGitHubCallback)
-		apiMux.HandleFunc(authSessionRoute, s.handleAuthSession)
-		apiMux.HandleFunc(authLogoutRoute, s.handleAuthLogout)
-		apiMux.HandleFunc(authTokensRoute, s.handleAuthTokens)
-		apiMux.HandleFunc(authTokenItemSubtreeRoute, s.handleAuthTokenByID(authTokenItemSubtreeRoute))
-		apiMux.HandleFunc(issuesRoute, s.handleIssues)
-		apiMux.HandleFunc(activityRoute, s.handleActivity)
-		apiMux.HandleFunc(issuesCompareRoute, s.handleIssueCompare)
-		apiMux.HandleFunc(issuesCombineRoute, s.handleIssueCombine)
-		apiMux.HandleFunc(issuesLinkRoute, s.handleIssueLink)
-		apiMux.HandleFunc(issuesSearchRoute, s.handleIssueSearch)
-		apiMux.HandleFunc(searchRoute, s.handleUnifiedSearch)
-		apiMux.HandleFunc(issueItemSubtreeRoute, s.handleIssueByID(issueItemSubtreeRoute))
-		apiMux.HandleFunc(tagsRoute, s.handleTags)
-		apiMux.HandleFunc(revisionRoute, s.handleRevision)
-		apiMux.HandleFunc(mapRoute, s.handleMap)
-		apiMux.HandleFunc(mapEdgesRoute, s.handleMapEdges)
-		apiMux.HandleFunc(peopleCorrelationsRoute, s.handleWorkCorrelations)
-		apiMux.HandleFunc(peopleSubtreeRoute, s.handlePersonProfile(peopleSubtreeRoute))
-		apiMux.HandleFunc(debugAnalyzeRoute, s.handleDebugIssueAnalyze)
-		apiMux.HandleFunc(debugInvalidateMapProjectionRoute, s.handleDebugInvalidateMapProjection)
+		s.registerDedicatedAPIRoutes(apiMux, apiRoutes, publicAPIRoutes, prefix)
 	}
+	s.registerUIRoutes(apiMux, apiRoutes, publicAPIRoutes, "/api/ui")
 
 	mcpHandler := mcpserver.NewHandler(mcpserver.ServerConfig{
 		CreateIssue:      s.createIssue,
@@ -254,6 +181,133 @@ func (s *Server) Handler() http.Handler {
 	handler := authMiddleware(s.authService, publicAPIRoutes, root)
 	handler = corsMiddleware(s.config.CORSOrigins, apiRoutes, handler)
 	return loggingMiddleware(handler)
+}
+
+func (s *Server) registerDedicatedAPIRoutes(
+	apiMux *http.ServeMux,
+	apiRoutes map[string]struct{},
+	publicAPIRoutes map[string]struct{},
+	prefix string,
+) {
+	healthRoute := path.Join(prefix, "health")
+	authGitHubStartRoute := path.Join(prefix, "auth", "github", "start")
+	authGitHubCallbackRoute := path.Join(prefix, "auth", "github", "callback")
+	authSessionRoute := path.Join(prefix, "auth", "session")
+	authLogoutRoute := path.Join(prefix, "auth", "logout")
+	authTokensRoute := path.Join(prefix, "auth", "tokens")
+	authTokenItemSubtreeRoute := authTokenItemRoute(prefix)
+	authCLILoginRoute := path.Join(prefix, "auth", "cli", "login")
+	authCLILoginExchangeSubtreeRoute := authCLILoginExchangeRoute(prefix)
+	issuesRoute := path.Join(prefix, "issues")
+	issuesSearchRoute := path.Join(prefix, "issues", "search")
+	issuesCombineRoute := path.Join(prefix, "issues", "combine")
+	issuesLinkRoute := path.Join(prefix, "issues", "link")
+	issuesRefineRoute := path.Join(prefix, "issues", "refine")
+	issuesProgressRoute := path.Join(prefix, "issues", "progress")
+	issuesCloseRoute := path.Join(prefix, "issues", "close")
+	issuesAssignRoute := path.Join(prefix, "issues", "assign")
+	issueItemSubtreeRoute := issueItemRoute(prefix)
+	tagsRoute := path.Join(prefix, "tags")
+	peopleSubtreeRoute := path.Join(prefix, "people") + "/"
+	peopleCorrelationsRoute := path.Join(prefix, "people", "correlations")
+
+	registerPublicRoute(apiMux, apiRoutes, publicAPIRoutes, healthRoute, s.handleHealth)
+	registerPublicRoute(apiMux, apiRoutes, publicAPIRoutes, authGitHubStartRoute, s.handleAuthGitHubStart)
+	registerPublicRoute(apiMux, apiRoutes, publicAPIRoutes, authGitHubCallbackRoute, s.handleAuthGitHubCallback)
+	registerPublicRoute(apiMux, apiRoutes, publicAPIRoutes, authSessionRoute, s.handleAuthSession)
+	registerPublicRoute(apiMux, apiRoutes, publicAPIRoutes, authLogoutRoute, s.handleAuthLogout)
+	registerPublicRoute(apiMux, apiRoutes, publicAPIRoutes, authCLILoginRoute, s.handleAuthCLILogin)
+	registerPublicRoute(apiMux, apiRoutes, publicAPIRoutes, authCLILoginExchangeSubtreeRoute, s.handleAuthCLILoginExchange(authCLILoginExchangeSubtreeRoute))
+
+	registerProtectedRoute(apiMux, apiRoutes, authTokensRoute, s.handleAuthTokens)
+	registerProtectedRoute(apiMux, apiRoutes, authTokenItemSubtreeRoute, s.handleAuthTokenByID(authTokenItemSubtreeRoute))
+	registerProtectedRoute(apiMux, apiRoutes, issuesRoute, s.handleIssues)
+	registerProtectedRoute(apiMux, apiRoutes, issuesSearchRoute, s.handleIssueSearch)
+	registerProtectedRoute(apiMux, apiRoutes, issuesCombineRoute, s.handleIssueCombine)
+	registerProtectedRoute(apiMux, apiRoutes, issuesLinkRoute, s.handleIssueLink)
+	registerProtectedRoute(apiMux, apiRoutes, issuesRefineRoute, s.handleIssueRefineBatch)
+	registerProtectedRoute(apiMux, apiRoutes, issuesProgressRoute, s.handleIssueProgressBatch)
+	registerProtectedRoute(apiMux, apiRoutes, issuesCloseRoute, s.handleIssueCloseBatch)
+	registerProtectedRoute(apiMux, apiRoutes, issuesAssignRoute, s.handleIssueAssignBatch)
+	registerProtectedRoute(apiMux, apiRoutes, issueItemSubtreeRoute, s.handleIssueByID(issueItemSubtreeRoute))
+	registerProtectedRoute(apiMux, apiRoutes, tagsRoute, s.handleTags)
+	registerProtectedRoute(apiMux, apiRoutes, peopleCorrelationsRoute, s.handleWorkCorrelations)
+	registerProtectedRoute(apiMux, apiRoutes, peopleSubtreeRoute, s.handlePersonProfile(peopleSubtreeRoute))
+}
+
+func (s *Server) registerUIRoutes(
+	apiMux *http.ServeMux,
+	apiRoutes map[string]struct{},
+	publicAPIRoutes map[string]struct{},
+	prefix string,
+) {
+	healthRoute := path.Join(prefix, "health")
+	authGitHubStartRoute := path.Join(prefix, "auth", "github", "start")
+	authGitHubCallbackRoute := path.Join(prefix, "auth", "github", "callback")
+	authSessionRoute := path.Join(prefix, "auth", "session")
+	authLogoutRoute := path.Join(prefix, "auth", "logout")
+	authTokensRoute := path.Join(prefix, "auth", "tokens")
+	authTokenItemSubtreeRoute := authTokenItemRoute(prefix)
+	authCLILoginCompleteSubtreeRoute := authCLILoginCompleteRoute(prefix)
+	issuesRoute := path.Join(prefix, "issues")
+	activityRoute := path.Join(prefix, "activity")
+	issuesCompareRoute := path.Join(prefix, "issues", "compare")
+	issuesSearchRoute := path.Join(prefix, "issues", "search")
+	searchRoute := path.Join(prefix, "search")
+	issueItemSubtreeRoute := issueItemRoute(prefix)
+	tagsRoute := path.Join(prefix, "tags")
+	revisionRoute := path.Join(prefix, "revision")
+	mapRoute := path.Join(prefix, "map")
+	mapEdgesRoute := path.Join(prefix, "map", "edges")
+	debugAnalyzeRoute := path.Join(prefix, "debug", "issues", "analyze")
+	debugInvalidateMapProjectionRoute := path.Join(prefix, "debug", "map-projection", "invalidate")
+	peopleSubtreeRoute := path.Join(prefix, "people") + "/"
+	peopleCorrelationsRoute := path.Join(prefix, "people", "correlations")
+
+	registerPublicRoute(apiMux, apiRoutes, publicAPIRoutes, healthRoute, s.handleHealth)
+	registerPublicRoute(apiMux, apiRoutes, publicAPIRoutes, authGitHubStartRoute, s.handleAuthGitHubStart)
+	registerPublicRoute(apiMux, apiRoutes, publicAPIRoutes, authGitHubCallbackRoute, s.handleAuthGitHubCallback)
+	registerPublicRoute(apiMux, apiRoutes, publicAPIRoutes, authSessionRoute, s.handleAuthSession)
+	registerPublicRoute(apiMux, apiRoutes, publicAPIRoutes, authLogoutRoute, s.handleAuthLogout)
+
+	registerProtectedRoute(apiMux, apiRoutes, authTokensRoute, s.handleAuthTokens)
+	registerProtectedRoute(apiMux, apiRoutes, authTokenItemSubtreeRoute, s.handleAuthTokenByID(authTokenItemSubtreeRoute))
+	registerProtectedRoute(apiMux, apiRoutes, authCLILoginCompleteSubtreeRoute, s.handleAuthCLILoginComplete(authCLILoginCompleteSubtreeRoute))
+	registerProtectedRoute(apiMux, apiRoutes, issuesRoute, s.handleIssues)
+	registerProtectedRoute(apiMux, apiRoutes, activityRoute, s.handleActivity)
+	registerProtectedRoute(apiMux, apiRoutes, issuesCompareRoute, s.handleIssueCompare)
+	registerProtectedRoute(apiMux, apiRoutes, issuesSearchRoute, s.handleIssueSearch)
+	registerProtectedRoute(apiMux, apiRoutes, searchRoute, s.handleUnifiedSearch)
+	registerProtectedRoute(apiMux, apiRoutes, issueItemSubtreeRoute, s.handleIssueByID(issueItemSubtreeRoute))
+	registerProtectedRoute(apiMux, apiRoutes, tagsRoute, s.handleTags)
+	registerProtectedRoute(apiMux, apiRoutes, revisionRoute, s.handleRevision)
+	registerProtectedRoute(apiMux, apiRoutes, mapRoute, s.handleMap)
+	registerProtectedRoute(apiMux, apiRoutes, mapEdgesRoute, s.handleMapEdges)
+	registerProtectedRoute(apiMux, apiRoutes, peopleCorrelationsRoute, s.handleWorkCorrelations)
+	registerProtectedRoute(apiMux, apiRoutes, peopleSubtreeRoute, s.handlePersonProfile(peopleSubtreeRoute))
+	registerProtectedRoute(apiMux, apiRoutes, debugAnalyzeRoute, s.handleDebugIssueAnalyze)
+	registerProtectedRoute(apiMux, apiRoutes, debugInvalidateMapProjectionRoute, s.handleDebugInvalidateMapProjection)
+}
+
+func registerProtectedRoute(
+	apiMux *http.ServeMux,
+	apiRoutes map[string]struct{},
+	route string,
+	handler http.HandlerFunc,
+) {
+	apiRoutes[route] = struct{}{}
+	apiMux.HandleFunc(route, handler)
+}
+
+func registerPublicRoute(
+	apiMux *http.ServeMux,
+	apiRoutes map[string]struct{},
+	publicAPIRoutes map[string]struct{},
+	route string,
+	handler http.HandlerFunc,
+) {
+	registerProtectedRoute(apiMux, apiRoutes, route, handler)
+	publicAPIRoutes[route] = struct{}{}
 }
 
 func (s *Server) Start() error {

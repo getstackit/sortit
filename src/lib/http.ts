@@ -4,7 +4,22 @@ type ErrorPayload = {
   error?: string;
 };
 
-export class UnauthorizedError extends Error {}
+export class HTTPError extends Error {
+  status: number;
+
+  constructor(status: number, message: string) {
+    super(message);
+    this.name = "HTTPError";
+    this.status = status;
+  }
+}
+
+export class UnauthorizedError extends HTTPError {
+  constructor(message: string) {
+    super(401, message);
+    this.name = "UnauthorizedError";
+  }
+}
 
 async function readErrorMessage(response: Response) {
   const fallback = `Request failed with ${response.status}`;
@@ -40,7 +55,7 @@ export async function requestJSON<T>(
       }
       throw new UnauthorizedError(message);
     }
-    throw new Error(message);
+    throw new HTTPError(response.status, message);
   }
 
   return (await response.json()) as T;

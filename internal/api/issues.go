@@ -39,6 +39,30 @@ type progressIssueRequest struct {
 
 type assignIssueRequest struct {
 	AssignedTo string `json:"assignedTo"`
+	CreatedBy  string `json:"createdBy,omitempty"`
+}
+
+type batchCloseIssuesRequest struct {
+	IDs      []string `json:"ids"`
+	ClosedBy string   `json:"closedBy,omitempty"`
+}
+
+type batchRefineIssuesRequest struct {
+	IDs       []string `json:"ids"`
+	Raw       string   `json:"raw"`
+	CreatedBy string   `json:"createdBy,omitempty"`
+}
+
+type batchProgressIssuesRequest struct {
+	IDs       []string `json:"ids"`
+	Raw       string   `json:"raw"`
+	CreatedBy string   `json:"createdBy,omitempty"`
+}
+
+type batchAssignIssuesRequest struct {
+	IDs        []string `json:"ids"`
+	AssignedTo string   `json:"assignedTo"`
+	CreatedBy  string   `json:"createdBy,omitempty"`
 }
 
 type splitIssueChildRequest struct {
@@ -159,11 +183,31 @@ func (s *Server) handleIssueSearch(w http.ResponseWriter, r *http.Request) {
 	if limit != nil {
 		searchLimit = *limit
 	}
+	offset, err := ParseNonNegativeIntQuery(r.URL.Query(), "offset")
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "invalid offset query")
+		return
+	}
+
+	searchOffset := 0
+	if offset != nil {
+		searchOffset = *offset
+	}
+
+	sortBy, err := parseIssueSearchSortBy(firstQueryValue(r, "sortBy", "sort_by"))
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
 
 	result, err := s.searchIssues.Handle(r.Context(), queries.SearchIssues{
-		Query:  query,
-		Limit:  searchLimit,
-		Status: filter,
+		Query:      query,
+		Limit:      searchLimit,
+		Offset:     searchOffset,
+		Status:     filter,
+		AssignedTo: firstQueryValue(r, "assignedTo", "assigned_to"),
+		Tags:       ParseCSV(r.URL.Query().Get("tags")),
+		SortBy:     sortBy,
 	})
 	if err != nil {
 		writeInternalError(w, r, "failed to search issues", err)
@@ -228,11 +272,130 @@ func (s *Server) handleIssueLink(w http.ResponseWriter, r *http.Request) {
 			writeError(w, http.StatusNotFound, "issue not found")
 			return
 		}
+		if errors.Is(err, issues.ErrInvalidIssueLink) {
+			writeError(w, http.StatusBadRequest, err.Error())
+			return
+		}
+		if errors.Is(err, issues.ErrDuplicateIssueLink) {
+			writeError(w, http.StatusConflict, err.Error())
+			return
+		}
 		writeInternalError(w, r, "failed to link issues", err)
 		return
 	}
 
 	writeJSON(w, http.StatusCreated, result)
+}
+
+func (s *Server) handleIssueRefineBatch(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		w.Header().Set("Allow", http.MethodPost)
+		http.Error(w, http.StatusText(http.StatusMethodNotAllowed), http.StatusMethodNotAllowed)
+		return
+	}
+
+	request, err := decodeBatchRefineIssuesRequest(r)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+
+	result, err := commands.RunIssueMutationBatch(request.IDs, func(id string) (issues.Issue, error) {
+		return s.refineIssue.Handle(r.Context(), commands.RefineIssue{
+			ID:        id,
+			Raw:       request.Raw,
+			CreatedBy: actorForRequest(r, request.CreatedBy),
+		})
+	})
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+
+	writeJSON(w, http.StatusOK, result)
+}
+
+func (s *Server) handleIssueProgressBatch(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		w.Header().Set("Allow", http.MethodPost)
+		http.Error(w, http.StatusText(http.StatusMethodNotAllowed), http.StatusMethodNotAllowed)
+		return
+	}
+
+	request, err := decodeBatchProgressIssuesRequest(r)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+
+	result, err := commands.RunIssueMutationBatch(request.IDs, func(id string) (issues.Issue, error) {
+		return s.progressIssue.Handle(r.Context(), commands.ProgressIssue{
+			ID:        id,
+			Raw:       request.Raw,
+			CreatedBy: actorForRequest(r, request.CreatedBy),
+		})
+	})
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+
+	writeJSON(w, http.StatusOK, result)
+}
+
+func (s *Server) handleIssueCloseBatch(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		w.Header().Set("Allow", http.MethodPost)
+		http.Error(w, http.StatusText(http.StatusMethodNotAllowed), http.StatusMethodNotAllowed)
+		return
+	}
+
+	request, err := decodeBatchCloseIssuesRequest(r)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+
+	result, err := commands.RunIssueMutationBatch(request.IDs, func(id string) (issues.Issue, error) {
+		return s.closeIssue.Handle(r.Context(), commands.CloseIssue{
+			ID:       id,
+			ClosedBy: actorForRequest(r, request.ClosedBy),
+		})
+	})
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+
+	writeJSON(w, http.StatusOK, result)
+}
+
+func (s *Server) handleIssueAssignBatch(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		w.Header().Set("Allow", http.MethodPost)
+		http.Error(w, http.StatusText(http.StatusMethodNotAllowed), http.StatusMethodNotAllowed)
+		return
+	}
+
+	request, err := decodeBatchAssignIssuesRequest(r)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+
+	result, err := commands.RunIssueMutationBatch(request.IDs, func(id string) (issues.Issue, error) {
+		return s.assignIssue.Handle(r.Context(), commands.AssignIssue{
+			ID:         id,
+			AssignedTo: request.AssignedTo,
+			CreatedBy:  actorForRequest(r, request.CreatedBy),
+		})
+	})
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+
+	writeJSON(w, http.StatusOK, result)
 }
 
 func (s *Server) handleIssueByID(route string) http.HandlerFunc {
@@ -440,6 +603,7 @@ func (s *Server) handleIssueByID(route string) http.HandlerFunc {
 			assigned, err := s.assignIssue.Handle(r.Context(), commands.AssignIssue{
 				ID:         id,
 				AssignedTo: request.AssignedTo,
+				CreatedBy:  actorForRequest(r, request.CreatedBy),
 			})
 			if err != nil {
 				if errors.Is(err, issues.ErrNotFound) {
@@ -525,7 +689,7 @@ func (s *Server) handleIssueList(w http.ResponseWriter, r *http.Request) {
 
 	items, err := s.listIssues.Handle(r.Context(), queries.ListIssuesQuery{
 		Status:     filter,
-		AssignedTo: strings.TrimSpace(r.URL.Query().Get("assignedTo")),
+		AssignedTo: firstQueryValue(r, "assignedTo", "assigned_to"),
 		Tags:       ParseCSV(r.URL.Query().Get("tags")),
 		Limit:      listLimit,
 		Offset:     listOffset,
@@ -568,6 +732,75 @@ func decodeCreateIssueRequest(r *http.Request) (createIssueRequest, error) {
 	request.CreatedBy = strings.TrimSpace(request.CreatedBy)
 	if request.Raw == "" {
 		return createIssueRequest{}, errors.New("raw is required")
+	}
+
+	return request, nil
+}
+
+func decodeBatchCloseIssuesRequest(r *http.Request) (batchCloseIssuesRequest, error) {
+	request, err := decodeJSON[batchCloseIssuesRequest](r)
+	if err != nil {
+		return batchCloseIssuesRequest{}, err
+	}
+
+	request.IDs = sanitizeIssueIDs(request.IDs)
+	request.ClosedBy = strings.TrimSpace(request.ClosedBy)
+	if len(request.IDs) == 0 {
+		return batchCloseIssuesRequest{}, errors.New("at least one issue id is required")
+	}
+
+	return request, nil
+}
+
+func decodeBatchRefineIssuesRequest(r *http.Request) (batchRefineIssuesRequest, error) {
+	request, err := decodeJSON[batchRefineIssuesRequest](r)
+	if err != nil {
+		return batchRefineIssuesRequest{}, err
+	}
+
+	request.IDs = sanitizeIssueIDs(request.IDs)
+	request.Raw = strings.TrimSpace(request.Raw)
+	request.CreatedBy = strings.TrimSpace(request.CreatedBy)
+	if len(request.IDs) == 0 {
+		return batchRefineIssuesRequest{}, errors.New("at least one issue id is required")
+	}
+	if request.Raw == "" {
+		return batchRefineIssuesRequest{}, errors.New("raw is required")
+	}
+
+	return request, nil
+}
+
+func decodeBatchProgressIssuesRequest(r *http.Request) (batchProgressIssuesRequest, error) {
+	request, err := decodeJSON[batchProgressIssuesRequest](r)
+	if err != nil {
+		return batchProgressIssuesRequest{}, err
+	}
+
+	request.IDs = sanitizeIssueIDs(request.IDs)
+	request.Raw = strings.TrimSpace(request.Raw)
+	request.CreatedBy = strings.TrimSpace(request.CreatedBy)
+	if len(request.IDs) == 0 {
+		return batchProgressIssuesRequest{}, errors.New("at least one issue id is required")
+	}
+	if request.Raw == "" {
+		return batchProgressIssuesRequest{}, errors.New("raw is required")
+	}
+
+	return request, nil
+}
+
+func decodeBatchAssignIssuesRequest(r *http.Request) (batchAssignIssuesRequest, error) {
+	request, err := decodeJSON[batchAssignIssuesRequest](r)
+	if err != nil {
+		return batchAssignIssuesRequest{}, err
+	}
+
+	request.IDs = sanitizeIssueIDs(request.IDs)
+	request.AssignedTo = strings.TrimSpace(request.AssignedTo)
+	request.CreatedBy = strings.TrimSpace(request.CreatedBy)
+	if len(request.IDs) == 0 {
+		return batchAssignIssuesRequest{}, errors.New("at least one issue id is required")
 	}
 
 	return request, nil
@@ -651,6 +884,7 @@ func decodeAssignIssueRequest(r *http.Request) (assignIssueRequest, error) {
 	}
 
 	request.AssignedTo = strings.TrimSpace(request.AssignedTo)
+	request.CreatedBy = strings.TrimSpace(request.CreatedBy)
 	return request, nil
 }
 
@@ -759,4 +993,24 @@ func sanitizeIssueIDs(ids []string) []string {
 		out = append(out, id)
 	}
 	return out
+}
+
+func firstQueryValue(r *http.Request, keys ...string) string {
+	for _, key := range keys {
+		if value := strings.TrimSpace(r.URL.Query().Get(key)); value != "" {
+			return value
+		}
+	}
+	return ""
+}
+
+func parseIssueSearchSortBy(raw string) (string, error) {
+	switch strings.ToLower(strings.TrimSpace(raw)) {
+	case "", "relevance":
+		return "", nil
+	case "created_at":
+		return "created_at", nil
+	default:
+		return "", errors.New("sortBy must be one of: relevance, created_at")
+	}
 }

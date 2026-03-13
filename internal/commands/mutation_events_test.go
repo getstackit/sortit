@@ -2,6 +2,7 @@ package commands
 
 import (
 	"context"
+	"errors"
 	"testing"
 	"time"
 
@@ -112,12 +113,16 @@ func TestAssignIssuePublishesAssignedEventAfterCommit(t *testing.T) {
 	updated, err := handler.Handle(context.Background(), AssignIssue{
 		ID:         issue.ID,
 		AssignedTo: "Jordan",
+		CreatedBy:  "Taylor",
 	})
 	if err != nil {
 		t.Fatalf("assign issue: %v", err)
 	}
 	if updated.AssignedTo != "Jordan" {
 		t.Fatalf("expected issue assigned to Jordan, got %q", updated.AssignedTo)
+	}
+	if updated.Discussion[1].CreatedBy != "Taylor" {
+		t.Fatalf("expected assignment post author Taylor, got %q", updated.Discussion[1].CreatedBy)
 	}
 
 	assertPublishedAndPersistedEvent(t, fixture.store, fixture.bus, len(baselineEvents), "assigned", issue.ID)
@@ -263,6 +268,49 @@ func TestLinkIssuesPublishesLinkEventAfterCommit(t *testing.T) {
 	}
 
 	assertPublishedAndPersistedEvent(t, fixture.store, fixture.bus, 0, "link", source.ID)
+}
+
+func TestLinkIssuesRejectsSelfLinks(t *testing.T) {
+	t.Parallel()
+
+	fixture := newCommandTestFixture()
+	source := seedIssue(t, fixture.store, "Source issue", "Casey")
+	handler := LinkIssuesHandler{Runner: fixture.runner, Events: fixture.bus}
+
+	_, err := handler.Handle(context.Background(), LinkIssues{
+		SourceID: source.ID,
+		TargetID: source.ID,
+		Type:     issues.IssueLinkTypeRelatedTo,
+	})
+	if !errors.Is(err, issues.ErrInvalidIssueLink) {
+		t.Fatalf("expected invalid issue link error, got %v", err)
+	}
+}
+
+func TestLinkIssuesRejectsDuplicateLogicalLinks(t *testing.T) {
+	t.Parallel()
+
+	fixture := newCommandTestFixture()
+	source := seedIssue(t, fixture.store, "Source issue", "Casey")
+	target := seedIssue(t, fixture.store, "Target issue", "Jordan")
+	handler := LinkIssuesHandler{Runner: fixture.runner, Events: fixture.bus}
+
+	if _, err := handler.Handle(context.Background(), LinkIssues{
+		SourceID: source.ID,
+		TargetID: target.ID,
+		Type:     issues.IssueLinkTypeRelatedTo,
+	}); err != nil {
+		t.Fatalf("seed link issues: %v", err)
+	}
+
+	_, err := handler.Handle(context.Background(), LinkIssues{
+		SourceID: source.ID,
+		TargetID: target.ID,
+		Type:     issues.IssueLinkTypeRelatedTo,
+	})
+	if !errors.Is(err, issues.ErrDuplicateIssueLink) {
+		t.Fatalf("expected duplicate issue link error, got %v", err)
+	}
 }
 
 func TestCombineIssuesPublishesCombineEventAfterCommit(t *testing.T) {

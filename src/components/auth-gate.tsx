@@ -1,11 +1,17 @@
 "use client";
 
 import type { ReactNode } from "react";
+import { usePathname } from "next/navigation";
 import { LoginScreen } from "@/components/login-screen";
 import { useAuth } from "@/components/auth-provider";
 
 export function AuthGate({ children }: { children: ReactNode }) {
   const { user, loading } = useAuth();
+  const pathname = usePathname();
+
+  if (pathname === "/auth/cli-login") {
+    return <>{children}</>;
+  }
 
   if (loading) {
     return (

@@ -3,6 +3,7 @@ package issues
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"strings"
 	"sync"
 	"testing"
@@ -627,6 +628,69 @@ func TestPostgresStoreLoadMapProjectionDataReturnsLinkedIssuesAndTags(t *testing
 	}
 	if linked.Links[0].TargetIssueID != parent.ID || linked.Links[0].Type != IssueLinkTypeDerivedFrom {
 		t.Fatalf("unexpected projection link: %#v", linked.Links[0])
+	}
+}
+
+func TestPostgresStoreSaveLinkRejectsSelfLinks(t *testing.T) {
+	store := newPostgresTestStore(t)
+	ctx := context.Background()
+
+	issue := BuildNewIssue(NewIssueID(), CreateInput{
+		Raw:       "Search ranking quality regressed",
+		CreatedBy: "Casey",
+	})
+	if err := store.SaveIssue(ctx, issue); err != nil {
+		t.Fatalf("save issue: %v", err)
+	}
+
+	err := store.SaveLink(ctx, IssueLink{
+		ID:            NewOperationID(),
+		Type:          IssueLinkTypeRelatedTo,
+		SourceIssueID: issue.ID,
+		TargetIssueID: issue.ID,
+		CreatedBy:     "Casey",
+		CreatedAt:     time.Now().UTC(),
+	})
+	if !errors.Is(err, ErrInvalidIssueLink) {
+		t.Fatalf("expected invalid issue link error, got %v", err)
+	}
+}
+
+func TestPostgresStoreSaveLinkRejectsDuplicateLogicalLinks(t *testing.T) {
+	store := newPostgresTestStore(t)
+	ctx := context.Background()
+
+	source := BuildNewIssue(NewIssueID(), CreateInput{
+		Raw:       "Search ranking quality regressed",
+		CreatedBy: "Casey",
+	})
+	target := BuildNewIssue(NewIssueID(), CreateInput{
+		Raw:       "Map projection should slim payloads",
+		CreatedBy: "Jordan",
+	})
+	if err := store.SaveIssue(ctx, source); err != nil {
+		t.Fatalf("save source issue: %v", err)
+	}
+	if err := store.SaveIssue(ctx, target); err != nil {
+		t.Fatalf("save target issue: %v", err)
+	}
+
+	link := IssueLink{
+		ID:            NewOperationID(),
+		Type:          IssueLinkTypeDerivedFrom,
+		SourceIssueID: source.ID,
+		TargetIssueID: target.ID,
+		CreatedBy:     "Jordan",
+		CreatedAt:     time.Now().UTC(),
+	}
+	if err := store.SaveLink(ctx, link); err != nil {
+		t.Fatalf("save first link: %v", err)
+	}
+
+	link.ID = NewOperationID()
+	err := store.SaveLink(ctx, link)
+	if !errors.Is(err, ErrDuplicateIssueLink) {
+		t.Fatalf("expected duplicate issue link error, got %v", err)
 	}
 }
 

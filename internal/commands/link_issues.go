@@ -26,11 +26,14 @@ func (h LinkIssuesHandler) Handle(ctx context.Context, input LinkIssues) (result
 	sourceID := strings.TrimSpace(input.SourceID)
 	targetID := strings.TrimSpace(input.TargetID)
 	if sourceID == "" || targetID == "" {
-		return issues.IssueOperationResult{}, issues.ErrNotFound
+		return issues.IssueOperationResult{}, fmt.Errorf("%w: sourceId and targetId are required", issues.ErrInvalidIssueLink)
 	}
 	linkType := issues.NormalizeIssueLinkType(input.Type)
 	if linkType == "" {
-		return issues.IssueOperationResult{}, fmt.Errorf("link type is required")
+		return issues.IssueOperationResult{}, fmt.Errorf("%w: link type is required", issues.ErrInvalidIssueLink)
+	}
+	if sourceID == targetID {
+		return issues.IssueOperationResult{}, fmt.Errorf("%w: sourceId and targetId must differ", issues.ErrInvalidIssueLink)
 	}
 
 	uow, finish, err := Begin(ctx, h.Runner)
@@ -50,6 +53,17 @@ func (h LinkIssuesHandler) Handle(ctx context.Context, input LinkIssues) (result
 	target, err := uow.Get(ctx, targetID)
 	if err != nil {
 		return issues.IssueOperationResult{}, err
+	}
+	for _, existing := range source.Links {
+		if existing.SourceIssueID == sourceID && existing.TargetIssueID == targetID && existing.Type == linkType {
+			return issues.IssueOperationResult{}, fmt.Errorf(
+				"%w: %s %s %s already exists",
+				issues.ErrDuplicateIssueLink,
+				sourceID,
+				linkType,
+				targetID,
+			)
+		}
 	}
 
 	actor := issues.DefaultActor(input.CreatedBy)

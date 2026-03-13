@@ -42,7 +42,7 @@ type AssignIssuesHandler struct {
 }
 
 func (h AssignIssuesHandler) Handle(ctx context.Context, input AssignIssues) (IssueMutationResult, error) {
-	return runIssueMutationBatch(input.IDs, func(id string) (issues.Issue, error) {
+	return RunIssueMutationBatch(input.IDs, func(id string) (issues.Issue, error) {
 		return h.AssignIssue.Handle(ctx, AssignIssue{
 			ID:         id,
 			AssignedTo: input.AssignedTo,
@@ -60,7 +60,7 @@ type CloseIssuesHandler struct {
 }
 
 func (h CloseIssuesHandler) Handle(ctx context.Context, input CloseIssues) (IssueMutationResult, error) {
-	return runIssueMutationBatch(input.IDs, func(id string) (issues.Issue, error) {
+	return RunIssueMutationBatch(input.IDs, func(id string) (issues.Issue, error) {
 		return h.CloseIssue.Handle(ctx, CloseIssue{
 			ID:       id,
 			ClosedBy: input.ClosedBy,
@@ -84,7 +84,7 @@ func (h ProgressIssuesHandler) Handle(ctx context.Context, input ProgressIssues)
 		return IssueMutationResult{}, err
 	}
 
-	return runIssueMutationBatch(input.IDs, func(id string) (issues.Issue, error) {
+	return RunIssueMutationBatch(input.IDs, func(id string) (issues.Issue, error) {
 		return h.ProgressIssue.Handle(ctx, ProgressIssue{
 			ID:        id,
 			Raw:       raw,
@@ -109,7 +109,7 @@ func (h RefineIssuesHandler) Handle(ctx context.Context, input RefineIssues) (Is
 		return IssueMutationResult{}, err
 	}
 
-	return runIssueMutationBatch(input.IDs, func(id string) (issues.Issue, error) {
+	return RunIssueMutationBatch(input.IDs, func(id string) (issues.Issue, error) {
 		return h.RefineIssue.Handle(ctx, RefineIssue{
 			ID:        id,
 			Raw:       raw,
@@ -118,7 +118,7 @@ func (h RefineIssuesHandler) Handle(ctx context.Context, input RefineIssues) (Is
 	})
 }
 
-func runIssueMutationBatch(ids []string, mutate func(string) (issues.Issue, error)) (IssueMutationResult, error) {
+func RunIssueMutationBatch(ids []string, mutate func(string) (issues.Issue, error)) (IssueMutationResult, error) {
 	ids = issues.SanitizeIssueIDs(ids)
 	if len(ids) == 0 {
 		return IssueMutationResult{}, fmt.Errorf("at least one issue id is required")

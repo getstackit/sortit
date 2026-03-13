@@ -84,7 +84,7 @@ func TestHandlerServesRootAndAPI(t *testing.T) {
 	})
 
 	t.Run("map", func(t *testing.T) {
-		req := httptest.NewRequest(http.MethodGet, "/api/map", nil)
+		req := httptest.NewRequest(http.MethodGet, "/api/ui/map", nil)
 		rec := httptest.NewRecorder()
 
 		handler.ServeHTTP(rec, req)
@@ -108,7 +108,7 @@ func TestHandlerServesRootAndAPI(t *testing.T) {
 	t.Run("map edges", func(t *testing.T) {
 		req := httptest.NewRequest(
 			http.MethodGet,
-			"/api/map/edges?xMin=0&xMax=1&yMin=0&yMax=1",
+			"/api/ui/map/edges?xMin=0&xMax=1&yMin=0&yMax=1",
 			nil,
 		)
 		rec := httptest.NewRecorder()
@@ -184,7 +184,7 @@ func TestCORSPreflightBehavior(t *testing.T) {
 	})
 
 	t.Run("invalid viewport is rejected", func(t *testing.T) {
-		req := httptest.NewRequest(http.MethodGet, "/api/map?xMin=bad", nil)
+		req := httptest.NewRequest(http.MethodGet, "/api/ui/map?xMin=bad", nil)
 		rec := httptest.NewRecorder()
 
 		handler.ServeHTTP(rec, req)
@@ -202,7 +202,7 @@ func TestMapEndpointsStartEmptyByDefault(t *testing.T) {
 	})
 	handler := server.Handler()
 
-	mapReq := httptest.NewRequest(http.MethodGet, "/api/map", nil)
+	mapReq := httptest.NewRequest(http.MethodGet, "/api/ui/map", nil)
 	mapRec := httptest.NewRecorder()
 	handler.ServeHTTP(mapRec, mapReq)
 
@@ -223,7 +223,7 @@ func TestMapEndpointsStartEmptyByDefault(t *testing.T) {
 		)
 	}
 
-	edgesReq := httptest.NewRequest(http.MethodGet, "/api/map/edges", nil)
+	edgesReq := httptest.NewRequest(http.MethodGet, "/api/ui/map/edges", nil)
 	edgesRec := httptest.NewRecorder()
 	handler.ServeHTTP(edgesRec, edgesReq)
 
@@ -250,7 +250,7 @@ func TestMapEdgesEndpointReturnsEdgeResponse(t *testing.T) {
 
 	req := httptest.NewRequest(
 		http.MethodGet,
-		"/api/map/edges?xMin=0.15&xMax=0.45&yMin=0.15&yMax=0.45",
+		"/api/ui/map/edges?xMin=0.15&xMax=0.45&yMin=0.15&yMax=0.45",
 		nil,
 	)
 	rec := httptest.NewRecorder()
@@ -297,7 +297,7 @@ func TestMapEdgesEndpointUsesDefaultViewport(t *testing.T) {
 	})
 	handler := server.Handler()
 
-	req := httptest.NewRequest(http.MethodGet, "/api/map/edges", nil)
+	req := httptest.NewRequest(http.MethodGet, "/api/ui/map/edges", nil)
 	rec := httptest.NewRecorder()
 
 	handler.ServeHTTP(rec, req)
@@ -329,7 +329,7 @@ func TestMapEdgesEndpointHonorsEdgeThreshold(t *testing.T) {
 	})
 	handler := server.Handler()
 
-	req := httptest.NewRequest(http.MethodGet, "/api/map/edges?edgeThreshold=0.70", nil)
+	req := httptest.NewRequest(http.MethodGet, "/api/ui/map/edges?edgeThreshold=0.70", nil)
 	rec := httptest.NewRecorder()
 
 	handler.ServeHTTP(rec, req)
@@ -548,7 +548,7 @@ func TestMapEdgesEndpointRejectsInvalidViewport(t *testing.T) {
 	})
 	handler := server.Handler()
 
-	req := httptest.NewRequest(http.MethodGet, "/api/map/edges?xMin=bad", nil)
+	req := httptest.NewRequest(http.MethodGet, "/api/ui/map/edges?xMin=bad", nil)
 	rec := httptest.NewRecorder()
 
 	handler.ServeHTTP(rec, req)
@@ -574,10 +574,10 @@ func TestMapEndpointsRejectInvalidEdgeThreshold(t *testing.T) {
 	handler := server.Handler()
 
 	for _, path := range []string{
-		"/api/map?edgeThreshold=bad",
-		"/api/map?edgeThreshold=1.1",
-		"/api/map/edges?edgeThreshold=bad",
-		"/api/map/edges?edgeThreshold=-0.1",
+		"/api/ui/map?edgeThreshold=bad",
+		"/api/ui/map?edgeThreshold=1.1",
+		"/api/ui/map/edges?edgeThreshold=bad",
+		"/api/ui/map/edges?edgeThreshold=-0.1",
 	} {
 		req := httptest.NewRequest(http.MethodGet, path, nil)
 		rec := httptest.NewRecorder()
@@ -598,8 +598,8 @@ func TestMapEdgesEndpointRejectsNonFiniteViewport(t *testing.T) {
 	handler := server.Handler()
 
 	for _, path := range []string{
-		"/api/map/edges?xMin=NaN&xMax=1&yMin=0&yMax=1",
-		"/api/map/edges?xMin=0&xMax=+Inf&yMin=0&yMax=1",
+		"/api/ui/map/edges?xMin=NaN&xMax=1&yMin=0&yMax=1",
+		"/api/ui/map/edges?xMin=0&xMax=+Inf&yMin=0&yMax=1",
 	} {
 		req := httptest.NewRequest(http.MethodGet, path, nil)
 		rec := httptest.NewRecorder()
@@ -613,7 +613,7 @@ func TestMapEdgesEndpointRejectsNonFiniteViewport(t *testing.T) {
 }
 
 func mapEdgesPath(viewport *issuemap.Viewport) string {
-	return "/api/map/edges?xMin=" + formatFloat(viewport.XMin) +
+	return "/api/ui/map/edges?xMin=" + formatFloat(viewport.XMin) +
 		"&xMax=" + formatFloat(viewport.XMax) +
 		"&yMin=" + formatFloat(viewport.YMin) +
 		"&yMax=" + formatFloat(viewport.YMax)

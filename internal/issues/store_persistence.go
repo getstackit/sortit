@@ -109,6 +109,22 @@ func (s *InMemoryStore) SaveLink(_ context.Context, link IssueLink) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
+	sourceID := strings.TrimSpace(link.SourceIssueID)
+	targetID := strings.TrimSpace(link.TargetIssueID)
+	if sourceID == "" || targetID == "" || normalizeIssueLinkType(link.Type) == "" {
+		return ErrInvalidIssueLink
+	}
+	if sourceID == targetID {
+		return ErrInvalidIssueLink
+	}
+	for _, existing := range s.links {
+		if existing.SourceIssueID == sourceID &&
+			existing.TargetIssueID == targetID &&
+			existing.Type == normalizeIssueLinkType(link.Type) {
+			return ErrDuplicateIssueLink
+		}
+	}
+
 	s.links = append(s.links, link)
 	return nil
 }

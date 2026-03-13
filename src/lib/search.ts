@@ -1,4 +1,4 @@
-import { apiURL } from "@/lib/api";
+import { uiAPIURL } from "@/lib/api";
 import { getJSON } from "@/lib/http";
 import type { SearchIssueRecord, IssueTagScore } from "@/lib/issues";
 
@@ -35,7 +35,7 @@ export async function searchUnified(
   }
 
   return getJSON<UnifiedSearchResponse>(
-    apiURL(`/api/v1/search?${params.toString()}`),
+    uiAPIURL(`/search?${params.toString()}`),
     {
       cache: "no-store",
       signal,

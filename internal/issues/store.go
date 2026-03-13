@@ -15,6 +15,8 @@ import (
 var ErrNotFound = errors.New("issue not found")
 var ErrIssueClosed = errors.New("issue is closed")
 var ErrMapProjectionNotFound = errors.New("map projection not found")
+var ErrInvalidIssueLink = errors.New("invalid issue link")
+var ErrDuplicateIssueLink = errors.New("duplicate issue link")
 
 type IssueStatus string
 

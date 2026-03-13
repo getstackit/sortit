@@ -162,18 +162,21 @@ function formatPostKindLabel(kind: IssuePostKind, refinementIndex: number) {
   }
 }
 
-function formatLinkType(type: IssueLinkRecord["type"]) {
+function formatLinkType(
+  type: IssueLinkRecord["type"],
+  direction?: IssueLinkRecord["direction"]
+) {
   switch (type) {
     case "parent_of":
-      return "Parent of";
+      return direction === "incoming" ? "Child of" : "Parent of";
     case "child_of":
-      return "Child of";
+      return direction === "incoming" ? "Parent of" : "Child of";
     case "merged_into":
-      return "Merged into";
+      return direction === "incoming" ? "Merged from" : "Merged into";
     case "derived_from":
-      return "Derived from";
+      return direction === "incoming" ? "Source for" : "Derived from";
     case "duplicate_of":
-      return "Duplicate of";
+      return direction === "incoming" ? "Has duplicate" : "Duplicate of";
     case "related_to":
     default:
       return "Related to";
@@ -714,15 +717,15 @@ export function IssueDetailPage({ issueID }: { issueID: string }) {
   const relationshipGroups = useMemo(() => {
     const groups = new Map<string, IssueLinkRecord[]>();
     for (const link of issue?.links ?? []) {
-      const key = link.type;
+      const key = `${link.type}:${link.direction ?? "unknown"}`;
       const current = groups.get(key) ?? [];
       current.push(link);
       groups.set(key, current);
     }
 
-    return [...groups.entries()].map(([type, links]) => ({
-      type,
-      label: formatLinkType(type as IssueLinkRecord["type"]),
+    return [...groups.entries()].map(([key, links]) => ({
+      type: key,
+      label: formatLinkType(links[0].type, links[0].direction),
       links: [...links].sort((left, right) => {
         const leftIssue = left.relatedIssue;
         const rightIssue = right.relatedIssue;

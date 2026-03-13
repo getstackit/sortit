@@ -4,7 +4,7 @@ import { useState } from "react";
 import { AppShell } from "@/components/app-shell";
 import { AppSidebar } from "@/components/app-sidebar";
 import { SiteHeader } from "@/components/site-header";
-import { apiURL } from "@/lib/api";
+import { uiAPIURL } from "@/lib/api";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 
@@ -100,7 +100,7 @@ export default function DebugPage() {
     setError(null);
 
     try {
-      const response = await fetch(apiURL("/api/v1/debug/issues/analyze"), {
+      const response = await fetch(uiAPIURL("/debug/issues/analyze"), {
         method: "POST",
         credentials: "include",
         headers: {
@@ -145,7 +145,7 @@ export default function DebugPage() {
 
     try {
       const response = await fetch(
-        apiURL("/api/v1/debug/map-projection/invalidate"),
+        uiAPIURL("/debug/map-projection/invalidate"),
         {
           method: "POST",
           credentials: "include",

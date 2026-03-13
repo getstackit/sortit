@@ -15,7 +15,7 @@ The easiest local setup is to use `localhost` everywhere:
 
 - web UI: `http://localhost:3000`
 - API: `http://localhost:8081`
-- GitHub callback: `http://localhost:8081/api/v1/auth/github/callback`
+- GitHub callback: `http://localhost:8081/api/ui/auth/github/callback`
 - MCP endpoint: `http://localhost:8081/mcp`
 
 Do not mix `localhost` and `127.0.0.1` during auth setup unless you deliberately reconfigure every related setting. The session and OAuth state cookies are host-specific, so a flow that starts on `localhost` and finishes on `127.0.0.1` will not behave reliably.
@@ -36,7 +36,7 @@ Splat always boots the server with GitHub auth enabled, so local backend startup
 Create a GitHub OAuth App with:
 
 - Homepage URL: `http://localhost:3000`
-- Authorization callback URL: `http://localhost:8081/api/v1/auth/github/callback`
+- Authorization callback URL: `http://localhost:8081/api/ui/auth/github/callback`
 
 Then copy the app's:
 

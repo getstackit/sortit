@@ -16,6 +16,7 @@ import (
 	"github.com/golang-migrate/migrate/v4"
 	migratepostgres "github.com/golang-migrate/migrate/v4/database/postgres"
 	"github.com/golang-migrate/migrate/v4/source/iofs"
+	"github.com/jackc/pgx/v5/pgconn"
 	_ "github.com/jackc/pgx/v5/stdlib"
 
 	"splat/internal/issues/issuesdb"
@@ -1350,6 +1351,15 @@ func insertIssueLink(ctx context.Context, q *issuesdb.Queries, link IssueLink) e
 		Note:              strings.TrimSpace(link.Note),
 		OperationID:       strings.TrimSpace(link.OperationID),
 	}); err != nil {
+		var pgErr *pgconn.PgError
+		if errors.As(err, &pgErr) {
+			switch pgErr.Code {
+			case "23514":
+				return fmt.Errorf("%w: sourceId and targetId must differ", ErrInvalidIssueLink)
+			case "23505":
+				return fmt.Errorf("%w: %s %s %s already exists", ErrDuplicateIssueLink, link.SourceIssueID, link.Type, link.TargetIssueID)
+			}
+		}
 		return fmt.Errorf("insert issue link %q: %w", link.ID, err)
 	}
 	return nil

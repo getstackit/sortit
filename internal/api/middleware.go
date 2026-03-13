@@ -79,6 +79,11 @@ func isPublicRoute(requestPath string, publicAPIRoutes map[string]struct{}) bool
 	if _, ok := publicAPIRoutes[requestPath]; ok {
 		return true
 	}
+	for route := range publicAPIRoutes {
+		if strings.HasSuffix(route, "/") && strings.HasPrefix(requestPath, route) {
+			return true
+		}
+	}
 	return false
 }
 

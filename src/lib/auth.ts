@@ -1,4 +1,4 @@
-import { apiURL } from "@/lib/api";
+import { uiAPIURL } from "@/lib/api";
 import { getJSON, postJSON, UnauthorizedError } from "@/lib/http";
 
 export type SessionUser = {
@@ -29,9 +29,14 @@ type CreateAPITokenResponse = {
   metadata: APITokenRecord;
 };
 
+type CompleteCLILoginResponse = CreateAPITokenResponse & {
+  status: "complete";
+  user: SessionUser;
+};
+
 export async function fetchSession(): Promise<SessionUser | null> {
   try {
-    const payload = await getJSON<SessionResponse>(apiURL("/api/v1/auth/session"), {
+    const payload = await getJSON<SessionResponse>(uiAPIURL("/auth/session"), {
       cache: "no-store",
     });
     return payload.user;
@@ -45,13 +50,13 @@ export async function fetchSession(): Promise<SessionUser | null> {
 
 export function logoutSession() {
   return postJSON<{ status: string }, Record<string, never>>(
-    apiURL("/api/v1/auth/logout"),
+    uiAPIURL("/auth/logout"),
     {}
   );
 }
 
 export async function listAPITokens(): Promise<APITokenRecord[]> {
-  const payload = await getJSON<APITokensResponse>(apiURL("/api/v1/auth/tokens"), {
+  const payload = await getJSON<APITokensResponse>(uiAPIURL("/auth/tokens"), {
     cache: "no-store",
   });
   return payload.tokens ?? [];
@@ -59,14 +64,21 @@ export async function listAPITokens(): Promise<APITokenRecord[]> {
 
 export function createAPIToken() {
   return postJSON<CreateAPITokenResponse, Record<string, never>>(
-    apiURL("/api/v1/auth/tokens"),
+    uiAPIURL("/auth/tokens"),
     {}
   );
 }
 
 export function revokeAPIToken(id: string) {
   return postJSON<{ status: string }, Record<string, never>>(
-    apiURL(`/api/v1/auth/tokens/${encodeURIComponent(id)}/revoke`),
+    uiAPIURL(`/auth/tokens/${encodeURIComponent(id)}/revoke`),
+    {}
+  );
+}
+
+export function completeCLILogin(loginID: string) {
+  return postJSON<CompleteCLILoginResponse, Record<string, never>>(
+    uiAPIURL(`/auth/cli/login/${encodeURIComponent(loginID)}/complete`),
     {}
   );
 }

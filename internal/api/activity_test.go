@@ -19,7 +19,7 @@ func TestRevisionEndpointAdvancesAfterMutation(t *testing.T) {
 	})
 	handler := server.Handler()
 
-	beforeReq := httptest.NewRequest(http.MethodGet, "/api/revision", nil)
+	beforeReq := httptest.NewRequest(http.MethodGet, "/api/ui/revision", nil)
 	beforeRec := httptest.NewRecorder()
 	handler.ServeHTTP(beforeRec, beforeReq)
 
@@ -39,7 +39,7 @@ func TestRevisionEndpointAdvancesAfterMutation(t *testing.T) {
 		t.Fatalf("expected 201 for create, got %d", createRec.Code)
 	}
 
-	afterReq := httptest.NewRequest(http.MethodGet, "/api/revision", nil)
+	afterReq := httptest.NewRequest(http.MethodGet, "/api/ui/revision", nil)
 	afterRec := httptest.NewRecorder()
 	handler.ServeHTTP(afterRec, afterReq)
 
@@ -89,7 +89,7 @@ func TestActivityEndpointIncludesOperationalEvents(t *testing.T) {
 		t.Fatalf("expected 200 for close, got %d", closeRec.Code)
 	}
 
-	activityReq := httptest.NewRequest(http.MethodGet, "/api/activity?limit=10", nil)
+	activityReq := httptest.NewRequest(http.MethodGet, "/api/ui/activity?limit=10", nil)
 	activityRec := httptest.NewRecorder()
 	handler.ServeHTTP(activityRec, activityReq)
 	if activityRec.Code != http.StatusOK {

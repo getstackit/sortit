@@ -131,7 +131,7 @@ function CorrelationCard({ correlation }: { correlation: PersonCorrelation }) {
 }
 
 export function PeoplePage() {
-  const [status, setStatus] = useState<PeopleListStatus>("all");
+  const [status, setStatus] = useState<PeopleListStatus>("open");
   const { data: correlationsData, error: correlationsError, isLoading: correlationsLoading } =
     useWorkCorrelations(status);
   const { data: allIssues, isLoading: issuesLoading } = useIssues(status);

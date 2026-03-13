@@ -86,7 +86,7 @@ func TestDebugIssueAnalyzeEndpoint(t *testing.T) {
 	})
 
 	body := bytes.NewBufferString(`{"text":"Safari export crashes on iPad"}`)
-	req := httptest.NewRequest(http.MethodPost, "/api/v1/debug/issues/analyze", body)
+	req := httptest.NewRequest(http.MethodPost, "/api/ui/debug/issues/analyze", body)
 	req.Header.Set("Content-Type", "application/json")
 	rec := httptest.NewRecorder()
 
@@ -170,7 +170,7 @@ func TestDebugIssueAnalyzeEndpointReturnsEmbeddingSimilarities(t *testing.T) {
 		}),
 	})
 
-	req := httptest.NewRequest(http.MethodPost, "/api/debug/issues/analyze", bytes.NewBufferString(`{"text":"export issue"}`))
+	req := httptest.NewRequest(http.MethodPost, "/api/ui/debug/issues/analyze", bytes.NewBufferString(`{"text":"export issue"}`))
 	rec := httptest.NewRecorder()
 
 	server.Handler().ServeHTTP(rec, req)
@@ -220,7 +220,7 @@ func TestDebugIssueAnalyzeEndpointUsesCustomTags(t *testing.T) {
 	})
 
 	body := bytes.NewBufferString(`{"text":"Custom issue","tags":["custom","bug","custom"," "]}`)
-	req := httptest.NewRequest(http.MethodPost, "/api/debug/issues/analyze", body)
+	req := httptest.NewRequest(http.MethodPost, "/api/ui/debug/issues/analyze", body)
 	req.Header.Set("Content-Type", "application/json")
 	rec := httptest.NewRecorder()
 
@@ -245,7 +245,7 @@ func TestDebugInvalidateMapProjectionEndpoint(t *testing.T) {
 		IssueStore:  store,
 	})
 
-	req := httptest.NewRequest(http.MethodPost, "/api/debug/map-projection/invalidate", nil)
+	req := httptest.NewRequest(http.MethodPost, "/api/ui/debug/map-projection/invalidate", nil)
 	rec := httptest.NewRecorder()
 
 	server.Handler().ServeHTTP(rec, req)
@@ -272,7 +272,7 @@ func TestDebugInvalidateMapProjectionEndpointReturnsNotImplementedWithoutInvalid
 		APIPrefixes: []string{"/api"},
 	})
 
-	req := httptest.NewRequest(http.MethodPost, "/api/debug/map-projection/invalidate", nil)
+	req := httptest.NewRequest(http.MethodPost, "/api/ui/debug/map-projection/invalidate", nil)
 	rec := httptest.NewRecorder()
 
 	server.Handler().ServeHTTP(rec, req)
@@ -293,7 +293,7 @@ func TestDebugInvalidateMapProjectionEndpointReturnsServerErrorOnInvalidationFai
 		IssueStore:  store,
 	})
 
-	req := httptest.NewRequest(http.MethodPost, "/api/debug/map-projection/invalidate", nil)
+	req := httptest.NewRequest(http.MethodPost, "/api/ui/debug/map-projection/invalidate", nil)
 	rec := httptest.NewRecorder()
 
 	server.Handler().ServeHTTP(rec, req)
@@ -311,7 +311,7 @@ func TestDebugIssueAnalyzeEndpointRejectsInvalidInput(t *testing.T) {
 	handler := server.Handler()
 
 	t.Run("wrong method", func(t *testing.T) {
-		req := httptest.NewRequest(http.MethodGet, "/api/debug/issues/analyze", nil)
+		req := httptest.NewRequest(http.MethodGet, "/api/ui/debug/issues/analyze", nil)
 		rec := httptest.NewRecorder()
 
 		handler.ServeHTTP(rec, req)
@@ -322,7 +322,7 @@ func TestDebugIssueAnalyzeEndpointRejectsInvalidInput(t *testing.T) {
 	})
 
 	t.Run("invalidate wrong method", func(t *testing.T) {
-		req := httptest.NewRequest(http.MethodGet, "/api/debug/map-projection/invalidate", nil)
+		req := httptest.NewRequest(http.MethodGet, "/api/ui/debug/map-projection/invalidate", nil)
 		rec := httptest.NewRecorder()
 
 		handler.ServeHTTP(rec, req)
@@ -335,7 +335,7 @@ func TestDebugIssueAnalyzeEndpointRejectsInvalidInput(t *testing.T) {
 	t.Run("invalid json", func(t *testing.T) {
 		req := httptest.NewRequest(
 			http.MethodPost,
-			"/api/debug/issues/analyze",
+			"/api/ui/debug/issues/analyze",
 			bytes.NewBufferString(`{"text":`),
 		)
 		rec := httptest.NewRecorder()
@@ -350,7 +350,7 @@ func TestDebugIssueAnalyzeEndpointRejectsInvalidInput(t *testing.T) {
 	t.Run("missing text", func(t *testing.T) {
 		req := httptest.NewRequest(
 			http.MethodPost,
-			"/api/debug/issues/analyze",
+			"/api/ui/debug/issues/analyze",
 			bytes.NewBufferString(`{"text":"   "}`),
 		)
 		rec := httptest.NewRecorder()
@@ -365,7 +365,7 @@ func TestDebugIssueAnalyzeEndpointRejectsInvalidInput(t *testing.T) {
 	t.Run("analyzer not configured", func(t *testing.T) {
 		req := httptest.NewRequest(
 			http.MethodPost,
-			"/api/debug/issues/analyze",
+			"/api/ui/debug/issues/analyze",
 			bytes.NewBufferString(`{"text":"example"}`),
 		)
 		rec := httptest.NewRecorder()
