@@ -19,12 +19,20 @@ import type { PersonIssueRecommendation } from "@/lib/people";
 function RecommendationCard({
   title,
   recommendation,
+  embedded = false,
 }: {
   title: string;
   recommendation: PersonIssueRecommendation;
+  embedded?: boolean;
 }) {
   return (
-    <section className="app-surface rounded-[1.5rem] p-5">
+    <section
+      className={
+        embedded
+          ? "rounded-xl border border-border/70 bg-background/65 p-4"
+          : "app-surface rounded-[1.5rem] p-5"
+      }
+    >
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div>
           <p className="text-[11px] font-medium uppercase tracking-[0.16em] text-muted-foreground">
@@ -48,7 +56,11 @@ function RecommendationCard({
           tags={recommendation.issue.tagScores ?? recommendation.issue.tags}
           href={`/issues/${recommendation.issue.id}`}
           maxLabelLength={96}
-          className="rounded-xl border border-border/70 bg-background/65 px-3 py-3"
+          className={
+            embedded
+              ? undefined
+              : "rounded-xl border border-border/70 bg-background/65 px-3 py-3"
+          }
         />
       </div>
 
@@ -175,6 +187,7 @@ export function PersonDetailPage({ person }: { person: string }) {
                       key={recommendation.issue.id}
                       title="Recommendation"
                       recommendation={recommendation}
+                      embedded
                     />
                   ))}
                 </div>
