@@ -20,10 +20,10 @@ export function SiteHeader({
 }: SiteHeaderProps) {
   return (
     <header className="sticky top-0 z-10 shrink-0 border-b border-border/70 bg-background/72 backdrop-blur-xl">
-      <div className="relative px-4 py-3">
-        <div className="flex min-w-0 items-start gap-2">
-          <AppShellToggle className="-ml-1 mt-0.5" />
-          <div className="mr-2 mt-2 h-4 w-px shrink-0 bg-border" />
+      <div className="relative px-4">
+        <div className="flex min-h-14 min-w-0 items-center gap-2 py-2">
+          <AppShellToggle className="-ml-1" />
+          <div className="mr-2 h-4 w-px shrink-0 bg-border" />
           <div className="min-w-0">
             {eyebrow && (
               <p className="text-[11px] uppercase tracking-[0.18em] text-muted-foreground">
@@ -40,7 +40,7 @@ export function SiteHeader({
           </div>
         </div>
         {actions && (
-          <div className="flex flex-wrap items-center gap-2 pl-11 pt-3">
+          <div className="flex flex-wrap items-center gap-2 pb-3 pl-11">
             {actions}
           </div>
         )}

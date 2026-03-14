@@ -70,7 +70,7 @@ export function AppSidebar({
 
   return (
     <div className="flex h-full flex-col">
-      <div className="relative overflow-hidden border-b border-sidebar-border/70 px-3 py-3">
+      <div className="relative flex min-h-14 items-center overflow-hidden border-b border-sidebar-border/70 px-3">
         <div
           className={cn(
             "flex items-center gap-2",

@@ -137,6 +137,7 @@ describe("PeoplePage", () => {
     expect(screen.getByText("Assigned issues")).toBeInTheDocument();
     expect(screen.getByText("open issue")).toBeInTheDocument();
     expect(screen.queryByText("closed issue")).not.toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "Avery" })).toHaveAttribute("href", "/people/Avery");
   });
 
   it("shows the closed factor timeline section", () => {

@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useMemo, useState } from "react";
 import { AppShell } from "@/components/app-shell";
 import { AppSidebar } from "@/components/app-sidebar";
@@ -39,7 +40,12 @@ function PersonProfileCard({
             {person.charAt(0).toUpperCase()}
           </span>
           <div>
-            <p className="text-sm font-semibold">{person}</p>
+            <Link
+              href={`/people/${encodeURIComponent(person)}`}
+              className="text-sm font-semibold transition-colors hover:text-violet-700"
+            >
+              {person}
+            </Link>
             <p className="text-[11px] text-muted-foreground">
               {issueCount} issue{issueCount === 1 ? "" : "s"} assigned
             </p>
