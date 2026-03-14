@@ -1,4 +1,5 @@
 import type { ReactNode } from "react";
+import { Badge } from "@/components/ui/badge";
 
 type SectionHeaderProps = {
   eyebrow: string;
@@ -19,7 +20,7 @@ export function SectionHeader({ eyebrow, title, count, actions }: SectionHeaderP
         </h2>
       </div>
       <div className="flex items-center gap-2">
-        {count != null && <span className="app-chip tabular-nums">{count}</span>}
+        {count != null && <Badge variant="outline" className="tabular-nums">{count}</Badge>}
         {actions}
       </div>
     </div>

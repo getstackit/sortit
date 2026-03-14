@@ -1,3 +1,6 @@
+"use client";
+
+import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
 import { cn } from "@/lib/utils";
 
 type FilterToggleGroupProps<T extends string> = {
@@ -16,22 +19,20 @@ export function FilterToggleGroup<T extends string>({
   className,
 }: FilterToggleGroupProps<T>) {
   return (
-    <div className={cn("flex items-center gap-2", className)}>
+    <ToggleGroup className={cn("gap-1", className)}>
       {options.map((option) => (
-        <button
+        <ToggleGroupItem
           key={option}
-          type="button"
-          onClick={() => onChange(option)}
-          className={cn(
-            "rounded-full px-3 py-1 text-xs font-medium transition-colors",
-            value === option
-              ? "bg-foreground text-background"
-              : "bg-muted text-muted-foreground hover:bg-muted/80"
-          )}
+          pressed={value === option}
+          onPressedChange={(pressed) => {
+            if (pressed) onChange(option);
+          }}
+          className="rounded-full px-3 py-1 text-xs font-medium data-[pressed]:bg-foreground data-[pressed]:text-background"
+          size="sm"
         >
           {formatLabel ? formatLabel(option) : option.charAt(0).toUpperCase() + option.slice(1)}
-        </button>
+        </ToggleGroupItem>
       ))}
-    </div>
+    </ToggleGroup>
   );
 }

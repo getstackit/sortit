@@ -21,6 +21,7 @@ import { AppSidebar } from "@/components/app-sidebar";
 import { SiteHeader } from "@/components/site-header";
 import { useBackendRevision } from "@/hooks/use-issues";
 import { fetchActivity, type ActivityEventRecord } from "@/lib/activity";
+import { Badge } from "@/components/ui/badge";
 import { cn } from "@/lib/utils";
 import { formatRelativeTime } from "@/lib/format";
 
@@ -129,7 +130,7 @@ export function ActivityFeedPage() {
         eyebrow="Activity"
         title="Global activity feed"
         subtitle="Cross-issue discussion, status changes, assignments, and relationship operations."
-        meta={<span className="app-chip">{events.length} recent events</span>}
+        meta={<Badge variant="outline">{events.length} recent events</Badge>}
         actions={
           <div className="flex flex-wrap items-center gap-1.5">
             {EVENT_KINDS.map((kind) => (

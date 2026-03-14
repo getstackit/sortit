@@ -11,6 +11,7 @@ import { SiteHeader } from "@/components/site-header";
 import { TagBadge } from "@/components/tag-badge";
 import { TagRelevanceBars } from "@/components/tag-relevance-bars";
 import { usePersonDetail } from "@/hooks/use-people";
+import { Badge } from "@/components/ui/badge";
 import { cn } from "@/lib/utils";
 import { scoreClasses } from "@/lib/format";
 import type { PersonIssueRecommendation } from "@/lib/people";
@@ -52,9 +53,9 @@ function RecommendationCard({
       </div>
 
       <div className="mt-4 flex flex-wrap gap-2 text-[11px] text-muted-foreground">
-        <span className="app-chip">Factor {(recommendation.factorScore * 100).toFixed(0)}%</span>
-        <span className="app-chip">Semantic {(recommendation.semanticScore * 100).toFixed(0)}%</span>
-        <span className="app-chip capitalize">{recommendation.source}</span>
+        <Badge variant="outline">Factor {(recommendation.factorScore * 100).toFixed(0)}%</Badge>
+        <Badge variant="outline">Semantic {(recommendation.semanticScore * 100).toFixed(0)}%</Badge>
+        <Badge variant="outline" className="capitalize">{recommendation.source}</Badge>
       </div>
 
       {recommendation.sharedTags.length > 0 && (
@@ -80,9 +81,9 @@ export function PersonDetailPage({ person }: { person: string }) {
         meta={
           data ? (
             <>
-              <span className="app-chip tabular-nums">{data.issueCount} assigned</span>
-              <span className="app-chip tabular-nums">{data.openIssueCount} open</span>
-              <span className="app-chip tabular-nums">{data.closedIssueCount} closed</span>
+              <Badge variant="outline" className="tabular-nums">{data.issueCount} assigned</Badge>
+              <Badge variant="outline" className="tabular-nums">{data.openIssueCount} open</Badge>
+              <Badge variant="outline" className="tabular-nums">{data.closedIssueCount} closed</Badge>
             </>
           ) : undefined
         }

@@ -5,6 +5,7 @@ import { AppShell } from "@/components/app-shell";
 import { AppSidebar } from "@/components/app-sidebar";
 import { SiteHeader } from "@/components/site-header";
 import { uiAPIURL } from "@/lib/api";
+import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 
@@ -307,9 +308,9 @@ export default function DebugPage() {
                 </p>
               </div>
               {result && (
-                <span className="app-chip text-xs">
+                <Badge variant="outline" className="text-xs">
                   {result.tags.length} tags
-                </span>
+                </Badge>
               )}
             </div>
 
@@ -362,9 +363,9 @@ export default function DebugPage() {
                 </p>
               </div>
               {result && (
-                <span className="app-chip text-xs">
+                <Badge variant="outline" className="text-xs">
                   {result.embedding.dimensions} dims
-                </span>
+                </Badge>
               )}
             </div>
 
@@ -426,9 +427,9 @@ export default function DebugPage() {
                 </p>
               </div>
               {result && (
-                <span className="app-chip text-xs">
+                <Badge variant="outline" className="text-xs">
                   {result.comparedIssueCount} compared
-                </span>
+                </Badge>
               )}
             </div>
 
@@ -474,9 +475,9 @@ export default function DebugPage() {
                               </p>
                             )}
                           </div>
-                          <span className="app-chip text-xs text-foreground">
+                          <Badge variant="outline" className="text-xs text-foreground">
                             {Math.round(issue.similarity * 100)}%
-                          </span>
+                          </Badge>
                         </div>
                       </div>
                     ))}

@@ -16,6 +16,7 @@ import { useTags } from "@/hooks/use-tags";
 import { rememberRecentTag } from "@/hooks/use-recent-history";
 import { entityStyle } from "@/lib/entity-colors";
 import type { IssueRecord } from "@/lib/issues";
+import { Badge } from "@/components/ui/badge";
 import { tagHref } from "@/lib/tags";
 
 type RelatedTag = {
@@ -188,10 +189,10 @@ export function TagDetailPage({ tagName }: { tagName: string }) {
         meta={
           !loading && tag ? (
             <>
-              <span className="app-chip tabular-nums">{issueCount} issues</span>
-              <span className="app-chip tabular-nums">{openCount} open</span>
+              <Badge variant="outline" className="tabular-nums">{issueCount} issues</Badge>
+              <Badge variant="outline" className="tabular-nums">{openCount} open</Badge>
               {closedCount > 0 && (
-                <span className="app-chip tabular-nums">{closedCount} closed</span>
+                <Badge variant="outline" className="tabular-nums">{closedCount} closed</Badge>
               )}
             </>
           ) : undefined

@@ -116,7 +116,11 @@ function sameEntry(left: RecentHistoryItem, right: RecentHistoryItem) {
     return left.id === right.id;
   }
 
-  return left.name.localeCompare(right.name, undefined, { sensitivity: "accent" }) === 0;
+  if (left.kind === "tag" && right.kind === "tag") {
+    return left.name.localeCompare(right.name, undefined, { sensitivity: "accent" }) === 0;
+  }
+
+  return false;
 }
 
 function rememberEntry(nextItem: RecentHistoryItem) {

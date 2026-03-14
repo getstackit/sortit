@@ -13,6 +13,7 @@ import { TagBadge } from "@/components/tag-badge";
 import { TagRelevanceBars } from "@/components/tag-relevance-bars";
 import { useWorkCorrelations } from "@/hooks/use-people";
 import { useIssues } from "@/hooks/use-issues";
+import { Badge } from "@/components/ui/badge";
 import { cn } from "@/lib/utils";
 import { scoreColor } from "@/lib/format";
 import type { IssueRecord } from "@/lib/issues";
@@ -57,7 +58,7 @@ function PersonProfileCard({
           <p className="text-[11px] font-medium uppercase tracking-[0.14em] text-muted-foreground">
             Assigned issues
           </p>
-          <span className="app-chip">{issues.length}</span>
+          <Badge variant="outline">{issues.length}</Badge>
         </div>
         <div className="space-y-2">
           {issues.map((issue) => (

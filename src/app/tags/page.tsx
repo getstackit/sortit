@@ -14,6 +14,7 @@ import {
   cosineSimilarity,
   isGenericBucketTag,
 } from "@/lib/tag-quality";
+import { Badge } from "@/components/ui/badge";
 import { fetchTags, tagHref, type TagRecord } from "@/lib/tags";
 
 type TagPoint = {
@@ -201,9 +202,9 @@ export default function TagsPage() {
                     Click a tag to inspect its nearest semantic neighbors.
                   </p>
                 </div>
-                <span className="app-chip text-xs">
+                <Badge variant="outline" className="text-xs">
                   {embeddedTags.length} tags
-                </span>
+                </Badge>
               </div>
 
               <div className="mt-4 overflow-hidden rounded-2xl border border-border/70 bg-[radial-gradient(circle_at_top,var(--glow-color)_0%,transparent_55%),linear-gradient(180deg,color-mix(in_oklab,var(--background)_94%,white_6%)_0%,color-mix(in_oklab,var(--background)_90%,var(--gradient-end)_10%)_100%)]">
@@ -441,9 +442,9 @@ export default function TagsPage() {
                   Candidate merges based on lexical variants, embedding similarity, and overlapping issue coverage.
                 </p>
               </div>
-              <span className="app-chip">
+              <Badge variant="outline">
                 {consolidationCandidates.length} candidates
-              </span>
+              </Badge>
             </div>
 
             {loading || issuesLoading ? (

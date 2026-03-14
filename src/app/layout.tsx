@@ -5,6 +5,7 @@ import { Geist, Geist_Mono } from "next/font/google";
 import { AuthGate } from "@/components/auth-gate";
 import { AuthProvider } from "@/components/auth-provider";
 import { SWRProvider } from "@/components/swr-provider";
+import { Toaster } from "@/components/ui/sonner";
 import { themeInitScript } from "@/lib/theme";
 import "./globals.css";
 
@@ -45,6 +46,7 @@ export default function RootLayout({
             <AuthGate>{children}</AuthGate>
           </AuthProvider>
         </SWRProvider>
+        <Toaster />
       </body>
     </html>
   );

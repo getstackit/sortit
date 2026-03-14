@@ -1,7 +1,13 @@
 "use client";
 
-import { useMemo } from "react";
-import { FilterIcon, XIcon } from "lucide-react";
+import { useMemo, useState } from "react";
+import { ChevronDownIcon, FilterIcon, XIcon } from "lucide-react";
+import { Checkbox } from "@/components/ui/checkbox";
+import {
+  Collapsible,
+  CollapsibleContent,
+  CollapsibleTrigger,
+} from "@/components/ui/collapsible";
 import {
   SidebarContent,
   SidebarGroup,
@@ -16,9 +22,10 @@ import { cn } from "@/lib/utils";
 export type IssuesFilter = {
   tags: string[];
   assignees: string[];
+  includeClosed: boolean;
 };
 
-export const EMPTY_FILTER: IssuesFilter = { tags: [], assignees: [] };
+export const EMPTY_FILTER: IssuesFilter = { tags: [], assignees: [], includeClosed: false };
 
 export function isFilterActive(filter: IssuesFilter): boolean {
   return filter.tags.length > 0 || filter.assignees.length > 0;
@@ -31,7 +38,7 @@ export function applyFilter(
   return issues.filter((issue) => {
     if (
       filter.tags.length > 0 &&
-      !filter.tags.some((t) => issue.tags.includes(t))
+      !filter.tags.every((t) => issue.tags.includes(t))
     ) {
       return false;
     }
@@ -58,19 +65,40 @@ function CheckItem({
 }) {
   return (
     <label className="flex cursor-pointer items-center gap-2 rounded-lg px-2 py-1.5 text-sm transition-colors hover:bg-sidebar-accent/80">
-      <input
-        type="checkbox"
+      <Checkbox
         checked={checked}
-        onChange={(e) => onChange(e.target.checked)}
-        className="size-3.5 rounded border-border accent-foreground"
+        onCheckedChange={onChange}
       />
-      <span
-        className="truncate text-xs"
-        style={style}
-      >
+      <span className="truncate text-xs" style={style}>
         {label}
       </span>
     </label>
+  );
+}
+
+function FilterSection({
+  title,
+  children,
+  defaultOpen = true,
+}: {
+  title: string;
+  children: React.ReactNode;
+  defaultOpen?: boolean;
+}) {
+  return (
+    <Collapsible defaultOpen={defaultOpen}>
+      <SidebarGroup className="space-y-1">
+        <CollapsibleTrigger className="flex w-full items-center justify-between px-2">
+          <SidebarGroupLabel className="p-0 text-[11px] font-medium uppercase tracking-[0.16em] text-muted-foreground/60">
+            {title}
+          </SidebarGroupLabel>
+          <ChevronDownIcon className="size-3.5 text-muted-foreground/50 transition-transform [[data-open]_&]:rotate-180" />
+        </CollapsibleTrigger>
+        <CollapsibleContent>
+          <SidebarGroupContent>{children}</SidebarGroupContent>
+        </CollapsibleContent>
+      </SidebarGroup>
+    </Collapsible>
   );
 }
 
@@ -151,41 +179,41 @@ export function IssuesFilterSidebar({
       </SidebarHeader>
 
       <SidebarContent className="px-1">
+        <FilterSection title="Status">
+          <CheckItem
+            label="Include closed"
+            checked={filter.includeClosed}
+            onChange={(checked) =>
+              onFilterChange({ ...filter, includeClosed: checked })
+            }
+          />
+        </FilterSection>
+
         {allTags.length > 0 && (
-          <SidebarGroup className="space-y-1">
-            <SidebarGroupLabel className="px-2 text-[11px] font-medium uppercase tracking-[0.16em] text-muted-foreground/60">
-              Tags
-            </SidebarGroupLabel>
-            <SidebarGroupContent>
-              {allTags.map(({ name, count }) => (
-                <CheckItem
-                  key={name}
-                  label={`${name} (${count})`}
-                  checked={filter.tags.includes(name)}
-                  onChange={(checked) => toggleTag(name, checked)}
-                  style={entityStyle(name)}
-                />
-              ))}
-            </SidebarGroupContent>
-          </SidebarGroup>
+          <FilterSection title="Tags">
+            {allTags.map(({ name, count }) => (
+              <CheckItem
+                key={name}
+                label={`${name} (${count})`}
+                checked={filter.tags.includes(name)}
+                onChange={(checked) => toggleTag(name, checked)}
+                style={entityStyle(name)}
+              />
+            ))}
+          </FilterSection>
         )}
 
         {allAssignees.length > 0 && (
-          <SidebarGroup className="space-y-1">
-            <SidebarGroupLabel className="px-2 text-[11px] font-medium uppercase tracking-[0.16em] text-muted-foreground/60">
-              Assignee
-            </SidebarGroupLabel>
-            <SidebarGroupContent>
-              {allAssignees.map(({ name, count }) => (
-                <CheckItem
-                  key={name}
-                  label={`${name} (${count})`}
-                  checked={filter.assignees.includes(name)}
-                  onChange={(checked) => toggleAssignee(name, checked)}
-                />
-              ))}
-            </SidebarGroupContent>
-          </SidebarGroup>
+          <FilterSection title="Assignee">
+            {allAssignees.map(({ name, count }) => (
+              <CheckItem
+                key={name}
+                label={`${name} (${count})`}
+                checked={filter.assignees.includes(name)}
+                onChange={(checked) => toggleAssignee(name, checked)}
+              />
+            ))}
+          </FilterSection>
         )}
 
         {allTags.length === 0 && allAssignees.length === 0 && (

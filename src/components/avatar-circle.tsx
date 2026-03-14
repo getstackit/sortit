@@ -1,3 +1,4 @@
+import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { cn } from "@/lib/utils";
 
 type AvatarCircleProps = {
@@ -6,22 +7,18 @@ type AvatarCircleProps = {
   className?: string;
 };
 
-const SIZE_CLASSES = {
-  sm: "size-7 text-xs",
-  md: "size-8 text-sm",
-  lg: "size-10 text-base",
-};
+const SIZE_MAP = {
+  sm: "sm",
+  md: "default",
+  lg: "lg",
+} as const;
 
 export function AvatarCircle({ name, size = "md", className }: AvatarCircleProps) {
   return (
-    <span
-      className={cn(
-        "flex items-center justify-center rounded-full bg-violet-100 font-semibold text-violet-700",
-        SIZE_CLASSES[size],
-        className
-      )}
-    >
-      {name.charAt(0).toUpperCase()}
-    </span>
+    <Avatar size={SIZE_MAP[size]} className={cn("bg-violet-100", className)}>
+      <AvatarFallback className="bg-violet-100 font-semibold text-violet-700">
+        {name.charAt(0).toUpperCase()}
+      </AvatarFallback>
+    </Avatar>
   );
 }

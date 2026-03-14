@@ -45,6 +45,7 @@ import {
 import { rememberRecentIssue } from "@/hooks/use-recent-history";
 import { cn } from "@/lib/utils";
 import { formatRelativeTime } from "@/lib/format";
+import { Badge } from "@/components/ui/badge";
 import { TagBadge } from "@/components/tag-badge";
 import { TagRelevanceBars } from "@/components/tag-relevance-bars";
 import { entityStyle } from "@/lib/entity-colors";
@@ -936,9 +937,9 @@ export function IssueDetailPage({ issueID }: { issueID: string }) {
                         First-class issue links grouped by relationship type.
                       </p>
                     </div>
-                    <span className="app-chip">
+                    <Badge variant="outline">
                       {issue.links?.length ?? 0} link{(issue.links?.length ?? 0) === 1 ? "" : "s"}
-                    </span>
+                    </Badge>
                   </div>
 
                   {relationshipGroups.length === 0 ? (
@@ -983,7 +984,7 @@ export function IssueDetailPage({ issueID }: { issueID: string }) {
                                         {link.relatedIssue.status === "closed" ? "Closed" : "Open"}
                                       </span>
                                     )}
-                                    {link.direction && <span className="app-chip">{link.direction}</span>}
+                                    {link.direction && <Badge variant="outline">{link.direction}</Badge>}
                                   </div>
                                   <p className="mt-1 text-[11px] text-muted-foreground">
                                     {link.relatedIssue?.id ??
@@ -1022,9 +1023,9 @@ export function IssueDetailPage({ issueID }: { issueID: string }) {
                       </div>
                       <div className="flex flex-wrap gap-1.5">
                         {semanticNeighbors.length > 0 && (
-                          <span className="app-chip">
+                          <Badge variant="outline">
                             {semanticNeighbors.length} semantic
-                          </span>
+                          </Badge>
                         )}
                       </div>
                     </div>
@@ -1075,14 +1076,14 @@ export function IssueDetailPage({ issueID }: { issueID: string }) {
                       </div>
 
                       <div className="mt-3 flex flex-wrap gap-2 text-[11px] text-muted-foreground">
-                        <span className="app-chip inline-flex items-center gap-1">
+                        <Badge variant="outline" className="inline-flex items-center gap-1">
                           <span className="size-2 rounded-full bg-slate-900" />
                           Current issue
-                        </span>
-                        <span className="app-chip inline-flex items-center gap-1">
+                        </Badge>
+                        <Badge variant="outline" className="inline-flex items-center gap-1">
                           <span className="size-2 rounded-full bg-amber-500" />
                           Semantic
-                        </span>
+                        </Badge>
                       </div>
                     </div>
 
@@ -1173,9 +1174,9 @@ export function IssueDetailPage({ issueID }: { issueID: string }) {
                 <section className="app-surface rounded-[1.75rem] p-6">
                   <div className="flex flex-wrap items-center justify-between gap-4">
                     <h3 className="text-lg font-semibold tracking-tight">Discussion</h3>
-                    <span className="app-chip">
+                    <Badge variant="outline">
                       {discussion.length} post{discussion.length === 1 ? "" : "s"}
-                    </span>
+                    </Badge>
                   </div>
 
                   <div className="mt-5 space-y-4">
@@ -1202,10 +1203,10 @@ export function IssueDetailPage({ issueID }: { issueID: string }) {
                                 <span className="text-sm font-semibold">
                                   {formatPostKindLabel(kind, refinementIndex)}
                                 </span>
-                                {kind === "report" && <span className="app-chip">Starting state</span>}
-                                {kind === "closed" && <span className="app-chip">Status</span>}
-                                {kind === "reopened" && <span className="app-chip">Status</span>}
-                                {kind === "assigned" && <span className="app-chip">Routing</span>}
+                                {kind === "report" && <Badge variant="outline">Starting state</Badge>}
+                                {kind === "closed" && <Badge variant="outline">Status</Badge>}
+                                {kind === "reopened" && <Badge variant="outline">Status</Badge>}
+                                {kind === "assigned" && <Badge variant="outline">Routing</Badge>}
                               </div>
                               <p className="text-sm text-muted-foreground">
                                 {post.createdBy} · {formatRelativeTime(post.createdAt)}
@@ -1388,9 +1389,9 @@ export function IssueDetailPage({ issueID }: { issueID: string }) {
                         Split, combine, and link operations involving this issue.
                       </p>
                     </div>
-                    <span className="app-chip">
+                    <Badge variant="outline">
                       {operationHistory.length} op{operationHistory.length === 1 ? "" : "s"}
-                    </span>
+                    </Badge>
                   </div>
 
                   {operationHistory.length === 0 ? (

@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import { Badge } from "@/components/ui/badge";
 import { StatusBadge } from "@/components/status-badge";
 import { TagBadge } from "@/components/tag-badge";
 import { cn } from "@/lib/utils";
@@ -71,26 +72,24 @@ export function IssueCard({ issue, href, className, compact }: IssueCardProps) {
             ).length;
             if (progressCount > 0) {
               return (
-                <span
-                  className={cn(
-                    "rounded-full bg-blue-100 font-medium text-blue-700",
-                    compact ? "px-1.5 py-px text-[10px]" : "px-2 py-0.5 text-[11px]"
-                  )}
-                >
+                <Badge variant="secondary" className={cn(
+                  "rounded-full bg-blue-100 text-blue-700",
+                  compact ? "h-auto px-1.5 py-px text-[10px]" : "h-auto px-2 py-0.5 text-[11px]"
+                )}>
                   {progressCount} progress
-                </span>
+                </Badge>
               );
             }
             return null;
           })()}
         </div>
         {issue.assignedTo && (
-          <span className={cn(
-            "rounded-full bg-violet-100 font-medium text-violet-700",
-            compact ? "px-1.5 py-px text-[10px]" : "px-2 py-0.5 text-[11px]"
+          <Badge variant="secondary" className={cn(
+            "rounded-full bg-violet-100 text-violet-700",
+            compact ? "h-auto px-1.5 py-px text-[10px]" : "h-auto px-2 py-0.5 text-[11px]"
           )}>
             {issue.assignedTo}
-          </span>
+          </Badge>
         )}
         <span className={cn(
           "ml-auto tracking-wide text-muted-foreground/40 transition-colors group-hover/card:text-muted-foreground/60",

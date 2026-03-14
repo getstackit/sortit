@@ -1,10 +1,19 @@
 "use client";
 
-import { useRef, useState } from "react";
+import { useState } from "react";
 import { useRouter } from "next/navigation";
-import { Dialog } from "@base-ui/react/dialog";
+import {
+  Dialog,
+  DialogContent,
+  DialogClose,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
+import { Button } from "@/components/ui/button";
+import { Textarea } from "@/components/ui/textarea";
 import { createIssue, type IssueRecord } from "@/lib/issues";
-import { cn } from "@/lib/utils";
 
 type PasteModalProps = {
   open: boolean;
@@ -23,14 +32,6 @@ export function PasteModal({
   const [input, setInput] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
-  const textareaRef = useRef<HTMLTextAreaElement>(null);
-
-  function autoResize() {
-    const el = textareaRef.current;
-    if (!el) return;
-    el.style.height = "auto";
-    el.style.height = `${el.scrollHeight}px`;
-  }
 
   function reset() {
     setInput("");
@@ -64,68 +65,56 @@ export function PasteModal({
   }
 
   return (
-    <Dialog.Root
+    <Dialog
       open={open}
       onOpenChange={(nextOpen) => {
         if (!nextOpen) reset();
         onOpenChange(nextOpen);
       }}
     >
-      <Dialog.Portal>
-        <Dialog.Backdrop className="fixed inset-0 z-50 bg-black/40 transition-opacity data-[ending-style]:opacity-0 data-[starting-style]:opacity-0" />
-        <Dialog.Viewport className="fixed inset-0 z-50 flex items-start justify-center pt-[15vh]">
-          <Dialog.Popup className="app-surface w-full max-w-lg rounded-[1.5rem] p-5 transition-all data-[ending-style]:scale-95 data-[ending-style]:opacity-0 data-[starting-style]:scale-95 data-[starting-style]:opacity-0">
-            <Dialog.Title className="text-sm font-medium">
-              Paste anything
-            </Dialog.Title>
-            <Dialog.Description className="mt-1 text-xs text-muted-foreground">
-              Drop in text, a URL, an error log — we&apos;ll turn it into an issue,
-              and this becomes the first discussion post.
-            </Dialog.Description>
+      <DialogContent className="sm:max-w-lg">
+        <DialogHeader>
+          <DialogTitle>Paste anything</DialogTitle>
+          <DialogDescription>
+            Drop in text, a URL, an error log &mdash; we&apos;ll turn it into an issue,
+            and this becomes the first discussion post.
+          </DialogDescription>
+        </DialogHeader>
 
-            <textarea
-              ref={textareaRef}
-              value={input}
-              onChange={(e) => {
-                setInput(e.target.value);
-                if (error) setError(null);
-                autoResize();
-              }}
-              onKeyDown={(e) => {
-                if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) {
-                  e.preventDefault();
-                  void submit();
-                }
-              }}
-              placeholder="paste anything..."
-              disabled={submitting}
-              className="mt-4 min-h-[100px] w-full resize-none rounded-xl border border-input/80 bg-background/70 px-3 py-2 text-sm leading-relaxed placeholder:text-muted-foreground/50 focus:outline-none focus:ring-2 focus:ring-ring/40"
-              rows={4}
-            />
+        <Textarea
+          value={input}
+          onChange={(e) => {
+            setInput(e.target.value);
+            if (error) setError(null);
+          }}
+          onKeyDown={(e) => {
+            if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) {
+              e.preventDefault();
+              void submit();
+            }
+          }}
+          placeholder="paste anything..."
+          disabled={submitting}
+          className="min-h-[100px] resize-none"
+          rows={4}
+        />
 
-            {error && (
-              <p className="mt-2 text-xs text-destructive">{error}</p>
-            )}
+        {error && (
+          <p className="text-xs text-destructive">{error}</p>
+        )}
 
-            <div className="mt-4 flex items-center justify-end gap-2">
-              <Dialog.Close
-                className={cn(
-                  "rounded-md px-3 py-1.5 text-sm font-medium text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
-                )}
-              >
-                Cancel
-              </Dialog.Close>
-              <button
-                onClick={() => void submit()}
-                disabled={submitting || input.trim().length === 0}
-                className="rounded-md bg-primary px-3 py-1.5 text-sm font-medium text-primary-foreground transition-all hover:bg-primary/90 active:scale-[0.97] disabled:cursor-not-allowed disabled:opacity-50"
-              >
-                {submitting ? "Saving..." : "Submit"}
-              </button>
-            </div>
-          </Dialog.Popup>
-        </Dialog.Viewport>
-      </Dialog.Portal>
-    </Dialog.Root>
+        <DialogFooter>
+          <DialogClose render={<Button variant="outline" />}>
+            Cancel
+          </DialogClose>
+          <Button
+            onClick={() => void submit()}
+            disabled={submitting || input.trim().length === 0}
+          >
+            {submitting ? "Saving..." : "Submit"}
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
   );
 }

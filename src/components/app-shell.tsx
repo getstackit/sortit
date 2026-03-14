@@ -10,7 +10,14 @@ import {
 } from "react";
 import type { ReactNode } from "react";
 import { useRouter } from "next/navigation";
-import { Dialog } from "@base-ui/react/dialog";
+import {
+  Dialog,
+  DialogContent,
+  DialogClose,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 import { BackgroundMesh } from "@/components/background-mesh";
 import { CommandPalette } from "@/components/command-palette";
 import {
@@ -198,74 +205,62 @@ export function AppShell({
         </div>
       </div>
       <CommandPalette open={commandPaletteOpen} onOpenChange={setCommandPaletteOpen} />
-      <Dialog.Root open={shortcutHelpOpen} onOpenChange={setShortcutHelpOpen}>
-        <Dialog.Portal>
-          <Dialog.Backdrop className="fixed inset-0 z-50 bg-black/40 transition-opacity data-[ending-style]:opacity-0 data-[starting-style]:opacity-0" />
-          <Dialog.Viewport className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto px-4 py-[10vh]">
-            <Dialog.Popup className="app-surface w-full max-w-2xl rounded-[1.75rem] p-5 transition-all data-[ending-style]:scale-95 data-[ending-style]:opacity-0 data-[starting-style]:scale-95 data-[starting-style]:opacity-0">
-              <div className="flex items-start justify-between gap-4">
-                <div>
-                  <Dialog.Title className="text-sm font-medium">
-                    Keyboard shortcuts
-                  </Dialog.Title>
-                  <Dialog.Description className="mt-1 text-xs text-muted-foreground">
-                    Single-key shortcuts pause while you are typing in a field.
-                  </Dialog.Description>
-                </div>
-                <Dialog.Close className="rounded-md px-3 py-1.5 text-sm font-medium text-muted-foreground transition-colors hover:bg-muted hover:text-foreground">
-                  Close
-                </Dialog.Close>
-              </div>
+      <Dialog open={shortcutHelpOpen} onOpenChange={setShortcutHelpOpen}>
+        <DialogContent className="sm:max-w-2xl">
+          <DialogHeader>
+            <DialogTitle>Keyboard shortcuts</DialogTitle>
+            <DialogDescription>
+              Single-key shortcuts pause while you are typing in a field.
+            </DialogDescription>
+          </DialogHeader>
 
-              <div className="mt-5 grid gap-6 md:grid-cols-2">
-                <section className="space-y-3">
-                  <p className="text-[11px] font-medium uppercase tracking-[0.16em] text-muted-foreground">
-                    Global
-                  </p>
-                  <div className="space-y-2">
-                    {GLOBAL_SHORTCUTS.map((shortcut) => (
-                      <div
-                        key={shortcut.key}
-                        className="app-subtle-surface flex items-center justify-between gap-4 px-3 py-2"
-                      >
-                        <span className="text-sm text-foreground">
-                          {shortcut.description}
-                        </span>
-                        <kbd className="rounded-md border border-border bg-background px-2 py-1 text-[11px] font-medium text-muted-foreground">
-                          {shortcut.key}
-                        </kbd>
-                      </div>
-                    ))}
+          <div className="grid gap-6 md:grid-cols-2">
+            <section className="space-y-3">
+              <p className="text-[11px] font-medium uppercase tracking-[0.16em] text-muted-foreground">
+                Global
+              </p>
+              <div className="space-y-2">
+                {GLOBAL_SHORTCUTS.map((shortcut) => (
+                  <div
+                    key={shortcut.key}
+                    className="app-subtle-surface flex items-center justify-between gap-4 px-3 py-2"
+                  >
+                    <span className="text-sm text-foreground">
+                      {shortcut.description}
+                    </span>
+                    <kbd className="rounded-md border border-border bg-background px-2 py-1 text-[11px] font-medium text-muted-foreground">
+                      {shortcut.key}
+                    </kbd>
                   </div>
-                </section>
-
-                {shortcuts.length > 0 && (
-                  <section className="space-y-3">
-                    <p className="text-[11px] font-medium uppercase tracking-[0.16em] text-muted-foreground">
-                      This page
-                    </p>
-                    <div className="space-y-2">
-                      {shortcuts.map((shortcut) => (
-                        <div
-                          key={shortcut.key}
-                          className="app-subtle-surface flex items-center justify-between gap-4 px-3 py-2"
-                        >
-                          <span className="text-sm text-foreground">
-                            {shortcut.description}
-                          </span>
-                          <kbd className="rounded-md border border-border bg-background px-2 py-1 text-[11px] font-medium text-muted-foreground">
-                            {shortcut.key.toUpperCase()}
-                          </kbd>
-                        </div>
-                      ))}
-                    </div>
-                  </section>
-                )}
+                ))}
               </div>
-            </Dialog.Popup>
-          </Dialog.Viewport>
-        </Dialog.Portal>
-      </Dialog.Root>
+            </section>
+
+            {shortcuts.length > 0 && (
+              <section className="space-y-3">
+                <p className="text-[11px] font-medium uppercase tracking-[0.16em] text-muted-foreground">
+                  This page
+                </p>
+                <div className="space-y-2">
+                  {shortcuts.map((shortcut) => (
+                    <div
+                      key={shortcut.key}
+                      className="app-subtle-surface flex items-center justify-between gap-4 px-3 py-2"
+                    >
+                      <span className="text-sm text-foreground">
+                        {shortcut.description}
+                      </span>
+                      <kbd className="rounded-md border border-border bg-background px-2 py-1 text-[11px] font-medium text-muted-foreground">
+                        {shortcut.key.toUpperCase()}
+                      </kbd>
+                    </div>
+                  ))}
+                </div>
+              </section>
+            )}
+          </div>
+        </DialogContent>
+      </Dialog>
     </AppShellContext.Provider>
   );
 }
