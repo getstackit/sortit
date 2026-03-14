@@ -2,5 +2,5 @@ package integrations
 
 import "embed"
 
-//go:embed agents/templates/skills/*/SKILL.md agents/templates/common/*.yaml
+//go:embed agents/templates/skills/*/SKILL.md
 var agentTemplates embed.FS

@@ -19,5 +19,6 @@ var skillDefinitions = []skillDefinition{
 	{name: "splat-link", templatePath: "agents/templates/skills/splat-link/SKILL.md"},
 	{name: "splat-tags", templatePath: "agents/templates/skills/splat-tags/SKILL.md"},
 	{name: "splat-people", templatePath: "agents/templates/skills/splat-people/SKILL.md"},
+	{name: "splat-next", templatePath: "agents/templates/skills/splat-next/SKILL.md"},
 	{name: "splat-auth", templatePath: "agents/templates/skills/splat-auth/SKILL.md"},
 }

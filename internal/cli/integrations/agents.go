@@ -34,10 +34,9 @@ type fileGroup struct {
 }
 
 type agentInstallTarget struct {
-	format            agentSkillFormat
-	skillsDir         string
-	displayPath       string
-	includeAgentsMeta bool
+	format      agentSkillFormat
+	skillsDir   string
+	displayPath string
 }
 
 func NewAgentsCmd(version string) *cobra.Command {
@@ -94,7 +93,15 @@ func installSkillTargets(baseDir string, targets []agentInstallTarget, force boo
 	}
 
 	for _, target := range targets {
+		clearedDirs := make(map[string]struct{})
 		for _, group := range buildSkillFileGroups(target, skillDefinitions) {
+			destDir := filepath.Join(baseDir, filepath.Dir(group.destPath))
+			if _, ok := clearedDirs[destDir]; !ok {
+				if err := os.RemoveAll(destDir); err != nil {
+					return fmt.Errorf("clear directory %s: %w", destDir, err)
+				}
+				clearedDirs[destDir] = struct{}{}
+			}
 			if err := installFileGroup(baseDir, group, version); err != nil {
 				return err
 			}
@@ -115,19 +122,13 @@ func installSkillTargets(baseDir string, targets []agentInstallTarget, force boo
 }
 
 func buildSkillFileGroups(target agentInstallTarget, skills []skillDefinition) []fileGroup {
-	groups := make([]fileGroup, 0, len(skills)*2)
+	groups := make([]fileGroup, 0, len(skills))
 	for _, skill := range skills {
 		groups = append(groups, fileGroup{
 			templatePath: skill.templatePath,
 			destPath:     filepath.Join(target.skillsDir, skill.name, "SKILL.md"),
 			replaceVer:   true,
 		})
-		if target.includeAgentsMeta {
-			groups = append(groups, fileGroup{
-				templatePath: "agents/templates/common/openai.yaml",
-				destPath:     filepath.Join(target.skillsDir, skill.name, "agents", "openai.yaml"),
-			})
-		}
 	}
 	return groups
 }
@@ -295,10 +296,9 @@ func targetsForFormats(formats []agentSkillFormat) []agentInstallTarget {
 			})
 		case agentSkillFormatCodex:
 			targets = append(targets, agentInstallTarget{
-				format:            agentSkillFormatCodex,
-				skillsDir:         codexSkillsDir,
-				displayPath:       codexSkillsLabel,
-				includeAgentsMeta: true,
+				format:      agentSkillFormatCodex,
+				skillsDir:   codexSkillsDir,
+				displayPath: codexSkillsLabel,
 			})
 		}
 	}

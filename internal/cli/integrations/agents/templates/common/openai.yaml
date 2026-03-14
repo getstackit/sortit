@@ -1,3 +1,0 @@
-interface:
-  display_name: "Splat"
-  short_description: "Work with Splat issues through the CLI"
