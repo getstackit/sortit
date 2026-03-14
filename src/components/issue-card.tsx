@@ -1,8 +1,9 @@
 "use client";
 
 import Link from "next/link";
+import { StatusBadge } from "@/components/status-badge";
+import { TagBadge } from "@/components/tag-badge";
 import { cn } from "@/lib/utils";
-import { entityStyle } from "@/lib/entity-colors";
 import type { IssueRecord } from "@/lib/issues";
 
 function looksLikeCode(text: string) {
@@ -53,31 +54,16 @@ export function IssueCard({ issue, href, className, compact }: IssueCardProps) {
       <div className={cn("flex items-center gap-2", compact ? "mt-1.5" : "mt-3")}>
         <div className="flex flex-wrap gap-1.5">
           {issue.enrichmentStatus === "pending" && (
-            <span className="rounded-full bg-amber-100 px-2 py-0.5 text-[11px] font-medium text-amber-700">
-              Analyzing
-            </span>
+            <StatusBadge variant="analyzing" compact={compact} />
           )}
           {issue.enrichmentStatus === "failed" && (
-            <span className="rounded-full bg-rose-100 px-2 py-0.5 text-[11px] font-medium text-rose-700">
-              Analysis failed
-            </span>
+            <StatusBadge variant="failed" compact={compact} />
           )}
           {issue.status === "closed" && (
-            <span className="rounded-full bg-slate-200 px-2 py-0.5 text-[11px] font-medium text-slate-700">
-              Closed
-            </span>
+            <StatusBadge variant="closed" compact={compact} />
           )}
           {issue.tags.map((tag) => (
-            <span
-              key={tag}
-              className={cn(
-                "rounded-full border font-medium",
-                compact ? "px-1.5 py-px text-[10px]" : "px-2 py-0.5 text-[11px]"
-              )}
-              style={entityStyle(tag)}
-            >
-              {tag}
-            </span>
+            <TagBadge key={tag} tag={tag} compact={compact} />
           ))}
           {(() => {
             const progressCount = (issue.discussion ?? []).filter(

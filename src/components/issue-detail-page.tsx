@@ -44,6 +44,8 @@ import {
 } from "@/lib/issues";
 import { rememberRecentIssue } from "@/hooks/use-recent-history";
 import { cn } from "@/lib/utils";
+import { formatRelativeTime } from "@/lib/format";
+import { TagBadge } from "@/components/tag-badge";
 import { TagRelevanceBars } from "@/components/tag-relevance-bars";
 import { entityStyle } from "@/lib/entity-colors";
 import { tagHref } from "@/lib/tags";
@@ -69,29 +71,6 @@ const MINI_MAP_INNER_RADIUS = Math.min(MINI_MAP_VIEWBOX_WIDTH, MINI_MAP_VIEWBOX_
 
 function formatDateTime(value: string) {
   return new Date(value).toLocaleString();
-}
-
-function formatRelativeTime(value: string) {
-  const timestamp = new Date(value).getTime();
-  const diffSeconds = Math.round((timestamp - Date.now()) / 1000);
-  const formatter = new Intl.RelativeTimeFormat(undefined, { numeric: "auto" });
-
-  const ranges: Array<[Intl.RelativeTimeFormatUnit, number]> = [
-    ["year", 60 * 60 * 24 * 365],
-    ["month", 60 * 60 * 24 * 30],
-    ["week", 60 * 60 * 24 * 7],
-    ["day", 60 * 60 * 24],
-    ["hour", 60 * 60],
-    ["minute", 60],
-  ];
-
-  for (const [unit, seconds] of ranges) {
-    if (Math.abs(diffSeconds) >= seconds || unit === "minute") {
-      return formatter.format(Math.round(diffSeconds / seconds), unit);
-    }
-  }
-
-  return "just now";
 }
 
 function formatIssueTitle(raw: string, maxLength = 84) {

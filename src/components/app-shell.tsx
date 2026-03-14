@@ -185,14 +185,14 @@ export function AppShell({
           />
           <aside
             className={cn(
-              "fixed inset-y-0 left-0 z-40 flex w-72 flex-col border-r border-sidebar-border/70 bg-sidebar/78 text-sidebar-foreground backdrop-blur-xl transition-transform duration-200 md:static md:z-auto md:m-2 md:mr-0 md:h-[calc(100svh-1rem)] md:translate-x-0 md:rounded-l-[1.4rem] md:border md:shadow-sm",
+              "fixed inset-y-0 left-0 z-40 flex w-72 flex-col border-r border-sidebar-border/70 bg-sidebar/78 text-sidebar-foreground backdrop-blur-xl transition-transform duration-200 md:static md:z-auto md:translate-x-0",
               mobileSidebarOpen ? "translate-x-0" : "-translate-x-full",
               collapsed && "md:w-14"
             )}
           >
             {sidebar}
           </aside>
-          <main className="flex h-full min-h-0 min-w-0 flex-1 flex-col bg-background/76 backdrop-blur-xl md:m-2 md:ml-0 md:h-[calc(100svh-1rem)] md:rounded-r-[1.4rem] md:border md:border-border/40 md:shadow-sm">
+          <main className="flex h-full min-h-0 min-w-0 flex-1 flex-col bg-background/76 backdrop-blur-xl">
             {children}
           </main>
         </div>

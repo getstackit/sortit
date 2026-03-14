@@ -5,10 +5,12 @@ import { useEffect, useMemo } from "react";
 import { HashIcon, Link2Icon, SparklesIcon } from "lucide-react";
 import { AppShell } from "@/components/app-shell";
 import { AppSidebar } from "@/components/app-sidebar";
+import { DetailPageLayout, DetailPageGrid } from "@/components/detail-page-layout";
 import { IssueCard } from "@/components/issue-card";
+import { SectionHeader } from "@/components/section-header";
 import { SiteHeader } from "@/components/site-header";
+import { TagBadge } from "@/components/tag-badge";
 import { TagRelevanceBars } from "@/components/tag-relevance-bars";
-import { Skeleton } from "@/components/ui/skeleton";
 import { useIssues } from "@/hooks/use-issues";
 import { useTags } from "@/hooks/use-tags";
 import { rememberRecentTag } from "@/hooks/use-recent-history";
@@ -204,124 +206,20 @@ export function TagDetailPage({ tagName }: { tagName: string }) {
         }
       />
 
-      <div className="app-scrollarea min-h-0 flex-1 overflow-y-auto">
-        <div className="mx-auto flex w-full max-w-7xl flex-col gap-6 px-4 py-6 lg:px-6 xl:px-8">
-          {loading && (
-            <div className="grid gap-6 xl:grid-cols-[minmax(0,1fr)_21rem]">
-              <div className="space-y-6">
-                <Skeleton className="h-40 rounded-[1.75rem]" />
-                <Skeleton className="h-96 rounded-[1.75rem]" />
-              </div>
-              <div className="space-y-4">
-                <Skeleton className="h-56 rounded-[1.5rem]" />
-                <Skeleton className="h-64 rounded-[1.5rem]" />
-              </div>
-            </div>
-          )}
-
-          {!loading && error && (
-            <div className="app-status-warning">
-              Failed to load tag context: {error.message}
-            </div>
-          )}
-
-          {!loading && !error && !tag && (
-            <div className="app-status-warning">
-              No tag exists for &ldquo;{tagName}&rdquo;.
-            </div>
-          )}
-
-          {!loading && !error && tag && (
-            <div className="grid gap-6 xl:grid-cols-[minmax(0,1fr)_21rem] 2xl:grid-cols-[minmax(0,1.1fr)_24rem]">
-              <div className="space-y-6">
-                <section className="app-surface rounded-[1.75rem] p-6">
-                  <div className="flex flex-wrap items-start justify-between gap-4">
-                    <div className="space-y-3">
-                      <span
-                        className="inline-flex rounded-full border px-3 py-1 text-xs font-medium"
-                        style={entityStyle(tag.name)}
-                      >
-                        {tag.name}
-                      </span>
-                      <div>
-                        <p className="text-[11px] font-medium uppercase tracking-[0.18em] text-muted-foreground">
-                          Canonical description
-                        </p>
-                        <p className="mt-2 max-w-3xl text-[15px] leading-7 text-foreground/90">
-                          {tag.description || "No description has been recorded for this tag yet."}
-                        </p>
-                      </div>
-                    </div>
-                    <div className="grid min-w-[12rem] gap-3 sm:grid-cols-3 xl:grid-cols-1">
-                      <div className="app-subtle-surface rounded-[1.25rem] px-4 py-3">
-                        <p className="text-[11px] font-medium uppercase tracking-[0.14em] text-muted-foreground">
-                          Coverage
-                        </p>
-                        <p className="mt-2 text-2xl font-semibold tabular-nums">
-                          {issueCount}
-                        </p>
-                        <p className="text-[11px] text-muted-foreground">
-                          issues tagged
-                        </p>
-                      </div>
-                      <div className="app-subtle-surface rounded-[1.25rem] px-4 py-3">
-                        <p className="text-[11px] font-medium uppercase tracking-[0.14em] text-muted-foreground">
-                          Open
-                        </p>
-                        <p className="mt-2 text-2xl font-semibold tabular-nums">
-                          {openCount}
-                        </p>
-                        <p className="text-[11px] text-muted-foreground">
-                          currently active
-                        </p>
-                      </div>
-                      <div className="app-subtle-surface rounded-[1.25rem] px-4 py-3">
-                        <p className="text-[11px] font-medium uppercase tracking-[0.14em] text-muted-foreground">
-                          Neighbors
-                        </p>
-                        <p className="mt-2 text-2xl font-semibold tabular-nums">
-                          {semanticNeighbors.length}
-                        </p>
-                        <p className="text-[11px] text-muted-foreground">
-                          semantic matches
-                        </p>
-                      </div>
-                    </div>
-                  </div>
-                </section>
-
-                <section id="issues" className="app-surface rounded-[1.75rem] p-6">
-                  <div className="flex flex-wrap items-center justify-between gap-3">
-                    <div>
-                      <p className="text-[11px] font-medium uppercase tracking-[0.18em] text-muted-foreground">
-                        Associated issues
-                      </p>
-                      <h2 className="mt-1 text-lg font-semibold tracking-tight">
-                        All issues carrying this tag
-                      </h2>
-                    </div>
-                    <span className="app-chip">{issueCount} results</span>
-                  </div>
-
-                  {relatedIssues.length === 0 ? (
-                    <p className="mt-5 text-sm text-muted-foreground">
-                      No issues are currently associated with this tag.
-                    </p>
-                  ) : (
-                    <div className="mt-5 space-y-2">
-                      {relatedIssues.map((issue) => (
-                        <IssueCard
-                          key={issue.id}
-                          issue={issue}
-                          href={`/issues/${issue.id}`}
-                        />
-                      ))}
-                    </div>
-                  )}
-                </section>
-              </div>
-
-              <aside className="space-y-4 xl:sticky xl:top-6 xl:self-start">
+      <DetailPageLayout
+        loading={loading}
+        error={
+          error
+            ? <>Failed to load tag context: {error.message}</>
+            : !loading && !error && !tag
+              ? <>No tag exists for &ldquo;{tagName}&rdquo;.</>
+              : undefined
+        }
+      >
+        {tag && (
+          <DetailPageGrid
+            sidebar={
+              <>
                 <section id="related" className="app-surface rounded-[1.5rem] p-5">
                   <div className="flex items-center gap-2">
                     <HashIcon className="size-4 text-muted-foreground" />
@@ -343,12 +241,7 @@ export function TagDetailPage({ tagName }: { tagName: string }) {
                             href={tagHref(entry.tag)}
                             className="app-subtle-surface flex items-center justify-between gap-3 px-3 py-2 transition-colors hover:bg-accent/70"
                           >
-                            <span
-                              className="rounded-full border px-2 py-0.5 text-[11px] font-medium"
-                              style={entityStyle(entry.tag)}
-                            >
-                              {entry.tag}
-                            </span>
+                            <TagBadge tag={entry.tag} />
                             <span className="text-[11px] tabular-nums text-muted-foreground">
                               {entry.count} issues
                             </span>
@@ -413,11 +306,86 @@ export function TagDetailPage({ tagName }: { tagName: string }) {
                     </p>
                   </div>
                 </section>
-              </aside>
-            </div>
-          )}
-        </div>
-      </div>
+              </>
+            }
+          >
+            <section className="app-surface rounded-[1.75rem] p-6">
+              <div className="flex flex-wrap items-start justify-between gap-4">
+                <div className="space-y-3">
+                  <TagBadge tag={tag.name} className="inline-flex px-3 py-1 text-xs" />
+                  <div>
+                    <p className="text-[11px] font-medium uppercase tracking-[0.18em] text-muted-foreground">
+                      Canonical description
+                    </p>
+                    <p className="mt-2 max-w-3xl text-[15px] leading-7 text-foreground/90">
+                      {tag.description || "No description has been recorded for this tag yet."}
+                    </p>
+                  </div>
+                </div>
+                <div className="grid min-w-[12rem] gap-3 sm:grid-cols-3 xl:grid-cols-1">
+                  <div className="app-subtle-surface rounded-[1.25rem] px-4 py-3">
+                    <p className="text-[11px] font-medium uppercase tracking-[0.14em] text-muted-foreground">
+                      Coverage
+                    </p>
+                    <p className="mt-2 text-2xl font-semibold tabular-nums">
+                      {issueCount}
+                    </p>
+                    <p className="text-[11px] text-muted-foreground">
+                      issues tagged
+                    </p>
+                  </div>
+                  <div className="app-subtle-surface rounded-[1.25rem] px-4 py-3">
+                    <p className="text-[11px] font-medium uppercase tracking-[0.14em] text-muted-foreground">
+                      Open
+                    </p>
+                    <p className="mt-2 text-2xl font-semibold tabular-nums">
+                      {openCount}
+                    </p>
+                    <p className="text-[11px] text-muted-foreground">
+                      currently active
+                    </p>
+                  </div>
+                  <div className="app-subtle-surface rounded-[1.25rem] px-4 py-3">
+                    <p className="text-[11px] font-medium uppercase tracking-[0.14em] text-muted-foreground">
+                      Neighbors
+                    </p>
+                    <p className="mt-2 text-2xl font-semibold tabular-nums">
+                      {semanticNeighbors.length}
+                    </p>
+                    <p className="text-[11px] text-muted-foreground">
+                      semantic matches
+                    </p>
+                  </div>
+                </div>
+              </div>
+            </section>
+
+            <section id="issues" className="app-surface rounded-[1.75rem] p-6">
+              <SectionHeader
+                eyebrow="Associated issues"
+                title="All issues carrying this tag"
+                count={`${issueCount} results`}
+              />
+
+              {relatedIssues.length === 0 ? (
+                <p className="mt-5 text-sm text-muted-foreground">
+                  No issues are currently associated with this tag.
+                </p>
+              ) : (
+                <div className="mt-5 space-y-2">
+                  {relatedIssues.map((issue) => (
+                    <IssueCard
+                      key={issue.id}
+                      issue={issue}
+                      href={`/issues/${issue.id}`}
+                    />
+                  ))}
+                </div>
+              )}
+            </section>
+          </DetailPageGrid>
+        )}
+      </DetailPageLayout>
     </AppShell>
   );
 }

@@ -4,7 +4,7 @@ import Link from "next/link";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { useCallback, useDeferredValue, useEffect, useMemo, useRef, useState } from "react";
 import { motion, AnimatePresence } from "motion/react";
-import { Rows3Icon, Rows4Icon, SearchIcon, XIcon } from "lucide-react";
+import { FilterIcon, Rows3Icon, Rows4Icon, SearchIcon, XIcon } from "lucide-react";
 import { AppShell } from "@/components/app-shell";
 import { AppSidebar } from "@/components/app-sidebar";
 import { IssueCard } from "@/components/issue-card";
@@ -15,9 +15,17 @@ import { Label } from "@/components/ui/label";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Switch } from "@/components/ui/switch";
 import { CompactModeProvider, useCompactMode } from "@/hooks/use-compact-mode";
+import {
+  IssuesFilterSidebar,
+  applyFilter,
+  isFilterActive,
+  EMPTY_FILTER,
+  type IssuesFilter,
+} from "@/components/issues-filter-sidebar";
 import { useIssueSearch, useIssues } from "@/hooks/use-issues";
 import { issueHrefFromText } from "@/lib/issues";
-import { entityStyle } from "@/lib/entity-colors";
+import { StatusBadge } from "@/components/status-badge";
+import { TagBadge } from "@/components/tag-badge";
 import type { IssueRecord, SearchIssueRecord } from "@/lib/issues";
 import { cn } from "@/lib/utils";
 
@@ -122,21 +130,10 @@ function SearchResultCard({
 
       <div className={cn("flex flex-wrap items-center gap-1.5", compact ? "mt-2" : "mt-3")}>
         {issue.status === "closed" && (
-          <span className="rounded-full bg-slate-200 px-2 py-0.5 text-[11px] font-medium text-slate-700">
-            Closed
-          </span>
+          <StatusBadge variant="closed" compact={compact} />
         )}
         {issue.tags.slice(0, compact ? 3 : 5).map((tag) => (
-          <span
-            key={tag.tag}
-            className={cn(
-              "rounded-full border font-medium",
-              compact ? "px-1.5 py-px text-[10px]" : "px-2 py-0.5 text-[11px]"
-            )}
-            style={entityStyle(tag.tag)}
-          >
-            {tag.tag}
-          </span>
+          <TagBadge key={tag.tag} tag={tag.tag} compact={compact} />
         ))}
         <span className="rounded-full border border-border/60 bg-muted/50 px-2 py-0.5 text-[11px] font-medium text-muted-foreground">
           semantic {Math.round(issue.semanticSimilarity * 100)}%
@@ -182,6 +179,8 @@ export function IssuesBoard() {
   );
   const [searchText, setSearchText] = useState(initialSearchState.query);
   const [includeClosed, setIncludeClosed] = useState(initialSearchState.includeClosed);
+  const [filter, setFilter] = useState<IssuesFilter>(EMPTY_FILTER);
+  const [filterOpen, setFilterOpen] = useState(false);
   const searchInputRef = useRef<HTMLInputElement>(null);
   const lastWrittenSearchRef = useRef(searchParamsString);
   const deferredSearchText = useDeferredValue(searchText);
@@ -203,7 +202,10 @@ export function IssuesBoard() {
   } = useIssueSearch(activeQuery, searchStatus, ISSUE_SEARCH_RESULT_LIMIT);
 
   const searchResults = searchResponse?.relatedIssues ?? [];
-  const visibleIssues = hasQuery ? searchResults : issues;
+  const unfilteredIssues = hasQuery ? searchResults : issues;
+  const visibleIssues = isFilterActive(filter)
+    ? applyFilter(unfilteredIssues, filter)
+    : unfilteredIssues;
   const error = hasQuery ? searchError : issuesError;
   const loading = hasQuery ? searchLoading : issuesLoading;
   const resultCount = visibleIssues.length;
@@ -315,7 +317,7 @@ export function IssuesBoard() {
         }
       >
         <SiteHeader
-          title={hasQuery ? "Search issues" : "Open issues"}
+          title={hasQuery ? "Search issues" : "Issues"}
           eyebrow="Issues"
           subtitle={
             hasQuery
@@ -386,13 +388,25 @@ export function IssuesBoard() {
                 />
                 Include closed
               </Label>
+              <button
+                type="button"
+                onClick={() => setFilterOpen((o) => !o)}
+                title={filterOpen ? "Hide filters" : "Show filters"}
+                className={cn(
+                  "flex size-8 items-center justify-center rounded-lg border border-border/60 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground",
+                  filterOpen && "bg-muted text-foreground"
+                )}
+              >
+                <FilterIcon className="size-4" />
+              </button>
               <CompactToggle />
             </div>
           }
         />
-        <div className="app-scrollarea min-h-0 flex-1 overflow-y-auto">
-          <div className="@container/main flex min-h-0 flex-1 flex-col gap-2">
-            <div className="flex flex-col gap-4 py-4 md:gap-6 md:py-6">
+        <div className="flex min-h-0 flex-1">
+          <div className="app-scrollarea min-h-0 flex-1 overflow-y-auto">
+            <div className="@container/main flex min-h-0 flex-1 flex-col gap-2">
+              <div className="flex flex-col gap-4 py-4 md:gap-6 md:py-6">
               {error && (
                 <div className="px-4 lg:px-6">
                   <div className="app-status-warning">
@@ -423,13 +437,7 @@ export function IssuesBoard() {
                     {searchResponse?.query.tags && searchResponse.query.tags.length > 0 && (
                       <div className="flex flex-wrap gap-1.5">
                         {searchResponse.query.tags.slice(0, 5).map((tag) => (
-                          <span
-                            key={tag.tag}
-                            className="rounded-full border px-2 py-0.5 text-[11px] font-medium"
-                            style={entityStyle(tag.tag)}
-                          >
-                            {tag.tag}
-                          </span>
+                          <TagBadge key={tag.tag} tag={tag.tag} />
                         ))}
                       </div>
                     )}
@@ -460,7 +468,7 @@ export function IssuesBoard() {
                 </div>
               )}
 
-              {!loading && !hasQuery && issues.length === 0 && (
+              {!loading && !hasQuery && unfilteredIssues.length === 0 && (
                 <div className="app-surface mx-4 flex flex-col items-center gap-3 py-20 text-center lg:mx-6">
                   <div className="text-4xl opacity-20">~</div>
                   <p className="text-sm text-muted-foreground/60">
@@ -469,7 +477,23 @@ export function IssuesBoard() {
                 </div>
               )}
 
-              {!loading && hasQuery && visibleIssues.length === 0 && (
+              {!loading && visibleIssues.length === 0 && unfilteredIssues.length > 0 && isFilterActive(filter) && (
+                <div className="app-surface mx-4 flex flex-col items-center gap-3 py-20 text-center lg:mx-6">
+                  <div className="text-4xl opacity-20">~</div>
+                  <p className="text-sm text-muted-foreground/80">
+                    No issues match the current filters.
+                  </p>
+                  <button
+                    type="button"
+                    onClick={() => setFilter(EMPTY_FILTER)}
+                    className="text-xs text-muted-foreground underline underline-offset-2 hover:text-foreground"
+                  >
+                    Clear filters
+                  </button>
+                </div>
+              )}
+
+              {!loading && hasQuery && visibleIssues.length === 0 && !isFilterActive(filter) && (
                 <div className="app-surface mx-4 flex flex-col items-center gap-3 py-20 text-center lg:mx-6">
                   <div className="text-4xl opacity-20">?</div>
                   <p className="text-sm text-muted-foreground/80">
@@ -481,12 +505,22 @@ export function IssuesBoard() {
                 </div>
               )}
 
-              {!hasQuery && issues.length > 0 && <IssueList issues={issues} />}
-              {hasQuery && searchResults.length > 0 && (
-                <SearchResultList issues={searchResults} />
+              {!hasQuery && visibleIssues.length > 0 && <IssueList issues={visibleIssues} />}
+              {hasQuery && visibleIssues.length > 0 && (
+                <SearchResultList issues={visibleIssues as SearchIssueRecord[]} />
               )}
+              </div>
             </div>
           </div>
+          {filterOpen && (
+            <aside className="hidden w-56 shrink-0 overflow-y-auto md:block">
+              <IssuesFilterSidebar
+                issues={unfilteredIssues}
+                filter={filter}
+                onFilterChange={setFilter}
+              />
+            </aside>
+          )}
         </div>
       </AppShell>
     </CompactModeProvider>
