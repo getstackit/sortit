@@ -76,6 +76,7 @@ func SearchFromQueryWithTags(
 		limit = defaultSearchLimit
 	}
 
+	_, visible, _ := deriveRelationshipSemantics(storeIssues)
 	mapIssues, tagNames, issueEmbeddings, tagEmbeddings := runtimeMapInputs(storeIssues, storeTags)
 	factorVectors := runtimeFactorVectors(mapIssues, tagNames, tagEmbeddings)
 
@@ -104,6 +105,9 @@ func SearchFromQueryWithTags(
 
 	related := make([]RelatedIssue, 0, len(storeIssues))
 	for _, candidate := range storeIssues {
+		if _, ok := visible[candidate.ID]; !ok {
+			continue
+		}
 		candidateSummary := exploreIssueSummary(candidate)
 		semantic := vectors.CosineSimilarity(queryVector, issueEmbeddings[candidate.ID])
 		factor := vectors.CosineSimilarity(queryFactor, factorVectors[candidate.ID])
