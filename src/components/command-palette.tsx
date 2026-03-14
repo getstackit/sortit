@@ -5,10 +5,11 @@ import { useRouter } from "next/navigation";
 import { Dialog } from "@base-ui/react/dialog";
 import { FileTextIcon, LoaderIcon, SearchIcon, TagIcon } from "lucide-react";
 import { UNIFIED_SEARCH_LIMIT, useUnifiedSearch } from "@/hooks/use-search";
+import { useRecentHistory } from "@/hooks/use-recent-history";
 import { issueHrefFromText } from "@/lib/issues";
 import { tagHref } from "@/lib/tags";
 import { entityStyle } from "@/lib/entity-colors";
-import type { SearchIssueRecord } from "@/lib/issues";
+import type { IssueStatus, SearchIssueRecord } from "@/lib/issues";
 import type { RelatedTag } from "@/lib/search";
 import { cn } from "@/lib/utils";
 
@@ -21,18 +22,37 @@ type ResultItem =
   | { kind: "issue"; issue: SearchIssueRecord }
   | { kind: "tag"; tag: RelatedTag };
 
+type PaletteItem =
+  | {
+      kind: "issue";
+      source: "search" | "recent";
+      id: string;
+      raw: string;
+      status: IssueStatus;
+      tags: Array<{ tag: string; relevance: number }>;
+      similarity?: number;
+    }
+  | {
+      kind: "tag";
+      source: "search" | "recent";
+      name: string;
+      description?: string;
+      similarity?: number;
+    };
+
 export function CommandPalette({ open, onOpenChange }: CommandPaletteProps) {
   const router = useRouter();
   const [searchText, setSearchText] = useState("");
   const [activeIndex, setActiveIndex] = useState(0);
   const listRef = useRef<HTMLDivElement>(null);
+  const recentItems = useRecentHistory();
 
   const deferredSearchText = useDeferredValue(searchText);
   const activeQuery = deferredSearchText.trim();
 
   const { data, isLoading } = useUnifiedSearch(activeQuery);
 
-  const items = useMemo<ResultItem[]>(() => {
+  const searchItems = useMemo<ResultItem[]>(() => {
     const next: ResultItem[] = [];
     if (!data) {
       return next;
@@ -47,6 +67,54 @@ export function CommandPalette({ open, onOpenChange }: CommandPaletteProps) {
 
     return next;
   }, [data]);
+
+  const recentPaletteItems = useMemo<PaletteItem[]>(
+    () =>
+      recentItems.map((item) =>
+        item.kind === "issue"
+          ? {
+              kind: "issue",
+              source: "recent",
+              id: item.id,
+              raw: item.raw,
+              status: item.status,
+              tags: item.tags.map((tag) => ({ tag, relevance: 1 })),
+            }
+          : {
+              kind: "tag",
+              source: "recent",
+              name: item.name,
+              description: item.description,
+            }
+      ),
+    [recentItems]
+  );
+
+  const items = useMemo<PaletteItem[]>(
+    () =>
+      activeQuery.length === 0
+        ? recentPaletteItems
+        : searchItems.map((item) =>
+            item.kind === "issue"
+              ? {
+                  kind: "issue",
+                  source: "search",
+                  id: item.issue.id,
+                  raw: item.issue.raw,
+                  status: item.issue.status,
+                  tags: item.issue.tags,
+                  similarity: item.issue.combinedSimilarity,
+                }
+              : {
+                  kind: "tag",
+                  source: "search",
+                  name: item.tag.name,
+                  description: item.tag.description,
+                  similarity: item.tag.similarity,
+                }
+          ),
+    [activeQuery.length, recentPaletteItems, searchItems]
+  );
 
   const resolvedActiveIndex = items.length === 0 ? 0 : Math.min(activeIndex, items.length - 1);
 
@@ -76,11 +144,11 @@ export function CommandPalette({ open, onOpenChange }: CommandPaletteProps) {
   );
 
   const navigate = useCallback(
-    (item: ResultItem) => {
+    (item: PaletteItem) => {
       if (item.kind === "issue") {
-        router.push(`/issues/${item.issue.id}`);
+        router.push(`/issues/${item.id}`);
       } else {
-        router.push(tagHref(item.tag.name));
+        router.push(tagHref(item.name));
       }
       handleOpenChange(false);
     },
@@ -153,9 +221,107 @@ export function CommandPalette({ open, onOpenChange }: CommandPaletteProps) {
               className="max-h-[min(60vh,24rem)] overflow-y-auto"
             >
               {activeQuery.length === 0 && (
-                <div className="flex items-center justify-center py-12 text-sm text-muted-foreground/50">
-                  Search issues and tags...
-                </div>
+                items.length > 0 ? (
+                  <div className="py-2">
+                    <div className="px-4 py-2 text-[11px] font-medium uppercase tracking-[0.18em] text-muted-foreground/70">
+                      Recently viewed
+                    </div>
+                    {items.map((item, index) => {
+                      const isActive = index === resolvedActiveIndex;
+
+                      if (item.kind === "issue") {
+                        return (
+                          <button
+                            key={`recent-issue-${item.id}`}
+                            type="button"
+                            data-active={isActive}
+                            onClick={() => navigate(item)}
+                            onMouseEnter={() => setActiveIndex(index)}
+                            className={cn(
+                              "flex w-full items-center gap-3 px-4 py-2.5 text-left transition-colors",
+                              isActive
+                                ? "bg-accent text-accent-foreground"
+                                : "text-foreground"
+                            )}
+                          >
+                            <FileTextIcon className="size-4 shrink-0 text-muted-foreground" />
+                            <div className="min-w-0 flex-1">
+                              <p className="truncate text-sm">{item.raw}</p>
+                              <div className="mt-1 flex items-center gap-1.5">
+                                {item.status === "closed" && (
+                                  <span className="rounded-full bg-slate-200 px-1.5 py-px text-[10px] font-medium text-slate-700">
+                                    Closed
+                                  </span>
+                                )}
+                                {item.tags.map((tag) => (
+                                  <span
+                                    key={tag.tag}
+                                    className="rounded-full border px-1.5 py-px text-[10px] font-medium"
+                                    style={entityStyle(tag.tag)}
+                                  >
+                                    {tag.tag}
+                                  </span>
+                                ))}
+                              </div>
+                            </div>
+                            <span className="shrink-0 text-[11px] text-muted-foreground">
+                              Recent issue
+                            </span>
+                          </button>
+                        );
+                      }
+
+                      return (
+                        <button
+                          key={`recent-tag-${item.name}`}
+                          type="button"
+                          data-active={isActive}
+                          onClick={() => navigate(item)}
+                          onMouseEnter={() => setActiveIndex(index)}
+                          className={cn(
+                            "flex w-full items-center gap-3 px-4 py-2.5 text-left transition-colors",
+                            isActive
+                              ? "bg-accent text-accent-foreground"
+                              : "text-foreground"
+                          )}
+                        >
+                          <TagIcon className="size-4 shrink-0 text-muted-foreground" />
+                          <div className="min-w-0 flex-1">
+                            <p className="text-sm">
+                              <span
+                                className="rounded-full border px-2 py-0.5 text-[11px] font-medium"
+                                style={entityStyle(item.name)}
+                              >
+                                {item.name}
+                              </span>
+                            </p>
+                            {item.description && (
+                              <p className="mt-1 truncate text-xs text-muted-foreground">
+                                {item.description}
+                              </p>
+                            )}
+                          </div>
+                          <span className="shrink-0 text-[11px] text-muted-foreground">
+                            Recent tag
+                          </span>
+                        </button>
+                      );
+                    })}
+
+                    <div className="border-t border-border/50 px-4 py-2 text-xs text-muted-foreground/70">
+                      Recently viewed issues and tags appear here.
+                    </div>
+                  </div>
+                ) : (
+                  <div className="flex flex-col items-center gap-1 py-12 text-center">
+                    <p className="text-sm text-muted-foreground/80">
+                      Search issues and tags...
+                    </p>
+                    <p className="text-xs text-muted-foreground/50">
+                      Recently viewed issues and tags will show up here.
+                    </p>
+                  </div>
+                )
               )}
 
               {activeQuery.length > 0 && !isLoading && items.length === 0 && (
@@ -169,7 +335,7 @@ export function CommandPalette({ open, onOpenChange }: CommandPaletteProps) {
                 </div>
               )}
 
-              {items.length > 0 && (
+              {activeQuery.length > 0 && items.length > 0 && (
                 <div className="py-2">
                   {items.map((item, index) => {
                     const isActive = index === resolvedActiveIndex;
@@ -177,7 +343,7 @@ export function CommandPalette({ open, onOpenChange }: CommandPaletteProps) {
                     if (item.kind === "issue") {
                       return (
                         <button
-                          key={`issue-${item.issue.id}`}
+                          key={`issue-${item.id}`}
                           type="button"
                           data-active={isActive}
                           onClick={() => navigate(item)}
@@ -192,15 +358,15 @@ export function CommandPalette({ open, onOpenChange }: CommandPaletteProps) {
                           <FileTextIcon className="size-4 shrink-0 text-muted-foreground" />
                           <div className="min-w-0 flex-1">
                             <p className="truncate text-sm">
-                              {item.issue.raw}
+                              {item.raw}
                             </p>
                             <div className="mt-1 flex items-center gap-1.5">
-                              {item.issue.status === "closed" && (
+                              {item.status === "closed" && (
                                 <span className="rounded-full bg-slate-200 px-1.5 py-px text-[10px] font-medium text-slate-700">
                                   Closed
                                 </span>
                               )}
-                              {item.issue.tags.slice(0, 3).map((tag) => (
+                              {item.tags.slice(0, 3).map((tag) => (
                                 <span
                                   key={tag.tag}
                                   className="rounded-full border px-1.5 py-px text-[10px] font-medium"
@@ -212,7 +378,7 @@ export function CommandPalette({ open, onOpenChange }: CommandPaletteProps) {
                             </div>
                           </div>
                           <span className="shrink-0 text-xs tabular-nums text-muted-foreground">
-                            {Math.round(item.issue.combinedSimilarity * 100)}%
+                            {Math.round((item.similarity ?? 0) * 100)}%
                           </span>
                         </button>
                       );
@@ -220,7 +386,7 @@ export function CommandPalette({ open, onOpenChange }: CommandPaletteProps) {
 
                     return (
                       <button
-                        key={`tag-${item.tag.name}`}
+                        key={`tag-${item.name}`}
                         type="button"
                         data-active={isActive}
                         onClick={() => navigate(item)}
@@ -237,19 +403,19 @@ export function CommandPalette({ open, onOpenChange }: CommandPaletteProps) {
                           <p className="text-sm">
                             <span
                               className="rounded-full border px-2 py-0.5 text-[11px] font-medium"
-                              style={entityStyle(item.tag.name)}
+                              style={entityStyle(item.name)}
                             >
-                              {item.tag.name}
+                              {item.name}
                             </span>
                           </p>
-                          {item.tag.description && (
+                          {item.description && (
                             <p className="mt-1 truncate text-xs text-muted-foreground">
-                              {item.tag.description}
+                              {item.description}
                             </p>
                           )}
                         </div>
                         <span className="shrink-0 text-xs tabular-nums text-muted-foreground">
-                          {Math.round(item.tag.similarity * 100)}%
+                          {Math.round((item.similarity ?? 0) * 100)}%
                         </span>
                       </button>
                     );

@@ -42,6 +42,7 @@ import {
   type IssuePostRecord,
   type IssueRecord,
 } from "@/lib/issues";
+import { rememberRecentIssue } from "@/hooks/use-recent-history";
 import { cn } from "@/lib/utils";
 import { TagRelevanceBars } from "@/components/tag-relevance-bars";
 import { entityStyle } from "@/lib/entity-colors";
@@ -326,6 +327,14 @@ export function IssueDetailPage({ issueID }: { issueID: string }) {
 
   const discussion = useMemo(() => fallbackDiscussion(issue), [issue]);
   const issueTags = issue?.tags ?? [];
+
+  useEffect(() => {
+    if (!issue) {
+      return;
+    }
+
+    rememberRecentIssue(issue);
+  }, [issue]);
 
   const handleCopyIssue = useCallback(async () => {
     if (!issue) {

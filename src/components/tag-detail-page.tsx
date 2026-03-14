@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useMemo } from "react";
+import { useEffect, useMemo } from "react";
 import { HashIcon, Link2Icon, SparklesIcon } from "lucide-react";
 import { AppShell } from "@/components/app-shell";
 import { AppSidebar } from "@/components/app-sidebar";
@@ -11,6 +11,7 @@ import { TagRelevanceBars } from "@/components/tag-relevance-bars";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useIssues } from "@/hooks/use-issues";
 import { useTags } from "@/hooks/use-tags";
+import { rememberRecentTag } from "@/hooks/use-recent-history";
 import { entityStyle } from "@/lib/entity-colors";
 import type { IssueRecord } from "@/lib/issues";
 import { tagHref } from "@/lib/tags";
@@ -164,6 +165,14 @@ export function TagDetailPage({ tagName }: { tagName: string }) {
   const closedCount = issueCount - openCount;
   const loading = tagsLoading || issuesLoading;
   const error = tagsError ?? issuesError;
+
+  useEffect(() => {
+    if (!tag) {
+      return;
+    }
+
+    rememberRecentTag(tag);
+  }, [tag]);
 
   return (
     <AppShell sidebar={<AppSidebar showThingsSection={false} />}>

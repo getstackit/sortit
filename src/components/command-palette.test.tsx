@@ -2,6 +2,11 @@ import type { ReactNode } from "react";
 import { render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { CommandPalette } from "@/components/command-palette";
+import {
+  clearRecentHistory,
+  rememberRecentIssue,
+  rememberRecentTag,
+} from "@/hooks/use-recent-history";
 import { useUnifiedSearch } from "@/hooks/use-search";
 
 const push = vi.fn();
@@ -38,6 +43,7 @@ vi.mock("@/hooks/use-search", () => ({
 describe("CommandPalette", () => {
   beforeEach(() => {
     push.mockReset();
+    clearRecentHistory();
     Element.prototype.scrollIntoView = vi.fn();
     vi.mocked(useUnifiedSearch).mockReturnValue({
       data: {
@@ -84,6 +90,31 @@ describe("CommandPalette", () => {
     expect(onOpenChange).toHaveBeenCalledWith(false);
   });
 
+  it("shows recently viewed issues and tags when opened with no query", async () => {
+    const user = userEvent.setup();
+
+    rememberRecentIssue({
+      id: "issue-123",
+      raw: "Recent issue from detail page",
+      status: "open",
+      tags: ["frontend", "ux"],
+    });
+    rememberRecentTag({
+      name: "billing",
+      description: "Recurring payments and invoices",
+    });
+
+    render(<CommandPalette open onOpenChange={() => {}} />);
+
+    expect(screen.getByText("Recently viewed")).toBeInTheDocument();
+    expect(screen.getByText("Recent issue from detail page")).toBeInTheDocument();
+    expect(screen.getAllByText("billing").length).toBeGreaterThan(0);
+
+    await user.click(screen.getByRole("button", { name: /recent issue from detail page/i }));
+
+    expect(push).toHaveBeenCalledWith("/issues/issue-123");
+  });
+
   it("discloses that the palette is a truncated quick switcher", async () => {
     const user = userEvent.setup();
 
@@ -93,6 +124,15 @@ describe("CommandPalette", () => {
 
     expect(
       screen.getByText("Quick switcher showing up to 8 matches.")
+    ).toBeInTheDocument();
+  });
+
+  it("keeps an explanatory empty state before anything has been viewed", () => {
+    render(<CommandPalette open onOpenChange={() => {}} />);
+
+    expect(screen.getByText("Search issues and tags...")).toBeInTheDocument();
+    expect(
+      screen.getByText("Recently viewed issues and tags will show up here.")
     ).toBeInTheDocument();
   });
 });
