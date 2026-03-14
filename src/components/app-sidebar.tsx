@@ -6,6 +6,16 @@ import { useAppShell } from "@/components/app-shell";
 import { useAuth } from "@/components/auth-provider";
 import { PasteModal } from "@/components/paste-modal";
 import { ThemeToggle } from "@/components/theme-toggle";
+import {
+  SidebarContent,
+  SidebarFooter,
+  SidebarGroup,
+  SidebarGroupContent,
+  SidebarGroupLabel,
+  SidebarHeader,
+  SidebarMenu,
+  SidebarMenuItem,
+} from "@/components/ui/sidebar";
 import type { IssueRecord } from "@/lib/issues";
 import { cn } from "@/lib/utils";
 
@@ -22,18 +32,32 @@ type AppSidebarProps = {
   showThingsSection?: boolean;
 };
 
-function SidebarLink({
+const navItems = [
+  { label: "Issues", href: "/" },
+  { label: "Map", href: "/map" },
+  { label: "Activity", href: "/activity" },
+  { label: "Tag Map", href: "/tags" },
+  { label: "People", href: "/people" },
+  { label: "Settings", href: "/settings" },
+  { label: "Debug", href: "/debug" },
+];
+
+function NavLink({
   href,
   label,
   active,
   collapsed,
   onClick,
+  className,
+  children,
 }: {
   href: string;
   label: string;
   active?: boolean;
   collapsed: boolean;
   onClick: () => void;
+  className?: string;
+  children?: React.ReactNode;
 }) {
   return (
     <Link
@@ -44,14 +68,19 @@ function SidebarLink({
         "flex items-center rounded-xl border border-transparent px-2.5 py-2 text-sm transition-all hover:border-sidebar-border/70 hover:bg-sidebar-accent/80 hover:text-sidebar-accent-foreground",
         active &&
           "border-sidebar-border/70 bg-sidebar-accent/90 font-medium text-sidebar-accent-foreground shadow-sm",
-        collapsed && "justify-center px-0"
+        collapsed && "justify-center px-0",
+        className
       )}
     >
-      <span className={cn("truncate", collapsed && "sr-only")}>{label}</span>
-      {collapsed && (
-        <span aria-hidden="true" className="text-[11px] font-medium uppercase">
-          {label.charAt(0)}
-        </span>
+      {children ?? (
+        <>
+          <span className={cn("truncate", collapsed && "sr-only")}>{label}</span>
+          {collapsed && (
+            <span aria-hidden="true" className="text-[11px] font-medium uppercase">
+              {label.charAt(0)}
+            </span>
+          )}
+        </>
       )}
     </Link>
   );
@@ -70,7 +99,7 @@ export function AppSidebar({
 
   return (
     <div className="flex h-full flex-col">
-      <div className="relative overflow-hidden border-b border-sidebar-border/70 px-3 py-3">
+      <SidebarHeader className="relative min-h-14 justify-center overflow-hidden border-b border-sidebar-border/70 p-3">
         <div
           className={cn(
             "flex items-center gap-2",
@@ -91,7 +120,7 @@ export function AppSidebar({
           </span>
         </div>
         <div className="app-gradient-rule animate-gradient-shift absolute inset-x-0 bottom-0 h-px opacity-75" />
-      </div>
+      </SidebarHeader>
 
       <div className="px-3 pt-3">
         <button
@@ -126,122 +155,90 @@ export function AppSidebar({
         navigateOnCreate={navigateOnCreate}
       />
 
-      <div className="app-scrollarea flex min-h-0 flex-1 flex-col gap-5 overflow-y-auto px-3 py-4">
-        <section className="space-y-2">
-          <p
+      <SidebarContent className="app-scrollarea gap-5 px-3 py-4">
+        <SidebarGroup className="p-0 space-y-2">
+          <SidebarGroupLabel
             className={cn(
-              "px-2 text-[11px] font-medium uppercase tracking-[0.16em] text-sidebar-foreground/50",
+              "h-auto px-2 text-[11px] font-medium uppercase tracking-[0.16em] text-sidebar-foreground/50",
               collapsed && "hidden"
             )}
           >
             Views
-          </p>
-          <div className="space-y-1">
-            <SidebarLink
-              href="/"
-              label="Open Issues"
-              active={pathname === "/"}
-              collapsed={collapsed}
-              onClick={closeMobileSidebar}
-            />
-            <SidebarLink
-              href="/map"
-              label="Map"
-              active={pathname === "/map"}
-              collapsed={collapsed}
-              onClick={closeMobileSidebar}
-            />
-            <SidebarLink
-              href="/activity"
-              label="Activity"
-              active={pathname === "/activity"}
-              collapsed={collapsed}
-              onClick={closeMobileSidebar}
-            />
-            <SidebarLink
-              href="/tags"
-              label="Tag Map"
-              active={pathname === "/tags"}
-              collapsed={collapsed}
-              onClick={closeMobileSidebar}
-            />
-            <SidebarLink
-              href="/people"
-              label="People"
-              active={pathname === "/people"}
-              collapsed={collapsed}
-              onClick={closeMobileSidebar}
-            />
-            <SidebarLink
-              href="/settings"
-              label="Settings"
-              active={pathname === "/settings"}
-              collapsed={collapsed}
-              onClick={closeMobileSidebar}
-            />
-            <SidebarLink
-              href="/debug"
-              label="Debug"
-              active={pathname === "/debug"}
-              collapsed={collapsed}
-              onClick={closeMobileSidebar}
-            />
-          </div>
-        </section>
+          </SidebarGroupLabel>
+          <SidebarGroupContent>
+            <SidebarMenu className="gap-1">
+              {navItems.map((item) => (
+                <SidebarMenuItem key={item.href}>
+                  <NavLink
+                    href={item.href}
+                    label={item.label}
+                    active={pathname === item.href}
+                    collapsed={collapsed}
+                    onClick={closeMobileSidebar}
+                  />
+                </SidebarMenuItem>
+              ))}
+            </SidebarMenu>
+          </SidebarGroupContent>
+        </SidebarGroup>
 
         {showThingsSection && (
-          <section className="min-h-0 flex-1 space-y-2">
-            <p
+          <SidebarGroup className="min-h-0 flex-1 p-0 space-y-2">
+            <SidebarGroupLabel
               className={cn(
-                "px-2 text-[11px] font-medium uppercase tracking-[0.16em] text-sidebar-foreground/50",
+                "h-auto px-2 text-[11px] font-medium uppercase tracking-[0.16em] text-sidebar-foreground/50",
                 collapsed && "hidden"
               )}
             >
               Things
-            </p>
-            <div className="space-y-1">
-              {things.length === 0 && !collapsed && (
-                <p className="rounded-xl px-2.5 py-2 text-xs text-sidebar-foreground/50">
-                  Nothing yet
-                </p>
-              )}
-              {things.map((thing, index) => {
-                const isActive = pathname === (thing.href ?? `#${thing.id}`);
-                return (
-                <Link
-                  key={thing.id}
-                  href={thing.href ?? `#${thing.id}`}
-                  title={thing.title}
-                  onClick={closeMobileSidebar}
-                  className={cn(
-                    "flex items-center rounded-xl border-l-[3px] border-l-transparent border border-transparent px-2.5 py-2 text-sm transition-all hover:border-sidebar-border/70 hover:bg-sidebar-accent/80 hover:text-sidebar-accent-foreground",
-                    isActive &&
-                      "border-l-[var(--glow-color-current)] bg-sidebar-accent/90 font-medium text-sidebar-accent-foreground",
-                    collapsed && "justify-center px-0"
-                  )}
-                >
-                  <span className={cn("truncate", collapsed && "hidden")}>
-                    {thing.title}
-                  </span>
-                  {collapsed && (
-                    <span
-                      aria-hidden="true"
-                      className="text-[11px] font-medium uppercase text-sidebar-foreground/70"
-                    >
-                      {(index + 1).toString(36)}
-                    </span>
-                  )}
-                </Link>
-                );
-              })}
-            </div>
-          </section>
+            </SidebarGroupLabel>
+            <SidebarGroupContent>
+              <SidebarMenu className="gap-1">
+                {things.length === 0 && !collapsed && (
+                  <p className="rounded-xl px-2.5 py-2 text-xs text-sidebar-foreground/50">
+                    Nothing yet
+                  </p>
+                )}
+                {things.map((thing, index) => {
+                  const href = thing.href ?? `#${thing.id}`;
+                  const isActive = pathname === href;
+                  return (
+                    <SidebarMenuItem key={thing.id}>
+                      <NavLink
+                        href={href}
+                        label={thing.title}
+                        active={isActive}
+                        collapsed={collapsed}
+                        onClick={closeMobileSidebar}
+                        className={cn(
+                          "border-l-[3px] border-l-transparent",
+                          isActive && "border-l-[var(--glow-color-current)]"
+                        )}
+                      >
+                        <span className={cn("truncate", collapsed && "hidden")}>
+                          {thing.title}
+                        </span>
+                        {collapsed && (
+                          <span
+                            aria-hidden="true"
+                            className="text-[11px] font-medium uppercase text-sidebar-foreground/70"
+                          >
+                            {(index + 1).toString(36)}
+                          </span>
+                        )}
+                      </NavLink>
+                    </SidebarMenuItem>
+                  );
+                })}
+              </SidebarMenu>
+            </SidebarGroupContent>
+          </SidebarGroup>
         )}
-      </div>
+      </SidebarContent>
 
-      <div className="border-t border-sidebar-border px-3 py-3">
+      <SidebarFooter className="border-t border-sidebar-border p-3">
         {!collapsed && user && (
-          <div className="mb-3 rounded-2xl border border-sidebar-border/70 bg-sidebar-accent/55 px-3 py-3">
+          <div className="rounded-2xl border border-sidebar-border/70 bg-sidebar-accent/55 px-3 py-3">
             <p className="text-sm font-medium text-sidebar-accent-foreground">
               {user.displayName}
             </p>
@@ -258,7 +255,7 @@ export function AppSidebar({
         <div className={cn(collapsed && "px-0")}>
           <ThemeToggle />
         </div>
-      </div>
+      </SidebarFooter>
     </div>
   );
 }

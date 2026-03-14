@@ -64,6 +64,7 @@ import {
   parseMapURLState,
   viewportQuery,
 } from "@/features/map/url-state";
+import { Badge } from "@/components/ui/badge";
 import { tagHref } from "@/lib/tags";
 
 const PADDING = 60;
@@ -1459,20 +1460,20 @@ function MapPageContent() {
         eyebrow="Explore"
         meta={
           <>
-            <span className="app-chip tabular-nums">
+            <Badge variant="outline" className="tabular-nums">
               {issues.length} issues
-            </span>
+            </Badge>
             {closedIssueCount > 0 && (
-              <span className="app-chip tabular-nums">
+              <Badge variant="outline" className="tabular-nums">
                 {closedIssueCount} closed
-              </span>
+              </Badge>
             )}
-            <span className="app-chip tabular-nums">
+            <Badge variant="outline" className="tabular-nums">
               {visibleIssues.length} visible
-            </span>
-            <span className="app-chip tabular-nums">
+            </Badge>
+            <Badge variant="outline" className="tabular-nums">
               {renderedEdges.length} edges
-            </span>
+            </Badge>
           </>
         }
         actions={
@@ -1756,9 +1757,9 @@ function MapPageContent() {
                 <div className="flex items-start justify-between gap-3">
                   <div className="space-y-2">
                     <div className="flex flex-wrap items-center gap-2">
-                      <span className="app-chip px-2 py-0.5 text-[10px]">
+                      <Badge variant="outline" className="px-2 py-0.5 text-[10px]">
                         {sidebarIssue.id}
-                      </span>
+                      </Badge>
                       <span
                         className={
                           sidebarIssue.status === "closed"
@@ -1896,10 +1897,10 @@ function MapPageContent() {
                 <div className="flex items-start justify-between gap-3">
                   <div className="space-y-2">
                     <div className="flex flex-wrap items-center gap-2">
-                      <span className="app-chip px-2 py-0.5 text-[10px]">Cluster</span>
-                      <span className="app-chip px-2 py-0.5 text-[10px]">
+                      <Badge variant="outline" className="px-2 py-0.5 text-[10px]">Cluster</Badge>
+                      <Badge variant="outline" className="px-2 py-0.5 text-[10px]">
                         {selectedClusterIssues.length} issues
-                      </span>
+                      </Badge>
                       <span className="rounded-full bg-emerald-100 px-2 py-0.5 text-[10px] font-medium text-emerald-700">
                         {selectedClusterOpenCount} open
                       </span>

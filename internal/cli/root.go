@@ -11,6 +11,7 @@ import (
 
 	"github.com/spf13/cobra"
 
+	"splat/internal/cli/integrations"
 	"splat/internal/commands"
 	"splat/internal/issues"
 	issuemap "splat/internal/map"
@@ -32,6 +33,10 @@ type tagRecord struct {
 
 type tagsResponse struct {
 	Tags []tagRecord `json:"tags"`
+}
+
+type issuesListResponse struct {
+	Issues []issues.Issue `json:"issues"`
 }
 
 type createIssueRequest struct {
@@ -98,6 +103,8 @@ Date:    ` + date,
 	pf.StringVar(&opts.configPath, "config", opts.configPath, "Path to the CLI config file")
 
 	rootCmd.AddCommand(newAuthCmd(&opts))
+	rootCmd.AddCommand(integrations.NewAgentsCmd(version))
+	rootCmd.AddCommand(newMineCmd(&opts))
 	rootCmd.AddCommand(newIssueCmd(&opts))
 	rootCmd.AddCommand(newTagsCmd(&opts))
 	rootCmd.AddCommand(newPeopleCmd(&opts))
@@ -122,6 +129,50 @@ func newIssueCmd(opts *rootOptions) *cobra.Command {
 	issueCmd.AddCommand(newIssueLinkCmd(opts))
 	issueCmd.AddCommand(newIssueExploreCmd(opts))
 	return issueCmd
+}
+
+func newMineCmd(opts *rootOptions) *cobra.Command {
+	var status string
+	var limit int
+	var offset int
+	var tags []string
+
+	cmd := &cobra.Command{
+		Use:   "mine",
+		Short: "List issues assigned to the current authenticated user",
+		RunE: func(cmd *cobra.Command, _ []string) error {
+			client := opts.client()
+
+			var session authSessionResponse
+			if err := client.Get(cmd.Context(), "/auth/session", &session); err != nil {
+				return err
+			}
+
+			assignedTo := sessionActorName(session.User)
+			if assignedTo == "" {
+				return fmt.Errorf("authenticated user has no display name or login")
+			}
+
+			params := newQueryParams().
+				add("status", status).
+				addInt("limit", limit).
+				addInt("offset", offset).
+				add("assignedTo", assignedTo).
+				addCSV("tags", tags)
+
+			var response issuesListResponse
+			if err := client.Get(cmd.Context(), "/issues"+params.encode(), &response); err != nil {
+				return err
+			}
+			return printJSON(cmd, response)
+		},
+	}
+
+	cmd.Flags().StringVar(&status, "status", "open", "Issue status filter: open, closed, all")
+	cmd.Flags().IntVar(&limit, "limit", 0, "Maximum number of results")
+	cmd.Flags().IntVar(&offset, "offset", 0, "Number of results to skip")
+	cmd.Flags().StringSliceVar(&tags, "tag", nil, "Restrict results to one or more tags")
+	return cmd
 }
 
 func newIssueCreateCmd(opts *rootOptions) *cobra.Command {
@@ -547,6 +598,13 @@ func printJSON(cmd *cobra.Command, value any) error {
 	encoder := json.NewEncoder(cmd.OutOrStdout())
 	encoder.SetIndent("", "  ")
 	return encoder.Encode(value)
+}
+
+func sessionActorName(user SessionUser) string {
+	if value := strings.TrimSpace(user.DisplayName); value != "" {
+		return value
+	}
+	return strings.TrimSpace(user.Login)
 }
 
 func normalizeCSV(values []string) []string {

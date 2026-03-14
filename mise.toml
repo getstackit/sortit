@@ -78,6 +78,15 @@ run = """
   go build -o bin/splat ./apps/cli
 """
 
+[tasks.shims]
+description = "Install shims to repo root for local development"
+depends = ["cli:build"]
+run = """
+  cp scripts/splat-shim.sh ./splat
+  chmod +x ./splat
+  echo "Dev shim installed to repo root"
+"""
+
 [tasks.build]
 description = "Build the frontend and backend"
 depends = ["server:build", "cli:build"]

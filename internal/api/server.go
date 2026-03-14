@@ -58,6 +58,7 @@ type Server struct {
 	debugAnalyzeIssue   queries.DebugAnalyzeIssueHandler
 	exploreIssue        queries.ExploreIssueHandler
 	getPersonProfile    queries.GetPersonProfileHandler
+	getPersonDetail     queries.GetPersonDetailHandler
 	workCorrelations    queries.WorkCorrelationsHandler
 	authService         *auth.Service
 	catalog             *services.CatalogService
@@ -530,6 +531,7 @@ func NewServer(cfg ServerConfig) *Server {
 		getMapEdges:       queries.EdgeHandler{IssueStore: store, Catalog: catalog, Projection: mapProjectionLoader},
 		debugAnalyzeIssue: queries.DebugAnalyzeIssueHandler{Analyzer: cfg.Analyzer, Catalog: catalog, Store: store},
 		getPersonProfile:  queries.GetPersonProfileHandler{Store: store},
+		getPersonDetail:   queries.GetPersonDetailHandler{Store: store},
 		workCorrelations:  queries.WorkCorrelationsHandler{Store: store},
 		authService:       cfg.Auth,
 		catalog:           catalog,

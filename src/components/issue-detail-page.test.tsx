@@ -5,6 +5,10 @@ import { useParams } from "next/navigation";
 import { SWRConfig } from "swr";
 import { IssueDetailPage } from "@/components/issue-detail-page";
 import {
+  clearRecentHistory,
+  readRecentHistory,
+} from "@/hooks/use-recent-history";
+import {
   closeIssue,
   fetchIssue,
   fetchRevision,
@@ -159,6 +163,7 @@ describe("IssueDetailPage", () => {
       edges: [],
       clusters: [],
     });
+    clearRecentHistory();
   });
 
   afterEach(() => {
@@ -192,6 +197,24 @@ describe("IssueDetailPage", () => {
     ).toBeInTheDocument();
     expect(screen.getByText("Initial report")).toBeInTheDocument();
     expect(screen.getByText("Refinement 1")).toBeInTheDocument();
+  });
+
+  it("records the viewed issue in recent history", async () => {
+    vi.mocked(fetchIssue).mockResolvedValue(makeIssue());
+
+    renderIssueDetail("issue-123");
+
+    await screen.findByText("Canonical summary");
+
+    expect(readRecentHistory()).toEqual([
+      expect.objectContaining({
+        kind: "issue",
+        id: "issue-123",
+        raw: "Export fails in Safari after tapping share twice.",
+        status: "open",
+        tags: ["export", "safari"],
+      }),
+    ]);
   });
 
   it("falls back to the route param when the prop issue ID is undefined", async () => {
