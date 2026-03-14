@@ -129,6 +129,82 @@ func (s *InMemoryStore) SaveLink(_ context.Context, link IssueLink) error {
 	return nil
 }
 
+func (s *InMemoryStore) MergeTags(_ context.Context, canonical string, aliases []string) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	aliasSet := make(map[string]struct{}, len(aliases))
+	for _, alias := range aliases {
+		aliasSet[sanitizeTagName(alias)] = struct{}{}
+	}
+	canonicalNorm := sanitizeTagName(canonical)
+
+	for i, issue := range s.issues {
+		s.issues[i].Tags = mergeTagList(issue.Tags, canonicalNorm, aliasSet)
+		s.issues[i].TagScores = mergeTagScores(issue.TagScores, canonicalNorm, aliasSet)
+	}
+	return nil
+}
+
+func (s *InMemoryStore) DismissTagMerge(_ context.Context, _ string, _ string) error {
+	return nil
+}
+
+func (s *InMemoryStore) ListDismissedTagMerges(_ context.Context) ([]DismissedTagMerge, error) {
+	return nil, nil
+}
+
+func mergeTagList(tags []string, canonical string, aliases map[string]struct{}) []string {
+	hasCanonical := false
+	out := make([]string, 0, len(tags))
+	for _, tag := range tags {
+		norm := sanitizeTagName(tag)
+		if _, isAlias := aliases[norm]; isAlias {
+			if !hasCanonical {
+				out = append(out, canonical)
+				hasCanonical = true
+			}
+			continue
+		}
+		if norm == canonical {
+			hasCanonical = true
+		}
+		out = append(out, tag)
+	}
+	return out
+}
+
+func mergeTagScores(scores []TagRelevance, canonical string, aliases map[string]struct{}) []TagRelevance {
+	if len(scores) == 0 {
+		return scores
+	}
+
+	var canonicalRelevance float64
+	hasCanonical := false
+	out := make([]TagRelevance, 0, len(scores))
+	for _, score := range scores {
+		norm := sanitizeTagName(score.Tag)
+		if _, isAlias := aliases[norm]; isAlias {
+			if score.Relevance > canonicalRelevance {
+				canonicalRelevance = score.Relevance
+			}
+			continue
+		}
+		if norm == canonical {
+			hasCanonical = true
+			if score.Relevance > canonicalRelevance {
+				canonicalRelevance = score.Relevance
+			}
+			continue
+		}
+		out = append(out, score)
+	}
+	if hasCanonical || canonicalRelevance > 0 {
+		out = append([]TagRelevance{{Tag: canonical, Relevance: canonicalRelevance}}, out...)
+	}
+	return out
+}
+
 func (s *InMemoryStore) EnqueueIssueEnrichment(_ context.Context, issueID string, targetSequence int) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()

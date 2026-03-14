@@ -5,6 +5,7 @@ import (
 	"slices"
 	"strings"
 
+	"splat/internal/domain"
 	"splat/internal/issues"
 	"splat/internal/vectors"
 )
@@ -186,10 +187,10 @@ func queryMatchesTagNames(queryLower string, tagNames []string) bool {
 	}
 	words := make(map[string]struct{})
 	for w := range strings.FieldsSeq(queryLower) {
-		words[normalizeTagName(w)] = struct{}{}
+		words[domain.NormalizeTagName(w)] = struct{}{}
 	}
 	for _, tag := range tagNames {
-		if _, ok := words[normalizeTagName(tag)]; ok {
+		if _, ok := words[domain.NormalizeTagName(tag)]; ok {
 			return true
 		}
 	}

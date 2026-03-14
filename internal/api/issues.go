@@ -419,245 +419,270 @@ func (s *Server) handleIssueByID(route string) http.HandlerFunc {
 		}
 
 		if len(segments) == 1 {
-			if r.Method != http.MethodGet {
-				w.Header().Set("Allow", http.MethodGet)
-				http.Error(w, http.StatusText(http.StatusMethodNotAllowed), http.StatusMethodNotAllowed)
-				return
-			}
-
-			issue, err := s.getIssue.Handle(r.Context(), id)
-			if err != nil {
-				if errors.Is(err, issues.ErrNotFound) {
-					writeError(w, http.StatusNotFound, "issue not found")
-					return
-				}
-
-				writeInternalError(w, r, "failed to load issue", err)
-				return
-			}
-
-			writeJSON(w, http.StatusOK, issue)
+			s.handleGetIssue(w, r, id)
 			return
 		}
 
 		switch segments[1] {
 		case "close":
-			if r.Method != http.MethodPost {
-				w.Header().Set("Allow", http.MethodPost)
-				http.Error(w, http.StatusText(http.StatusMethodNotAllowed), http.StatusMethodNotAllowed)
-				return
-			}
-
-			request, err := decodeCloseIssueRequest(r)
-			if err != nil {
-				writeError(w, http.StatusBadRequest, err.Error())
-				return
-			}
-
-			closed, err := s.closeIssue.Handle(r.Context(), commands.CloseIssue{
-				ID:       id,
-				ClosedBy: actorForRequest(r, request.ClosedBy),
-			})
-			if err != nil {
-				if errors.Is(err, issues.ErrNotFound) {
-					writeError(w, http.StatusNotFound, "issue not found")
-					return
-				}
-
-				writeInternalError(w, r, "failed to close issue", err)
-				return
-			}
-
-			writeJSON(w, http.StatusOK, closed)
+			s.handleCloseIssue(w, r, id)
 		case "refine":
-			if r.Method != http.MethodPost {
-				w.Header().Set("Allow", http.MethodPost)
-				http.Error(w, http.StatusText(http.StatusMethodNotAllowed), http.StatusMethodNotAllowed)
-				return
-			}
-
-			request, err := decodeRefineIssueRequest(r)
-			if err != nil {
-				writeError(w, http.StatusBadRequest, err.Error())
-				return
-			}
-
-			refined, err := s.refineIssue.Handle(r.Context(), commands.RefineIssue{
-				ID:        id,
-				Raw:       request.Raw,
-				CreatedBy: actorForRequest(r, request.CreatedBy),
-			})
-			if err != nil {
-				if errors.Is(err, issues.ErrNotFound) {
-					writeError(w, http.StatusNotFound, "issue not found")
-					return
-				}
-				if errors.Is(err, issues.ErrIssueClosed) {
-					writeError(w, http.StatusConflict, "issue is closed")
-					return
-				}
-
-				writeInternalError(w, r, "failed to refine issue", err)
-				return
-			}
-
-			writeJSON(w, http.StatusOK, refined)
+			s.handleRefineIssue(w, r, id)
 		case "explore":
-			if r.Method != http.MethodGet {
-				w.Header().Set("Allow", http.MethodGet)
-				http.Error(w, http.StatusText(http.StatusMethodNotAllowed), http.StatusMethodNotAllowed)
-				return
-			}
-
-			limit, err := ParsePositiveIntQuery(r.URL.Query(), "limit")
-			if err != nil {
-				writeError(w, http.StatusBadRequest, "invalid limit query")
-				return
-			}
-
-			exploreLimit := 0
-			if limit != nil {
-				exploreLimit = *limit
-			}
-
-			result, err := s.exploreIssue.Handle(r.Context(), queries.ExploreIssue{
-				ID:    id,
-				Limit: exploreLimit,
-			})
-			if err != nil {
-				if errors.Is(err, issues.ErrNotFound) {
-					writeError(w, http.StatusNotFound, "issue not found")
-					return
-				}
-
-				writeInternalError(w, r, "failed to explore issue", err)
-				return
-			}
-
-			writeJSON(w, http.StatusOK, result)
+			s.handleExploreIssue(w, r, id)
 		case "progress":
-			if r.Method != http.MethodPost {
-				w.Header().Set("Allow", http.MethodPost)
-				http.Error(w, http.StatusText(http.StatusMethodNotAllowed), http.StatusMethodNotAllowed)
-				return
-			}
-
-			request, err := decodeProgressIssueRequest(r)
-			if err != nil {
-				writeError(w, http.StatusBadRequest, err.Error())
-				return
-			}
-
-			progressed, err := s.progressIssue.Handle(r.Context(), commands.ProgressIssue{
-				ID:        id,
-				Raw:       request.Raw,
-				CreatedBy: actorForRequest(r, request.CreatedBy),
-			})
-			if err != nil {
-				if errors.Is(err, issues.ErrNotFound) {
-					writeError(w, http.StatusNotFound, "issue not found")
-					return
-				}
-				if errors.Is(err, issues.ErrIssueClosed) {
-					writeError(w, http.StatusConflict, "issue is closed")
-					return
-				}
-
-				writeInternalError(w, r, "failed to post progress", err)
-				return
-			}
-
-			writeJSON(w, http.StatusOK, progressed)
+			s.handleProgressIssue(w, r, id)
 		case "reopen":
-			if r.Method != http.MethodPost {
-				w.Header().Set("Allow", http.MethodPost)
-				http.Error(w, http.StatusText(http.StatusMethodNotAllowed), http.StatusMethodNotAllowed)
-				return
-			}
-
-			reopened, err := s.reopenIssue.Handle(r.Context(), commands.ReopenIssue{ID: id})
-			if err != nil {
-				if errors.Is(err, issues.ErrNotFound) {
-					writeError(w, http.StatusNotFound, "issue not found")
-					return
-				}
-
-				writeInternalError(w, r, "failed to reopen issue", err)
-				return
-			}
-
-			writeJSON(w, http.StatusOK, reopened)
+			s.handleReopenIssue(w, r, id)
 		case "assign":
-			if r.Method != http.MethodPost {
-				w.Header().Set("Allow", http.MethodPost)
-				http.Error(w, http.StatusText(http.StatusMethodNotAllowed), http.StatusMethodNotAllowed)
-				return
-			}
-
-			request, err := decodeAssignIssueRequest(r)
-			if err != nil {
-				writeError(w, http.StatusBadRequest, err.Error())
-				return
-			}
-
-			assigned, err := s.assignIssue.Handle(r.Context(), commands.AssignIssue{
-				ID:         id,
-				AssignedTo: request.AssignedTo,
-				CreatedBy:  actorForRequest(r, request.CreatedBy),
-			})
-			if err != nil {
-				if errors.Is(err, issues.ErrNotFound) {
-					writeError(w, http.StatusNotFound, "issue not found")
-					return
-				}
-
-				writeInternalError(w, r, "failed to assign issue", err)
-				return
-			}
-
-			writeJSON(w, http.StatusOK, assigned)
+			s.handleAssignIssue(w, r, id)
 		case "split":
-			if r.Method != http.MethodPost {
-				w.Header().Set("Allow", http.MethodPost)
-				http.Error(w, http.StatusText(http.StatusMethodNotAllowed), http.StatusMethodNotAllowed)
-				return
-			}
-
-			request, err := decodeSplitIssueRequest(r)
-			if err != nil {
-				writeError(w, http.StatusBadRequest, err.Error())
-				return
-			}
-
-			children := make([]commands.SplitIssueChild, 0, len(request.Children))
-			for _, child := range request.Children {
-				children = append(children, commands.SplitIssueChild{
-					Raw:  child.Raw,
-					Tags: child.Tags,
-				})
-			}
-
-			result, err := s.splitIssue.Handle(r.Context(), commands.SplitIssue{
-				SourceID:    id,
-				Children:    children,
-				CreatedBy:   actorForRequest(r, request.CreatedBy),
-				Note:        request.Note,
-				CloseSource: request.CloseSource,
-			})
-			if err != nil {
-				if errors.Is(err, issues.ErrNotFound) {
-					writeError(w, http.StatusNotFound, "issue not found")
-					return
-				}
-				writeInternalError(w, r, "failed to split issue", err)
-				return
-			}
-
-			writeJSON(w, http.StatusCreated, result)
+			s.handleSplitIssue(w, r, id)
 		default:
 			writeError(w, http.StatusNotFound, "route not found")
 		}
 	}
+}
+
+func (s *Server) handleGetIssue(w http.ResponseWriter, r *http.Request, id string) {
+	if r.Method != http.MethodGet {
+		w.Header().Set("Allow", http.MethodGet)
+		http.Error(w, http.StatusText(http.StatusMethodNotAllowed), http.StatusMethodNotAllowed)
+		return
+	}
+
+	issue, err := s.getIssue.Handle(r.Context(), id)
+	if err != nil {
+		if errors.Is(err, issues.ErrNotFound) {
+			writeError(w, http.StatusNotFound, "issue not found")
+			return
+		}
+		writeInternalError(w, r, "failed to load issue", err)
+		return
+	}
+
+	writeJSON(w, http.StatusOK, issue)
+}
+
+func (s *Server) handleCloseIssue(w http.ResponseWriter, r *http.Request, id string) {
+	if r.Method != http.MethodPost {
+		w.Header().Set("Allow", http.MethodPost)
+		http.Error(w, http.StatusText(http.StatusMethodNotAllowed), http.StatusMethodNotAllowed)
+		return
+	}
+
+	request, err := decodeCloseIssueRequest(r)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+
+	closed, err := s.closeIssue.Handle(r.Context(), commands.CloseIssue{
+		ID:       id,
+		ClosedBy: actorForRequest(r, request.ClosedBy),
+	})
+	if err != nil {
+		if errors.Is(err, issues.ErrNotFound) {
+			writeError(w, http.StatusNotFound, "issue not found")
+			return
+		}
+		writeInternalError(w, r, "failed to close issue", err)
+		return
+	}
+
+	writeJSON(w, http.StatusOK, closed)
+}
+
+func (s *Server) handleRefineIssue(w http.ResponseWriter, r *http.Request, id string) {
+	if r.Method != http.MethodPost {
+		w.Header().Set("Allow", http.MethodPost)
+		http.Error(w, http.StatusText(http.StatusMethodNotAllowed), http.StatusMethodNotAllowed)
+		return
+	}
+
+	request, err := decodeRefineIssueRequest(r)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+
+	refined, err := s.refineIssue.Handle(r.Context(), commands.RefineIssue{
+		ID:        id,
+		Raw:       request.Raw,
+		CreatedBy: actorForRequest(r, request.CreatedBy),
+	})
+	if err != nil {
+		if errors.Is(err, issues.ErrNotFound) {
+			writeError(w, http.StatusNotFound, "issue not found")
+			return
+		}
+		if errors.Is(err, issues.ErrIssueClosed) {
+			writeError(w, http.StatusConflict, "issue is closed")
+			return
+		}
+		writeInternalError(w, r, "failed to refine issue", err)
+		return
+	}
+
+	writeJSON(w, http.StatusOK, refined)
+}
+
+func (s *Server) handleExploreIssue(w http.ResponseWriter, r *http.Request, id string) {
+	if r.Method != http.MethodGet {
+		w.Header().Set("Allow", http.MethodGet)
+		http.Error(w, http.StatusText(http.StatusMethodNotAllowed), http.StatusMethodNotAllowed)
+		return
+	}
+
+	limit, err := ParsePositiveIntQuery(r.URL.Query(), "limit")
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "invalid limit query")
+		return
+	}
+
+	exploreLimit := 0
+	if limit != nil {
+		exploreLimit = *limit
+	}
+
+	result, err := s.exploreIssue.Handle(r.Context(), queries.ExploreIssue{
+		ID:    id,
+		Limit: exploreLimit,
+	})
+	if err != nil {
+		if errors.Is(err, issues.ErrNotFound) {
+			writeError(w, http.StatusNotFound, "issue not found")
+			return
+		}
+		writeInternalError(w, r, "failed to explore issue", err)
+		return
+	}
+
+	writeJSON(w, http.StatusOK, result)
+}
+
+func (s *Server) handleProgressIssue(w http.ResponseWriter, r *http.Request, id string) {
+	if r.Method != http.MethodPost {
+		w.Header().Set("Allow", http.MethodPost)
+		http.Error(w, http.StatusText(http.StatusMethodNotAllowed), http.StatusMethodNotAllowed)
+		return
+	}
+
+	request, err := decodeProgressIssueRequest(r)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+
+	progressed, err := s.progressIssue.Handle(r.Context(), commands.ProgressIssue{
+		ID:        id,
+		Raw:       request.Raw,
+		CreatedBy: actorForRequest(r, request.CreatedBy),
+	})
+	if err != nil {
+		if errors.Is(err, issues.ErrNotFound) {
+			writeError(w, http.StatusNotFound, "issue not found")
+			return
+		}
+		if errors.Is(err, issues.ErrIssueClosed) {
+			writeError(w, http.StatusConflict, "issue is closed")
+			return
+		}
+		writeInternalError(w, r, "failed to post progress", err)
+		return
+	}
+
+	writeJSON(w, http.StatusOK, progressed)
+}
+
+func (s *Server) handleReopenIssue(w http.ResponseWriter, r *http.Request, id string) {
+	if r.Method != http.MethodPost {
+		w.Header().Set("Allow", http.MethodPost)
+		http.Error(w, http.StatusText(http.StatusMethodNotAllowed), http.StatusMethodNotAllowed)
+		return
+	}
+
+	reopened, err := s.reopenIssue.Handle(r.Context(), commands.ReopenIssue{ID: id})
+	if err != nil {
+		if errors.Is(err, issues.ErrNotFound) {
+			writeError(w, http.StatusNotFound, "issue not found")
+			return
+		}
+		writeInternalError(w, r, "failed to reopen issue", err)
+		return
+	}
+
+	writeJSON(w, http.StatusOK, reopened)
+}
+
+func (s *Server) handleAssignIssue(w http.ResponseWriter, r *http.Request, id string) {
+	if r.Method != http.MethodPost {
+		w.Header().Set("Allow", http.MethodPost)
+		http.Error(w, http.StatusText(http.StatusMethodNotAllowed), http.StatusMethodNotAllowed)
+		return
+	}
+
+	request, err := decodeAssignIssueRequest(r)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+
+	assigned, err := s.assignIssue.Handle(r.Context(), commands.AssignIssue{
+		ID:         id,
+		AssignedTo: request.AssignedTo,
+		CreatedBy:  actorForRequest(r, request.CreatedBy),
+	})
+	if err != nil {
+		if errors.Is(err, issues.ErrNotFound) {
+			writeError(w, http.StatusNotFound, "issue not found")
+			return
+		}
+		writeInternalError(w, r, "failed to assign issue", err)
+		return
+	}
+
+	writeJSON(w, http.StatusOK, assigned)
+}
+
+func (s *Server) handleSplitIssue(w http.ResponseWriter, r *http.Request, id string) {
+	if r.Method != http.MethodPost {
+		w.Header().Set("Allow", http.MethodPost)
+		http.Error(w, http.StatusText(http.StatusMethodNotAllowed), http.StatusMethodNotAllowed)
+		return
+	}
+
+	request, err := decodeSplitIssueRequest(r)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+
+	children := make([]commands.SplitIssueChild, 0, len(request.Children))
+	for _, child := range request.Children {
+		children = append(children, commands.SplitIssueChild{
+			Raw:  child.Raw,
+			Tags: child.Tags,
+		})
+	}
+
+	result, err := s.splitIssue.Handle(r.Context(), commands.SplitIssue{
+		SourceID:    id,
+		Children:    children,
+		CreatedBy:   actorForRequest(r, request.CreatedBy),
+		Note:        request.Note,
+		CloseSource: request.CloseSource,
+	})
+	if err != nil {
+		if errors.Is(err, issues.ErrNotFound) {
+			writeError(w, http.StatusNotFound, "issue not found")
+			return
+		}
+		writeInternalError(w, r, "failed to split issue", err)
+		return
+	}
+
+	writeJSON(w, http.StatusCreated, result)
 }
 
 func (s *Server) handleIssueList(w http.ResponseWriter, r *http.Request) {

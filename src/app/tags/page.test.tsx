@@ -2,7 +2,7 @@ import type { ReactNode } from "react";
 import { render, screen, waitFor } from "@testing-library/react";
 import TagsPage from "@/app/tags/page";
 import { useIssues } from "@/hooks/use-issues";
-import { fetchTags, type TagRecord } from "@/lib/tags";
+import { fetchDismissedTagMerges, fetchTags, type TagRecord } from "@/lib/tags";
 
 vi.mock("@/components/app-shell", () => ({
   AppShell: ({ children }: { children: ReactNode }) => <div>{children}</div>,
@@ -54,6 +54,7 @@ vi.mock("@/lib/tags", async () => {
   return {
     ...actual,
     fetchTags: vi.fn(),
+    fetchDismissedTagMerges: vi.fn(),
   };
 });
 
@@ -69,6 +70,8 @@ function makeTag(overrides: Partial<TagRecord>): TagRecord {
 describe("TagsPage", () => {
   beforeEach(() => {
     vi.mocked(fetchTags).mockReset();
+    vi.mocked(fetchDismissedTagMerges).mockReset();
+    vi.mocked(fetchDismissedTagMerges).mockResolvedValue([]);
     vi.mocked(useIssues).mockReturnValue({
       data: [],
       error: undefined,

@@ -286,6 +286,18 @@ type EnrichmentJobClaimer interface {
 
 // MapProjectionStore optionally provides a bulk read path tailored for
 // rebuilding the map projection without hydrating full issue details.
+// TagMerger replaces alias tags with the canonical tag across all issues.
+type TagMerger interface {
+	MergeTags(ctx context.Context, canonical string, aliases []string) error
+	DismissTagMerge(ctx context.Context, canonical string, alias string) error
+	ListDismissedTagMerges(ctx context.Context) ([]DismissedTagMerge, error)
+}
+
+type DismissedTagMerge struct {
+	CanonicalName string
+	AliasName     string
+}
+
 type MapProjectionStore interface {
 	LoadMapProjectionData(context.Context) ([]MapProjectionIssue, []Tag, error)
 }
