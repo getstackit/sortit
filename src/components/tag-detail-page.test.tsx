@@ -2,6 +2,10 @@ import type { ReactNode } from "react";
 import { render, screen } from "@testing-library/react";
 import { TagDetailPage } from "@/components/tag-detail-page";
 import { useIssues } from "@/hooks/use-issues";
+import {
+  clearRecentHistory,
+  readRecentHistory,
+} from "@/hooks/use-recent-history";
 import { useTags } from "@/hooks/use-tags";
 import type { IssueRecord } from "@/lib/issues";
 import type { TagRecord } from "@/lib/tags";
@@ -75,6 +79,7 @@ describe("TagDetailPage", () => {
   beforeEach(() => {
     vi.mocked(useTags).mockReset();
     vi.mocked(useIssues).mockReset();
+    clearRecentHistory();
   });
 
   it("renders associated issues, related tags, and semantic neighbors", () => {
@@ -148,5 +153,29 @@ describe("TagDetailPage", () => {
     render(<TagDetailPage tagName="billing" />);
 
     expect(screen.getByText(/No tag exists for/i)).toBeInTheDocument();
+  });
+
+  it("records the viewed tag in recent history", () => {
+    vi.mocked(useTags).mockReturnValue({
+      data: [makeTag({ name: "billing" })],
+      error: undefined,
+      isLoading: false,
+    } as ReturnType<typeof useTags>);
+
+    vi.mocked(useIssues).mockReturnValue({
+      data: [],
+      error: undefined,
+      isLoading: false,
+    } as ReturnType<typeof useIssues>);
+
+    render(<TagDetailPage tagName="billing" />);
+
+    expect(readRecentHistory()).toEqual([
+      expect.objectContaining({
+        kind: "tag",
+        name: "billing",
+        description: "Recurring payments and invoices",
+      }),
+    ]);
   });
 });

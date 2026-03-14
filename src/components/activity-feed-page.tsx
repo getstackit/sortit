@@ -21,7 +21,9 @@ import { AppSidebar } from "@/components/app-sidebar";
 import { SiteHeader } from "@/components/site-header";
 import { useBackendRevision } from "@/hooks/use-issues";
 import { fetchActivity, type ActivityEventRecord } from "@/lib/activity";
+import { Badge } from "@/components/ui/badge";
 import { cn } from "@/lib/utils";
+import { formatRelativeTime } from "@/lib/format";
 
 const EVENT_KINDS = [
   { value: "", label: "All" },
@@ -35,29 +37,6 @@ const EVENT_KINDS = [
   { value: "combine", label: "Combine", icon: GitMergeIcon },
   { value: "link", label: "Link", icon: LinkIcon },
 ] as const;
-
-function formatRelativeTime(value: string) {
-  const timestamp = new Date(value).getTime();
-  const diffSeconds = Math.round((timestamp - Date.now()) / 1000);
-  const formatter = new Intl.RelativeTimeFormat(undefined, { numeric: "auto" });
-
-  const ranges: Array<[Intl.RelativeTimeFormatUnit, number]> = [
-    ["year", 60 * 60 * 24 * 365],
-    ["month", 60 * 60 * 24 * 30],
-    ["week", 60 * 60 * 24 * 7],
-    ["day", 60 * 60 * 24],
-    ["hour", 60 * 60],
-    ["minute", 60],
-  ];
-
-  for (const [unit, seconds] of ranges) {
-    if (Math.abs(diffSeconds) >= seconds || unit === "minute") {
-      return formatter.format(Math.round(diffSeconds / seconds), unit);
-    }
-  }
-
-  return "just now";
-}
 
 function eventIcon(kind: string) {
   const match = EVENT_KINDS.find((k) => k.value === kind);
@@ -151,7 +130,7 @@ export function ActivityFeedPage() {
         eyebrow="Activity"
         title="Global activity feed"
         subtitle="Cross-issue discussion, status changes, assignments, and relationship operations."
-        meta={<span className="app-chip">{events.length} recent events</span>}
+        meta={<Badge variant="outline">{events.length} recent events</Badge>}
         actions={
           <div className="flex flex-wrap items-center gap-1.5">
             {EVENT_KINDS.map((kind) => (

@@ -1,6 +1,7 @@
 "use client";
 
 import { useMemo } from "react";
+import { Badge } from "@/components/ui/badge";
 import { entityColors } from "@/lib/entity-colors";
 import type { IssueRecord, IssueTagScore } from "@/lib/issues";
 
@@ -265,8 +266,8 @@ export function ClosedFactorAttributionChart({ issues }: { issues: IssueRecord[]
           </p>
         </div>
         <div className="flex flex-wrap gap-2 text-xs">
-          <span className="app-chip tabular-nums">{timeline.totalClosed} closed tickets</span>
-          <span className="app-chip capitalize">{timeline.granularity} buckets</span>
+          <Badge variant="outline" className="tabular-nums">{timeline.totalClosed} closed tickets</Badge>
+          <Badge variant="outline" className="capitalize">{timeline.granularity} buckets</Badge>
         </div>
       </div>
 

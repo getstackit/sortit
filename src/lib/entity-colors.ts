@@ -14,10 +14,10 @@ export function entityColors(name: string) {
   const hue = entityHue(name);
 
   return {
-    bg: `light-dark(hsl(${hue} 30% 95%), hsl(${hue} 20% 18%))`,
-    text: `light-dark(hsl(${hue} 55% 35%), hsl(${hue} 40% 75%))`,
-    border: `light-dark(hsl(${hue} 40% 85%), hsl(${hue} 30% 30%))`,
-    accent: `light-dark(hsl(${hue} 50% 65%), hsl(${hue} 40% 45%))`,
+    bg: `light-dark(hsl(${hue} 30% 95%), hsl(${hue} 40% 22%))`,
+    text: `light-dark(hsl(${hue} 55% 35%), hsl(${hue} 60% 80%))`,
+    border: `light-dark(hsl(${hue} 40% 85%), hsl(${hue} 45% 35%))`,
+    accent: `light-dark(hsl(${hue} 50% 65%), hsl(${hue} 55% 55%))`,
   };
 }
 

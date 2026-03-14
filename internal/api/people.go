@@ -17,8 +17,7 @@ func (s *Server) handlePersonProfile(route string) http.HandlerFunc {
 
 		tail := strings.TrimSpace(strings.TrimPrefix(r.URL.Path, route))
 		segments := strings.Split(tail, "/")
-
-		if len(segments) != 2 || segments[1] != "profile" {
+		if len(segments) == 0 || strings.TrimSpace(segments[0]) == "" {
 			writeError(w, http.StatusNotFound, "route not found")
 			return
 		}
@@ -26,6 +25,21 @@ func (s *Server) handlePersonProfile(route string) http.HandlerFunc {
 		person := strings.TrimSpace(segments[0])
 		if person == "" {
 			writeError(w, http.StatusBadRequest, "person name is required")
+			return
+		}
+
+		if len(segments) == 1 {
+			detail, err := s.getPersonDetail.Handle(r.Context(), person)
+			if err != nil {
+				writeInternalError(w, r, "failed to get person detail", err)
+				return
+			}
+			writeJSON(w, http.StatusOK, detail)
+			return
+		}
+
+		if len(segments) != 2 || segments[1] != "profile" {
+			writeError(w, http.StatusNotFound, "route not found")
 			return
 		}
 
