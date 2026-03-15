@@ -12,3 +12,21 @@ type TagRelevance struct {
 func NormalizeTagName(name string) string {
 	return strings.ToLower(strings.Join(strings.Fields(strings.TrimSpace(name)), " "))
 }
+
+// genericBucketTags lists broad category tags that should be deprioritized
+// in favor of more specific subsystem or feature-area tags.
+var genericBucketTags = map[string]bool{
+	"api":       true,
+	"backend":   true,
+	"client":    true,
+	"front end": true,
+	"frontend":  true,
+	"server":    true,
+	"ui":        true,
+	"ux":        true,
+}
+
+// IsGenericBucketTag returns true if the tag is a broad category bucket.
+func IsGenericBucketTag(name string) bool {
+	return genericBucketTags[NormalizeTagName(name)]
+}

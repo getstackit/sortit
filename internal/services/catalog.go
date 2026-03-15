@@ -3,6 +3,7 @@ package services
 import (
 	"context"
 	"fmt"
+	"slices"
 	"strings"
 	"time"
 
@@ -191,6 +192,18 @@ func aiTagsFromCatalog(tags []issues.Tag) []ai.Tag {
 			Description: strings.TrimSpace(tag.Description),
 		})
 	}
+	// Sort specific tags before generic buckets so the AI sees them first.
+	slices.SortStableFunc(out, func(a, b ai.Tag) int {
+		aGeneric := domain.IsGenericBucketTag(a.Name)
+		bGeneric := domain.IsGenericBucketTag(b.Name)
+		if aGeneric != bGeneric {
+			if aGeneric {
+				return 1
+			}
+			return -1
+		}
+		return 0
+	})
 	return out
 }
 

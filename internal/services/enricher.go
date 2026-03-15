@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"splat/internal/ai"
+	"splat/internal/domain"
 	"splat/internal/issues"
 )
 
@@ -47,7 +48,7 @@ func (s *IssueEnricher) AnalyzeCreateInput(ctx context.Context, input issues.Cre
 		return issues.CreateInput{}, err
 	}
 
-	input.TagScores = IssueTagScoresFromAnalysis(analyzed.Tags)
+	input.TagScores = attenuateGenericBucketScores(IssueTagScoresFromAnalysis(analyzed.Tags))
 	input.Embedding = Float32VectorToFloat64(analyzed.Embedding.Vector)
 	if len(input.Tags) == 0 {
 		input.Tags = nil
@@ -106,7 +107,7 @@ func (s *IssueEnricher) AnalyzeRefineInput(ctx context.Context, issue issues.Iss
 		PostRaw:      postRaw,
 		CanonicalRaw: canonicalRaw,
 		CreatedBy:    createdBy,
-		TagScores:    IssueTagScoresFromAnalysis(analyzed.Tags),
+		TagScores:    attenuateGenericBucketScores(IssueTagScoresFromAnalysis(analyzed.Tags)),
 		Embedding:    Float32VectorToFloat64(analyzed.Embedding.Vector),
 	}, nil
 }
@@ -186,8 +187,8 @@ func (s *IssueEnricher) AnalyzePersistedIssue(
 	emptyError := ""
 	return issues.IssueFieldUpdate{
 		Raw:                      &canonicalRaw,
-		Tags:                     issues.DisplayTags(explicitTags, IssueTagScoresFromAnalysis(analyzed.Tags)),
-		TagScores:                IssueTagScoresFromAnalysis(analyzed.Tags),
+		Tags:                     issues.DisplayTags(explicitTags, attenuateGenericBucketScores(IssueTagScoresFromAnalysis(analyzed.Tags))),
+		TagScores:                attenuateGenericBucketScores(IssueTagScoresFromAnalysis(analyzed.Tags)),
 		Embedding:                Float32VectorToFloat64(analyzed.Embedding.Vector),
 		EnrichmentStatus:         &status,
 		EnrichmentError:          &emptyError,
@@ -249,9 +250,38 @@ func (s *IssueEnricher) AnalyzeCombineInput(
 		Raw:       canonicalRaw,
 		CreatedBy: createdBy,
 		Note:      note,
-		TagScores: IssueTagScoresFromAnalysis(analyzed.Tags),
+		TagScores: attenuateGenericBucketScores(IssueTagScoresFromAnalysis(analyzed.Tags)),
 		Embedding: Float32VectorToFloat64(analyzed.Embedding.Vector),
 	}, nil
+}
+
+// attenuateGenericBucketScores reduces relevance of generic bucket tags
+// when more specific tags are also present, so that specific tags rank higher.
+func attenuateGenericBucketScores(scores []issues.TagRelevance) []issues.TagRelevance {
+	if len(scores) == 0 {
+		return scores
+	}
+
+	hasSpecific := false
+	for _, s := range scores {
+		if !domain.IsGenericBucketTag(s.Tag) && s.Relevance > 0 {
+			hasSpecific = true
+			break
+		}
+	}
+	if !hasSpecific {
+		return scores
+	}
+
+	const genericMultiplier = 0.6
+	out := make([]issues.TagRelevance, len(scores))
+	for i, s := range scores {
+		out[i] = s
+		if domain.IsGenericBucketTag(s.Tag) {
+			out[i].Relevance = s.Relevance * genericMultiplier
+		}
+	}
+	return out
 }
 
 func IssueTagScoresFromAnalysis(scores []ai.TagScore) []issues.TagRelevance {

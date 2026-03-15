@@ -1,11 +1,12 @@
 "use client";
 
 import Link from "next/link";
-import { Fragment, useEffect, useMemo, useState } from "react";
+import { Fragment, useCallback, useEffect, useMemo, useState } from "react";
 import { AppShell } from "@/components/app-shell";
 import { AppSidebar } from "@/components/app-sidebar";
 import { SiteHeader } from "@/components/site-header";
 import { Skeleton } from "@/components/ui/skeleton";
+import { Button } from "@/components/ui/button";
 import { useIssues } from "@/hooks/use-issues";
 import {
   buildConsolidationCandidates,
@@ -15,7 +16,15 @@ import {
   isGenericBucketTag,
 } from "@/lib/tag-quality";
 import { Badge } from "@/components/ui/badge";
-import { fetchTags, tagHref, type TagRecord } from "@/lib/tags";
+import {
+  dismissTagMerge,
+  fetchDismissedTagMerges,
+  fetchTags,
+  mergeTags,
+  tagHref,
+  type DismissedTagMerge,
+  type TagRecord,
+} from "@/lib/tags";
 
 type TagPoint = {
   tag: TagRecord;
@@ -42,18 +51,30 @@ export default function TagsPage() {
   const [error, setError] = useState<string | null>(null);
   const [edgeThreshold, setEdgeThreshold] = useState(0.72);
   const [selectedTagName, setSelectedTagName] = useState<string | null>(null);
+  const [dismissed, setDismissed] = useState<DismissedTagMerge[]>([]);
+  const [actionPending, setActionPending] = useState<string | null>(null);
   const {
     data: issues = [],
     error: issuesError,
     isLoading: issuesLoading,
   } = useIssues("all");
 
+  const reloadTags = useCallback(() => {
+    fetchTags()
+      .then(setTags)
+      .catch(() => {});
+  }, []);
+
   useEffect(() => {
     const controller = new AbortController();
 
-    fetchTags(controller.signal)
-      .then((payload) => {
-        setTags(payload);
+    Promise.all([
+      fetchTags(controller.signal),
+      fetchDismissedTagMerges(controller.signal),
+    ])
+      .then(([tagPayload, dismissedPayload]) => {
+        setTags(tagPayload);
+        setDismissed(dismissedPayload);
       })
       .catch((caughtError) => {
         if (controller.signal.aborted) {
@@ -71,6 +92,46 @@ export default function TagsPage() {
 
     return () => controller.abort();
   }, []);
+
+  const dismissedSet = useMemo(() => {
+    const set = new Set<string>();
+    for (const d of dismissed) {
+      set.add(`${d.canonicalName}:${d.aliasName}`);
+    }
+    return set;
+  }, [dismissed]);
+
+  const handleMerge = useCallback(
+    async (canonical: string, alias: string) => {
+      const key = `merge:${canonical}:${alias}`;
+      setActionPending(key);
+      try {
+        await mergeTags(canonical, [alias]);
+        reloadTags();
+      } catch {
+        // silently ignore
+      } finally {
+        setActionPending(null);
+      }
+    },
+    [reloadTags]
+  );
+
+  const handleDismiss = useCallback(
+    async (canonical: string, alias: string) => {
+      const key = `dismiss:${canonical}:${alias}`;
+      setActionPending(key);
+      try {
+        await dismissTagMerge(canonical, alias);
+        setDismissed((prev) => [...prev, { canonicalName: canonical, aliasName: alias }]);
+      } catch {
+        // silently ignore
+      } finally {
+        setActionPending(null);
+      }
+    },
+    []
+  );
 
   const embeddedTags = useMemo(
     () => tags.filter((tag) => Array.isArray(tag.embedding) && tag.embedding.length > 1),
@@ -127,8 +188,11 @@ export default function TagsPage() {
     [issues, selectedPoint, tags]
   );
   const consolidationCandidates = useMemo(
-    () => buildConsolidationCandidates(tags, issues),
-    [issues, tags]
+    () =>
+      buildConsolidationCandidates(tags, issues).filter(
+        (c) => !dismissedSet.has(`${c.canonicalName}:${c.aliasName}`)
+      ),
+    [dismissedSet, issues, tags]
   );
 
   const similarityMatrix = useMemo(
@@ -366,21 +430,50 @@ export default function TagsPage() {
                       </p>
                       {selectedMergeCandidates.length > 0 ? (
                         selectedMergeCandidates.map((candidate) => (
-                          <Link
+                          <div
                             key={candidate.name}
-                            href={tagHref(candidate.name)}
-                            className="app-subtle-surface flex items-start justify-between gap-3 px-3 py-2 transition-colors hover:bg-muted/40"
+                            className="app-subtle-surface flex items-start justify-between gap-3 px-3 py-2"
                           >
-                            <div>
+                            <Link
+                              href={tagHref(candidate.name)}
+                              className="min-w-0 flex-1 transition-colors hover:text-foreground"
+                            >
                               <p className="text-sm font-medium">{candidate.name}</p>
                               <p className="text-xs text-muted-foreground">
                                 {candidate.reason}
                               </p>
+                            </Link>
+                            <div className="flex shrink-0 items-center gap-1.5">
+                              <span className="text-xs font-medium tabular-nums text-muted-foreground">
+                                {Math.round(candidate.similarity * 100)}%
+                              </span>
+                              <Button
+                                variant="ghost"
+                                size="sm"
+                                className="h-6 px-1.5 text-[10px]"
+                                disabled={actionPending !== null}
+                                onClick={() => {
+                                  if (selectedPoint) {
+                                    handleDismiss(selectedPoint.tag.name, candidate.name);
+                                  }
+                                }}
+                              >
+                                Dismiss
+                              </Button>
+                              <Button
+                                size="sm"
+                                className="h-6 px-1.5 text-[10px]"
+                                disabled={actionPending !== null}
+                                onClick={() => {
+                                  if (selectedPoint) {
+                                    handleMerge(selectedPoint.tag.name, candidate.name);
+                                  }
+                                }}
+                              >
+                                Merge
+                              </Button>
                             </div>
-                            <span className="text-xs font-medium tabular-nums text-muted-foreground">
-                              {Math.round(candidate.similarity * 100)}%
-                            </span>
-                          </Link>
+                          </div>
                         ))
                       ) : (
                         <p className="text-sm text-muted-foreground">
@@ -518,7 +611,7 @@ export default function TagsPage() {
                       </div>
                     </div>
 
-                    <div className="mt-4 flex flex-wrap gap-2 text-xs text-muted-foreground">
+                    <div className="mt-4 flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
                       <span className="rounded-full border border-border/60 bg-background px-2.5 py-1">
                         {Math.round(candidate.similarity * 100)}% semantic similarity
                       </span>
@@ -528,6 +621,26 @@ export default function TagsPage() {
                       <span className="rounded-full border border-border/60 bg-background px-2.5 py-1">
                         {Math.round(candidate.containment * 100)}% containment
                       </span>
+                      <span className="flex-1" />
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        disabled={actionPending !== null}
+                        onClick={() =>
+                          handleDismiss(candidate.canonicalName, candidate.aliasName)
+                        }
+                      >
+                        Dismiss
+                      </Button>
+                      <Button
+                        size="sm"
+                        disabled={actionPending !== null}
+                        onClick={() =>
+                          handleMerge(candidate.canonicalName, candidate.aliasName)
+                        }
+                      >
+                        Merge
+                      </Button>
                     </div>
                   </div>
                 ))}

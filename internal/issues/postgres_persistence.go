@@ -228,6 +228,150 @@ func formatVectorLiteral(values []float64) (any, error) {
 	return builder.String(), nil
 }
 
+func (s *PostgresStore) MergeTags(ctx context.Context, canonical string, aliases []string) error {
+	canonical = sanitizeTagName(canonical)
+	if canonical == "" {
+		return fmt.Errorf("canonical tag name is required")
+	}
+
+	aliasSet := make(map[string]struct{}, len(aliases))
+	normalizedAliases := make([]string, 0, len(aliases))
+	for _, alias := range aliases {
+		norm := sanitizeTagName(alias)
+		if norm == "" || norm == canonical {
+			continue
+		}
+		if _, ok := aliasSet[norm]; ok {
+			continue
+		}
+		aliasSet[norm] = struct{}{}
+		normalizedAliases = append(normalizedAliases, norm)
+	}
+	if len(normalizedAliases) == 0 {
+		return nil
+	}
+
+	// Load all issues that reference any alias tag
+	rows, err := s.db.QueryContext(ctx,
+		`SELECT id, tags_json, tag_scores_json FROM issues`)
+	if err != nil {
+		return fmt.Errorf("list issues for tag merge: %w", err)
+	}
+	defer rows.Close() //nolint:errcheck
+
+	type issueUpdate struct {
+		id        string
+		tags      []string
+		tagScores []TagRelevance
+	}
+	var updates []issueUpdate
+
+	for rows.Next() {
+		var (
+			id            string
+			tagsJSON      []byte
+			tagScoresJSON []byte
+		)
+		if err := rows.Scan(&id, &tagsJSON, &tagScoresJSON); err != nil {
+			return fmt.Errorf("scan issue for tag merge: %w", err)
+		}
+
+		tags, err := unmarshalJSONB[[]string](tagsJSON)
+		if err != nil {
+			return fmt.Errorf("decode tags for issue %q: %w", id, err)
+		}
+		tagScores, err := unmarshalJSONB[[]TagRelevance](tagScoresJSON)
+		if err != nil {
+			return fmt.Errorf("decode tag scores for issue %q: %w", id, err)
+		}
+
+		newTags := mergeTagList(tags, canonical, aliasSet)
+		newScores := mergeTagScores(tagScores, canonical, aliasSet)
+
+		if len(newTags) != len(tags) || len(newScores) != len(tagScores) {
+			updates = append(updates, issueUpdate{id: id, tags: newTags, tagScores: newScores})
+		}
+	}
+	if err := rows.Err(); err != nil {
+		return fmt.Errorf("iterate issues for tag merge: %w", err)
+	}
+
+	for _, update := range updates {
+		tagsJSON, err := marshalJSONB(update.tags, []string{})
+		if err != nil {
+			return fmt.Errorf("marshal merged tags for %q: %w", update.id, err)
+		}
+		tagScoresJSON, err := marshalJSONB(update.tagScores, []TagRelevance{})
+		if err != nil {
+			return fmt.Errorf("marshal merged tag scores for %q: %w", update.id, err)
+		}
+		if _, err := s.db.ExecContext(ctx,
+			`UPDATE issues SET tags_json = $1, tag_scores_json = $2 WHERE id = $3`,
+			tagsJSON, tagScoresJSON, update.id,
+		); err != nil {
+			return fmt.Errorf("update merged tags for issue %q: %w", update.id, err)
+		}
+	}
+
+	// Delete alias tags from the tags table
+	for _, alias := range normalizedAliases {
+		if _, err := s.db.ExecContext(ctx,
+			`DELETE FROM tags WHERE LOWER(name) = $1`, alias,
+		); err != nil {
+			return fmt.Errorf("delete alias tag %q: %w", alias, err)
+		}
+	}
+
+	// Record merge history
+	for _, alias := range normalizedAliases {
+		if _, err := s.db.ExecContext(ctx,
+			`INSERT INTO tag_merge_history (canonical_name, alias_name) VALUES ($1, $2)`,
+			canonical, alias,
+		); err != nil {
+			return fmt.Errorf("record tag merge history: %w", err)
+		}
+	}
+
+	return nil
+}
+
+func (s *PostgresStore) DismissTagMerge(ctx context.Context, canonical string, alias string) error {
+	canonical = sanitizeTagName(canonical)
+	alias = sanitizeTagName(alias)
+	if canonical == "" || alias == "" {
+		return fmt.Errorf("canonical and alias tag names are required")
+	}
+
+	if _, err := s.db.ExecContext(ctx,
+		`INSERT INTO dismissed_tag_merges (canonical_name, alias_name)
+		 VALUES ($1, $2)
+		 ON CONFLICT (canonical_name, alias_name) DO NOTHING`,
+		canonical, alias,
+	); err != nil {
+		return fmt.Errorf("dismiss tag merge: %w", err)
+	}
+	return nil
+}
+
+func (s *PostgresStore) ListDismissedTagMerges(ctx context.Context) ([]DismissedTagMerge, error) {
+	rows, err := s.db.QueryContext(ctx,
+		`SELECT canonical_name, alias_name FROM dismissed_tag_merges ORDER BY dismissed_at DESC`)
+	if err != nil {
+		return nil, fmt.Errorf("list dismissed tag merges: %w", err)
+	}
+	defer rows.Close() //nolint:errcheck
+
+	var items []DismissedTagMerge
+	for rows.Next() {
+		var d DismissedTagMerge
+		if err := rows.Scan(&d.CanonicalName, &d.AliasName); err != nil {
+			return nil, fmt.Errorf("scan dismissed tag merge: %w", err)
+		}
+		items = append(items, d)
+	}
+	return items, rows.Err()
+}
+
 func (s *PostgresStore) SaveOperation(ctx context.Context, op IssueOperation) error {
 	if err := insertIssueOperation(ctx, s.queries, op); err != nil {
 		return err
