@@ -285,7 +285,8 @@ function MapPageContent() {
       });
 
     return () => controller.abort();
-  }, [urlState.edgeThreshold, urlState.showClosed, urlState.viewport]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- runs once on mount; urlState values are only used in the callback
+  }, []);
 
   useEffect(() => {
     if (showClosedRef.current === showClosed) {
