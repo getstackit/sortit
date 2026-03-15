@@ -136,14 +136,60 @@ func TestIssuesEndpointLogsNamedQueryTimingForGetByID(t *testing.T) {
 		slog.SetDefault(slog.New(originalHandler))
 	})
 
+	store := newPostgresIssueStore(t, nil)
+	ctx := context.Background()
+	target := issues.BuildNewIssue("issue-target", issues.CreateInput{
+		Raw:       "Target issue",
+		CreatedBy: "Casey",
+	})
+	related := issues.BuildNewIssue("issue-related", issues.CreateInput{
+		Raw:       "Related issue",
+		CreatedBy: "Jordan",
+	})
+	result := issues.BuildNewIssue("issue-result", issues.CreateInput{
+		Raw:       "Result issue",
+		CreatedBy: "Taylor",
+	})
+	for _, issue := range []issues.Issue{target, related, result} {
+		if err := store.SaveIssue(ctx, issue); err != nil {
+			t.Fatalf("save issue %q: %v", issue.ID, err)
+		}
+	}
+
+	opID := issues.NewOperationID()
+	if err := store.SaveOperation(ctx, issues.IssueOperation{
+		ID:        opID,
+		Kind:      issues.IssueOperationKindSplit,
+		CreatedBy: "Casey",
+		CreatedAt: time.Now().UTC(),
+		Participants: []issues.IssueOperationParticipant{
+			{IssueID: target.ID, Role: "source"},
+			{IssueID: related.ID, Role: "child"},
+			{IssueID: result.ID, Role: "child"},
+		},
+	}); err != nil {
+		t.Fatalf("save operation: %v", err)
+	}
+	if err := store.SaveLink(ctx, issues.IssueLink{
+		ID:            "issue-target-issue-related-parent",
+		Type:          issues.IssueLinkTypeParentOf,
+		SourceIssueID: target.ID,
+		TargetIssueID: related.ID,
+		CreatedBy:     "Casey",
+		CreatedAt:     time.Now().UTC(),
+		OperationID:   opID,
+	}); err != nil {
+		t.Fatalf("save link: %v", err)
+	}
+
 	server := NewServer(ServerConfig{
 		CORSOrigins: []string{"http://localhost:3000"},
 		APIPrefixes: []string{"/api"},
-		IssueStore:  newPostgresIssueStore(t, issues.FixtureIssues()),
+		IssueStore:  store,
 		Logger:      logger,
 	})
 
-	req := httptest.NewRequest(http.MethodGet, "/api/issues/sample-3", nil)
+	req := httptest.NewRequest(http.MethodGet, "/api/issues/issue-target", nil)
 	rec := httptest.NewRecorder()
 
 	server.Handler().ServeHTTP(rec, req)
@@ -160,11 +206,20 @@ func TestIssuesEndpointLogsNamedQueryTimingForGetByID(t *testing.T) {
 		"query_name=ListIssuePosts",
 		"query_name=ListIssueLinksForIssue",
 		"query_name=ListIssueOperationsForIssue",
-		"query_name=ListIssues",
+		"query_name=ListIssueOperationParticipantsForOperations",
+		"query_name=ListIssueReferencesByIDs",
 		"query_name=LoadIssueEnrichmentStates",
 	} {
 		if !strings.Contains(logged, want) {
 			t.Fatalf("expected log output to contain %q, got %q", want, logged)
+		}
+	}
+	for _, unwanted := range []string{
+		"query_name=ListIssues",
+		"query_name=ListIssueOperationParticipants ",
+	} {
+		if strings.Contains(logged, unwanted) {
+			t.Fatalf("expected log output to omit %q, got %q", unwanted, logged)
 		}
 	}
 	if strings.Contains(logged, "SELECT id, raw") {

@@ -434,7 +434,7 @@ func (s *PostgresStore) Get(ctx context.Context, id string) (Issue, error) {
 
 	defer s.logServiceTiming(ctx, "PostgresStore.Get", time.Now(), slog.String("issue_id", id))
 
-	issue, err := s.getIssueWithDiscussion(ctx, loggingIssueQuerier{
+	issue, err := getIssueWithDiscussion(ctx, loggingIssueQuerier{
 		inner:  s.queries,
 		logger: s.logger,
 	}, id)
@@ -911,11 +911,11 @@ type tagRecord struct {
 
 type issueQuerier interface {
 	GetIssue(context.Context, string) (issuesdb.GetIssueRow, error)
-	ListIssues(context.Context) ([]issuesdb.ListIssuesRow, error)
+	ListIssueReferencesByIDs(context.Context, []string) ([]issuesdb.ListIssueReferencesByIDsRow, error)
 	ListIssuePosts(context.Context, string) ([]issuesdb.IssuePost, error)
 	ListIssueLinksForIssue(context.Context, issuesdb.ListIssueLinksForIssueParams) ([]issuesdb.IssueLink, error)
 	ListIssueOperationsForIssue(context.Context, string) ([]issuesdb.IssueOperation, error)
-	ListIssueOperationParticipants(context.Context, string) ([]issuesdb.IssueOperationParticipant, error)
+	ListIssueOperationParticipantsForOperations(context.Context, []string) ([]issuesdb.ListIssueOperationParticipantsForOperationsRow, error)
 }
 
 type loggingIssueQuerier struct {
@@ -928,11 +928,17 @@ func (q loggingIssueQuerier) GetIssue(ctx context.Context, id string) (row issue
 	return q.inner.GetIssue(ctx, id)
 }
 
-func (q loggingIssueQuerier) ListIssues(ctx context.Context) (rows []issuesdb.ListIssuesRow, err error) {
+func (q loggingIssueQuerier) ListIssueReferencesByIDs(
+	ctx context.Context,
+	ids []string,
+) (rows []issuesdb.ListIssueReferencesByIDsRow, err error) {
 	defer func(start time.Time) {
-		logSQLQueryTiming(ctx, q.logger, "ListIssues", start, slog.Int("row_count", len(rows)))
+		logSQLQueryTiming(ctx, q.logger, "ListIssueReferencesByIDs", start,
+			slog.Int("issue_count", len(ids)),
+			slog.Int("row_count", len(rows)),
+		)
 	}(time.Now())
-	return q.inner.ListIssues(ctx)
+	return q.inner.ListIssueReferencesByIDs(ctx, ids)
 }
 
 func (q loggingIssueQuerier) ListIssuePosts(ctx context.Context, id string) (rows []issuesdb.IssuePost, err error) {
@@ -972,17 +978,17 @@ func (q loggingIssueQuerier) ListIssueOperationsForIssue(
 	return q.inner.ListIssueOperationsForIssue(ctx, issueID)
 }
 
-func (q loggingIssueQuerier) ListIssueOperationParticipants(
+func (q loggingIssueQuerier) ListIssueOperationParticipantsForOperations(
 	ctx context.Context,
-	operationID string,
-) (rows []issuesdb.IssueOperationParticipant, err error) {
+	operationIDs []string,
+) (rows []issuesdb.ListIssueOperationParticipantsForOperationsRow, err error) {
 	defer func(start time.Time) {
-		logSQLQueryTiming(ctx, q.logger, "ListIssueOperationParticipants", start,
-			slog.String("operation_id", operationID),
+		logSQLQueryTiming(ctx, q.logger, "ListIssueOperationParticipantsForOperations", start,
+			slog.Int("operation_count", len(operationIDs)),
 			slog.Int("row_count", len(rows)),
 		)
 	}(time.Now())
-	return q.inner.ListIssueOperationParticipants(ctx, operationID)
+	return q.inner.ListIssueOperationParticipantsForOperations(ctx, operationIDs)
 }
 
 func logSQLQueryTiming(ctx context.Context, logger *slog.Logger, queryName string, start time.Time, attrs ...slog.Attr) {
@@ -1254,7 +1260,7 @@ func issueOperationFromQuery(row issuesdb.IssueOperation) IssueOperation {
 	}
 }
 
-func issueOperationParticipantFromQuery(row issuesdb.IssueOperationParticipant) IssueOperationParticipant {
+func issueOperationParticipantFromQuery(row issuesdb.ListIssueOperationParticipantsForOperationsRow) IssueOperationParticipant {
 	return IssueOperationParticipant{
 		IssueID: row.IssueID,
 		Role:    row.Role,
@@ -1313,7 +1319,7 @@ func tagFromQuery(row issuesdb.Tag) (Tag, error) {
 	return tag, nil
 }
 
-func (s *PostgresStore) getIssueWithDiscussion(ctx context.Context, q issueQuerier, id string) (Issue, error) {
+func getIssueWithDiscussion(ctx context.Context, q issueQuerier, id string) (Issue, error) {
 	issueRow, err := q.GetIssue(ctx, id)
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
@@ -1337,9 +1343,20 @@ func (s *PostgresStore) getIssueWithDiscussion(ctx context.Context, q issueQueri
 	if err != nil {
 		return Issue{}, fmt.Errorf("list issue operations: %w", err)
 	}
-	allIssueRows, err := q.ListIssues(ctx)
+	operationIDs := make([]string, 0, len(operationRows))
+	for _, row := range operationRows {
+		operationIDs = append(operationIDs, row.ID)
+	}
+	participantsRows := make([]issuesdb.ListIssueOperationParticipantsForOperationsRow, 0)
+	if len(operationIDs) > 0 {
+		participantsRows, err = q.ListIssueOperationParticipantsForOperations(ctx, operationIDs)
+		if err != nil {
+			return Issue{}, fmt.Errorf("list issue operation participants: %w", err)
+		}
+	}
+	issuesByID, err := loadIssueReferenceIndex(ctx, q, issueRow, linkRows, participantsRows)
 	if err != nil {
-		return Issue{}, fmt.Errorf("list issues for references: %w", err)
+		return Issue{}, err
 	}
 
 	discussion := make([]IssuePost, 0, len(postRows))
@@ -1351,24 +1368,17 @@ func (s *PostgresStore) getIssueWithDiscussion(ctx context.Context, q issueQueri
 		links = append(links, issueLinkFromQuery(row))
 	}
 
-	issuesByID := make(map[string]Issue, len(allIssueRows))
-	for _, row := range allIssueRows {
-		issue, err := issueFromQuery(issueModelFromListIssuesRow(row))
-		if err != nil {
-			return Issue{}, err
-		}
-		issuesByID[issue.ID] = issue
+	participantsByOperationID := make(map[string][]issuesdb.ListIssueOperationParticipantsForOperationsRow, len(operationRows))
+	for _, row := range participantsRows {
+		participantsByOperationID[row.OperationID] = append(participantsByOperationID[row.OperationID], row)
 	}
 
 	operations := make([]IssueOperation, 0, len(operationRows))
 	for _, row := range operationRows {
-		participantsRows, err := q.ListIssueOperationParticipants(ctx, row.ID)
-		if err != nil {
-			return Issue{}, fmt.Errorf("list issue operation participants: %w", err)
-		}
 		operation := issueOperationFromQuery(row)
-		participants := make([]IssueOperationParticipant, 0, len(participantsRows))
-		for _, participantRow := range participantsRows {
+		participantRows := participantsByOperationID[row.ID]
+		participants := make([]IssueOperationParticipant, 0, len(participantRows))
+		for _, participantRow := range participantRows {
 			participant := issueOperationParticipantFromQuery(participantRow)
 			if related, ok := issuesByID[participant.IssueID]; ok {
 				ref := issueReference(related)
@@ -1381,6 +1391,64 @@ func (s *PostgresStore) getIssueWithDiscussion(ctx context.Context, q issueQueri
 	}
 
 	return hydrateIssueWithDiscussion(issueRow, discussion, links, operations, issuesByID)
+}
+
+func loadIssueReferenceIndex(
+	ctx context.Context,
+	q issueQuerier,
+	issueRow issuesdb.GetIssueRow,
+	linkRows []issuesdb.IssueLink,
+	participantRows []issuesdb.ListIssueOperationParticipantsForOperationsRow,
+) (map[string]Issue, error) {
+	currentIssue, err := issueFromQuery(issueModelFromGetIssueRow(issueRow))
+	if err != nil {
+		return nil, err
+	}
+
+	issuesByID := map[string]Issue{
+		currentIssue.ID: currentIssue,
+	}
+
+	relatedIDs := make([]string, 0, len(linkRows)+len(participantRows))
+	seen := map[string]struct{}{
+		currentIssue.ID: {},
+	}
+	addID := func(id string) {
+		id = strings.TrimSpace(id)
+		if id == "" {
+			return
+		}
+		if _, ok := seen[id]; ok {
+			return
+		}
+		seen[id] = struct{}{}
+		relatedIDs = append(relatedIDs, id)
+	}
+
+	for _, row := range linkRows {
+		addID(row.SourceIssueID)
+		addID(row.TargetIssueID)
+	}
+	for _, row := range participantRows {
+		addID(row.IssueID)
+	}
+
+	if len(relatedIDs) == 0 {
+		return issuesByID, nil
+	}
+
+	referenceRows, err := q.ListIssueReferencesByIDs(ctx, relatedIDs)
+	if err != nil {
+		return nil, fmt.Errorf("list issue references: %w", err)
+	}
+	for _, row := range referenceRows {
+		issuesByID[row.ID] = Issue{
+			ID:     row.ID,
+			Raw:    row.Raw,
+			Status: normalizeIssueStatus(IssueStatus(row.Status)),
+		}
+	}
+	return issuesByID, nil
 }
 
 func hydrateIssueWithDiscussion(
