@@ -104,6 +104,7 @@ func SearchFromQueryWithTags(
 	queryLower := strings.ToLower(queryRaw)
 	tagCorrelationBoost := queryMatchesTagNames(queryLower, tagNames)
 	tagSpecificity := buildTagSpecificityMap(storeTags)
+	genericQuery := queryMatchesGenericTag(queryLower, tagSpecificity)
 
 	related := make([]RelatedIssue, 0, len(storeIssues))
 	for _, candidate := range storeIssues {
@@ -116,6 +117,9 @@ func SearchFromQueryWithTags(
 		textMatch := textMatchScore(queryLower, candidate.Raw)
 		combined := blendScores(semantic, factor, textMatch, tagCorrelationBoost)
 		combined -= issueSpecificityPenalty(candidateSummary.Tags, tagSpecificity)
+		if genericQuery {
+			combined += specificCooccurrenceBoost(candidateSummary.Tags, tagSpecificity)
+		}
 		sharedTags := sharedRelevantTags(querySummary.Tags, candidateSummary.Tags, 3)
 
 		related = append(related, RelatedIssue{
@@ -222,6 +226,54 @@ func issueSpecificityPenalty(tags []TagRelevance, tagSpecificity map[string]*flo
 		totalPenalty += specificityPenalty(tagSpecificity[tag.Tag])
 	}
 	return totalPenalty / float64(limit)
+}
+
+// queryMatchesGenericTag returns true if any query word exactly matches a
+// tag with low specificity (< 0.5), indicating the user is filtering by a
+// broad category.
+func queryMatchesGenericTag(queryLower string, tagSpecificity map[string]*float64) bool {
+	if queryLower == "" {
+		return false
+	}
+	for w := range strings.FieldsSeq(queryLower) {
+		normalized := domain.NormalizeTagName(w)
+		if p, ok := tagSpecificity[normalized]; ok {
+			s := 0.5
+			if p != nil {
+				s = *p
+			}
+			if s < 0.5 {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+// specificCooccurrenceBoost returns a small positive boost for issues that
+// carry specific tags (specificity >= 0.5) alongside generic ones. When a user
+// searches by a generic tag, issues with co-occurring specific tags should
+// rank above issues with only generic tags.
+func specificCooccurrenceBoost(tags []TagRelevance, tagSpecificity map[string]*float64) float64 {
+	const boostPerTag = 0.03
+	const maxBoost = 0.06
+	boost := 0.0
+	for _, tag := range tags {
+		if tag.Relevance <= 0.2 {
+			continue
+		}
+		s := 0.5
+		if p, ok := tagSpecificity[tag.Tag]; ok && p != nil {
+			s = *p
+		}
+		if s >= 0.5 {
+			boost += boostPerTag
+			if boost >= maxBoost {
+				return maxBoost
+			}
+		}
+	}
+	return boost
 }
 
 // buildTagSpecificityMap builds a lookup from tag name to its specificity score pointer.

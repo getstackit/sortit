@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	"splat/internal/issues"
+	"splat/internal/services"
 	"splat/internal/vectors"
 )
 
@@ -32,7 +33,8 @@ type PersonDetail struct {
 }
 
 type GetPersonDetailHandler struct {
-	Store issues.Store
+	Store   issues.Store
+	Catalog *services.CatalogService
 }
 
 func (h GetPersonDetailHandler) Handle(ctx context.Context, person string) (PersonDetail, error) {
@@ -46,7 +48,8 @@ func (h GetPersonDetailHandler) Handle(ctx context.Context, person string) (Pers
 		return PersonDetail{}, err
 	}
 
-	profile := buildPersonTagProfile(peopleAnalyticsIssuesFromIssues(assignedIssues), person, IssueStatusFilterAll)
+	tagSpecificity := loadTagSpecificityMap(ctx, h.Catalog)
+	profile := buildPersonTagProfile(peopleAnalyticsIssuesFromIssues(assignedIssues), person, IssueStatusFilterAll, tagSpecificity)
 	openAssigned, closedAssigned := splitIssuesByStatus(assignedIssues)
 	sortAssignedIssues(openAssigned)
 	sortAssignedIssues(closedAssigned)

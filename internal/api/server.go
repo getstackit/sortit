@@ -72,6 +72,10 @@ type issueTagStore interface {
 	UpdateTagSpecificity(ctx context.Context, name string, specificity, llm, embedding *float64, computedAt *time.Time) error
 }
 
+type issueStoreLoggerSetter interface {
+	SetLogger(*slog.Logger)
+}
+
 func mapProjectionStoreFromIssueStore(store issues.Store) issues.MapProjectionStorePersistence {
 	if projectionStore, ok := store.(issues.MapProjectionStorePersistence); ok {
 		return projectionStore
@@ -446,6 +450,9 @@ func NewServer(cfg ServerConfig) *Server {
 	if baseStore == nil {
 		baseStore = issues.NewInMemoryStore(nil)
 	}
+	if loggerSetter, ok := baseStore.(issueStoreLoggerSetter); ok {
+		loggerSetter.SetLogger(logger)
+	}
 	revisions := issues.NewRevisionTracker()
 	observed := issues.NewObservedStore(baseStore, revisions)
 	store := observed
@@ -546,7 +553,7 @@ func NewServer(cfg ServerConfig) *Server {
 		},
 		listIssues:    queries.ListIssuesHandler{Store: store},
 		listActivity:  queries.ListActivityHandler{Events: events},
-		getIssue:      queries.GetIssueHandler{Store: store},
+		getIssue:      queries.GetIssueHandler{Store: store, Logger: logger.With("query", "get_issue")},
 		compareIssues: queries.CompareIssuesHandler{Store: store},
 		searchIssues: queries.SearchIssuesHandler{
 			Analyzer: commandAnalyzer,
@@ -563,9 +570,9 @@ func NewServer(cfg ServerConfig) *Server {
 		getMap:            queries.MapHandler{IssueStore: store, Catalog: catalog, Projection: mapProjectionLoader},
 		getMapEdges:       queries.EdgeHandler{IssueStore: store, Catalog: catalog, Projection: mapProjectionLoader},
 		debugAnalyzeIssue: queries.DebugAnalyzeIssueHandler{Analyzer: cfg.Analyzer, Catalog: catalog, Store: store},
-		getPersonProfile:  queries.GetPersonProfileHandler{Store: store},
-		getPersonDetail:   queries.GetPersonDetailHandler{Store: store},
-		workCorrelations:  queries.WorkCorrelationsHandler{Store: store},
+		getPersonProfile:  queries.GetPersonProfileHandler{Store: store, Catalog: catalog},
+		getPersonDetail:   queries.GetPersonDetailHandler{Store: store, Catalog: catalog},
+		workCorrelations:  queries.WorkCorrelationsHandler{Store: store, Catalog: catalog},
 		authService:       cfg.Auth,
 		catalog:           catalog,
 	}

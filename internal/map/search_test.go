@@ -3,6 +3,7 @@ package issuemap
 import (
 	"testing"
 
+	"splat/internal/domain"
 	"splat/internal/issues"
 )
 
@@ -70,5 +71,44 @@ func TestSearchTagsDeprioritizesGenericBucketTags(t *testing.T) {
 	}
 	if results[2].Name != "backend" {
 		t.Fatalf("expected generic bucket tag to be deprioritized, got ordering %+v", results)
+	}
+}
+
+func TestGenericQueryBoostsIssuesWithSpecificTags(t *testing.T) {
+	lowSpecificity := 0.1
+	highSpecificity := 0.8
+
+	genericOnly := issues.Issue{
+		ID:   "generic-only",
+		Raw:  "backend service is slow",
+		Tags: []string{"backend"},
+		TagScores: []domain.TagRelevance{
+			{Tag: "backend", Relevance: 0.9},
+		},
+	}
+	withSpecific := issues.Issue{
+		ID:   "with-specific",
+		Raw:  "backend billing endpoint timeout",
+		Tags: []string{"backend", "billing"},
+		TagScores: []domain.TagRelevance{
+			{Tag: "backend", Relevance: 0.8},
+			{Tag: "billing", Relevance: 0.7},
+		},
+	}
+
+	storeIssues := []issues.Issue{genericOnly, withSpecific}
+	storeTags := []issues.Tag{
+		{Name: "backend", Embedding: []float64{1, 0}, Specificity: &lowSpecificity},
+		{Name: "billing", Embedding: []float64{0, 1}, Specificity: &highSpecificity},
+	}
+
+	resp := SearchFromQueryWithTags(storeIssues, storeTags, "backend", nil, nil, 10)
+
+	if len(resp.RelatedIssues) < 2 {
+		t.Fatalf("expected at least 2 results, got %d", len(resp.RelatedIssues))
+	}
+
+	if resp.RelatedIssues[0].ID != "with-specific" {
+		t.Errorf("expected issue with specific co-occurring tags to rank first when searching by generic tag, got %q first", resp.RelatedIssues[0].ID)
 	}
 }
