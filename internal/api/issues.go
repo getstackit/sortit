@@ -451,7 +451,7 @@ func (s *Server) handleGetIssue(w http.ResponseWriter, r *http.Request, id strin
 		return
 	}
 
-	issue, err := s.getIssue.Handle(r.Context(), id)
+	issue, err := s.getIssue.Handle(r.Context(), queries.GetIssue{ID: id})
 	if err != nil {
 		if errors.Is(err, issues.ErrNotFound) {
 			writeError(w, http.StatusNotFound, "issue not found")

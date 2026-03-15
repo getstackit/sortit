@@ -3,7 +3,6 @@ package issues
 import (
 	"context"
 	"database/sql"
-	"errors"
 	"fmt"
 	"strings"
 
@@ -53,78 +52,16 @@ func (u *PostgresUnitOfWork) List(ctx context.Context) ([]Issue, error) {
 }
 
 func (u *PostgresUnitOfWork) Get(ctx context.Context, id string) (Issue, error) {
+	return u.GetIssueDetail(ctx, id)
+}
+
+func (u *PostgresUnitOfWork) GetIssueDetail(ctx context.Context, id string) (Issue, error) {
 	id = strings.TrimSpace(id)
 	if id == "" {
 		return Issue{}, ErrNotFound
 	}
 
-	issueRow, err := u.queries.GetIssue(ctx, id)
-	if err != nil {
-		if errors.Is(err, sql.ErrNoRows) {
-			return Issue{}, ErrNotFound
-		}
-		return Issue{}, err
-	}
-
-	postRows, err := u.queries.ListIssuePosts(ctx, id)
-	if err != nil {
-		return Issue{}, fmt.Errorf("list issue posts: %w", err)
-	}
-	linkRows, err := u.queries.ListIssueLinksForIssue(ctx, issuesdb.ListIssueLinksForIssueParams{
-		SourceIssueID: id,
-		TargetIssueID: id,
-	})
-	if err != nil {
-		return Issue{}, fmt.Errorf("list issue links: %w", err)
-	}
-	operationRows, err := u.queries.ListIssueOperationsForIssue(ctx, id)
-	if err != nil {
-		return Issue{}, fmt.Errorf("list issue operations: %w", err)
-	}
-	allIssueRows, err := u.queries.ListIssues(ctx)
-	if err != nil {
-		return Issue{}, fmt.Errorf("list issues for references: %w", err)
-	}
-
-	discussion := make([]IssuePost, 0, len(postRows))
-	for _, row := range postRows {
-		discussion = append(discussion, issuePostFromQuery(row))
-	}
-	links := make([]IssueLink, 0, len(linkRows))
-	for _, row := range linkRows {
-		links = append(links, issueLinkFromQuery(row))
-	}
-
-	issuesByID := make(map[string]Issue, len(allIssueRows))
-	for _, row := range allIssueRows {
-		issue, err := issueFromQuery(issueModelFromListIssuesRow(row))
-		if err != nil {
-			return Issue{}, err
-		}
-		issuesByID[issue.ID] = issue
-	}
-
-	operations := make([]IssueOperation, 0, len(operationRows))
-	for _, row := range operationRows {
-		participantsRows, err := u.queries.ListIssueOperationParticipants(ctx, row.ID)
-		if err != nil {
-			return Issue{}, fmt.Errorf("list issue operation participants: %w", err)
-		}
-		operation := issueOperationFromQuery(row)
-		participants := make([]IssueOperationParticipant, 0, len(participantsRows))
-		for _, participantRow := range participantsRows {
-			participant := issueOperationParticipantFromQuery(participantRow)
-			if related, ok := issuesByID[participant.IssueID]; ok {
-				ref := issueReference(related)
-				participant.Issue = &ref
-			}
-			participants = append(participants, participant)
-		}
-		operation.Participants = participants
-		operations = append(operations, operation)
-	}
-
-	issue, err := hydrateIssueWithDiscussion(issueRow, discussion, links, operations, issuesByID)
+	issue, err := getIssueWithDiscussion(ctx, u.queries, id)
 	if err != nil {
 		return Issue{}, err
 	}
@@ -133,6 +70,26 @@ func (u *PostgresUnitOfWork) Get(ctx context.Context, id string) (Issue, error) 
 		return Issue{}, err
 	}
 	return applyIssueEnrichmentStates([]Issue{issue}, states)[0], nil
+}
+
+func (u *PostgresUnitOfWork) GetIssueDetailBase(ctx context.Context, id string) (Issue, error) {
+	return getIssueDetailBase(ctx, u.queries, id)
+}
+
+func (u *PostgresUnitOfWork) ListIssueDetailPosts(ctx context.Context, id string) ([]IssuePost, error) {
+	return listIssueDetailPosts(ctx, u.queries, id)
+}
+
+func (u *PostgresUnitOfWork) ListIssueDetailLinks(ctx context.Context, id string) ([]IssueLink, error) {
+	return listIssueDetailLinks(ctx, u.queries, id)
+}
+
+func (u *PostgresUnitOfWork) ListIssueDetailOperations(ctx context.Context, id string) ([]IssueOperation, error) {
+	return listIssueDetailOperations(ctx, u.queries, id)
+}
+
+func (u *PostgresUnitOfWork) ListIssueDetailReferences(ctx context.Context, ids []string) ([]IssueReference, error) {
+	return listIssueDetailReferences(ctx, u.queries, ids)
 }
 
 // Store writes

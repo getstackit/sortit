@@ -38,7 +38,7 @@ run = "sh scripts/db-backup.sh"
 [tasks.lint]
 description = "Run ESLint and golangci-lint"
 run = """
-  golangci-lint run ./...
+  GOCACHE="${GOCACHE:-/tmp/splat-gocache}" GOLANGCI_LINT_CACHE="${GOLANGCI_LINT_CACHE:-/tmp/splat-golangci-lint-cache}" golangci-lint run ./...
   npm run lint
 """
 

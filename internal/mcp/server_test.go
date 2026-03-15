@@ -491,7 +491,7 @@ func newTestHandlers() *handlers {
 		getIssue:         queries.GetIssueHandler{Store: store},
 		listTags:         queries.ListTagsHandler{Catalog: catalog},
 		searchIssues:     queries.SearchIssuesHandler{Analyzer: analyzer, Catalog: catalog, Store: store},
-		exploreIssue:     queries.ExploreIssueHandler{Store: store, Catalog: catalog},
+		exploreIssue:     queries.ExploreIssueHandler{Reader: store, DetailReader: store, Catalog: catalog},
 		getPersonProfile: queries.GetPersonProfileHandler{Store: store},
 		workCorrelations: queries.WorkCorrelationsHandler{Store: store},
 	}
@@ -518,9 +518,13 @@ func drainTestEnrichment(t *testing.T, handler *handlers) {
 	if !ok {
 		return
 	}
+	store, ok := handler.getIssue.Store.(issues.Store)
+	if !ok {
+		t.Fatal("expected get issue reader to also implement issues.Store in tests")
+	}
 	worker := &services.IssueEnrichmentWorker{
 		Logger:   slog.Default(),
-		Store:    handler.getIssue.Store,
+		Store:    store,
 		DB:       handler.createIssue.Runner.DB,
 		Jobs:     claimer,
 		Enricher: handler.createIssue.Enricher,

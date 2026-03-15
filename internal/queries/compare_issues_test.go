@@ -11,24 +11,6 @@ type compareOnlyStore struct {
 	items []issues.CompareIssue
 }
 
-func (s compareOnlyStore) List(_ context.Context) ([]issues.Issue, error) {
-	panic("List should not be called in compare handler")
-}
-
-func (s compareOnlyStore) Get(_ context.Context, _ string) (issues.Issue, error) {
-	panic("Get should not be called when compare store is available")
-}
-
-func (s compareOnlyStore) SaveIssue(context.Context, issues.Issue) error { return nil }
-func (s compareOnlyStore) SaveIssuePost(context.Context, issues.IssuePost) error {
-	return nil
-}
-func (s compareOnlyStore) UpdateIssueFields(context.Context, string, issues.IssueFieldUpdate) error {
-	return nil
-}
-func (s compareOnlyStore) SaveOperation(context.Context, issues.IssueOperation) error { return nil }
-func (s compareOnlyStore) SaveLink(context.Context, issues.IssueLink) error           { return nil }
-
 func (s compareOnlyStore) ListCompareIssues(_ context.Context, ids []string) ([]issues.CompareIssue, error) {
 	items := make([]issues.CompareIssue, 0, len(ids))
 	for _, id := range ids {
@@ -48,7 +30,7 @@ func (s compareOnlyStore) ListCompareIssues(_ context.Context, ids []string) ([]
 
 func TestCompareIssuesUsesCompareStore(t *testing.T) {
 	handler := CompareIssuesHandler{
-		Store: compareOnlyStore{
+		Reader: compareOnlyStore{
 			items: []issues.CompareIssue{
 				{ID: "issue-a", Embedding: []float64{1, 0}},
 				{ID: "issue-b", Embedding: []float64{0.6, 0.8}},
