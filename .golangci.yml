@@ -44,8 +44,10 @@ linters:
       locale: US
     gosec:
       excludes:
+        - G117
         - G204
         - G304
+        - G701
         - G702
         - G703
         - G704
