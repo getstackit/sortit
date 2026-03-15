@@ -22,6 +22,8 @@ SELECT
   status,
   closed_at_unix_nano,
   closed_by,
+  closed_reason,
+  closed_reason_note,
   tag_scores_json,
   embedding_json,
   assigned_to,
@@ -75,6 +77,8 @@ type SearchIssuesByEmbeddingRow struct {
 	Status            string
 	ClosedAtUnixNano  int64
 	ClosedBy          string
+	ClosedReason      string
+	ClosedReasonNote  string
 	TagScoresJson     json.RawMessage
 	EmbeddingJson     json.RawMessage
 	AssignedTo        string
@@ -112,6 +116,8 @@ func (q *Queries) SearchIssuesByEmbedding(ctx context.Context, arg SearchIssuesB
 			&i.Status,
 			&i.ClosedAtUnixNano,
 			&i.ClosedBy,
+			&i.ClosedReason,
+			&i.ClosedReasonNote,
 			&i.TagScoresJson,
 			&i.EmbeddingJson,
 			&i.AssignedTo,

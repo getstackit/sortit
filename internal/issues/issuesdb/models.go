@@ -45,6 +45,8 @@ type Issue struct {
 	Status                   string
 	ClosedAtUnixNano         int64
 	ClosedBy                 string
+	ClosedReason             string
+	ClosedReasonNote         string
 	TagScoresJson            json.RawMessage
 	EmbeddingJson            json.RawMessage
 	EmbeddingVector          interface{}

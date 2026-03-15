@@ -51,6 +51,8 @@ type batchMutationRequest struct {
 	CreatedBy  string   `json:"createdBy,omitempty"`
 	ClosedBy   string   `json:"closedBy,omitempty"`
 	AssignedTo string   `json:"assignedTo,omitempty"`
+	Reason     string   `json:"reason,omitempty"`
+	ReasonNote string   `json:"reasonNote,omitempty"`
 }
 
 type splitIssueChildRequest struct {
@@ -316,6 +318,8 @@ func newIssueProgressCmd(opts *rootOptions) *cobra.Command {
 
 func newIssueCloseCmd(opts *rootOptions) *cobra.Command {
 	var closedBy string
+	var reason string
+	var reasonNote string
 
 	cmd := &cobra.Command{
 		Use:   "close <id> [id...]",
@@ -325,8 +329,10 @@ func newIssueCloseCmd(opts *rootOptions) *cobra.Command {
 			client := opts.client()
 			var result commands.IssueMutationResult
 			if err := client.Post(cmd.Context(), "/issues/close", batchMutationRequest{
-				IDs:      args,
-				ClosedBy: closedBy,
+				IDs:        args,
+				ClosedBy:   closedBy,
+				Reason:     reason,
+				ReasonNote: reasonNote,
 			}, &result); err != nil {
 				return err
 			}
@@ -335,6 +341,8 @@ func newIssueCloseCmd(opts *rootOptions) *cobra.Command {
 	}
 
 	cmd.Flags().StringVar(&closedBy, "closed-by", "", "Override actor name when no authenticated principal is present")
+	cmd.Flags().StringVar(&reason, "reason", "", "Close reason: fixed, stale, duplicate, wont_fix, by_design")
+	cmd.Flags().StringVar(&reasonNote, "reason-note", "", "Optional note explaining the close reason")
 	return cmd
 }
 

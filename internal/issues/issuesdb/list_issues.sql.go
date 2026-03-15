@@ -11,7 +11,7 @@ import (
 )
 
 const listIssues = `-- name: ListIssues :many
-SELECT id, raw, tags_json, created_by, created_at_unix_nano, status, closed_at_unix_nano, closed_by, tag_scores_json, embedding_json, assigned_to
+SELECT id, raw, tags_json, created_by, created_at_unix_nano, status, closed_at_unix_nano, closed_by, closed_reason, closed_reason_note, tag_scores_json, embedding_json, assigned_to
 FROM issues
 ORDER BY created_at_unix_nano DESC, id ASC
 `
@@ -25,6 +25,8 @@ type ListIssuesRow struct {
 	Status            string
 	ClosedAtUnixNano  int64
 	ClosedBy          string
+	ClosedReason      string
+	ClosedReasonNote  string
 	TagScoresJson     json.RawMessage
 	EmbeddingJson     json.RawMessage
 	AssignedTo        string
@@ -48,6 +50,8 @@ func (q *Queries) ListIssues(ctx context.Context) ([]ListIssuesRow, error) {
 			&i.Status,
 			&i.ClosedAtUnixNano,
 			&i.ClosedBy,
+			&i.ClosedReason,
+			&i.ClosedReasonNote,
 			&i.TagScoresJson,
 			&i.EmbeddingJson,
 			&i.AssignedTo,

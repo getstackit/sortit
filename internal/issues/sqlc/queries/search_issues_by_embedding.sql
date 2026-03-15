@@ -8,6 +8,8 @@ SELECT
   status,
   closed_at_unix_nano,
   closed_by,
+  closed_reason,
+  closed_reason_note,
   tag_scores_json,
   embedding_json,
   assigned_to,

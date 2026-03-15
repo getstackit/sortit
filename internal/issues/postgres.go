@@ -936,6 +936,8 @@ type issueRecord struct {
 	Status            string
 	ClosedAtUnixNano  int64
 	ClosedBy          string
+	ClosedReason      string
+	ClosedReasonNote  string
 	TagScoresJSON     json.RawMessage
 	EmbeddingJSON     json.RawMessage
 	AssignedTo        string
@@ -954,7 +956,7 @@ type issueQuerier interface {
 	ListIssuePosts(context.Context, string) ([]issuesdb.IssuePost, error)
 	ListIssueLinksForIssue(context.Context, issuesdb.ListIssueLinksForIssueParams) ([]issuesdb.IssueLink, error)
 	ListIssueOperationsForIssue(context.Context, string) ([]issuesdb.IssueOperation, error)
-	ListIssueOperationParticipantsForOperations(context.Context, []string) ([]issuesdb.ListIssueOperationParticipantsForOperationsRow, error)
+	ListIssueOperationParticipantsForOperations(context.Context, []string) ([]issuesdb.IssueOperationParticipant, error)
 }
 
 type loggingIssueQuerier struct {
@@ -1020,7 +1022,7 @@ func (q loggingIssueQuerier) ListIssueOperationsForIssue(
 func (q loggingIssueQuerier) ListIssueOperationParticipantsForOperations(
 	ctx context.Context,
 	operationIDs []string,
-) (rows []issuesdb.ListIssueOperationParticipantsForOperationsRow, err error) {
+) (rows []issuesdb.IssueOperationParticipant, err error) {
 	defer func(start time.Time) {
 		logSQLQueryTiming(ctx, q.logger, "ListIssueOperationParticipantsForOperations", start,
 			slog.Int("operation_count", len(operationIDs)),
@@ -1075,6 +1077,8 @@ func recordFromIssue(issue Issue) (issueRecord, error) {
 		Status:            string(normalizeIssueStatus(issue.Status)),
 		ClosedAtUnixNano:  closedAtUnixNano(issue),
 		ClosedBy:          closedBy(issue),
+		ClosedReason:      issue.ClosedReason,
+		ClosedReasonNote:  issue.ClosedReasonNote,
 		TagScoresJSON:     tagScoresJSON,
 		EmbeddingJSON:     embeddingJSON,
 		AssignedTo:        strings.TrimSpace(issue.AssignedTo),
@@ -1098,9 +1102,13 @@ func issueFromQuery(row issuesdb.Issue) (Issue, error) {
 	status := normalizeIssueStatus(IssueStatus(row.Status))
 	closedAt := closedAtFromUnixNano(row.ClosedAtUnixNano)
 	closedBy := strings.TrimSpace(row.ClosedBy)
+	closedReason := strings.TrimSpace(row.ClosedReason)
+	closedReasonNote := strings.TrimSpace(row.ClosedReasonNote)
 	if status != StatusClosed {
 		closedAt = nil
 		closedBy = ""
+		closedReason = ""
+		closedReasonNote = ""
 	}
 
 	return normalizeIssueEnrichment(Issue{
@@ -1112,6 +1120,8 @@ func issueFromQuery(row issuesdb.Issue) (Issue, error) {
 		Status:                   status,
 		ClosedAt:                 closedAt,
 		ClosedBy:                 closedBy,
+		ClosedReason:             closedReason,
+		ClosedReasonNote:         closedReasonNote,
 		AssignedTo:               strings.TrimSpace(row.AssignedTo),
 		TagScores:                tagScores,
 		Embedding:                embedding,
@@ -1201,6 +1211,8 @@ func issueModelFromGetIssueRow(row issuesdb.GetIssueRow) issuesdb.Issue {
 		Status:                   row.Status,
 		ClosedAtUnixNano:         row.ClosedAtUnixNano,
 		ClosedBy:                 row.ClosedBy,
+		ClosedReason:             row.ClosedReason,
+		ClosedReasonNote:         row.ClosedReasonNote,
 		TagScoresJson:            row.TagScoresJson,
 		EmbeddingJson:            row.EmbeddingJson,
 		AssignedTo:               row.AssignedTo,
@@ -1220,6 +1232,8 @@ func issueModelFromListIssuesRow(row issuesdb.ListIssuesRow) issuesdb.Issue {
 		Status:            row.Status,
 		ClosedAtUnixNano:  row.ClosedAtUnixNano,
 		ClosedBy:          row.ClosedBy,
+		ClosedReason:      row.ClosedReason,
+		ClosedReasonNote:  row.ClosedReasonNote,
 		TagScoresJson:     row.TagScoresJson,
 		EmbeddingJson:     row.EmbeddingJson,
 		AssignedTo:        row.AssignedTo,
@@ -1236,6 +1250,8 @@ func issueModelFromListIssuesFilteredRow(row issuesdb.ListIssuesFilteredRow) iss
 		Status:            row.Status,
 		ClosedAtUnixNano:  row.ClosedAtUnixNano,
 		ClosedBy:          row.ClosedBy,
+		ClosedReason:      row.ClosedReason,
+		ClosedReasonNote:  row.ClosedReasonNote,
 		TagScoresJson:     row.TagScoresJson,
 		EmbeddingJson:     row.EmbeddingJson,
 		AssignedTo:        row.AssignedTo,
@@ -1252,6 +1268,8 @@ func issueModelFromSearchIssuesByEmbeddingRow(row issuesdb.SearchIssuesByEmbeddi
 		Status:            row.Status,
 		ClosedAtUnixNano:  row.ClosedAtUnixNano,
 		ClosedBy:          row.ClosedBy,
+		ClosedReason:      row.ClosedReason,
+		ClosedReasonNote:  row.ClosedReasonNote,
 		TagScoresJson:     row.TagScoresJson,
 		EmbeddingJson:     row.EmbeddingJson,
 		AssignedTo:        row.AssignedTo,
@@ -1305,7 +1323,7 @@ func issueOperationFromQuery(row issuesdb.IssueOperation) IssueOperation {
 	}
 }
 
-func issueOperationParticipantFromQuery(row issuesdb.ListIssueOperationParticipantsForOperationsRow) IssueOperationParticipant {
+func issueOperationParticipantFromQuery(row issuesdb.IssueOperationParticipant) IssueOperationParticipant {
 	return IssueOperationParticipant{
 		IssueID: row.IssueID,
 		Role:    row.Role,
@@ -1369,7 +1387,7 @@ func listIssueDetailOperations(ctx context.Context, q issueQuerier, id string) (
 		operationIDs = append(operationIDs, row.ID)
 	}
 
-	participantsByOperationID := make(map[string][]issuesdb.ListIssueOperationParticipantsForOperationsRow, len(rows))
+	participantsByOperationID := make(map[string][]issuesdb.IssueOperationParticipant, len(rows))
 	if len(operationIDs) > 0 {
 		participantRows, err := q.ListIssueOperationParticipantsForOperations(ctx, operationIDs)
 		if err != nil {
@@ -1496,7 +1514,7 @@ func getIssueWithDiscussion(ctx context.Context, q issueQuerier, id string) (Iss
 	for _, row := range operationRows {
 		operationIDs = append(operationIDs, row.ID)
 	}
-	participantsRows := make([]issuesdb.ListIssueOperationParticipantsForOperationsRow, 0)
+	participantsRows := make([]issuesdb.IssueOperationParticipant, 0)
 	if len(operationIDs) > 0 {
 		participantsRows, err = q.ListIssueOperationParticipantsForOperations(ctx, operationIDs)
 		if err != nil {
@@ -1517,7 +1535,7 @@ func getIssueWithDiscussion(ctx context.Context, q issueQuerier, id string) (Iss
 		links = append(links, issueLinkFromQuery(row))
 	}
 
-	participantsByOperationID := make(map[string][]issuesdb.ListIssueOperationParticipantsForOperationsRow, len(operationRows))
+	participantsByOperationID := make(map[string][]issuesdb.IssueOperationParticipant, len(operationRows))
 	for _, row := range participantsRows {
 		participantsByOperationID[row.OperationID] = append(participantsByOperationID[row.OperationID], row)
 	}
@@ -1547,7 +1565,7 @@ func loadIssueReferenceIndex(
 	q issueQuerier,
 	issueRow issuesdb.GetIssueRow,
 	linkRows []issuesdb.IssueLink,
-	participantRows []issuesdb.ListIssueOperationParticipantsForOperationsRow,
+	participantRows []issuesdb.IssueOperationParticipant,
 ) (map[string]Issue, error) {
 	currentIssue, err := issueFromQuery(issueModelFromGetIssueRow(issueRow))
 	if err != nil {

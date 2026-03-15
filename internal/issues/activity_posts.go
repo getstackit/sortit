@@ -5,9 +5,15 @@ import (
 	"strings"
 )
 
-func closeIssuePost(createdBy string) string {
+func closeIssuePost(createdBy, reason, reasonNote string) string {
 	actor := defaultActor(createdBy)
-	return fmt.Sprintf("Closed by %s.", actor)
+	if reason == "" {
+		return fmt.Sprintf("Closed by %s.", actor)
+	}
+	if reasonNote == "" {
+		return fmt.Sprintf("%s closed this as %s.", actor, reason)
+	}
+	return fmt.Sprintf("%s closed this as %s — %s", actor, reason, reasonNote)
 }
 
 func reopenIssuePost() string {
