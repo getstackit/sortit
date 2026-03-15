@@ -18,7 +18,7 @@ type revisionSource interface {
 }
 
 type MapProjectionLoader struct {
-	Store       issues.Store
+	Store       detailedIssueReader
 	Catalog     *services.CatalogService
 	Revisions   revisionSource
 	Projections issues.MapProjectionStorePersistence
@@ -47,6 +47,11 @@ type MapProjectionLoadProfile struct {
 	Build           issuemap.BuildMapProjectionProfile
 	Steps           []MapProjectionLoadStep
 	TotalDuration   time.Duration
+}
+
+type detailedIssueReader interface {
+	List(context.Context) ([]issues.Issue, error)
+	GetIssueDetail(context.Context, string) (issues.Issue, error)
 }
 
 func (l *MapProjectionLoader) Current(ctx context.Context) (issuemap.MapProjection, error) {
@@ -203,7 +208,7 @@ func (l *MapProjectionLoader) rebuildProfiled(ctx context.Context) (issuemap.Map
 
 func loadDetailedIssuesAndTagsProfiled(
 	ctx context.Context,
-	store issues.Store,
+	store detailedIssueReader,
 	catalog *services.CatalogService,
 ) ([]issues.MapProjectionIssue, []issues.Tag, DetailedIssueLoadProfile, error) {
 	startedAt := time.Now()
@@ -240,7 +245,7 @@ func loadDetailedIssuesAndTagsProfiled(
 	detailed := make([]issues.Issue, 0, len(items))
 	stepStartedAt = time.Now()
 	for _, item := range items {
-		issue, err := store.Get(ctx, item.ID)
+		issue, err := store.GetIssueDetail(ctx, item.ID)
 		if err != nil {
 			return nil, nil, DetailedIssueLoadProfile{}, err
 		}

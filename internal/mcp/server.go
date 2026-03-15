@@ -338,7 +338,7 @@ func (h *handlers) handleGetIssue(ctx context.Context, req mcp.CallToolRequest) 
 		return result, nil
 	}
 
-	issue, err := h.getIssue.Handle(ctx, id)
+	issue, err := h.getIssue.Handle(ctx, queries.GetIssue{ID: id})
 	if err != nil {
 		return toolResultError(err), nil
 	}
