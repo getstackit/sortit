@@ -92,11 +92,12 @@ func exploreSemanticCandidateSet(
 
 		issue, err := store.Get(ctx, id)
 		if err != nil {
-			if fallback != nil && errors.Is(err, issues.ErrNotFound) {
+			switch {
+			case fallback != nil && errors.Is(err, issues.ErrNotFound):
 				issue = *fallback
-			} else if errors.Is(err, issues.ErrNotFound) {
+			case errors.Is(err, issues.ErrNotFound):
 				return nil
-			} else {
+			default:
 				return err
 			}
 		}

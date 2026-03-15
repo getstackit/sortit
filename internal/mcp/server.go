@@ -318,7 +318,7 @@ type handlers struct {
 func (h *handlers) handleCreateIssue(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 	raw, err := req.RequireString("raw")
 	if err != nil {
-		return mcp.NewToolResultError("raw is required"), nil
+		return mcp.NewToolResultError("raw is required"), nil //nolint:nilerr
 	}
 
 	issue, err := h.createIssue.Handle(ctx, commands.CreateIssue{
@@ -358,7 +358,7 @@ func (h *handlers) handleListTags(ctx context.Context, _ mcp.CallToolRequest) (*
 func (h *handlers) handleSearchIssues(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 	query, err := req.RequireString("query")
 	if err != nil {
-		return mcp.NewToolResultError("query is required"), nil
+		return mcp.NewToolResultError("query is required"), nil //nolint:nilerr
 	}
 
 	query = strings.TrimSpace(query)
@@ -415,7 +415,7 @@ func (h *handlers) handleSearchIssues(ctx context.Context, req mcp.CallToolReque
 }
 
 func (h *handlers) handleRefineIssues(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
-	ids, result := requireIssueIDs(req, "ids")
+	ids, result := requireIssueIDs(req)
 	if result != nil {
 		return result, nil
 	}
@@ -437,7 +437,7 @@ func (h *handlers) handleRefineIssues(ctx context.Context, req mcp.CallToolReque
 }
 
 func (h *handlers) handleProgressIssues(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
-	ids, result := requireIssueIDs(req, "ids")
+	ids, result := requireIssueIDs(req)
 	if result != nil {
 		return result, nil
 	}
@@ -459,7 +459,7 @@ func (h *handlers) handleProgressIssues(ctx context.Context, req mcp.CallToolReq
 }
 
 func (h *handlers) handleCloseIssues(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
-	ids, result := requireIssueIDs(req, "ids")
+	ids, result := requireIssueIDs(req)
 	if result != nil {
 		return result, nil
 	}
@@ -498,13 +498,13 @@ func (h *handlers) handleExploreIssue(ctx context.Context, req mcp.CallToolReque
 }
 
 func (h *handlers) handleAssignIssues(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
-	ids, result := requireIssueIDs(req, "ids")
+	ids, result := requireIssueIDs(req)
 	if result != nil {
 		return result, nil
 	}
 	assignedTo, err := req.RequireString("assigned_to")
 	if err != nil {
-		return mcp.NewToolResultError("assigned_to is required"), nil
+		return mcp.NewToolResultError("assigned_to is required"), nil //nolint:nilerr
 	}
 
 	issue, err := h.assignIssues.Handle(ctx, commands.AssignIssues{
@@ -521,11 +521,11 @@ func (h *handlers) handleAssignIssues(ctx context.Context, req mcp.CallToolReque
 func (h *handlers) handleSplitIssue(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 	id, err := req.RequireString("id")
 	if err != nil {
-		return mcp.NewToolResultError("id is required"), nil
+		return mcp.NewToolResultError("id is required"), nil //nolint:nilerr
 	}
 	children, err := req.RequireStringSlice("children_raw")
 	if err != nil {
-		return mcp.NewToolResultError("children_raw is required"), nil
+		return mcp.NewToolResultError("children_raw is required"), nil //nolint:nilerr
 	}
 
 	id = strings.TrimSpace(id)
@@ -562,7 +562,7 @@ func (h *handlers) handleSplitIssue(ctx context.Context, req mcp.CallToolRequest
 func (h *handlers) handleCombineIssues(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 	ids, err := req.RequireStringSlice("ids")
 	if err != nil {
-		return mcp.NewToolResultError("ids is required"), nil
+		return mcp.NewToolResultError("ids is required"), nil //nolint:nilerr
 	}
 	ids = issues.SanitizeIssueIDs(ids)
 	if len(ids) < 2 {
@@ -584,15 +584,15 @@ func (h *handlers) handleCombineIssues(ctx context.Context, req mcp.CallToolRequ
 func (h *handlers) handleLinkIssues(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 	sourceID, err := req.RequireString("source_id")
 	if err != nil {
-		return mcp.NewToolResultError("source_id is required"), nil
+		return mcp.NewToolResultError("source_id is required"), nil //nolint:nilerr
 	}
 	targetID, err := req.RequireString("target_id")
 	if err != nil {
-		return mcp.NewToolResultError("target_id is required"), nil
+		return mcp.NewToolResultError("target_id is required"), nil //nolint:nilerr
 	}
 	linkTypeRaw, err := req.RequireString("type")
 	if err != nil {
-		return mcp.NewToolResultError("type is required"), nil
+		return mcp.NewToolResultError("type is required"), nil //nolint:nilerr
 	}
 
 	sourceID = strings.TrimSpace(sourceID)
@@ -685,10 +685,10 @@ func requirePositiveInt(req mcp.CallToolRequest, field string, fallback int) (in
 	return value, nil
 }
 
-func requireIssueIDs(req mcp.CallToolRequest, field string) ([]string, *mcp.CallToolResult) {
-	ids, err := req.RequireStringSlice(field)
+func requireIssueIDs(req mcp.CallToolRequest) ([]string, *mcp.CallToolResult) {
+	ids, err := req.RequireStringSlice("ids")
 	if err != nil {
-		return nil, mcp.NewToolResultError(field + " is required")
+		return nil, mcp.NewToolResultError("ids is required")
 	}
 	ids = issues.SanitizeIssueIDs(ids)
 	if len(ids) == 0 {

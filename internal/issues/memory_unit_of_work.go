@@ -12,4 +12,4 @@ func (s *InMemoryStore) BeginUnitOfWork(_ context.Context) (UnitOfWork, error) {
 }
 
 func (u *InMemoryUnitOfWork) Commit() error   { return nil }
-func (u *InMemoryUnitOfWork) Rollback() error  { return nil }
+func (u *InMemoryUnitOfWork) Rollback() error { return nil }

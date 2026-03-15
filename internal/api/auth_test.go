@@ -30,7 +30,7 @@ func (p fakeOAuthProvider) Exchange(_ context.Context, code, redirectURL string)
 	return p.user, nil
 }
 
-func newAuthenticatedServer(t *testing.T) (*Server, http.Handler) {
+func newAuthenticatedServer(t *testing.T) (*Server, http.Handler) { //nolint:unparam
 	t.Helper()
 
 	store := newPostgresIssueStore(t, nil)

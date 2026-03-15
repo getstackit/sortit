@@ -51,7 +51,7 @@ func saveCLIConfig(path string, cfg cliConfig) error {
 		path = defaultConfigPath()
 	}
 
-	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+	if err := os.MkdirAll(filepath.Dir(path), 0o750); err != nil {
 		return fmt.Errorf("create cli config dir: %w", err)
 	}
 

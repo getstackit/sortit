@@ -27,9 +27,8 @@ func defaultTagCatalog() []tagSpec {
 	return specs
 }
 
-func round(value float64, digits int) float64 {
-	scale := math.Pow(10, float64(digits))
-	return math.Round(value*scale) / scale
+func round(value float64) float64 {
+	return math.Round(value*100) / 100
 }
 
 func normalizeVector(vector []float64) {

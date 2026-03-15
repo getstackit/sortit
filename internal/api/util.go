@@ -17,7 +17,7 @@ import (
 // decodeJSON reads the JSON body of an HTTP request into a value of type T.
 // It limits the body size to 1 MB, disallows unknown fields, and closes the body.
 func decodeJSON[T any](r *http.Request) (T, error) {
-	defer r.Body.Close()
+	defer r.Body.Close() //nolint:errcheck
 
 	decoder := json.NewDecoder(io.LimitReader(r.Body, 1<<20))
 	decoder.DisallowUnknownFields()

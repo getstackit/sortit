@@ -102,7 +102,7 @@ func (s *PostgresStore) ListIssueMetadata(ctx context.Context) ([]Issue, error) 
 	if err != nil {
 		return nil, fmt.Errorf("list issue metadata: %w", err)
 	}
-	defer rows.Close()
+	defer rows.Close() //nolint:errcheck
 
 	items := make([]Issue, 0)
 	for rows.Next() {
@@ -178,7 +178,7 @@ func (s *PostgresStore) ListIssueEmbeddingSimilarities(
 	if err != nil {
 		return nil, 0, 0, fmt.Errorf("list issue embedding similarities: %w", err)
 	}
-	defer rows.Close()
+	defer rows.Close() //nolint:errcheck
 
 	items := make([]IssueEmbeddingSimilarity, 0, limit)
 	for rows.Next() {
@@ -230,7 +230,7 @@ func (s *PostgresStore) ListPeopleAnalytics(ctx context.Context, opts ListOption
 	if err != nil {
 		return nil, fmt.Errorf("list people analytics issues: %w", err)
 	}
-	defer rows.Close()
+	defer rows.Close() //nolint:errcheck
 
 	items := make([]PeopleAnalyticsIssue, 0)
 	for rows.Next() {
@@ -280,7 +280,7 @@ func (s *PostgresStore) ListCompareIssues(ctx context.Context, ids []string) ([]
 	if err != nil {
 		return nil, fmt.Errorf("list compare issues: %w", err)
 	}
-	defer rows.Close()
+	defer rows.Close() //nolint:errcheck
 
 	byID := make(map[string]CompareIssue, len(ids))
 	for rows.Next() {
@@ -368,7 +368,7 @@ func (s *PostgresStore) SearchIssues(ctx context.Context, opts SemanticSearchOpt
 
 	rows, err := s.queries.SearchIssuesByEmbedding(ctx, issuesdb.SearchIssuesByEmbeddingParams{
 		QueryVector:      vectorLiteral,
-		EmbeddingDims:    int32(len(opts.QueryEmbedding)),
+		EmbeddingDims:    int32(len(opts.QueryEmbedding)), //nolint:gosec
 		FilterStatus:     params.filterStatus,
 		Status:           params.statusValue,
 		FilterAssignedTo: params.filterAssignedTo,
@@ -377,8 +377,8 @@ func (s *PostgresStore) SearchIssues(ctx context.Context, opts SemanticSearchOpt
 		ExcludeID:        params.excludeIDValue,
 		FilterTags:       params.filterTags,
 		Tags:             append([]string(nil), params.tagsValue...),
-		LimitCount:       int32(params.limit),
-		OffsetCount:      int32(params.offset),
+		LimitCount:       int32(params.limit),  //nolint:gosec
+		OffsetCount:      int32(params.offset), //nolint:gosec
 	})
 	if err != nil {
 		return nil, fmt.Errorf("search issues by embedding: %w", err)
@@ -442,7 +442,7 @@ func (s *PostgresStore) LoadMapProjectionData(ctx context.Context) ([]MapProject
 	if err != nil {
 		return nil, nil, fmt.Errorf("list issues for map projection: %w", err)
 	}
-	defer rows.Close()
+	defer rows.Close() //nolint:errcheck
 
 	items := make([]MapProjectionIssue, 0)
 	for rows.Next() {
@@ -495,7 +495,7 @@ func (s *PostgresStore) LoadMapProjectionData(ctx context.Context) ([]MapProject
 	if err != nil {
 		return nil, nil, fmt.Errorf("list issue links for map projection: %w", err)
 	}
-	defer linkRows.Close()
+	defer linkRows.Close() //nolint:errcheck
 
 	linksByIssue := make(map[string][]IssueLink, len(items))
 	for linkRows.Next() {
@@ -540,7 +540,7 @@ func (s *PostgresStore) GetMapProjection(ctx context.Context, revision uint64) (
 	row := s.db.QueryRowContext(
 		ctx,
 		`SELECT payload_json FROM map_projections WHERE revision = $1`,
-		int64(revision),
+		int64(revision), //nolint:gosec
 	)
 
 	var payload []byte
@@ -561,7 +561,7 @@ func (s *PostgresStore) SaveMapProjection(ctx context.Context, revision uint64, 
 		 ON CONFLICT (revision) DO UPDATE
 		 SET payload_json = excluded.payload_json,
 		     created_at_unix_nano = excluded.created_at_unix_nano`,
-		int64(revision),
+		int64(revision), //nolint:gosec
 		payload,
 		time.Now().UTC().UnixNano(),
 	)
@@ -627,8 +627,8 @@ func (p listIssuesFilteredParams) sqlc() issuesdb.ListIssuesFilteredParams {
 		ExcludeID:        p.excludeIDValue,
 		FilterTags:       p.filterTags,
 		Tags:             append([]string(nil), p.tagsValue...),
-		LimitCount:       int32(p.limit),
-		OffsetCount:      int32(p.offset),
+		LimitCount:       int32(p.limit),  //nolint:gosec
+		OffsetCount:      int32(p.offset), //nolint:gosec
 	}
 }
 
@@ -692,7 +692,7 @@ func (s *PostgresStore) Replace(ctx context.Context, next []Issue) error {
 	if err != nil {
 		return fmt.Errorf("begin replace issues tx: %w", err)
 	}
-	defer tx.Rollback()
+	defer tx.Rollback() //nolint:errcheck
 
 	qtx := s.queries.WithTx(tx)
 	if err := qtx.DeleteAllEvents(ctx); err != nil {
@@ -795,7 +795,7 @@ func (s *PostgresStore) UpsertTags(ctx context.Context, tags []Tag) error {
 	if err != nil {
 		return fmt.Errorf("begin upsert tags tx: %w", err)
 	}
-	defer tx.Rollback()
+	defer tx.Rollback() //nolint:errcheck
 
 	qtx := s.queries.WithTx(tx)
 	for _, tag := range normalized {
@@ -971,7 +971,7 @@ func loadIssueEnrichmentStates(
 	if err != nil {
 		return nil, fmt.Errorf("load issue enrichment states: %w", err)
 	}
-	defer rows.Close()
+	defer rows.Close() //nolint:errcheck
 
 	states := make(map[string]issueEnrichmentStateRecord, len(ids))
 	for rows.Next() {
@@ -987,7 +987,7 @@ func loadIssueEnrichmentStates(
 		states[id] = issueEnrichmentStateRecord{
 			Status:         normalizeIssueEnrichmentStatus(IssueEnrichmentStatus(status)),
 			Error:          strings.TrimSpace(enrichmentErr),
-			TargetSequence: int(targetSequence),
+			TargetSequence: int(targetSequence), //nolint:gosec
 		}
 	}
 	if err := rows.Err(); err != nil {
@@ -1094,7 +1094,7 @@ func issuePostFromQuery(row issuesdb.IssuePost) IssuePost {
 		Raw:       row.Raw,
 		CreatedBy: row.CreatedBy,
 		CreatedAt: time.Unix(0, row.CreatedAtUnixNano).UTC(),
-		Sequence:  int(row.Sequence),
+		Sequence:  int(row.Sequence), //nolint:gosec
 		Kind:      row.Kind,
 	}
 }
@@ -1277,7 +1277,7 @@ func insertIssuePosts(ctx context.Context, q *issuesdb.Queries, posts []IssuePos
 			Raw:               strings.TrimSpace(post.Raw),
 			CreatedBy:         strings.TrimSpace(post.CreatedBy),
 			CreatedAtUnixNano: post.CreatedAt.UTC().UnixNano(),
-			Sequence:          int64(post.Sequence),
+			Sequence:          int64(post.Sequence), //nolint:gosec
 			Kind:              post.Kind,
 		}); err != nil {
 			return fmt.Errorf("insert issue post %q: %w", post.ID, err)
@@ -1333,7 +1333,7 @@ func insertIssueOperationParticipant(
 		OperationID: strings.TrimSpace(operationID),
 		IssueID:     strings.TrimSpace(participant.IssueID),
 		Role:        strings.TrimSpace(participant.Role),
-		Sequence:    int64(sequence),
+		Sequence:    int64(sequence), //nolint:gosec
 	}); err != nil {
 		return fmt.Errorf("insert issue operation participant for %q: %w", operationID, err)
 	}

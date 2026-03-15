@@ -40,7 +40,7 @@ func TestPostgresStoreCreateListAndGet(t *testing.T) {
 	if issue.Raw != "add postgres storage" {
 		t.Fatalf("expected trimmed raw value, got %q", issue.Raw)
 	}
-	if issue.CreatedBy != "Casey" {
+	if issue.CreatedBy != "Casey" { //nolint:goconst
 		t.Fatalf("expected trimmed creator, got %q", issue.CreatedBy)
 	}
 	if issue.Status != StatusOpen {
@@ -145,7 +145,7 @@ func TestPostgresStoreRefineAppendsDiscussionAndUpdatesCanonicalIssue(t *testing
 	if len(refined.Discussion) != 2 {
 		t.Fatalf("expected 2 discussion posts, got %#v", refined.Discussion)
 	}
-	if refined.Discussion[1].CreatedBy != "Jordan" {
+	if refined.Discussion[1].CreatedBy != "Jordan" { //nolint:goconst
 		t.Fatalf("expected refinement author Jordan, got %q", refined.Discussion[1].CreatedBy)
 	}
 	if refined.Discussion[1].Sequence != 2 {
@@ -1128,7 +1128,7 @@ func issuesHarness(t *testing.T) *testpostgres.Harness {
 	return issuesPostgresHarness.harness
 }
 
-func sparseUnitVector(dim, index int) []float64 {
+func sparseUnitVector(dim, index int) []float64 { //nolint:unparam
 	vector := make([]float64, dim)
 	if index >= 0 && index < dim {
 		vector[index] = 1

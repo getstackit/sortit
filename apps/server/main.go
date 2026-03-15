@@ -41,7 +41,7 @@ func run() error {
 	if err != nil {
 		return err
 	}
-	defer issueStore.Close()
+	defer issueStore.Close() //nolint:errcheck
 
 	githubProvider, err := auth.NewGitHubProvider(auth.GitHubProviderConfig{
 		ClientID:     os.Getenv("GITHUB_CLIENT_ID"),

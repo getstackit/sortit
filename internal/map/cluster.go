@@ -55,7 +55,7 @@ func ComputeFactorClusters(items []issues.Issue, positions map[string]Position) 
 	}
 
 	// Deterministic seed based on issue count
-	rng := rand.New(rand.NewSource(int64(n)))
+	rng := rand.New(rand.NewSource(int64(n))) //nolint:gosec
 
 	bestScore := -2.0
 	var bestAssign []int
@@ -278,7 +278,7 @@ func clusterLabel(group []issues.Issue) string {
 		k string
 		v float64
 	}
-	var sorted []kv
+	sorted := make([]kv, 0, len(scores))
 	for k, v := range scores {
 		sorted = append(sorted, kv{k, v})
 	}

@@ -3,22 +3,7 @@ package issues
 import (
 	"fmt"
 	"strings"
-	"time"
 )
-
-func appendActivityPost(posts []IssuePost, issueID string, createdAt time.Time, createdBy string, kind string, raw string) []IssuePost {
-	next := cloneIssuePosts(posts)
-	next = append(next, IssuePost{
-		ID:        issuePostID(issueID, len(next)+1),
-		IssueID:   issueID,
-		Raw:       strings.TrimSpace(raw),
-		CreatedBy: defaultActor(createdBy),
-		CreatedAt: createdAt.UTC(),
-		Sequence:  len(next) + 1,
-		Kind:      strings.TrimSpace(kind),
-	})
-	return next
-}
 
 func closeIssuePost(createdBy string) string {
 	actor := defaultActor(createdBy)

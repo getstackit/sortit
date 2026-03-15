@@ -79,7 +79,7 @@ func (p *GitHubProvider) Exchange(ctx context.Context, code, redirectURL string)
 	if err != nil {
 		return OAuthUser{}, fmt.Errorf("exchange github code: %w", err)
 	}
-	defer tokenResp.Body.Close()
+	defer tokenResp.Body.Close() //nolint:errcheck
 
 	if tokenResp.StatusCode != http.StatusOK {
 		return OAuthUser{}, fmt.Errorf("github token exchange failed with %d", tokenResp.StatusCode)
@@ -107,7 +107,7 @@ func (p *GitHubProvider) Exchange(ctx context.Context, code, redirectURL string)
 	if err != nil {
 		return OAuthUser{}, fmt.Errorf("load github user: %w", err)
 	}
-	defer userResp.Body.Close()
+	defer userResp.Body.Close() //nolint:errcheck
 
 	if userResp.StatusCode != http.StatusOK {
 		return OAuthUser{}, fmt.Errorf("github user lookup failed with %d", userResp.StatusCode)
@@ -155,7 +155,7 @@ func (p *GitHubProvider) lookupPrimaryEmail(ctx context.Context, accessToken str
 	if err != nil {
 		return "", fmt.Errorf("load github emails: %w", err)
 	}
-	defer resp.Body.Close()
+	defer resp.Body.Close() //nolint:errcheck
 
 	if resp.StatusCode != http.StatusOK {
 		return "", fmt.Errorf("github email lookup failed with %d", resp.StatusCode)

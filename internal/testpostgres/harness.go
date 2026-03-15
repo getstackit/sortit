@@ -111,7 +111,7 @@ func (h *Harness) terminateDatabaseConnections(ctx context.Context, database str
 	if err != nil {
 		return fmt.Errorf("open postgres admin connection: %w", err)
 	}
-	defer db.Close()
+	defer db.Close() //nolint:errcheck
 
 	if _, err := db.ExecContext(
 		ctx,

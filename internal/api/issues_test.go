@@ -53,7 +53,7 @@ func TestIssuesEndpointListsSeededIssues(t *testing.T) {
 	if rec.Code != http.StatusOK {
 		t.Fatalf("expected 200 for issue list, got %d", rec.Code)
 	}
-	if got := rec.Header().Get("Content-Type"); got != "application/json; charset=utf-8" {
+	if got := rec.Header().Get("Content-Type"); got != "application/json; charset=utf-8" { //nolint:goconst
 		t.Fatalf("expected JSON content type, got %q", got)
 	}
 
@@ -249,7 +249,7 @@ func TestIssuesEndpointCreatesIssue(t *testing.T) {
 	if created.Raw != "new issue" {
 		t.Fatalf("expected trimmed raw value, got %q", created.Raw)
 	}
-	if created.CreatedBy != "Casey" {
+	if created.CreatedBy != "Casey" { //nolint:goconst
 		t.Fatalf("expected trimmed createdBy, got %q", created.CreatedBy)
 	}
 	if created.Status != issues.StatusOpen {
@@ -677,7 +677,7 @@ func TestIssuesEndpointExploresIssue(t *testing.T) {
 		t.Fatalf("decode explore response: %v", err)
 	}
 
-	if payload.Issue.ID != "issue-target" {
+	if payload.Issue.ID != "issue-target" { //nolint:goconst
 		t.Fatalf("expected target issue in response, got %q", payload.Issue.ID)
 	}
 	if len(payload.RelatedIssues) != 2 {
@@ -1187,12 +1187,6 @@ func TestIssuesEndpointExploreRejectsInvalidLimit(t *testing.T) {
 		t.Fatalf("expected invalid limit error, got %q", payload.Error)
 	}
 }
-
-//go:fix inline
-func ptrToTime(value time.Time) *time.Time {
-	return new(value)
-}
-
 func TestIssuesEndpointRejectsInvalidBody(t *testing.T) {
 	server := NewServer(ServerConfig{
 		CORSOrigins: []string{"http://localhost:3000"},

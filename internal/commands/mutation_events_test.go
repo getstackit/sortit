@@ -69,7 +69,7 @@ func assertPublishedAndPersistedEvent(
 	baselineCount int,
 	wantKind string,
 	wantIssueID string,
-) issues.Event {
+) issues.Event { //nolint:unparam
 	t.Helper()
 
 	if len(bus.events) != 1 {

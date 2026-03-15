@@ -408,9 +408,9 @@ func writeError(w http.ResponseWriter, status int, message string) {
 
 func writeInternalError(w http.ResponseWriter, r *http.Request, message string, err error) {
 	if err != nil {
-		log.Printf("500 %s %s: %s: %v", r.Method, r.URL.Path, message, err)
+		log.Printf("500 %s %s: %s: %v", r.Method, r.URL.Path, message, err) //nolint:gosec
 	} else {
-		log.Printf("500 %s %s: %s", r.Method, r.URL.Path, message)
+		log.Printf("500 %s %s: %s", r.Method, r.URL.Path, message) //nolint:gosec
 	}
 	writeError(w, http.StatusInternalServerError, message)
 }

@@ -98,7 +98,7 @@ func BuildMapProjectionProfiled(
 		Duration: time.Since(stepStartedAt),
 	})
 
-	positions := make(map[string]Position, len(runtimeIssues))
+	var positions map[string]Position
 	roundedPositions := make(map[string]Position, len(runtimeIssues))
 	mapIssues := make([]MapIssue, len(runtimeIssues))
 	allEdges := []Edge{}
@@ -403,26 +403,6 @@ func filterVisibleClusters(items []Cluster, visible map[string]struct{}) []Clust
 	return filtered
 }
 
-func filterRuntimeIssuesByID(items []issues.Issue, ids map[string]struct{}) []issues.Issue {
-	filtered := make([]issues.Issue, 0, len(ids))
-	for _, item := range items {
-		if _, ok := ids[item.ID]; ok {
-			filtered = append(filtered, item)
-		}
-	}
-	return filtered
-}
-
-func filterEmbeddingMapByID(input map[string][]float64, ids map[string]struct{}) map[string][]float64 {
-	filtered := make(map[string][]float64, len(ids))
-	for id := range ids {
-		if value, ok := input[id]; ok {
-			filtered[id] = value
-		}
-	}
-	return filtered
-}
-
 func filterMapIssuesByID(items []MapIssue, ids map[string]struct{}) []MapIssue {
 	filtered := make([]MapIssue, 0, len(ids))
 	for _, item := range items {
@@ -469,79 +449,6 @@ func cloneVisibleIDs(input map[string]struct{}) map[string]struct{} {
 		out[id] = struct{}{}
 	}
 	return out
-}
-
-func mapIssuesByID(items []MapIssue) map[string]MapIssue {
-	index := make(map[string]MapIssue, len(items))
-	for _, item := range items {
-		index[item.ID] = item
-	}
-	return index
-}
-
-func cloneEmbeddingMap(input map[string][]float64) map[string][]float64 {
-	if len(input) == 0 {
-		return nil
-	}
-	out := make(map[string][]float64, len(input))
-	for key, value := range input {
-		out[key] = append([]float64(nil), value...)
-	}
-	return out
-}
-
-func issuesByID(items []issues.Issue) map[string]issues.Issue {
-	index := make(map[string]issues.Issue, len(items))
-	for _, item := range items {
-		index[item.ID] = item
-	}
-	return index
-}
-
-func cloneStoreIssues(items []issues.Issue) []issues.Issue {
-	if len(items) == 0 {
-		return nil
-	}
-	cloned := make([]issues.Issue, len(items))
-	for i, item := range items {
-		cloned[i] = item
-		cloned[i].Tags = append([]string(nil), item.Tags...)
-		cloned[i].Discussion = append([]issues.IssuePost(nil), item.Discussion...)
-		cloned[i].Links = append([]issues.IssueLink(nil), item.Links...)
-		cloned[i].Operations = append([]issues.IssueOperation(nil), item.Operations...)
-		cloned[i].TagScores = append([]issues.TagRelevance(nil), item.TagScores...)
-		cloned[i].Embedding = append([]float64(nil), item.Embedding...)
-	}
-	return cloned
-}
-
-func cloneStoreTags(items []issues.Tag) []issues.Tag {
-	if len(items) == 0 {
-		return nil
-	}
-	cloned := make([]issues.Tag, len(items))
-	for i, item := range items {
-		cloned[i] = item
-		cloned[i].Embedding = append([]float64(nil), item.Embedding...)
-	}
-	return cloned
-}
-
-func cloneRuntimeIssues(items []issues.Issue) []issues.Issue {
-	if len(items) == 0 {
-		return nil
-	}
-	cloned := make([]issues.Issue, len(items))
-	for i, item := range items {
-		cloned[i] = issues.Issue{
-			ID:        item.ID,
-			Raw:       item.Raw,
-			Status:    item.Status,
-			TagScores: append([]TagRelevance(nil), item.TagScores...),
-			Embedding: append([]float64(nil), item.Embedding...),
-		}
-	}
-	return cloned
 }
 
 func cloneClusters(items []Cluster) []Cluster {

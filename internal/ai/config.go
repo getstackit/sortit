@@ -7,16 +7,21 @@ import (
 	"strings"
 )
 
+const (
+	providerStub   = "stub"
+	providerOpenAI = "openai"
+)
+
 func NewAnalyzerFromEnv() (*Analyzer, error) {
 	provider := strings.ToLower(strings.TrimSpace(os.Getenv("AI_PROVIDER")))
-	if runningUnderGoTest() && provider != "" && provider != "stub" {
+	if runningUnderGoTest() && provider != "" && provider != providerStub {
 		return nil, fmt.Errorf("AI_PROVIDER %q is disabled during go test; use stub or inject fakes", provider)
 	}
 
 	switch provider {
-	case "", "stub":
+	case "", providerStub:
 		return NewAnalyzer(NewStubTagger(), NewStubEmbedder()), nil
-	case "openai":
+	case providerOpenAI:
 		tagModel := os.Getenv("OPENAI_TAG_MODEL")
 
 		cfg := OpenAIConfig{

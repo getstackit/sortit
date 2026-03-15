@@ -372,7 +372,6 @@ func runtimeIssueEmbedding(issue issues.Issue, tagEmbeddings map[string][]float6
 	}
 	normalizeVector(vector)
 	return vector
-
 }
 
 func embeddingFromText(text string) []float64 {
@@ -424,7 +423,7 @@ func tokenize(text string) []string {
 
 func fnvHash(text string, salt int) uint64 {
 	hasher := fnv.New64a()
-	_, _ = hasher.Write([]byte{byte(salt)})
+	_, _ = hasher.Write([]byte{byte(salt)}) //nolint:gosec
 	_, _ = hasher.Write([]byte(text))
 	return hasher.Sum64()
 }

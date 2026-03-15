@@ -135,7 +135,7 @@ func buildSkillFileGroups(target agentInstallTarget, skills []skillDefinition) [
 
 func installFileGroup(baseDir string, group fileGroup, version string) error {
 	destPath := filepath.Join(baseDir, group.destPath)
-	if err := os.MkdirAll(filepath.Dir(destPath), 0o755); err != nil {
+	if err := os.MkdirAll(filepath.Dir(destPath), 0o750); err != nil {
 		return fmt.Errorf("create directory %s: %w", filepath.Dir(destPath), err)
 	}
 

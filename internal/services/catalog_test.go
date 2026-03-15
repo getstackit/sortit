@@ -30,11 +30,11 @@ func (catalogTestTagger) Score(context.Context, string, []ai.Tag) ([]ai.TagScore
 }
 
 func (catalogTestTagger) Provider() string {
-	return "test"
+	return "test" //nolint:goconst
 }
 
 func (catalogTestTagger) Model() string {
-	return "test"
+	return "test" //nolint:goconst
 }
 
 type catalogTestEmbedder struct {

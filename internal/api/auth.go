@@ -212,7 +212,7 @@ func (s *Server) handleAuthCLILogin(w http.ResponseWriter, r *http.Request) {
 		LoginID:       start.ID,
 		StartURL:      cliLoginPageURL(s.authService.WebOrigin(), start.ID),
 		ExchangeToken: start.ExchangeToken,
-		IntervalMS:    int(start.PollInterval / time.Millisecond),
+		IntervalMS:    int(start.PollInterval / time.Millisecond), //nolint:gosec
 		ExpiresAt:     start.ExpiresAt,
 	})
 }

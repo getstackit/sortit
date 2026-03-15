@@ -176,11 +176,6 @@ func (l *MapProjectionLoader) loadProjection(ctx context.Context, revision uint6
 	return projection, nil
 }
 
-func (l *MapProjectionLoader) rebuild(ctx context.Context) (issuemap.MapProjection, error) {
-	projection, _, err := l.rebuildProfiled(ctx)
-	return projection, err
-}
-
 type rebuildProfile struct {
 	load  DetailedIssueLoadProfile
 	build issuemap.BuildMapProjectionProfile
@@ -204,15 +199,6 @@ func (l *MapProjectionLoader) rebuildProfiled(ctx context.Context) (issuemap.Map
 		build: buildProfile,
 		total: time.Since(startedAt),
 	}, nil
-}
-
-func loadDetailedIssuesAndTags(
-	ctx context.Context,
-	store issues.Store,
-	catalog *services.CatalogService,
-) ([]issues.MapProjectionIssue, []issues.Tag, error) {
-	items, tags, _, err := loadDetailedIssuesAndTagsProfiled(ctx, store, catalog)
-	return items, tags, err
 }
 
 func loadDetailedIssuesAndTagsProfiled(

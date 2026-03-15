@@ -117,9 +117,9 @@ func SearchFromQueryWithTags(
 			Raw:                candidateSummary.Raw,
 			Status:             candidateSummary.Status,
 			Tags:               candidateSummary.Tags,
-			SemanticSimilarity: round(semantic, 2),
-			FactorSimilarity:   round(factor, 2),
-			CombinedSimilarity: round(combined, 2),
+			SemanticSimilarity: round(semantic),
+			FactorSimilarity:   round(factor),
+			CombinedSimilarity: round(combined),
 			Reason:             relatedIssueReason(sharedTags, semantic, factor),
 		})
 	}
@@ -277,7 +277,7 @@ func SearchTags(storeTags []issues.Tag, queryEmbedding []float64, limit int) []R
 		related = append(related, RelatedTag{
 			Name:        tag.Name,
 			Description: tag.Description,
-			Similarity:  round(sim, 2),
+			Similarity:  round(sim),
 		})
 	}
 

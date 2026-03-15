@@ -270,7 +270,7 @@ func (c *openAIClient) doJSON(ctx context.Context, method string, requestPath st
 	if err != nil {
 		return fmt.Errorf("send request: %w", err)
 	}
-	defer resp.Body.Close()
+	defer resp.Body.Close() //nolint:errcheck
 
 	payload, err := io.ReadAll(io.LimitReader(resp.Body, 1<<20))
 	if err != nil {
@@ -349,7 +349,7 @@ func buildOpenAICanonicalizationPrompt(posts []string) string {
 		if post == "" {
 			continue
 		}
-		builder.WriteString(fmt.Sprintf("Post %d:\n", index+1))
+		fmt.Fprintf(&builder, "Post %d:\n", index+1)
 		builder.WriteString(post)
 		builder.WriteString("\n\n")
 	}

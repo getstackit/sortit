@@ -66,7 +66,7 @@ func (c *apiClient) do(ctx context.Context, method, path string, body any, out a
 	if err != nil {
 		return fmt.Errorf("request failed: %w", err)
 	}
-	defer resp.Body.Close()
+	defer resp.Body.Close() //nolint:errcheck
 
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
 		return decodeAPIError(resp)

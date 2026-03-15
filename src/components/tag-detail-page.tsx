@@ -14,7 +14,7 @@ import { TagRelevanceBars } from "@/components/tag-relevance-bars";
 import { useIssues } from "@/hooks/use-issues";
 import { useTags } from "@/hooks/use-tags";
 import { rememberRecentTag } from "@/hooks/use-recent-history";
-import { entityStyle } from "@/lib/entity-colors";
+
 import type { IssueRecord } from "@/lib/issues";
 import { Badge } from "@/components/ui/badge";
 import { tagHref } from "@/lib/tags";

@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useMemo } from "react";
 import { ChevronDownIcon, FilterIcon, XIcon } from "lucide-react";
 import { Checkbox } from "@/components/ui/checkbox";
 import {
@@ -17,7 +17,7 @@ import {
 } from "@/components/ui/sidebar";
 import { entityStyle } from "@/lib/entity-colors";
 import type { IssueRecord } from "@/lib/issues";
-import { cn } from "@/lib/utils";
+
 
 export type IssuesFilter = {
   tags: string[];

@@ -39,4 +39,3 @@ func ComputeEdgesWithEmbeddings(items []issues.Issue, embeddings map[string][]fl
 
 	return edges
 }
-

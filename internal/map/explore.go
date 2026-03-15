@@ -94,9 +94,9 @@ func ExploreFromIssuesWithTags(storeIssues []issues.Issue, storeTags []issues.Ta
 			Raw:                candidateSummary.Raw,
 			Status:             candidateSummary.Status,
 			Tags:               candidateSummary.Tags,
-			SemanticSimilarity: round(semantic, 2),
-			FactorSimilarity:   round(factor, 2),
-			CombinedSimilarity: round(combined, 2),
+			SemanticSimilarity: round(semantic),
+			FactorSimilarity:   round(factor),
+			CombinedSimilarity: round(combined),
 			Reason:             relatedIssueReasonWithBoost(sharedTags, semantic, factor, boost, canonical[candidate.ID]),
 		})
 	}
@@ -323,7 +323,7 @@ func buildExploreOpportunities(target ExploreIssue, related []RelatedIssue) []Op
 			})
 			total += item.CombinedSimilarity
 		}
-		confidence := round(total/float64(len(group.issues)), 2)
+		confidence := round(total / float64(len(group.issues)))
 
 		title := "Investigate a shared root cause"
 		if len(group.sharedTags) > 0 {

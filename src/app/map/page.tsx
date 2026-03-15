@@ -151,7 +151,7 @@ function MapPageContent() {
   const pathname = usePathname();
   const searchParams = useSearchParams();
   const searchParamsString = searchParams.toString();
-  const urlState = useMemo(() => parseMapURLState(searchParams), [searchParams]);
+  const urlState = parseMapURLState(searchParams);
   const baseQueryParamsRef = useRef(new URLSearchParams(searchParamsString));
   const [mapData, setMapData] = useState<MapData | null>(null);
   const [loading, setLoading] = useState(true);
@@ -488,13 +488,7 @@ function MapPageContent() {
 
   const visibleIssueIds = useMemo(
     () => new Set(visibleIssueIDsForViewport(issues, deferredViewport)),
-    [
-      issues,
-      deferredViewport.xMax,
-      deferredViewport.xMin,
-      deferredViewport.yMax,
-      deferredViewport.yMin,
-    ]
+    [issues, deferredViewport]
   );
 
   const visibleIssues = useMemo(
@@ -697,7 +691,7 @@ function MapPageContent() {
     setBatchEmbeddingAnalysis(null);
     setBatchEmbeddingError(null);
     setBatchEmbeddingLoading(false);
-  }, []);
+  }, [setBatchEmbeddingAnalysis, setBatchEmbeddingError, setBatchEmbeddingLoading]);
 
   function scheduleViewport(nextViewport: Viewport) {
     viewportRef.current = nextViewport;
@@ -751,13 +745,13 @@ function MapPageContent() {
     resetBatchEmbeddingAnalysis();
     setSelectedBatch(new Set());
     setLassoPoints([]);
-  }, [resetBatchEmbeddingAnalysis]);
+  }, [resetBatchEmbeddingAnalysis, setShowBatchAnalysis, setSelectedBatch, setLassoPoints]);
 
   const clearAllSelections = useCallback(() => {
     clearSelection();
     setSelectedId(null);
     setFilteredClusterLabel(null);
-  }, [clearSelection]);
+  }, [clearSelection, setSelectedId, setFilteredClusterLabel]);
 
   const toScreen = useCallback((nx: number, ny: number) => {
     const width = viewport.xMax - viewport.xMin;
@@ -800,7 +794,7 @@ function MapPageContent() {
 
       return next;
     });
-  }, [resetBatchEmbeddingAnalysis, selectedId]);
+  }, [resetBatchEmbeddingAnalysis, selectedId, setShowBatchAnalysis, setSelectedId, setSelectedBatch]);
 
   useEffect(() => {
     const container = containerRef.current;
@@ -1000,7 +994,7 @@ function MapPageContent() {
       const issueId = issueEl.getAttribute("data-issue");
       if (issueId) setHoveredId(issueId);
     }
-  }, []);
+  }, [setHoveredId]);
 
   const handleMouseOut = useCallback((event: ReactMouseEvent<SVGSVGElement>) => {
     const issueEl = (event.target as SVGElement).closest("[data-issue]");
@@ -1008,7 +1002,7 @@ function MapPageContent() {
     const related = event.relatedTarget as SVGElement | null;
     if (related && issueEl.contains(related)) return;
     setHoveredId(null);
-  }, []);
+  }, [setHoveredId]);
 
   const hasSelection = selectedId != null || selectedBatch.size > 0;
 
@@ -1127,6 +1121,7 @@ function MapPageContent() {
     issueIndex,
     toScreen,
     filteredClusterLabel,
+    setFilteredClusterLabel,
   ]);
 
   const filteredIssueIds = useMemo(() => {

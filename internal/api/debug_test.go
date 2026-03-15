@@ -24,7 +24,7 @@ func (t *fakeTagger) Score(_ context.Context, _ string, tags []ai.Tag) ([]ai.Tag
 }
 
 func (t *fakeTagger) Provider() string {
-	return "fake"
+	return "fake" //nolint:goconst
 }
 
 func (t *fakeTagger) Model() string {

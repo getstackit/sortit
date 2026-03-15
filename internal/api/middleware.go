@@ -110,7 +110,7 @@ func loggingMiddleware(next http.Handler) http.Handler {
 		start := time.Now()
 		recorder := &statusRecorder{ResponseWriter: w, status: http.StatusOK}
 		next.ServeHTTP(recorder, r)
-		log.Printf(
+		log.Printf( //nolint:gosec
 			"%s %s %d %s",
 			r.Method,
 			r.URL.Path,

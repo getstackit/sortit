@@ -26,8 +26,10 @@ func (s peopleAnalyticsOnlyStore) SaveIssuePost(context.Context, issues.IssuePos
 func (s peopleAnalyticsOnlyStore) UpdateIssueFields(context.Context, string, issues.IssueFieldUpdate) error {
 	return nil
 }
-func (s peopleAnalyticsOnlyStore) SaveOperation(context.Context, issues.IssueOperation) error { return nil }
-func (s peopleAnalyticsOnlyStore) SaveLink(context.Context, issues.IssueLink) error         { return nil }
+func (s peopleAnalyticsOnlyStore) SaveOperation(context.Context, issues.IssueOperation) error {
+	return nil
+}
+func (s peopleAnalyticsOnlyStore) SaveLink(context.Context, issues.IssueLink) error { return nil }
 
 func (s peopleAnalyticsOnlyStore) ListPeopleAnalytics(
 	_ context.Context,

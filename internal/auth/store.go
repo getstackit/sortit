@@ -30,7 +30,7 @@ func (s *Store) UpsertOAuthUser(ctx context.Context, oauthUser OAuthUser) (User,
 	if err != nil {
 		return User{}, fmt.Errorf("begin auth upsert tx: %w", err)
 	}
-	defer tx.Rollback()
+	defer tx.Rollback() //nolint:errcheck
 
 	var userID string
 	err = tx.QueryRowContext(
@@ -183,7 +183,7 @@ func (s *Store) ListAPITokens(ctx context.Context, userID string) ([]APIToken, e
 	if err != nil {
 		return nil, fmt.Errorf("list api tokens: %w", err)
 	}
-	defer rows.Close()
+	defer rows.Close() //nolint:errcheck
 
 	var tokens []APIToken
 	for rows.Next() {

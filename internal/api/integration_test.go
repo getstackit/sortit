@@ -137,7 +137,7 @@ func TestAPIIntegrationCreateLookupMapAndTagsWithMockAIBackend(t *testing.T) {
 	if !slices.Equal(second.Tags, []string{"export", "csv", "performance"}) {
 		t.Fatalf("unexpected tags for second issue: %#v", second.Tags)
 	}
-	if assigned.AssignedTo != "Avery" {
+	if assigned.AssignedTo != "Avery" { //nolint:goconst
 		t.Fatalf("expected assigned issue to be owned by Avery, got %q", assigned.AssignedTo)
 	}
 
@@ -250,7 +250,7 @@ func TestAPIIntegrationCreateAndCloseIssue(t *testing.T) {
 	if closed.ClosedAt == nil {
 		t.Fatal("expected closedAt to be set")
 	}
-	if closed.ClosedBy != "Jordan" {
+	if closed.ClosedBy != "Jordan" { //nolint:goconst
 		t.Fatalf("expected closedBy Jordan, got %q", closed.ClosedBy)
 	}
 

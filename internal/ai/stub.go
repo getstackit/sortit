@@ -110,14 +110,14 @@ func (e *StubEmbedder) embedTexts(_ context.Context, texts []string) ([][]float3
 		}
 
 		for idx, token := range tokens {
-			bucket := int(hashUint32(token) % uint32(e.dimensions))
+			bucket := int(hashUint32(token) % uint32(e.dimensions)) //nolint:gosec
 			sign := 1.0
 			if hashUint32(token+"-sign")%2 == 0 {
 				sign = -1
 			}
 
 			vector[bucket] += sign * (1 + float64((idx%5))/10)
-			nextBucket := int(hashUint32(token+"-next") % uint32(e.dimensions))
+			nextBucket := int(hashUint32(token+"-next") % uint32(e.dimensions)) //nolint:gosec
 			vector[nextBucket] += sign * 0.35
 		}
 

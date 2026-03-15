@@ -78,13 +78,13 @@ func (s *PostgresStore) ClaimNextIssueEnrichment(
 	)
 
 	var job IssueEnrichmentJob
-	switch err := row.Scan(&job.IssueID, &job.TargetSequence, &job.AttemptCount); {
-	case err == nil:
+	switch err := row.Scan(&job.IssueID, &job.TargetSequence, &job.AttemptCount); err {
+	case nil:
 		if commitErr := tx.Commit(); commitErr != nil {
 			return IssueEnrichmentJob{}, false, fmt.Errorf("commit enrichment job claim: %w", commitErr)
 		}
 		return job, true, nil
-	case err == sql.ErrNoRows:
+	case sql.ErrNoRows:
 		return IssueEnrichmentJob{}, false, nil
 	default:
 		return IssueEnrichmentJob{}, false, fmt.Errorf("claim next enrichment job: %w", err)

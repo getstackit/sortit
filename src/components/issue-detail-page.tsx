@@ -46,7 +46,7 @@ import { rememberRecentIssue } from "@/hooks/use-recent-history";
 import { cn } from "@/lib/utils";
 import { formatRelativeTime } from "@/lib/format";
 import { Badge } from "@/components/ui/badge";
-import { TagBadge } from "@/components/tag-badge";
+
 import { TagRelevanceBars } from "@/components/tag-relevance-bars";
 import { entityStyle } from "@/lib/entity-colors";
 import { tagHref } from "@/lib/tags";
