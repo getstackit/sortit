@@ -14,10 +14,13 @@ type tagsResponse struct {
 }
 
 type tagResponse struct {
-	Name        string    `json:"name"`
-	Description string    `json:"description,omitempty"`
-	CreatedAt   time.Time `json:"createdAt"`
-	Embedding   []float64 `json:"embedding,omitempty"`
+	Name                 string    `json:"name"`
+	Description          string    `json:"description,omitempty"`
+	CreatedAt            time.Time `json:"createdAt"`
+	Embedding            []float64 `json:"embedding,omitempty"`
+	Specificity          *float64  `json:"specificity,omitempty"`
+	SpecificityLLM       *float64  `json:"specificityLlm,omitempty"`
+	SpecificityEmbedding *float64  `json:"specificityEmbedding,omitempty"`
 }
 
 type mergeTagsRequest struct {
@@ -198,10 +201,13 @@ func toTagResponses(tags []issues.Tag) []tagResponse {
 	items := make([]tagResponse, len(tags))
 	for i, tag := range tags {
 		items[i] = tagResponse{
-			Name:        tag.Name,
-			Description: tag.Description,
-			CreatedAt:   tag.CreatedAt,
-			Embedding:   append([]float64(nil), tag.Embedding...),
+			Name:                 tag.Name,
+			Description:          tag.Description,
+			CreatedAt:            tag.CreatedAt,
+			Embedding:            append([]float64(nil), tag.Embedding...),
+			Specificity:          tag.Specificity,
+			SpecificityLLM:       tag.SpecificityLLM,
+			SpecificityEmbedding: tag.SpecificityEmbedding,
 		}
 	}
 	return items

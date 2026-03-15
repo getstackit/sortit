@@ -8,6 +8,18 @@ export type SpecificTagSuggestion = {
   count: number;
 };
 
+export type SpecificityLadderEntry = {
+  name: string;
+  description: string;
+  similarity: number;
+  specificity: number;
+};
+
+export type SpecificityLadder = {
+  moreSpecific: SpecificityLadderEntry[];
+  moreGeneric: SpecificityLadderEntry[];
+};
+
 export type MergeCandidate = {
   name: string;
   description: string;
@@ -86,68 +98,74 @@ export function issueTagRelevance(issue: IssueRecord, tagName: string) {
   return issue.tags.some((tag) => normalizeTagName(tag) === normalizedTag) ? 1 : 0;
 }
 
+function tagSpecificity(tag: TagRecord): number {
+  return tag.specificity ?? 0.5;
+}
+
+export function buildSpecificityLadder(
+  tagName: string,
+  tags: TagRecord[],
+  limit = 4
+): SpecificityLadder {
+  const normalizedName = normalizeTagName(tagName);
+  const selectedTag = tags.find(
+    (tag) => normalizeTagName(tag.name) === normalizedName
+  );
+
+  if (
+    !selectedTag ||
+    !Array.isArray(selectedTag.embedding) ||
+    selectedTag.embedding.length <= 1
+  ) {
+    return { moreSpecific: [], moreGeneric: [] };
+  }
+
+  const selectedSpecificity = tagSpecificity(selectedTag);
+
+  const similar = tags
+    .filter((tag) => {
+      if (normalizeTagName(tag.name) === normalizedName) return false;
+      if (!Array.isArray(tag.embedding) || tag.embedding.length <= 1) return false;
+      if (tag.embedding.length !== selectedTag.embedding.length) return false;
+      return true;
+    })
+    .map((tag) => ({
+      name: tag.name,
+      description: tag.description ?? "",
+      similarity: cosineSimilarity(selectedTag.embedding, tag.embedding),
+      specificity: tagSpecificity(tag),
+    }))
+    .filter((entry) => entry.similarity >= 0.5);
+
+  const moreSpecific = similar
+    .filter((entry) => entry.specificity > selectedSpecificity)
+    .sort((a, b) => b.specificity - a.specificity)
+    .slice(0, limit);
+
+  const moreGeneric = similar
+    .filter((entry) => entry.specificity < selectedSpecificity)
+    .sort((a, b) => a.specificity - b.specificity)
+    .slice(0, limit);
+
+  return { moreSpecific, moreGeneric };
+}
+
 export function buildSpecificTagSuggestions(
   tagName: string,
   tags: TagRecord[],
-  issues: IssueRecord[],
-  limit = 6
-): SpecificTagSuggestion[] {
-  if (!isGenericBucketTag(tagName)) {
+  limit = 4
+): SpecificityLadderEntry[] {
+  const normalizedName = normalizeTagName(tagName);
+  const selectedTag = tags.find(
+    (tag) => normalizeTagName(tag.name) === normalizedName
+  );
+
+  if (!selectedTag || tagSpecificity(selectedTag) >= 0.4) {
     return [];
   }
 
-  const tagsByName = new Map(
-    tags.map((tag) => [normalizeTagName(tag.name), tag] as const)
-  );
-  const selectedTag = normalizeTagName(tagName);
-  const aggregate = new Map<string, { total: number; count: number }>();
-
-  for (const issue of issues) {
-    if (issueTagRelevance(issue, selectedTag) <= 0) {
-      continue;
-    }
-
-    const sourceTags =
-      issue.tagScores && issue.tagScores.length > 0
-        ? issue.tagScores.map((entry) => ({
-            tag: entry.tag,
-            relevance: entry.relevance,
-          }))
-        : issue.tags.map((entry) => ({ tag: entry, relevance: 1 }));
-
-    for (const entry of sourceTags) {
-      const normalizedEntry = normalizeTagName(entry.tag);
-      if (normalizedEntry === selectedTag || isGenericBucketTag(normalizedEntry)) {
-        continue;
-      }
-
-      const current = aggregate.get(normalizedEntry) ?? { total: 0, count: 0 };
-      current.total += entry.relevance;
-      current.count += 1;
-      aggregate.set(normalizedEntry, current);
-    }
-  }
-
-  return Array.from(aggregate.entries())
-    .map(([normalizedEntry, stats]) => {
-      const tag = tagsByName.get(normalizedEntry);
-      return {
-        name: tag?.name ?? normalizedEntry,
-        description: tag?.description ?? "",
-        relevance: stats.total / stats.count,
-        count: stats.count,
-      };
-    })
-    .sort((left, right) => {
-      if (right.relevance !== left.relevance) {
-        return right.relevance - left.relevance;
-      }
-      if (right.count !== left.count) {
-        return right.count - left.count;
-      }
-      return left.name.localeCompare(right.name);
-    })
-    .slice(0, limit);
+  const ladder = buildSpecificityLadder(tagName, tags, limit);
+  return ladder.moreSpecific;
 }
 
 export function buildMergeCandidates(

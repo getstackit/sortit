@@ -11,9 +11,9 @@ import { useIssues } from "@/hooks/use-issues";
 import {
   buildConsolidationCandidates,
   buildMergeCandidates,
-  buildSpecificTagSuggestions,
+  buildSpecificityLadder,
   cosineSimilarity,
-  isGenericBucketTag,
+  type SpecificityLadder,
 } from "@/lib/tag-quality";
 import { Badge } from "@/components/ui/badge";
 import {
@@ -180,13 +180,15 @@ export default function TagsPage() {
     () => buildMergeCandidates(selectedPoint?.tag ?? null, embeddedTags),
     [embeddedTags, selectedPoint]
   );
-  const selectedSpecificSuggestions = useMemo(
+  const selectedSpecificityLadder: SpecificityLadder = useMemo(
     () =>
       selectedPoint
-        ? buildSpecificTagSuggestions(selectedPoint.tag.name, tags, issues)
-        : [],
-    [issues, selectedPoint, tags]
+        ? buildSpecificityLadder(selectedPoint.tag.name, tags)
+        : { moreSpecific: [], moreGeneric: [] },
+    [selectedPoint, tags]
   );
+  const selectedSpecificity =
+    selectedPoint?.tag.specificity ?? 0.5;
   const consolidationCandidates = useMemo(
     () =>
       buildConsolidationCandidates(tags, issues).filter(
@@ -314,13 +316,13 @@ export default function TagsPage() {
                           className="cursor-pointer"
                         >
                           <circle
-                            r={selected ? 15 : 11}
+                            r={tagNodeRadius(point.tag, selected)}
                             fill={tagColor(point.tag.name)}
                             stroke={selected ? "#0f172a" : "rgba(15, 23, 42, 0.18)"}
                             strokeWidth={selected ? 3 : 1.5}
                           />
                           <text
-                            x={selected ? 22 : 18}
+                            x={tagNodeRadius(point.tag, selected) + 7}
                             y={5}
                             fontSize="22"
                             fontWeight={selected ? "700" : "600"}
@@ -362,9 +364,7 @@ export default function TagsPage() {
                           PCA
                         </span>
                         <span className="rounded-full border border-border/60 bg-background px-2.5 py-1 text-xs font-medium text-muted-foreground">
-                          {isGenericBucketTag(selectedPoint.tag.name)
-                            ? "Generic bucket"
-                            : "Specific tag"}
+                          Specificity: {selectedSpecificity.toFixed(2)}
                         </span>
                         <Link
                           href={tagHref(selectedPoint.tag.name)}
@@ -377,49 +377,71 @@ export default function TagsPage() {
 
                     <div className="mt-4 space-y-2">
                       <p className="text-[11px] font-medium uppercase tracking-[0.14em] text-muted-foreground">
-                        Specificity
+                        Specificity ladder
                       </p>
-                      {isGenericBucketTag(selectedPoint.tag.name) ? (
+                      {selectedSpecificity < 0.4 && (
+                        <p className="text-sm text-muted-foreground">
+                          This tag has low specificity. Consider using a more specific alternative below.
+                        </p>
+                      )}
+                      {selectedSpecificityLadder.moreSpecific.length > 0 ? (
                         <>
-                          <p className="text-sm text-muted-foreground">
-                            This tag is a broad bucket. Prefer a concrete subsystem or feature-area tag when one exists.
+                          <p className="text-[10px] font-medium uppercase tracking-[0.12em] text-muted-foreground">
+                            More specific
                           </p>
-                          {issuesLoading ? (
-                            <p className="text-sm text-muted-foreground">
-                              Loading co-occurring tags...
-                            </p>
-                          ) : issuesError ? (
-                            <p className="text-sm text-muted-foreground">
-                              Could not load issue data for specificity suggestions.
-                            </p>
-                          ) : selectedSpecificSuggestions.length > 0 ? (
-                            selectedSpecificSuggestions.map((suggestion) => (
-                              <Link
-                                key={suggestion.name}
-                                href={tagHref(suggestion.name)}
-                                className="app-subtle-surface flex items-start justify-between gap-3 px-3 py-2 transition-colors hover:bg-muted/40"
-                              >
-                                <div>
-                                  <p className="text-sm font-medium">{suggestion.name}</p>
-                                  <p className="text-xs text-muted-foreground">
-                                    {suggestion.description || "No description"}
-                                  </p>
-                                </div>
-                                <div className="text-right text-xs text-muted-foreground">
-                                  <div>{Math.round(suggestion.relevance * 100)}%</div>
-                                  <div>{suggestion.count} issues</div>
-                                </div>
-                              </Link>
-                            ))
-                          ) : (
-                            <p className="text-sm text-muted-foreground">
-                              No sharper co-occurring tags have surfaced yet.
-                            </p>
-                          )}
+                          {selectedSpecificityLadder.moreSpecific.map((entry) => (
+                            <button
+                              key={entry.name}
+                              type="button"
+                              onClick={() => setSelectedTagName(entry.name)}
+                              className="app-subtle-surface flex w-full items-start justify-between gap-3 px-3 py-2 text-left transition-colors hover:bg-muted/40"
+                            >
+                              <div>
+                                <p className="text-sm font-medium">{entry.name}</p>
+                                <p className="text-xs text-muted-foreground">
+                                  {entry.description || "No description"}
+                                </p>
+                              </div>
+                              <div className="text-right text-xs text-muted-foreground">
+                                <div>{Math.round(entry.similarity * 100)}% sim</div>
+                                <div>{entry.specificity.toFixed(2)} spec</div>
+                              </div>
+                            </button>
+                          ))}
                         </>
                       ) : (
                         <p className="text-sm text-muted-foreground">
-                          This already reads like a concrete application surface or subsystem tag.
+                          No more-specific related tags found.
+                        </p>
+                      )}
+                      {selectedSpecificityLadder.moreGeneric.length > 0 ? (
+                        <>
+                          <p className="mt-2 text-[10px] font-medium uppercase tracking-[0.12em] text-muted-foreground">
+                            More generic
+                          </p>
+                          {selectedSpecificityLadder.moreGeneric.map((entry) => (
+                            <button
+                              key={entry.name}
+                              type="button"
+                              onClick={() => setSelectedTagName(entry.name)}
+                              className="app-subtle-surface flex w-full items-start justify-between gap-3 px-3 py-2 text-left transition-colors hover:bg-muted/40"
+                            >
+                              <div>
+                                <p className="text-sm font-medium">{entry.name}</p>
+                                <p className="text-xs text-muted-foreground">
+                                  {entry.description || "No description"}
+                                </p>
+                              </div>
+                              <div className="text-right text-xs text-muted-foreground">
+                                <div>{Math.round(entry.similarity * 100)}% sim</div>
+                                <div>{entry.specificity.toFixed(2)} spec</div>
+                              </div>
+                            </button>
+                          ))}
+                        </>
+                      ) : (
+                        <p className="text-sm text-muted-foreground">
+                          No more-generic related tags found.
                         </p>
                       )}
                     </div>
@@ -434,15 +456,28 @@ export default function TagsPage() {
                             key={candidate.name}
                             className="app-subtle-surface flex items-start justify-between gap-3 px-3 py-2"
                           >
-                            <Link
-                              href={tagHref(candidate.name)}
-                              className="min-w-0 flex-1 transition-colors hover:text-foreground"
-                            >
-                              <p className="text-sm font-medium">{candidate.name}</p>
-                              <p className="text-xs text-muted-foreground">
-                                {candidate.reason}
-                              </p>
-                            </Link>
+                            <div className="min-w-0 flex-1">
+                              <Link
+                                href={tagHref(candidate.name)}
+                                className="transition-colors hover:text-foreground"
+                              >
+                                <p className="text-sm font-medium">{candidate.name}</p>
+                                <p className="text-xs text-muted-foreground">
+                                  {candidate.reason}
+                                </p>
+                              </Link>
+                              {(() => {
+                                const candidateTag = tags.find((t) => t.name === candidate.name);
+                                const bothHigh =
+                                  (selectedPoint?.tag.specificity ?? 0) >= 0.7 &&
+                                  (candidateTag?.specificity ?? 0) >= 0.7;
+                                return bothHigh ? (
+                                  <p className="mt-1.5 rounded-lg border border-amber-300/50 bg-amber-50 px-2 py-1 text-[10px] text-amber-800 dark:border-amber-500/30 dark:bg-amber-950/30 dark:text-amber-300">
+                                    Both tags are highly specific — merging may lose meaningful distinction.
+                                  </p>
+                                ) : null;
+                              })()}
+                            </div>
                             <div className="flex shrink-0 items-center gap-1.5">
                               <span className="text-xs font-medium tabular-nums text-muted-foreground">
                                 {Math.round(candidate.similarity * 100)}%
@@ -584,6 +619,18 @@ export default function TagsPage() {
                         <p className="mt-2 text-xs text-muted-foreground">
                           {candidate.reason}
                         </p>
+                        {(() => {
+                          const canonicalTag = tags.find((t) => t.name === candidate.canonicalName);
+                          const aliasTag = tags.find((t) => t.name === candidate.aliasName);
+                          const bothHigh =
+                            (canonicalTag?.specificity ?? 0) >= 0.7 &&
+                            (aliasTag?.specificity ?? 0) >= 0.7;
+                          return bothHigh ? (
+                            <p className="mt-2 rounded-lg border border-amber-300/50 bg-amber-50 px-3 py-2 text-xs text-amber-800 dark:border-amber-500/30 dark:bg-amber-950/30 dark:text-amber-300">
+                              Both tags are highly specific — merging may lose meaningful distinction.
+                            </p>
+                          ) : null;
+                        })()}
                       </div>
                       <span className="rounded-full border border-border/60 bg-background px-2.5 py-1 text-xs font-medium text-muted-foreground">
                         {Math.round(candidate.score * 100)} score
@@ -922,6 +969,12 @@ function fallbackPoints(count: number) {
     const angle = (Math.PI * 2 * index) / count;
     return [Math.cos(angle), Math.sin(angle)];
   });
+}
+
+function tagNodeRadius(tag: TagRecord, selected: boolean): number {
+  const specificity = tag.specificity ?? 0.5;
+  const base = 6 + specificity * 14; // 6px at 0, 20px at 1
+  return selected ? base + 4 : base;
 }
 
 function tagColor(name: string) {

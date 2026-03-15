@@ -1,6 +1,5 @@
 import Link from "next/link";
 import { entityStyle } from "@/lib/entity-colors";
-import { isGenericBucketTag } from "@/lib/tag-quality";
 import { tagHref } from "@/lib/tags";
 
 export type TagScore = {
@@ -11,13 +10,14 @@ export type TagScore = {
 type TagRelevanceBarsProps = {
   tags: TagScore[];
   colorFor?: (tag: string) => string;
+  tagSpecificity?: Map<string, number | null | undefined>;
 };
 
 function defaultColor(tag: string): string {
   return entityStyle(tag).color ?? "#888";
 }
 
-export function TagRelevanceBars({ tags, colorFor = defaultColor }: TagRelevanceBarsProps) {
+export function TagRelevanceBars({ tags, colorFor = defaultColor, tagSpecificity }: TagRelevanceBarsProps) {
   if (tags.length === 0) {
     return null;
   }
@@ -28,7 +28,8 @@ export function TagRelevanceBars({ tags, colorFor = defaultColor }: TagRelevance
         Tag Relevance
       </p>
       {tags.map(({ tag, relevance }) => {
-        const generic = isGenericBucketTag(tag);
+        const specificity = tagSpecificity?.get(tag) ?? null;
+        const generic = specificity !== null && specificity < 0.3;
         return (
           <div key={tag} className="flex items-center gap-2">
             <span

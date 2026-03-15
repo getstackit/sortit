@@ -6,6 +6,9 @@ export type TagRecord = {
   description?: string;
   createdAt: string;
   embedding: number[];
+  specificity?: number | null;
+  specificityLlm?: number | null;
+  specificityEmbedding?: number | null;
 };
 
 type TagsResponse = {
