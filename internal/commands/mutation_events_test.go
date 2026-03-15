@@ -26,7 +26,7 @@ func newCommandTestFixture() commandTestFixture {
 		ai.NewStubCanonicalizer(),
 	)
 	store := issues.NewInMemoryStore(nil)
-	catalog := services.NewCatalogService(nil, analyzer)
+	catalog := services.NewCatalogService(nil, analyzer, slog.Default())
 	return commandTestFixture{
 		store:    store,
 		runner:   &CommandRunner{DB: store},

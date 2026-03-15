@@ -2,6 +2,7 @@ package services
 
 import (
 	"context"
+	"log/slog"
 	"testing"
 	"time"
 
@@ -75,6 +76,7 @@ func TestEnsureStoredTagsReembedsWhenDescriptionChanges(t *testing.T) {
 	service := NewCatalogService(
 		store,
 		ai.NewAnalyzer(catalogTestTagger{}, embedder),
+		slog.Default(),
 	)
 
 	err := service.EnsureStoredTags(context.Background(), []issues.Tag{
@@ -118,6 +120,7 @@ func TestEnsureStoredTagsKeepsExistingEmbeddingWhenDescriptionUnchanged(t *testi
 	service := NewCatalogService(
 		store,
 		ai.NewAnalyzer(catalogTestTagger{}, embedder),
+		slog.Default(),
 	)
 
 	err := service.EnsureStoredTags(context.Background(), []issues.Tag{

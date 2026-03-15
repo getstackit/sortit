@@ -274,6 +274,7 @@ func (s *Server) registerUIRoutes(
 	mapEdgesRoute := path.Join(prefix, "map", "edges")
 	debugAnalyzeRoute := path.Join(prefix, "debug", "issues", "analyze")
 	debugInvalidateMapProjectionRoute := path.Join(prefix, "debug", "map-projection", "invalidate")
+	debugRescoreTagsRoute := path.Join(prefix, "debug", "tags", "rescore")
 	peopleSubtreeRoute := path.Join(prefix, "people") + "/"
 	peopleCorrelationsRoute := path.Join(prefix, "people", "correlations")
 
@@ -303,6 +304,7 @@ func (s *Server) registerUIRoutes(
 	registerProtectedRoute(apiMux, apiRoutes, peopleSubtreeRoute, s.handlePersonProfile(peopleSubtreeRoute))
 	registerProtectedRoute(apiMux, apiRoutes, debugAnalyzeRoute, s.handleDebugIssueAnalyze)
 	registerProtectedRoute(apiMux, apiRoutes, debugInvalidateMapProjectionRoute, s.handleDebugInvalidateMapProjection)
+	registerProtectedRoute(apiMux, apiRoutes, debugRescoreTagsRoute, s.handleDebugRescoreTags)
 }
 
 func registerProtectedRoute(
@@ -466,7 +468,8 @@ func NewServer(cfg ServerConfig) *Server {
 
 	tagStore := tagStoreFromIssueStore(store)
 	commandAnalyzer := services.FallbackAnalyzer(cfg.Analyzer)
-	catalog := services.NewCatalogService(tagStore, commandAnalyzer)
+	catalogLogger := logger.With("component", "catalog")
+	catalog := services.NewCatalogService(tagStore, commandAnalyzer, catalogLogger)
 	enricherLogger := logger.With("component", "enricher")
 	enricher := services.NewIssueEnricher(commandAnalyzer, catalog, enricherLogger)
 	var enrichmentWorker *services.IssueEnrichmentWorker

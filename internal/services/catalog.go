@@ -3,6 +3,7 @@ package services
 import (
 	"context"
 	"fmt"
+	"log/slog"
 	"slices"
 	"strings"
 	"time"
@@ -22,12 +23,14 @@ type TagStore interface {
 type CatalogService struct {
 	store    TagStore
 	analyzer *ai.Analyzer
+	logger   *slog.Logger
 }
 
-func NewCatalogService(store TagStore, analyzer *ai.Analyzer) *CatalogService {
+func NewCatalogService(store TagStore, analyzer *ai.Analyzer, logger *slog.Logger) *CatalogService {
 	return &CatalogService{
 		store:    store,
 		analyzer: analyzer,
+		logger:   logger,
 	}
 }
 
@@ -273,6 +276,9 @@ func (s *CatalogService) ScoreTagSpecificity(ctx context.Context, tagName string
 		return fmt.Errorf("tag name is required")
 	}
 
+	start := time.Now()
+	s.logger.InfoContext(ctx, "scoring tag specificity", "tag", tagName)
+
 	tags, err := s.StoredTags(ctx)
 	if err != nil {
 		return fmt.Errorf("list tags for specificity: %w", err)
@@ -306,17 +312,29 @@ func (s *CatalogService) ScoreTagSpecificity(ctx context.Context, tagName string
 	if err := s.store.UpdateTagSpecificity(ctx, tagName, &blended, &llmScore, &embScore, &now); err != nil {
 		return fmt.Errorf("persist specificity for %q: %w", tagName, err)
 	}
+
+	s.logger.InfoContext(ctx, "tag specificity scored",
+		"tag", tagName,
+		"blended", blended,
+		"llm", llmScore,
+		"embedding", embScore,
+		"duration", time.Since(start).Round(time.Millisecond),
+	)
 	return nil
 }
 
 // ScoreAllTagsSpecificity computes the blended specificity score for every tag
 // in the catalog. This is a bulk operation for initial scoring or re-scoring.
 func (s *CatalogService) ScoreAllTagsSpecificity(ctx context.Context) error {
+	start := time.Now()
+	s.logger.InfoContext(ctx, "rescoring all tag specificity")
+
 	tags, err := s.StoredTags(ctx)
 	if err != nil {
 		return fmt.Errorf("list tags for specificity: %w", err)
 	}
 	if len(tags) == 0 {
+		s.logger.InfoContext(ctx, "no tags to rescore")
 		return nil
 	}
 
@@ -324,7 +342,13 @@ func (s *CatalogService) ScoreAllTagsSpecificity(ctx context.Context) error {
 	embeddingScores := computeEmbeddingSpecificity(tags)
 	now := time.Now().UTC()
 
+	s.logger.InfoContext(ctx, "computed embedding specificity",
+		"tag_count", len(catalog),
+		"embedding_count", countEmbeddings(tags),
+	)
+
 	for i, tag := range catalog {
+		tagStart := time.Now()
 		llmScore, err := s.analyzer.ScoreTagSpecificity(ctx, tag, catalog)
 		if err != nil {
 			return fmt.Errorf("score specificity for %q: %w", tag.Name, err)
@@ -339,8 +363,32 @@ func (s *CatalogService) ScoreAllTagsSpecificity(ctx context.Context) error {
 		if err := s.store.UpdateTagSpecificity(ctx, tag.Name, &blended, &llmScore, &embScore, &now); err != nil {
 			return fmt.Errorf("persist specificity for %q: %w", tag.Name, err)
 		}
+
+		s.logger.InfoContext(ctx, "tag scored",
+			"tag", tag.Name,
+			"blended", blended,
+			"llm", llmScore,
+			"embedding", embScore,
+			"progress", fmt.Sprintf("%d/%d", i+1, len(catalog)),
+			"duration", time.Since(tagStart).Round(time.Millisecond),
+		)
 	}
+
+	s.logger.InfoContext(ctx, "all tags rescored",
+		"tag_count", len(catalog),
+		"duration", time.Since(start).Round(time.Millisecond),
+	)
 	return nil
+}
+
+func countEmbeddings(tags []issues.Tag) int {
+	n := 0
+	for _, t := range tags {
+		if len(t.Embedding) > 0 {
+			n++
+		}
+	}
+	return n
 }
 
 // computeEmbeddingSpecificity computes the embedding-based specificity score

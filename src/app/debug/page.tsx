@@ -85,6 +85,9 @@ export default function DebugPage() {
   const [invalidateLoading, setInvalidateLoading] = useState(false);
   const [invalidateError, setInvalidateError] = useState<string | null>(null);
   const [invalidateMessage, setInvalidateMessage] = useState<string | null>(null);
+  const [rescoreLoading, setRescoreLoading] = useState(false);
+  const [rescoreError, setRescoreError] = useState<string | null>(null);
+  const [rescoreMessage, setRescoreMessage] = useState<string | null>(null);
 
   const topTags = result?.tags.slice(0, 8) ?? [];
   const embeddingPreview = result?.embedding.preview ?? [];
@@ -182,6 +185,45 @@ export default function DebugPage() {
     }
   }
 
+  async function rescoreTagSpecificity() {
+    setRescoreLoading(true);
+    setRescoreError(null);
+    setRescoreMessage(null);
+
+    try {
+      const response = await fetch(uiAPIURL("/debug/tags/rescore"), {
+        method: "POST",
+        credentials: "include",
+      });
+
+      const payload = (await parseDebugResponse(response)) as
+        | { rescored?: boolean }
+        | { error?: string };
+
+      if (!response.ok) {
+        throw new Error(
+          "error" in payload && payload.error
+            ? payload.error
+            : `Request failed with ${response.status}`
+        );
+      }
+
+      if (!("rescored" in payload) || !payload.rescored) {
+        throw new Error("Backend did not confirm rescoring.");
+      }
+
+      setRescoreMessage("All tag specificity scores recalculated.");
+    } catch (caughtError) {
+      setRescoreError(
+        caughtError instanceof Error
+          ? caughtError.message
+          : "Unknown rescoring error"
+      );
+    } finally {
+      setRescoreLoading(false);
+    }
+  }
+
   return (
     <AppShell sidebar={<AppSidebar things={SECTION_LINKS} />}>
       <SiteHeader
@@ -251,6 +293,15 @@ export default function DebugPage() {
                 </Button>
                 <Button
                   variant="outline"
+                  onClick={rescoreTagSpecificity}
+                  disabled={rescoreLoading}
+                >
+                  {rescoreLoading
+                    ? "Rescoring tags..."
+                    : "Rescore tag specificity"}
+                </Button>
+                <Button
+                  variant="outline"
                   onClick={() => {
                     setText(DEFAULT_TEXT);
                     setTags("");
@@ -276,6 +327,18 @@ export default function DebugPage() {
               {invalidateMessage && (
                 <div className="app-status-success">
                   {invalidateMessage}
+                </div>
+              )}
+
+              {rescoreError && (
+                <div className="app-status-warning">
+                  {rescoreError}
+                </div>
+              )}
+
+              {rescoreMessage && (
+                <div className="app-status-success">
+                  {rescoreMessage}
                 </div>
               )}
 
