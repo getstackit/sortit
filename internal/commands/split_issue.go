@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"strings"
+	"sync"
 	"time"
 
 	"splat/internal/issues"
@@ -60,35 +61,59 @@ func (h SplitIssueHandler) Handle(ctx context.Context, input SplitIssue) (result
 		issues.Issue
 		index int
 	}
-	childPlans := make([]childIssuePlan, 0, len(input.Children))
+	childPlans := make([]childIssuePlan, len(input.Children))
 
+	// Enrich all children concurrently to avoid sequential timeouts.
+	var mu sync.Mutex
+	var enrichErr error
+	var wg sync.WaitGroup
 	for index, child := range input.Children {
-		enriched, err := h.Enricher.AnalyzeCreateInput(ctx, issues.CreateInput{
-			Raw:       child.Raw,
-			Tags:      child.Tags,
-			CreatedBy: input.CreatedBy,
-		})
-		if err != nil {
-			return issues.IssueOperationResult{}, err
-		}
+		wg.Add(1)
+		go func(index int, child SplitIssueChild) {
+			defer wg.Done()
 
-		raw := strings.TrimSpace(enriched.Raw)
-		if raw == "" {
-			return issues.IssueOperationResult{}, fmt.Errorf("child raw is required")
-		}
+			enriched, err := h.Enricher.AnalyzeCreateInput(ctx, issues.CreateInput{
+				Raw:       child.Raw,
+				Tags:      child.Tags,
+				CreatedBy: input.CreatedBy,
+			})
 
-		childID := issues.NewIssueID()
+			mu.Lock()
+			defer mu.Unlock()
+			if enrichErr != nil {
+				return
+			}
+			if err != nil {
+				enrichErr = err
+				return
+			}
 
-		childIssue := issues.BuildNewIssue(childID, enriched)
-		childIssue.CreatedAt = createdAt
+			raw := strings.TrimSpace(enriched.Raw)
+			if raw == "" {
+				enrichErr = fmt.Errorf("child raw is required")
+				return
+			}
 
+			childID := issues.NewIssueID()
+			childIssue := issues.BuildNewIssue(childID, enriched)
+			childIssue.CreatedAt = createdAt
+
+			childPlans[index] = childIssuePlan{
+				Issue: childIssue,
+				index: index,
+			}
+		}(index, child)
+	}
+	wg.Wait()
+
+	if enrichErr != nil {
+		return issues.IssueOperationResult{}, enrichErr
+	}
+
+	for _, plan := range childPlans {
 		operation.Participants = append(operation.Participants, issues.IssueOperationParticipant{
-			IssueID: childID,
-			Role:    fmt.Sprintf("child:%d", index+1),
-		})
-		childPlans = append(childPlans, childIssuePlan{
-			Issue: childIssue,
-			index: index,
+			IssueID: plan.ID,
+			Role:    fmt.Sprintf("child:%d", plan.index+1),
 		})
 	}
 
