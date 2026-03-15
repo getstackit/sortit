@@ -2,7 +2,15 @@
 
 import Link from "next/link";
 import { useEffect, useMemo } from "react";
-import { HashIcon, Link2Icon, SparklesIcon } from "lucide-react";
+import {
+  AlertTriangleIcon,
+  ArrowDownIcon,
+  ArrowUpIcon,
+  GitMergeIcon,
+  HashIcon,
+  Link2Icon,
+  SparklesIcon,
+} from "lucide-react";
 import { AppShell } from "@/components/app-shell";
 import { AppSidebar } from "@/components/app-sidebar";
 import { DetailPageLayout, DetailPageGrid } from "@/components/detail-page-layout";
@@ -18,6 +26,14 @@ import { rememberRecentTag } from "@/hooks/use-recent-history";
 import type { IssueRecord } from "@/lib/issues";
 import { Badge } from "@/components/ui/badge";
 import { tagHref } from "@/lib/tags";
+import {
+  normalizeTagName,
+  cosineSimilarity,
+  issueTagRelevance,
+  isGenericBucketTag,
+  buildSpecificityLadder,
+  buildMergeCandidates,
+} from "@/lib/tag-quality";
 
 type RelatedTag = {
   tag: string;
@@ -30,43 +46,6 @@ type SemanticNeighbor = {
   description: string;
   similarity: number;
 };
-
-function normalizeTagName(value: string) {
-  return value.trim().toLowerCase();
-}
-
-function cosineSimilarity(left: number[], right: number[]) {
-  if (left.length === 0 || left.length !== right.length) {
-    return 0;
-  }
-
-  let dotProduct = 0;
-  let leftMagnitude = 0;
-  let rightMagnitude = 0;
-  for (let index = 0; index < left.length; index += 1) {
-    dotProduct += left[index] * right[index];
-    leftMagnitude += left[index] * left[index];
-    rightMagnitude += right[index] * right[index];
-  }
-
-  if (leftMagnitude === 0 || rightMagnitude === 0) {
-    return 0;
-  }
-
-  return dotProduct / (Math.sqrt(leftMagnitude) * Math.sqrt(rightMagnitude));
-}
-
-function issueTagRelevance(issue: IssueRecord, tagName: string) {
-  const normalizedTag = normalizeTagName(tagName);
-  const score = issue.tagScores?.find(
-    (entry) => normalizeTagName(entry.tag) === normalizedTag
-  );
-  if (score) {
-    return score.relevance;
-  }
-
-  return issue.tags.some((tag) => normalizeTagName(tag) === normalizedTag) ? 1 : 0;
-}
 
 function compareIssuesByTag(left: IssueRecord, right: IssueRecord, tagName: string) {
   if (left.status !== right.status) {
@@ -162,6 +141,18 @@ export function TagDetailPage({ tagName }: { tagName: string }) {
       .sort((left, right) => right.similarity - left.similarity)
       .slice(0, 6);
   }, [normalizedTag, tag, tags]);
+
+  const specificityLadder = useMemo(
+    () => (tag ? buildSpecificityLadder(tag.name, tags) : { moreSpecific: [], moreGeneric: [] }),
+    [tag, tags]
+  );
+
+  const mergeCandidates = useMemo(
+    () => buildMergeCandidates(tag, tags),
+    [tag, tags]
+  );
+
+  const isGenericBucket = tag ? isGenericBucketTag(tag.name) : false;
 
   const issueCount = relatedIssues.length;
   const openCount = relatedIssues.filter((issue) => issue.status === "open").length;
@@ -292,6 +283,126 @@ export function TagDetailPage({ tagName }: { tagName: string }) {
                   )}
                 </section>
 
+                {(specificityLadder.moreSpecific.length > 0 || specificityLadder.moreGeneric.length > 0) && (
+                  <section className="app-surface rounded-[1.5rem] p-5">
+                    <div className="flex items-center gap-2">
+                      <ArrowUpIcon className="size-4 text-muted-foreground" />
+                      <h3 className="text-sm font-semibold">Specificity ladder</h3>
+                    </div>
+
+                    {tag?.specificity != null && tag.specificity < 0.4 && (
+                      <p className="mt-3 text-xs text-muted-foreground">
+                        This tag has low specificity. Consider using a more specific alternative below.
+                      </p>
+                    )}
+
+                    {specificityLadder.moreSpecific.length > 0 && (
+                      <div className="mt-4">
+                        <div className="flex items-center gap-1.5">
+                          <ArrowUpIcon className="size-3 text-muted-foreground" />
+                          <p className="text-[10px] font-medium uppercase tracking-[0.12em] text-muted-foreground">
+                            More specific
+                          </p>
+                        </div>
+                        <div className="mt-1.5 space-y-1.5">
+                          {specificityLadder.moreSpecific.map((entry) => (
+                            <Link
+                              key={entry.name}
+                              href={tagHref(entry.name)}
+                              className="app-subtle-surface flex items-start justify-between gap-3 px-3 py-2 transition-colors hover:bg-accent/70"
+                            >
+                              <div>
+                                <p className="text-sm font-medium">{entry.name}</p>
+                                <p className="text-xs text-muted-foreground">
+                                  {entry.description || "No description"}
+                                </p>
+                              </div>
+                              <div className="text-right text-xs tabular-nums text-muted-foreground">
+                                <div>{Math.round(entry.similarity * 100)}% sim</div>
+                                <div>{entry.specificity.toFixed(2)} spec</div>
+                              </div>
+                            </Link>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+
+                    {specificityLadder.moreGeneric.length > 0 && (
+                      <div className="mt-4">
+                        <div className="flex items-center gap-1.5">
+                          <ArrowDownIcon className="size-3 text-muted-foreground" />
+                          <p className="text-[10px] font-medium uppercase tracking-[0.12em] text-muted-foreground">
+                            More generic
+                          </p>
+                        </div>
+                        <div className="mt-1.5 space-y-1.5">
+                          {specificityLadder.moreGeneric.map((entry) => (
+                            <Link
+                              key={entry.name}
+                              href={tagHref(entry.name)}
+                              className="app-subtle-surface flex items-start justify-between gap-3 px-3 py-2 transition-colors hover:bg-accent/70"
+                            >
+                              <div>
+                                <p className="text-sm font-medium">{entry.name}</p>
+                                <p className="text-xs text-muted-foreground">
+                                  {entry.description || "No description"}
+                                </p>
+                              </div>
+                              <div className="text-right text-xs tabular-nums text-muted-foreground">
+                                <div>{Math.round(entry.similarity * 100)}% sim</div>
+                                <div>{entry.specificity.toFixed(2)} spec</div>
+                              </div>
+                            </Link>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+                  </section>
+                )}
+
+                {mergeCandidates.length > 0 && (
+                  <section className="app-surface rounded-[1.5rem] p-5">
+                    <div className="flex items-center gap-2">
+                      <GitMergeIcon className="size-4 text-muted-foreground" />
+                      <h3 className="text-sm font-semibold">Potential merges</h3>
+                    </div>
+
+                    <div className="mt-4 space-y-1.5">
+                      {mergeCandidates.map((candidate) => {
+                        const candidateTag = tags.find((t) => t.name === candidate.name);
+                        const bothHighSpecificity =
+                          (tag?.specificity ?? 0) >= 0.7 &&
+                          (candidateTag?.specificity ?? 0) >= 0.7;
+
+                        return (
+                          <Link
+                            key={candidate.name}
+                            href={tagHref(candidate.name)}
+                            className="app-subtle-surface block px-3 py-2 transition-colors hover:bg-accent/70"
+                          >
+                            <div className="flex items-start justify-between gap-3">
+                              <div className="min-w-0">
+                                <p className="text-sm font-medium">{candidate.name}</p>
+                                <p className="text-xs text-muted-foreground">
+                                  {candidate.reason}
+                                </p>
+                              </div>
+                              <span className="text-xs font-medium tabular-nums text-muted-foreground">
+                                {Math.round(candidate.similarity * 100)}%
+                              </span>
+                            </div>
+                            {bothHighSpecificity && (
+                              <p className="mt-1.5 rounded-lg border border-amber-300/50 bg-amber-50 px-2 py-1 text-[10px] text-amber-800 dark:border-amber-500/30 dark:bg-amber-950/30 dark:text-amber-300">
+                                Both tags are highly specific — merging may lose meaningful distinction.
+                              </p>
+                            )}
+                          </Link>
+                        );
+                      })}
+                    </div>
+                  </section>
+                )}
+
                 <section className="app-surface rounded-[1.5rem] p-5">
                   <div className="flex items-center gap-2">
                     <SparklesIcon className="size-4 text-muted-foreground" />
@@ -357,6 +468,15 @@ export function TagDetailPage({ tagName }: { tagName: string }) {
                       </div>
                     ) : (
                       <p className="mt-2 text-sm text-muted-foreground">Not yet scored</p>
+                    )}
+
+                    {isGenericBucket && (
+                      <div className="mt-3 flex items-start gap-2 rounded-lg border border-amber-300/50 bg-amber-50 px-3 py-2 dark:border-amber-500/30 dark:bg-amber-950/30">
+                        <AlertTriangleIcon className="mt-0.5 size-3.5 shrink-0 text-amber-600 dark:text-amber-400" />
+                        <p className="text-xs text-amber-800 dark:text-amber-300">
+                          This is a broad bucket tag. Consider using a more specific alternative from the specificity ladder below.
+                        </p>
+                      </div>
                     )}
                   </div>
                 </div>

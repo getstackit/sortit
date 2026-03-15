@@ -22,6 +22,7 @@ import {
   type IssueMapCanvasNode,
 } from "@/components/issue-map-canvas";
 import { AppSidebar } from "@/components/app-sidebar";
+import { TagBadge } from "@/components/tag-badge";
 import { SiteHeader } from "@/components/site-header";
 import { Button, buttonVariants } from "@/components/ui/button";
 import type {
@@ -48,7 +49,6 @@ import { formatRelativeTime } from "@/lib/format";
 import { Badge } from "@/components/ui/badge";
 
 import { TagRelevanceBars } from "@/components/tag-relevance-bars";
-import { entityStyle } from "@/lib/entity-colors";
 import { tagHref } from "@/lib/tags";
 
 type SemanticNeighbor = {
@@ -841,13 +841,8 @@ export function IssueDetailPage({ issueID }: { issueID: string }) {
             <div className="flex flex-wrap items-center gap-2">
               {issueTags.length > 0 &&
                 issueTags.map((tag) => (
-                  <Link
-                    key={tag}
-                    href={tagHref(tag)}
-                    className="rounded-full border px-2.5 py-0.5 text-[11px] font-medium transition-colors hover:bg-accent/70"
-                    style={entityStyle(tag)}
-                  >
-                    {tag}
+                  <Link key={tag} href={tagHref(tag)} className="transition-colors hover:opacity-80">
+                    <TagBadge tag={tag} />
                   </Link>
                 ))}
               <Link
