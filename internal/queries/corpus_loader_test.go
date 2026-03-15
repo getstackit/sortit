@@ -46,6 +46,10 @@ func (s *stubMapProjectionStore) List(_ context.Context) ([]issues.Issue, error)
 }
 
 func (s *stubMapProjectionStore) Get(_ context.Context, id string) (issues.Issue, error) {
+	return s.GetIssueDetail(context.Background(), id)
+}
+
+func (s *stubMapProjectionStore) GetIssueDetail(_ context.Context, id string) (issues.Issue, error) {
 	s.getCalls++
 	for _, item := range s.items {
 		if item.ID == id {

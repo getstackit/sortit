@@ -488,10 +488,10 @@ func newTestHandlers() *handlers {
 		splitIssue:       commands.SplitIssueHandler{Runner: runner, Enricher: enricher, Events: eventBus},
 		combineIssues:    commands.CombineIssuesHandler{Runner: runner, Store: store, Enricher: enricher, Events: eventBus},
 		linkIssues:       commands.LinkIssuesHandler{Runner: runner, Events: eventBus},
-		getIssue:         queries.GetIssueHandler{Reader: store},
+		getIssue:         queries.GetIssueHandler{Store: store},
 		listTags:         queries.ListTagsHandler{Catalog: catalog},
 		searchIssues:     queries.SearchIssuesHandler{Analyzer: analyzer, Catalog: catalog, Store: store},
-		exploreIssue:     queries.ExploreIssueHandler{Store: store, Catalog: catalog},
+		exploreIssue:     queries.ExploreIssueHandler{Reader: store, DetailReader: store, Catalog: catalog},
 		getPersonProfile: queries.GetPersonProfileHandler{Store: store},
 		workCorrelations: queries.WorkCorrelationsHandler{Store: store},
 	}
@@ -514,11 +514,11 @@ func createTestIssue(t *testing.T, handler *handlers, raw string, createdBy stri
 func drainTestEnrichment(t *testing.T, handler *handlers) {
 	t.Helper()
 
-	claimer, ok := handler.getIssue.Reader.(issues.EnrichmentJobClaimer)
+	claimer, ok := handler.getIssue.Store.(issues.EnrichmentJobClaimer)
 	if !ok {
 		return
 	}
-	store, ok := handler.getIssue.Reader.(issues.Store)
+	store, ok := handler.getIssue.Store.(issues.Store)
 	if !ok {
 		t.Fatal("expected get issue reader to also implement issues.Store in tests")
 	}

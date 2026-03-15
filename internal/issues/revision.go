@@ -2,6 +2,7 @@ package issues
 
 import (
 	"context"
+	"errors"
 	"sync/atomic"
 	"time"
 )
@@ -64,6 +65,79 @@ func (s *ObservedStore) List(ctx context.Context) ([]Issue, error) {
 
 func (s *ObservedStore) Get(ctx context.Context, id string) (Issue, error) {
 	return s.base.Get(ctx, id)
+}
+
+func (s *ObservedStore) GetIssueDetail(ctx context.Context, id string) (Issue, error) {
+	if detailReader, ok := s.base.(IssueDetailReader); ok {
+		return detailReader.GetIssueDetail(ctx, id)
+	}
+	return s.base.Get(ctx, id)
+}
+
+func (s *ObservedStore) GetIssueDetailBase(ctx context.Context, id string) (Issue, error) {
+	if detailStore, ok := s.base.(IssueDetailStore); ok {
+		return detailStore.GetIssueDetailBase(ctx, id)
+	}
+	issue, err := s.base.Get(ctx, id)
+	if err != nil {
+		return Issue{}, err
+	}
+	issue.Discussion = nil
+	issue.Links = nil
+	issue.Operations = nil
+	return issue, nil
+}
+
+func (s *ObservedStore) ListIssueDetailPosts(ctx context.Context, id string) ([]IssuePost, error) {
+	if detailStore, ok := s.base.(IssueDetailStore); ok {
+		return detailStore.ListIssueDetailPosts(ctx, id)
+	}
+	issue, err := s.base.Get(ctx, id)
+	if err != nil {
+		return nil, err
+	}
+	return cloneIssuePosts(issue.Discussion), nil
+}
+
+func (s *ObservedStore) ListIssueDetailLinks(ctx context.Context, id string) ([]IssueLink, error) {
+	if detailStore, ok := s.base.(IssueDetailStore); ok {
+		return detailStore.ListIssueDetailLinks(ctx, id)
+	}
+	issue, err := s.base.Get(ctx, id)
+	if err != nil {
+		return nil, err
+	}
+	return cloneIssueLinks(issue.Links), nil
+}
+
+func (s *ObservedStore) ListIssueDetailOperations(ctx context.Context, id string) ([]IssueOperation, error) {
+	if detailStore, ok := s.base.(IssueDetailStore); ok {
+		return detailStore.ListIssueDetailOperations(ctx, id)
+	}
+	issue, err := s.base.Get(ctx, id)
+	if err != nil {
+		return nil, err
+	}
+	return cloneIssueOperations(issue.Operations), nil
+}
+
+func (s *ObservedStore) ListIssueDetailReferences(ctx context.Context, ids []string) ([]IssueReference, error) {
+	if detailStore, ok := s.base.(IssueDetailStore); ok {
+		return detailStore.ListIssueDetailReferences(ctx, ids)
+	}
+
+	refs := make([]IssueReference, 0, len(ids))
+	for _, id := range SanitizeIssueIDs(ids) {
+		issue, err := s.base.Get(ctx, id)
+		if err != nil {
+			if errors.Is(err, ErrNotFound) {
+				continue
+			}
+			return nil, err
+		}
+		refs = append(refs, issueReference(issue))
+	}
+	return refs, nil
 }
 
 func (s *ObservedStore) SaveIssue(ctx context.Context, issue Issue) error {

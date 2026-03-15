@@ -52,6 +52,10 @@ func (u *PostgresUnitOfWork) List(ctx context.Context) ([]Issue, error) {
 }
 
 func (u *PostgresUnitOfWork) Get(ctx context.Context, id string) (Issue, error) {
+	return u.GetIssueDetail(ctx, id)
+}
+
+func (u *PostgresUnitOfWork) GetIssueDetail(ctx context.Context, id string) (Issue, error) {
 	id = strings.TrimSpace(id)
 	if id == "" {
 		return Issue{}, ErrNotFound
@@ -66,6 +70,26 @@ func (u *PostgresUnitOfWork) Get(ctx context.Context, id string) (Issue, error) 
 		return Issue{}, err
 	}
 	return applyIssueEnrichmentStates([]Issue{issue}, states)[0], nil
+}
+
+func (u *PostgresUnitOfWork) GetIssueDetailBase(ctx context.Context, id string) (Issue, error) {
+	return getIssueDetailBase(ctx, u.queries, id)
+}
+
+func (u *PostgresUnitOfWork) ListIssueDetailPosts(ctx context.Context, id string) ([]IssuePost, error) {
+	return listIssueDetailPosts(ctx, u.queries, id)
+}
+
+func (u *PostgresUnitOfWork) ListIssueDetailLinks(ctx context.Context, id string) ([]IssueLink, error) {
+	return listIssueDetailLinks(ctx, u.queries, id)
+}
+
+func (u *PostgresUnitOfWork) ListIssueDetailOperations(ctx context.Context, id string) ([]IssueOperation, error) {
+	return listIssueDetailOperations(ctx, u.queries, id)
+}
+
+func (u *PostgresUnitOfWork) ListIssueDetailReferences(ctx context.Context, ids []string) ([]IssueReference, error) {
+	return listIssueDetailReferences(ctx, u.queries, ids)
 }
 
 // Store writes

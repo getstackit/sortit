@@ -16,16 +16,18 @@ type ExploreIssue struct {
 }
 
 type ExploreIssueHandler struct {
-	Store   issues.Store
-	Catalog *services.CatalogService
+	Reader       issues.Reader
+	DetailReader issues.IssueDetailReader
+	SearchStore  issues.SemanticSearchStore
+	Catalog      *services.CatalogService
 }
 
 func (h ExploreIssueHandler) Handle(ctx context.Context, input ExploreIssue) (issuemap.ExploreResponse, error) {
-	if searcher, ok := semanticSearchStore(h.Store); ok {
-		return h.handleSemanticExplore(ctx, input, searcher)
+	if h.SearchStore != nil {
+		return h.handleSemanticExplore(ctx, input, h.SearchStore)
 	}
 
-	storeIssues, err := h.Store.List(ctx)
+	storeIssues, err := h.Reader.List(ctx)
 	if err != nil {
 		return issuemap.ExploreResponse{}, err
 	}
@@ -43,7 +45,7 @@ func (h ExploreIssueHandler) handleSemanticExplore(
 	input ExploreIssue,
 	searcher semanticIssueSearcher,
 ) (issuemap.ExploreResponse, error) {
-	target, err := h.Store.Get(ctx, input.ID)
+	target, err := h.DetailReader.GetIssueDetail(ctx, input.ID)
 	if err != nil {
 		return issuemap.ExploreResponse{}, err
 	}
@@ -53,7 +55,7 @@ func (h ExploreIssueHandler) handleSemanticExplore(
 		return issuemap.ExploreResponse{}, err
 	}
 
-	candidateSet, err := exploreSemanticCandidateSet(ctx, h.Store, searcher, target, input.Limit)
+	candidateSet, err := exploreSemanticCandidateSet(ctx, h.DetailReader, searcher, target, input.Limit)
 	if err != nil {
 		return issuemap.ExploreResponse{}, err
 	}
@@ -63,7 +65,7 @@ func (h ExploreIssueHandler) handleSemanticExplore(
 
 func exploreSemanticCandidateSet(
 	ctx context.Context,
-	store issues.Store,
+	reader issues.IssueDetailReader,
 	searcher semanticIssueSearcher,
 	target issues.Issue,
 	limit int,
@@ -90,7 +92,7 @@ func exploreSemanticCandidateSet(
 			return nil
 		}
 
-		issue, err := store.Get(ctx, id)
+		issue, err := reader.GetIssueDetail(ctx, id)
 		if err != nil {
 			switch {
 			case fallback != nil && errors.Is(err, issues.ErrNotFound):

@@ -272,6 +272,22 @@ type Reader interface {
 	Get(context.Context, string) (Issue, error)
 }
 
+type IssueDetailReader interface {
+	GetIssueDetail(context.Context, string) (Issue, error)
+}
+
+type IssueDetailStore interface {
+	GetIssueDetailBase(context.Context, string) (Issue, error)
+	ListIssueDetailPosts(context.Context, string) ([]IssuePost, error)
+	ListIssueDetailLinks(context.Context, string) ([]IssueLink, error)
+	ListIssueDetailOperations(context.Context, string) ([]IssueOperation, error)
+	ListIssueDetailReferences(context.Context, []string) ([]IssueReference, error)
+}
+
+type CompareIssueReader interface {
+	ListCompareIssues(context.Context, []string) ([]CompareIssue, error)
+}
+
 type Writer interface {
 	SaveIssue(ctx context.Context, issue Issue) error
 	SaveIssuePost(ctx context.Context, post IssuePost) error
@@ -415,6 +431,128 @@ func (s *InMemoryStore) Get(_ context.Context, id string) (Issue, error) {
 	}
 
 	return Issue{}, ErrNotFound
+}
+
+func (s *InMemoryStore) GetIssueDetail(ctx context.Context, id string) (Issue, error) {
+	return s.Get(ctx, id)
+}
+
+func (s *InMemoryStore) GetIssueDetailBase(_ context.Context, id string) (Issue, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	id = strings.TrimSpace(id)
+	for _, issue := range s.issues {
+		if issue.ID != id {
+			continue
+		}
+		cloned := cloneIssues([]Issue{issue})[0]
+		cloned.Discussion = nil
+		cloned.Links = nil
+		cloned.Operations = nil
+		return cloned, nil
+	}
+
+	return Issue{}, ErrNotFound
+}
+
+func (s *InMemoryStore) ListIssueDetailPosts(_ context.Context, id string) ([]IssuePost, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	id = strings.TrimSpace(id)
+	if _, ok := s.discussion[id]; !ok {
+		for _, issue := range s.issues {
+			if issue.ID == id {
+				return nil, nil
+			}
+		}
+		return nil, ErrNotFound
+	}
+
+	return cloneIssuePosts(s.discussion[id]), nil
+}
+
+func (s *InMemoryStore) ListIssueDetailLinks(_ context.Context, id string) ([]IssueLink, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	id = strings.TrimSpace(id)
+	found := false
+	for _, issue := range s.issues {
+		if issue.ID == id {
+			found = true
+			break
+		}
+	}
+	if !found {
+		return nil, ErrNotFound
+	}
+
+	links := make([]IssueLink, 0)
+	for _, link := range s.links {
+		if link.SourceIssueID == id || link.TargetIssueID == id {
+			links = append(links, link)
+		}
+	}
+	return cloneIssueLinks(links), nil
+}
+
+func (s *InMemoryStore) ListIssueDetailOperations(_ context.Context, id string) ([]IssueOperation, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	id = strings.TrimSpace(id)
+	found := false
+	for _, issue := range s.issues {
+		if issue.ID == id {
+			found = true
+			break
+		}
+	}
+	if !found {
+		return nil, ErrNotFound
+	}
+
+	operations := make([]IssueOperation, 0)
+	for _, operation := range s.operations {
+		include := false
+		for _, participant := range operation.Participants {
+			if participant.IssueID == id {
+				include = true
+				break
+			}
+		}
+		if !include {
+			continue
+		}
+		copyOp := operation
+		copyOp.Participants = make([]IssueOperationParticipant, len(operation.Participants))
+		for i, participant := range operation.Participants {
+			copyOp.Participants[i] = IssueOperationParticipant{
+				IssueID: participant.IssueID,
+				Role:    participant.Role,
+			}
+		}
+		operations = append(operations, copyOp)
+	}
+	return cloneIssueOperations(operations), nil
+}
+
+func (s *InMemoryStore) ListIssueDetailReferences(_ context.Context, ids []string) ([]IssueReference, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	index := issuesByIDFromList(s.issues)
+	refs := make([]IssueReference, 0, len(ids))
+	for _, id := range SanitizeIssueIDs(ids) {
+		issue, ok := index[id]
+		if !ok {
+			continue
+		}
+		refs = append(refs, issueReference(issue))
+	}
+	return refs, nil
 }
 
 func (s *InMemoryStore) LoadMapProjectionData(_ context.Context) ([]MapProjectionIssue, []Tag, error) {

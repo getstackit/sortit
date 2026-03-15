@@ -97,6 +97,14 @@ func unitOfWorkBeginnerFromStore(store issues.Store) issues.UnitOfWorkBeginner {
 	return nil
 }
 
+func semanticSearchStoreFromStore(store issues.Store) issues.SemanticSearchStore {
+	searchStore, ok := store.(issues.SemanticSearchStore)
+	if !ok {
+		return nil
+	}
+	return searchStore
+}
+
 func enrichmentJobClaimerFromStore(store issues.Store) issues.EnrichmentJobClaimer {
 	claimer, ok := store.(issues.EnrichmentJobClaimer)
 	if !ok {
@@ -553,8 +561,8 @@ func NewServer(cfg ServerConfig) *Server {
 		},
 		listIssues:    queries.ListIssuesHandler{Store: store},
 		listActivity:  queries.ListActivityHandler{Events: events},
-		getIssue:      queries.GetIssueHandler{Reader: store, Logger: logger.With("query", "get_issue")},
-		compareIssues: queries.CompareIssuesHandler{Store: store},
+		getIssue:      queries.GetIssueHandler{Store: store, Logger: logger.With("query", "get_issue")},
+		compareIssues: queries.CompareIssuesHandler{Reader: store},
 		searchIssues: queries.SearchIssuesHandler{
 			Analyzer: commandAnalyzer,
 			Catalog:  catalog,
@@ -565,7 +573,12 @@ func NewServer(cfg ServerConfig) *Server {
 			Catalog:  catalog,
 			Store:    baseStore,
 		},
-		exploreIssue:      queries.ExploreIssueHandler{Store: baseStore, Catalog: catalog},
+		exploreIssue: queries.ExploreIssueHandler{
+			Reader:       store,
+			DetailReader: store,
+			SearchStore:  semanticSearchStoreFromStore(baseStore),
+			Catalog:      catalog,
+		},
 		listTags:          queries.ListTagsHandler{Catalog: catalog},
 		getMap:            queries.MapHandler{IssueStore: store, Catalog: catalog, Projection: mapProjectionLoader},
 		getMapEdges:       queries.EdgeHandler{IssueStore: store, Catalog: catalog, Projection: mapProjectionLoader},

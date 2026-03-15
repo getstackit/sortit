@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useCallback, useState } from "react";
 import Link from "next/link";
 import useSWR from "swr";
 import {
@@ -11,6 +11,7 @@ import {
   LinkIcon,
   MessageSquareMoreIcon,
   PlusCircleIcon,
+  Loader2Icon,
   RefreshCwIcon,
   ScissorsIcon,
   TrendingUpIcon,
@@ -114,15 +115,41 @@ function ActivityCard({ event }: { event: ActivityEventRecord }) {
   );
 }
 
+const PAGE_SIZE = 40;
+
 export function ActivityFeedPage() {
   const [kindFilter, setKindFilter] = useState("");
+  const [allEvents, setAllEvents] = useState<ActivityEventRecord[]>([]);
+  const [nextCursor, setNextCursor] = useState<string | undefined>(undefined);
+  const [loadingMore, setLoadingMore] = useState(false);
   const { data: revision = 0 } = useBackendRevision();
-  const { data, error, isLoading } = useSWR(
+
+  const { error, isLoading } = useSWR(
     ["activity-feed", revision, kindFilter],
-    () => fetchActivity({ limit: 80, kind: kindFilter || undefined })
+    () => fetchActivity({ limit: PAGE_SIZE, kind: kindFilter || undefined }),
+    {
+      onSuccess(data) {
+        setAllEvents(data.events);
+        setNextCursor(data.nextCursor);
+      },
+    }
   );
 
-  const events = data?.events ?? [];
+  const loadMore = useCallback(async () => {
+    if (!nextCursor || loadingMore) return;
+    setLoadingMore(true);
+    try {
+      const data = await fetchActivity({
+        limit: PAGE_SIZE,
+        cursor: nextCursor,
+        kind: kindFilter || undefined,
+      });
+      setAllEvents((prev) => [...prev, ...data.events]);
+      setNextCursor(data.nextCursor);
+    } finally {
+      setLoadingMore(false);
+    }
+  }, [nextCursor, loadingMore, kindFilter]);
 
   return (
     <AppShell sidebar={<AppSidebar showThingsSection={false} />}>
@@ -130,7 +157,7 @@ export function ActivityFeedPage() {
         eyebrow="Activity"
         title="Global activity feed"
         subtitle="Cross-issue discussion, status changes, assignments, and relationship operations."
-        meta={<Badge variant="outline">{events.length} recent events</Badge>}
+        meta={<Badge variant="outline">{allEvents.length} recent events</Badge>}
         actions={
           <div className="flex flex-wrap items-center gap-1.5">
             {EVENT_KINDS.map((kind) => (
@@ -165,7 +192,7 @@ export function ActivityFeedPage() {
             </div>
           )}
 
-          {!isLoading && !error && events.length === 0 && (
+          {!isLoading && !error && allEvents.length === 0 && (
             <div className="py-12 text-center text-sm text-muted-foreground">
               <ActivitySquareIcon className="mx-auto mb-3 size-5" />
               {kindFilter
@@ -174,11 +201,30 @@ export function ActivityFeedPage() {
             </div>
           )}
 
-          {events.length > 0 && (
+          {allEvents.length > 0 && (
             <div className="pl-0">
-              {events.map((event) => (
+              {allEvents.map((event) => (
                 <ActivityCard key={event.id} event={event} />
               ))}
+
+              {nextCursor && (
+                <div className="flex justify-center py-6">
+                  <button
+                    onClick={loadMore}
+                    disabled={loadingMore}
+                    className="inline-flex items-center gap-2 rounded-full border border-border/70 px-4 py-2 text-sm font-medium text-muted-foreground transition-colors hover:bg-accent/70 hover:text-foreground disabled:opacity-50"
+                  >
+                    {loadingMore ? (
+                      <>
+                        <Loader2Icon className="size-4 animate-spin" />
+                        Loading...
+                      </>
+                    ) : (
+                      "Load more"
+                    )}
+                  </button>
+                </div>
+              )}
             </div>
           )}
         </div>

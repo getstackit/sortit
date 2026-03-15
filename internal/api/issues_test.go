@@ -30,6 +30,30 @@ func (s failingIssueStore) Get(context.Context, string) (issues.Issue, error) {
 	return issues.Issue{}, issues.ErrNotFound
 }
 
+func (s failingIssueStore) GetIssueDetail(context.Context, string) (issues.Issue, error) {
+	return issues.Issue{}, issues.ErrNotFound
+}
+
+func (s failingIssueStore) GetIssueDetailBase(context.Context, string) (issues.Issue, error) {
+	return issues.Issue{}, issues.ErrNotFound
+}
+
+func (s failingIssueStore) ListIssueDetailPosts(context.Context, string) ([]issues.IssuePost, error) {
+	return nil, issues.ErrNotFound
+}
+
+func (s failingIssueStore) ListIssueDetailLinks(context.Context, string) ([]issues.IssueLink, error) {
+	return nil, issues.ErrNotFound
+}
+
+func (s failingIssueStore) ListIssueDetailOperations(context.Context, string) ([]issues.IssueOperation, error) {
+	return nil, issues.ErrNotFound
+}
+
+func (s failingIssueStore) ListIssueDetailReferences(context.Context, []string) ([]issues.IssueReference, error) {
+	return nil, issues.ErrNotFound
+}
+
 func (s failingIssueStore) SaveIssue(context.Context, issues.Issue) error         { return nil }
 func (s failingIssueStore) SaveIssuePost(context.Context, issues.IssuePost) error { return nil }
 func (s failingIssueStore) UpdateIssueFields(context.Context, string, issues.IssueFieldUpdate) error {
@@ -201,14 +225,12 @@ func TestIssuesEndpointLogsNamedQueryTimingForGetByID(t *testing.T) {
 	logged := logOutput.String()
 	for _, want := range []string{
 		"service=GetIssueHandler.Handle",
-		"service=PostgresStore.Get",
 		"query_name=GetIssue",
 		"query_name=ListIssuePosts",
 		"query_name=ListIssueLinksForIssue",
 		"query_name=ListIssueOperationsForIssue",
 		"query_name=ListIssueOperationParticipantsForOperations",
 		"query_name=ListIssueReferencesByIDs",
-		"query_name=LoadIssueEnrichmentStates",
 	} {
 		if !strings.Contains(logged, want) {
 			t.Fatalf("expected log output to contain %q, got %q", want, logged)
@@ -217,6 +239,7 @@ func TestIssuesEndpointLogsNamedQueryTimingForGetByID(t *testing.T) {
 	for _, unwanted := range []string{
 		"query_name=ListIssues",
 		"query_name=ListIssueOperationParticipants ",
+		"query_name=LoadIssueEnrichmentStates",
 	} {
 		if strings.Contains(logged, unwanted) {
 			t.Fatalf("expected log output to omit %q, got %q", unwanted, logged)
