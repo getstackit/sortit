@@ -1,6 +1,9 @@
 package ai
 
-import "testing"
+import (
+	"context"
+	"testing"
+)
 
 func TestNormalizeScoresCanonicalizesAndDeduplicates(t *testing.T) {
 	scores := []TagScore{
@@ -65,5 +68,36 @@ func TestNormalizeScoresRoundsRelevanceToTwoDecimals(t *testing.T) {
 	}
 	if values["ux"] != 0 {
 		t.Fatalf("expected ux relevance 0, got %v", values["ux"])
+	}
+}
+
+func TestScoreTagSpecificityWithStub(t *testing.T) {
+	analyzer := NewAnalyzer(NewStubTagger(), NewStubEmbedder())
+
+	catalog := []Tag{
+		{Name: "backend"},
+		{Name: "safari"},
+		{Name: "safari-flexbox-gap"},
+		{Name: "onboarding"},
+	}
+
+	tests := []struct {
+		tag      Tag
+		wantLow  float64
+		wantHigh float64
+	}{
+		{Tag{Name: "backend"}, 0.0, 0.3},
+		{Tag{Name: "safari"}, 0.4, 0.6},
+		{Tag{Name: "safari-flexbox-gap"}, 0.6, 1.0},
+	}
+
+	for _, tt := range tests {
+		score, err := analyzer.ScoreTagSpecificity(context.Background(), tt.tag, catalog)
+		if err != nil {
+			t.Fatalf("ScoreTagSpecificity(%q): %v", tt.tag.Name, err)
+		}
+		if score < tt.wantLow || score > tt.wantHigh {
+			t.Errorf("ScoreTagSpecificity(%q) = %v, want [%v, %v]", tt.tag.Name, score, tt.wantLow, tt.wantHigh)
+		}
 	}
 }

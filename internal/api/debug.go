@@ -13,6 +13,7 @@ import (
 
 const debugAnalyzeTimeout = 45 * time.Second
 const debugInvalidateMapProjectionTimeout = 15 * time.Second
+const debugRescoreTagsTimeout = 120 * time.Second
 
 type debugIssueAnalyzeRequest struct {
 	Text string   `json:"text"`
@@ -38,6 +39,10 @@ type debugIssueAnalyzeResponse struct {
 
 type debugInvalidateMapProjectionResponse struct {
 	Invalidated bool `json:"invalidated"`
+}
+
+type debugRescoreTagsResponse struct {
+	Rescored bool `json:"rescored"`
 }
 
 func (s *Server) handleDebugIssueAnalyze(w http.ResponseWriter, r *http.Request) {
@@ -102,6 +107,38 @@ func (s *Server) handleDebugInvalidateMapProjection(w http.ResponseWriter, r *ht
 	}
 
 	writeJSON(w, http.StatusOK, debugInvalidateMapProjectionResponse{Invalidated: true})
+}
+
+func (s *Server) handleDebugRescoreTags(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		w.Header().Set("Allow", http.MethodPost)
+		http.Error(w, http.StatusText(http.StatusMethodNotAllowed), http.StatusMethodNotAllowed)
+		return
+	}
+
+	if s.catalog == nil {
+		writeError(w, http.StatusNotImplemented, "tag specificity scoring is unavailable")
+		return
+	}
+
+	s.logger.InfoContext(r.Context(), "debug rescore tags requested")
+
+	ctx, cancel := context.WithTimeout(r.Context(), debugRescoreTagsTimeout)
+	defer cancel()
+
+	start := time.Now()
+	if err := s.catalog.ScoreAllTagsSpecificity(ctx); err != nil {
+		writeInternalError(w, r, "failed to rescore tag specificity", err)
+		return
+	}
+
+	s.revisions.Bump()
+
+	s.logger.InfoContext(r.Context(), "debug rescore tags complete",
+		"duration", time.Since(start).Round(time.Millisecond),
+	)
+
+	writeJSON(w, http.StatusOK, debugRescoreTagsResponse{Rescored: true})
 }
 
 func decodeDebugIssueAnalyzeRequest(r *http.Request) (debugIssueAnalyzeRequest, error) {

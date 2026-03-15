@@ -469,7 +469,7 @@ func newTestHandlers() *handlers {
 		ai.NewStubCanonicalizer(),
 	)
 	store := issues.NewInMemoryStore(nil)
-	catalog := services.NewCatalogService(nil, analyzer)
+	catalog := services.NewCatalogService(nil, analyzer, slog.Default())
 	enricher := services.NewIssueEnricher(analyzer, catalog, slog.Default())
 	runner := &commands.CommandRunner{DB: store}
 	eventBus := issues.NewEventBus()

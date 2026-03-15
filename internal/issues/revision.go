@@ -3,6 +3,7 @@ package issues
 import (
 	"context"
 	"sync/atomic"
+	"time"
 )
 
 type RevisionTracker struct {
@@ -108,6 +109,7 @@ func (s *ObservedStore) SaveLink(ctx context.Context, link IssueLink) error {
 type observedTagStore interface {
 	ListTags(context.Context) ([]Tag, error)
 	UpsertTags(context.Context, []Tag) error
+	UpdateTagSpecificity(ctx context.Context, name string, specificity, llm, embedding *float64, computedAt *time.Time) error
 }
 
 type observedMapProjectionStore interface {
@@ -149,6 +151,18 @@ func (s *ObservedStore) UpsertTags(ctx context.Context, tags []Tag) error {
 	if len(tags) > 0 {
 		s.tracker.Bump()
 	}
+	return nil
+}
+
+func (s *ObservedStore) UpdateTagSpecificity(ctx context.Context, name string, specificity, llm, embedding *float64, computedAt *time.Time) error {
+	tagStore, ok := s.base.(observedTagStore)
+	if !ok {
+		return nil
+	}
+	if err := tagStore.UpdateTagSpecificity(ctx, name, specificity, llm, embedding, computedAt); err != nil {
+		return err
+	}
+	s.tracker.Bump()
 	return nil
 }
 

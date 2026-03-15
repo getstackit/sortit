@@ -44,7 +44,7 @@ func (u *PostgresUnitOfWork) List(ctx context.Context) ([]Issue, error) {
 		}
 		items = append(items, issue)
 	}
-	states, err := loadIssueEnrichmentStates(ctx, u.tx, issueIDs(items))
+	states, err := loadIssueEnrichmentStates(ctx, u.tx, nil, issueIDs(items))
 	if err != nil {
 		return nil, err
 	}
@@ -128,7 +128,7 @@ func (u *PostgresUnitOfWork) Get(ctx context.Context, id string) (Issue, error) 
 	if err != nil {
 		return Issue{}, err
 	}
-	states, err := loadIssueEnrichmentStates(ctx, u.tx, []string{id})
+	states, err := loadIssueEnrichmentStates(ctx, u.tx, nil, []string{id})
 	if err != nil {
 		return Issue{}, err
 	}

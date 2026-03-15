@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"math"
 	"net/http"
 	"strings"
 	"time"
@@ -77,6 +78,10 @@ type openAIChatCompletionResponse struct {
 
 type openAITagScoresResponse struct {
 	Tags []TagScore `json:"tags"`
+}
+
+type openAISpecificityResponse struct {
+	Specificity float64 `json:"specificity"`
 }
 
 type openAIEmbeddingRequest struct {
@@ -153,7 +158,7 @@ func (t *OpenAITagger) Score(ctx context.Context, text string, tags []Tag) ([]Ta
 	}
 
 	var response openAIChatCompletionResponse
-	if err := t.client.doJSON(ctx, http.MethodPost, "/chat/completions", request, &response); err != nil {
+	if err := t.client.doJSON(ctx, "/chat/completions", request, &response); err != nil {
 		return nil, err
 	}
 	if len(response.Choices) == 0 {
@@ -192,7 +197,7 @@ func (c *OpenAICanonicalizer) CanonicalizeDiscussion(ctx context.Context, posts 
 	}
 
 	var response openAIChatCompletionResponse
-	if err := c.client.doJSON(ctx, http.MethodPost, "/chat/completions", request, &response); err != nil {
+	if err := c.client.doJSON(ctx, "/chat/completions", request, &response); err != nil {
 		return "", err
 	}
 	if len(response.Choices) == 0 {
@@ -214,7 +219,7 @@ func (e *OpenAIEmbedder) embedTexts(ctx context.Context, texts []string) ([][]fl
 	}
 
 	var response openAIEmbeddingResponse
-	if err := e.client.doJSON(ctx, http.MethodPost, "/embeddings", request, &response); err != nil {
+	if err := e.client.doJSON(ctx, "/embeddings", request, &response); err != nil {
 		return nil, err
 	}
 
@@ -253,13 +258,13 @@ func newOpenAIClient(cfg OpenAIConfig) (*openAIClient, error) {
 	}, nil
 }
 
-func (c *openAIClient) doJSON(ctx context.Context, method string, requestPath string, requestBody any, responseBody any) error {
+func (c *openAIClient) doJSON(ctx context.Context, requestPath string, requestBody any, responseBody any) error {
 	body, err := json.Marshal(requestBody)
 	if err != nil {
 		return fmt.Errorf("encode request: %w", err)
 	}
 
-	req, err := http.NewRequestWithContext(ctx, method, c.baseURL+requestPath, bytes.NewReader(body))
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, c.baseURL+requestPath, bytes.NewReader(body))
 	if err != nil {
 		return fmt.Errorf("build request: %w", err)
 	}
@@ -336,6 +341,74 @@ func buildOpenAITaggingSystemPrompt() string {
 		"Suggested tags must be short, lowercase, reusable, and corpus-shaping. " +
 		"Every suggested tag must include a description that states what it captures and what it excludes. " +
 		"Return at most 1 suggested tag unless 2 independent missing concepts are both central."
+}
+
+func (t *OpenAITagger) ScoreSpecificity(ctx context.Context, tag Tag, catalog []Tag) (float64, error) {
+	request := openAIChatCompletionRequest{
+		Model:       t.model,
+		Temperature: 0,
+		ResponseFormat: &openAIResponseFormat{
+			Type: "json_object",
+		},
+		Messages: []openAIChatMessageRequest{
+			{
+				Role:    "system",
+				Content: buildOpenAISpecificitySystemPrompt(),
+			},
+			{
+				Role:    "user",
+				Content: buildOpenAISpecificityPrompt(tag, catalog),
+			},
+		},
+	}
+
+	var response openAIChatCompletionResponse
+	if err := t.client.doJSON(ctx, "/chat/completions", request, &response); err != nil {
+		return 0, err
+	}
+	if len(response.Choices) == 0 {
+		return 0, errors.New("openai returned no completion choices")
+	}
+
+	var payload openAISpecificityResponse
+	if err := json.Unmarshal([]byte(response.Choices[0].Message.Content), &payload); err != nil {
+		return 0, fmt.Errorf("decode specificity response: %w", err)
+	}
+
+	return math.Max(0, math.Min(1, math.Round(payload.Specificity*100)/100)), nil
+}
+
+func buildOpenAISpecificitySystemPrompt() string {
+	return "Score how semantically specific a tag is within its tag catalog. " +
+		"Return a JSON object with a single key named specificity. " +
+		"specificity must be a float between 0 and 1 inclusive, using up to 2 decimal places. " +
+		"A score of 0 means the tag is extremely broad and generic (e.g. 'backend', 'frontend', 'ui'). " +
+		"A score of 1 means the tag is maximally narrow and precise (e.g. 'safari-flexbox-gap', 'stripe-webhook-retry'). " +
+		"Consider the full catalog for relative reasoning: a tag is more specific if more general alternatives exist in the catalog. " +
+		"A tag is less specific if it could apply to nearly any issue without discriminating. " +
+		"Focus on how narrowly the tag scopes a problem domain, subsystem, or feature area."
+}
+
+func buildOpenAISpecificityPrompt(tag Tag, catalog []Tag) string {
+	var builder strings.Builder
+	builder.WriteString("Score the specificity of this tag:\n\n")
+	builder.WriteString("Tag: ")
+	builder.WriteString(tag.Name)
+	if tag.Description != "" {
+		builder.WriteString("\nDescription: ")
+		builder.WriteString(tag.Description)
+	}
+	builder.WriteString("\n\nFull tag catalog for context:\n")
+	for _, t := range catalog {
+		builder.WriteString("- ")
+		builder.WriteString(t.Name)
+		if t.Description != "" {
+			builder.WriteString(": ")
+			builder.WriteString(t.Description)
+		}
+		builder.WriteString("\n")
+	}
+	return builder.String()
 }
 
 func buildOpenAICanonicalizationPrompt(posts []string) string {

@@ -8,6 +8,7 @@ import (
 	"strings"
 
 	"splat/internal/issues"
+	"splat/internal/services"
 	"splat/internal/vectors"
 )
 
@@ -29,10 +30,13 @@ type WorkCorrelationsResult struct {
 }
 
 type WorkCorrelationsHandler struct {
-	Store issues.Store
+	Store   issues.Store
+	Catalog *services.CatalogService
 }
 
 func (h WorkCorrelationsHandler) Handle(ctx context.Context, filter IssueStatusFilter) (WorkCorrelationsResult, error) {
+	tagSpecificity := loadTagSpecificityMap(ctx, h.Catalog)
+
 	if store, ok := h.Store.(peopleAnalyticsLister); ok {
 		items, err := store.ListPeopleAnalytics(ctx, issues.ListOptions{
 			Status: issueStatusFromFilter(filter),
@@ -40,7 +44,7 @@ func (h WorkCorrelationsHandler) Handle(ctx context.Context, filter IssueStatusF
 		if err != nil {
 			return WorkCorrelationsResult{}, err
 		}
-		return buildWorkCorrelations(items, IssueStatusFilterAll), nil
+		return buildWorkCorrelations(items, IssueStatusFilterAll, tagSpecificity), nil
 	}
 
 	if store, ok := h.Store.(filteredIssueLister); ok {
@@ -50,7 +54,7 @@ func (h WorkCorrelationsHandler) Handle(ctx context.Context, filter IssueStatusF
 		if err != nil {
 			return WorkCorrelationsResult{}, err
 		}
-		return buildWorkCorrelations(peopleAnalyticsIssuesFromIssues(items), IssueStatusFilterAll), nil
+		return buildWorkCorrelations(peopleAnalyticsIssuesFromIssues(items), IssueStatusFilterAll, tagSpecificity), nil
 	}
 
 	if h.Store != nil {
@@ -58,13 +62,13 @@ func (h WorkCorrelationsHandler) Handle(ctx context.Context, filter IssueStatusF
 		if err != nil {
 			return WorkCorrelationsResult{}, err
 		}
-		return buildWorkCorrelations(peopleAnalyticsIssuesFromIssues(allIssues), filter), nil
+		return buildWorkCorrelations(peopleAnalyticsIssuesFromIssues(allIssues), filter, tagSpecificity), nil
 	}
 
 	return WorkCorrelationsResult{Correlations: []PersonCorrelation{}}, nil
 }
 
-func buildWorkCorrelations(allIssues []issues.PeopleAnalyticsIssue, filter IssueStatusFilter) WorkCorrelationsResult {
+func buildWorkCorrelations(allIssues []issues.PeopleAnalyticsIssue, filter IssueStatusFilter, tagSpecificity map[string]*float64) WorkCorrelationsResult {
 	allIssues = filterPeopleAnalyticsByStatus(allIssues, filter)
 
 	// Group issues by assignee
@@ -93,7 +97,7 @@ func buildWorkCorrelations(allIssues []issues.PeopleAnalyticsIssue, filter Issue
 		pd := personData{
 			name:       personIssues[0].AssignedTo,
 			issues:     personIssues,
-			tagProfile: meanTagProfile(personIssues),
+			tagProfile: meanTagProfile(personIssues, tagSpecificity),
 			embedding:  meanEmbedding(personIssues),
 		}
 		people = append(people, pd)
@@ -134,7 +138,7 @@ func buildWorkCorrelations(allIssues []issues.PeopleAnalyticsIssue, filter Issue
 	return WorkCorrelationsResult{Correlations: correlations}
 }
 
-func meanTagProfile(matched []issues.PeopleAnalyticsIssue) []TagRelevance {
+func meanTagProfile(matched []issues.PeopleAnalyticsIssue, tagSpecificity map[string]*float64) []TagRelevance {
 	if len(matched) == 0 {
 		return []TagRelevance{}
 	}
@@ -143,7 +147,8 @@ func meanTagProfile(matched []issues.PeopleAnalyticsIssue) []TagRelevance {
 	counts := make(map[string]int)
 	for _, issue := range matched {
 		for _, ts := range issue.TagScores {
-			sums[ts.Tag] += ts.Relevance
+			weighted := ts.Relevance * specificityWeight(tagSpecificity[ts.Tag])
+			sums[ts.Tag] += weighted
 			counts[ts.Tag]++
 		}
 	}
@@ -311,4 +316,31 @@ func filterPeopleAnalyticsByStatus(items []issues.PeopleAnalyticsIssue, filter I
 
 func roundTo2(v float64) float64 {
 	return math.Round(v*100) / 100
+}
+
+// specificityWeight returns the specificity value for weighting, defaulting
+// to 0.5 when the score is nil (unscored).
+func specificityWeight(s *float64) float64 {
+	if s == nil {
+		return 0.5
+	}
+	return *s
+}
+
+// loadTagSpecificityMap loads stored tags from the catalog and builds a map
+// from tag name to specificity pointer. Returns nil if the catalog is
+// unavailable or loading fails (callers treat nil map entries as default).
+func loadTagSpecificityMap(ctx context.Context, catalog *services.CatalogService) map[string]*float64 {
+	if catalog == nil {
+		return nil
+	}
+	tags, err := catalog.StoredTags(ctx)
+	if err != nil {
+		return nil
+	}
+	m := make(map[string]*float64, len(tags))
+	for i := range tags {
+		m[tags[i].Name] = tags[i].Specificity
+	}
+	return m
 }

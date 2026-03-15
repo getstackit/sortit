@@ -127,6 +127,51 @@ func TestIssuesEndpointGetsIssueByID(t *testing.T) {
 	}
 }
 
+func TestIssuesEndpointLogsNamedQueryTimingForGetByID(t *testing.T) {
+	var logOutput bytes.Buffer
+	logger := slog.New(slog.NewTextHandler(&logOutput, nil))
+	originalHandler := slog.Default().Handler()
+	slog.SetDefault(logger)
+	t.Cleanup(func() {
+		slog.SetDefault(slog.New(originalHandler))
+	})
+
+	server := NewServer(ServerConfig{
+		CORSOrigins: []string{"http://localhost:3000"},
+		APIPrefixes: []string{"/api"},
+		IssueStore:  newPostgresIssueStore(t, issues.FixtureIssues()),
+		Logger:      logger,
+	})
+
+	req := httptest.NewRequest(http.MethodGet, "/api/issues/sample-3", nil)
+	rec := httptest.NewRecorder()
+
+	server.Handler().ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200 for issue lookup, got %d", rec.Code)
+	}
+
+	logged := logOutput.String()
+	for _, want := range []string{
+		"service=GetIssueHandler.Handle",
+		"service=PostgresStore.Get",
+		"query_name=GetIssue",
+		"query_name=ListIssuePosts",
+		"query_name=ListIssueLinksForIssue",
+		"query_name=ListIssueOperationsForIssue",
+		"query_name=ListIssues",
+		"query_name=LoadIssueEnrichmentStates",
+	} {
+		if !strings.Contains(logged, want) {
+			t.Fatalf("expected log output to contain %q, got %q", want, logged)
+		}
+	}
+	if strings.Contains(logged, "SELECT id, raw") {
+		t.Fatalf("expected logs to omit raw SQL text, got %q", logged)
+	}
+}
+
 func TestIssueLinkRejectsSelfLinks(t *testing.T) {
 	store := newPostgresIssueStore(t, nil)
 	source := issues.BuildNewIssue(issues.NewIssueID(), issues.CreateInput{

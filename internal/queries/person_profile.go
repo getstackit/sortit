@@ -6,6 +6,7 @@ import (
 
 	"splat/internal/domain"
 	"splat/internal/issues"
+	"splat/internal/services"
 )
 
 // TagRelevance is an alias for domain.TagRelevance.
@@ -18,7 +19,8 @@ type PersonTagProfile struct {
 }
 
 type GetPersonProfileHandler struct {
-	Store issues.Store
+	Store   issues.Store
+	Catalog *services.CatalogService
 }
 
 type peopleAnalyticsLister interface {
@@ -31,6 +33,8 @@ func (h GetPersonProfileHandler) Handle(ctx context.Context, person string, filt
 		return PersonTagProfile{}, nil
 	}
 
+	tagSpecificity := loadTagSpecificityMap(ctx, h.Catalog)
+
 	if store, ok := h.Store.(peopleAnalyticsLister); ok {
 		items, err := store.ListPeopleAnalytics(ctx, issues.ListOptions{
 			Status:     issueStatusFromFilter(filter),
@@ -39,7 +43,7 @@ func (h GetPersonProfileHandler) Handle(ctx context.Context, person string, filt
 		if err != nil {
 			return PersonTagProfile{}, err
 		}
-		return buildPersonTagProfile(items, person, IssueStatusFilterAll), nil
+		return buildPersonTagProfile(items, person, IssueStatusFilterAll, tagSpecificity), nil
 	}
 
 	if store, ok := h.Store.(filteredIssueLister); ok {
@@ -50,7 +54,7 @@ func (h GetPersonProfileHandler) Handle(ctx context.Context, person string, filt
 		if err != nil {
 			return PersonTagProfile{}, err
 		}
-		return buildPersonTagProfile(peopleAnalyticsIssuesFromIssues(items), person, IssueStatusFilterAll), nil
+		return buildPersonTagProfile(peopleAnalyticsIssuesFromIssues(items), person, IssueStatusFilterAll, tagSpecificity), nil
 	}
 
 	if h.Store != nil {
@@ -58,13 +62,13 @@ func (h GetPersonProfileHandler) Handle(ctx context.Context, person string, filt
 		if err != nil {
 			return PersonTagProfile{}, err
 		}
-		return buildPersonTagProfile(peopleAnalyticsIssuesFromIssues(allIssues), person, filter), nil
+		return buildPersonTagProfile(peopleAnalyticsIssuesFromIssues(allIssues), person, filter, tagSpecificity), nil
 	}
 
 	return PersonTagProfile{}, nil
 }
 
-func buildPersonTagProfile(allIssues []issues.PeopleAnalyticsIssue, person string, filter IssueStatusFilter) PersonTagProfile {
+func buildPersonTagProfile(allIssues []issues.PeopleAnalyticsIssue, person string, filter IssueStatusFilter, tagSpecificity map[string]*float64) PersonTagProfile {
 	allIssues = filterPeopleAnalyticsByStatus(allIssues, filter)
 
 	var matched []issues.PeopleAnalyticsIssue
@@ -77,6 +81,6 @@ func buildPersonTagProfile(allIssues []issues.PeopleAnalyticsIssue, person strin
 	return PersonTagProfile{
 		Person:     person,
 		IssueCount: len(matched),
-		TagProfile: meanTagProfile(matched),
+		TagProfile: meanTagProfile(matched, tagSpecificity),
 	}
 }

@@ -112,12 +112,12 @@ describe("TagsPage", () => {
     consoleError.mockRestore();
   });
 
-  it("shows specificity and merge insights for generic bucket tags", async () => {
+  it("shows specificity ladder and merge insights for tags", async () => {
     vi.mocked(fetchTags).mockResolvedValue([
-      makeTag({ name: "backend", description: "Generic backend surface", embedding: [1, 0] }),
-      makeTag({ name: "billing", description: "Invoices and account charges", embedding: [0.98, 0.02] }),
-      makeTag({ name: "payments", description: "Payment processing", embedding: [0.97, 0.03] }),
-      makeTag({ name: "back end", description: "Spacing variant", embedding: [1, 0] }),
+      makeTag({ name: "backend", description: "Generic backend surface", embedding: [1, 0], specificity: 0.2 }),
+      makeTag({ name: "billing", description: "Invoices and account charges", embedding: [0.98, 0.02], specificity: 0.8 }),
+      makeTag({ name: "payments", description: "Payment processing", embedding: [0.97, 0.03], specificity: 0.75 }),
+      makeTag({ name: "back end", description: "Spacing variant", embedding: [1, 0], specificity: 0.2 }),
     ]);
     vi.mocked(useIssues).mockReturnValue({
       data: [
@@ -140,9 +140,8 @@ describe("TagsPage", () => {
 
     render(<TagsPage />);
 
-    expect(await screen.findByText("Specificity")).toBeInTheDocument();
-    expect(screen.getByText("Generic bucket")).toBeInTheDocument();
-    expect(screen.getAllByText("Invoices and account charges").length).toBeGreaterThan(0);
+    expect(await screen.findByText("Specificity ladder")).toBeInTheDocument();
+    expect(screen.getByText(/Specificity: 0\.20/)).toBeInTheDocument();
     expect(screen.getByText("Potential merges")).toBeInTheDocument();
     expect(screen.getAllByText("Name variant").length).toBeGreaterThan(0);
   });

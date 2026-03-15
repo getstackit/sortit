@@ -114,7 +114,11 @@ CREATE TABLE tags (
     name TEXT PRIMARY KEY,
     description TEXT NOT NULL,
     created_at_unix_nano BIGINT NOT NULL,
-    embedding_json JSONB NOT NULL DEFAULT '[]'
+    embedding_json JSONB NOT NULL DEFAULT '[]',
+    specificity REAL,
+    specificity_llm REAL,
+    specificity_embedding REAL,
+    specificity_computed_at TIMESTAMPTZ
 );
 
 CREATE TABLE users (
