@@ -5,6 +5,7 @@
 package issuesdb
 
 import (
+	"database/sql"
 	"encoding/json"
 )
 
@@ -36,18 +37,30 @@ type Event struct {
 }
 
 type Issue struct {
-	ID                string
-	Raw               string
-	TagsJson          json.RawMessage
-	CreatedBy         string
-	CreatedAtUnixNano int64
-	Status            string
-	ClosedAtUnixNano  int64
-	ClosedBy          string
-	TagScoresJson     json.RawMessage
-	EmbeddingJson     json.RawMessage
-	EmbeddingVector   interface{}
-	AssignedTo        string
+	ID                       string
+	Raw                      string
+	TagsJson                 json.RawMessage
+	CreatedBy                string
+	CreatedAtUnixNano        int64
+	Status                   string
+	ClosedAtUnixNano         int64
+	ClosedBy                 string
+	TagScoresJson            json.RawMessage
+	EmbeddingJson            json.RawMessage
+	EmbeddingVector          interface{}
+	AssignedTo               string
+	EnrichmentStatus         string
+	EnrichmentError          string
+	EnrichmentTargetSequence int64
+}
+
+type IssueEnrichmentJob struct {
+	IssueID                string
+	TargetSequence         int64
+	LeaseExpiresAtUnixNano int64
+	AttemptCount           int64
+	CreatedAtUnixNano      int64
+	UpdatedAtUnixNano      int64
 }
 
 type IssueLink struct {
@@ -95,10 +108,14 @@ type Session struct {
 }
 
 type Tag struct {
-	Name              string
-	Description       string
-	CreatedAtUnixNano int64
-	EmbeddingJson     json.RawMessage
+	Name                  string
+	Description           string
+	CreatedAtUnixNano     int64
+	EmbeddingJson         json.RawMessage
+	Specificity           sql.NullFloat64
+	SpecificityLlm        sql.NullFloat64
+	SpecificityEmbedding  sql.NullFloat64
+	SpecificityComputedAt sql.NullTime
 }
 
 type User struct {

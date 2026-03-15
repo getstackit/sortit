@@ -69,6 +69,7 @@ type Server struct {
 type issueTagStore interface {
 	ListTags(context.Context) ([]issues.Tag, error)
 	UpsertTags(context.Context, []issues.Tag) error
+	UpdateTagSpecificity(ctx context.Context, name string, specificity, llm, embedding *float64, computedAt *time.Time) error
 }
 
 func mapProjectionStoreFromIssueStore(store issues.Store) issues.MapProjectionStorePersistence {
@@ -478,6 +479,7 @@ func NewServer(cfg ServerConfig) *Server {
 			DB:       uowBeginner,
 			Jobs:     claimer,
 			Enricher: enricher,
+			Catalog:  catalog,
 			OnStateChange: func(ctx context.Context, applied bool) {
 				revisions.Bump()
 				if applied && invalidator != nil {

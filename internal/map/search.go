@@ -103,6 +103,7 @@ func SearchFromQueryWithTags(
 
 	queryLower := strings.ToLower(queryRaw)
 	tagCorrelationBoost := queryMatchesTagNames(queryLower, tagNames)
+	tagSpecificity := buildTagSpecificityMap(storeTags)
 
 	related := make([]RelatedIssue, 0, len(storeIssues))
 	for _, candidate := range storeIssues {
@@ -114,7 +115,7 @@ func SearchFromQueryWithTags(
 		factor := vectors.CosineSimilarity(queryFactor, factorVectors[candidate.ID])
 		textMatch := textMatchScore(queryLower, candidate.Raw)
 		combined := blendScores(semantic, factor, textMatch, tagCorrelationBoost)
-		combined -= issueSpecificityPenalty(candidateSummary.Tags)
+		combined -= issueSpecificityPenalty(candidateSummary.Tags, tagSpecificity)
 		sharedTags := sharedRelevantTags(querySummary.Tags, candidateSummary.Tags, 3)
 
 		related = append(related, RelatedIssue{
@@ -209,24 +210,27 @@ func blendScores(semantic, factor, textMatch float64, tagCorrelation bool) float
 }
 
 // issueSpecificityPenalty penalizes issues whose top tags are all generic
-// bucket tags, so that issues with specific tags rank above generic ones.
-func issueSpecificityPenalty(tags []TagRelevance) float64 {
+// (low specificity), so that issues with specific tags rank above generic ones.
+func issueSpecificityPenalty(tags []TagRelevance, tagSpecificity map[string]*float64) float64 {
 	if len(tags) == 0 {
 		return 0
 	}
 	// Check up to the top 3 tags by relevance (they come pre-sorted).
 	limit := min(3, len(tags))
-	genericCount := 0
+	var totalPenalty float64
 	for _, tag := range tags[:limit] {
-		if genericBucketPenalty(tag.Tag) > 0 {
-			genericCount++
-		}
+		totalPenalty += specificityPenalty(tagSpecificity[tag.Tag])
 	}
-	if genericCount == 0 {
-		return 0
+	return totalPenalty / float64(limit)
+}
+
+// buildTagSpecificityMap builds a lookup from tag name to its specificity score pointer.
+func buildTagSpecificityMap(tags []issues.Tag) map[string]*float64 {
+	m := make(map[string]*float64, len(tags))
+	for i := range tags {
+		m[tags[i].Name] = tags[i].Specificity
 	}
-	// Small penalty proportional to how generic the top tags are.
-	return 0.02 * float64(genericCount) / float64(limit)
+	return m
 }
 
 // textMatchScore computes a lightweight text-match signal between the query
@@ -278,7 +282,7 @@ func SearchTags(storeTags []issues.Tag, queryEmbedding []float64, limit int) []R
 			continue
 		}
 		sim := vectors.CosineSimilarity(queryEmbedding, tag.Embedding)
-		rankedScores[tag.Name] = sim - genericBucketPenalty(tag.Name)
+		rankedScores[tag.Name] = sim - specificityPenalty(tag.Specificity)
 		related = append(related, RelatedTag{
 			Name:        tag.Name,
 			Description: tag.Description,

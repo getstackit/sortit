@@ -92,6 +92,12 @@ type Tag struct {
 	Description string    `json:"description,omitempty"`
 	CreatedAt   time.Time `json:"createdAt"`
 	Embedding   []float64 `json:"-"`
+
+	// Specificity scores (nil = not yet computed).
+	Specificity           *float64   `json:"specificity,omitempty"`
+	SpecificityLLM        *float64   `json:"specificityLlm,omitempty"`
+	SpecificityEmbedding  *float64   `json:"specificityEmbedding,omitempty"`
+	SpecificityComputedAt *time.Time `json:"specificityComputedAt,omitempty"`
 }
 
 // TagRelevance is an alias for domain.TagRelevance.
@@ -465,6 +471,10 @@ func sanitizeTags(tags []string) []string {
 }
 
 func displayTags(explicitTags []string, scores []TagRelevance) []string {
+	return displayTagsWithSpecificity(explicitTags, scores, nil)
+}
+
+func displayTagsWithSpecificity(explicitTags []string, scores []TagRelevance, tagSpecificity map[string]*float64) []string {
 	if tags := sanitizeTags(explicitTags); len(tags) > 0 {
 		return tags
 	}
@@ -474,10 +484,12 @@ func displayTags(explicitTags []string, scores []TagRelevance) []string {
 
 	normalized := copyTagScores(scores)
 	slices.SortStableFunc(normalized, func(a, b TagRelevance) int {
-		if a.Relevance > b.Relevance {
+		aScore := displayScore(a.Relevance, tagSpecificity, a.Tag)
+		bScore := displayScore(b.Relevance, tagSpecificity, b.Tag)
+		if aScore > bScore {
 			return -1
 		}
-		if a.Relevance < b.Relevance {
+		if aScore < bScore {
 			return 1
 		}
 		if a.Tag < b.Tag {
@@ -506,6 +518,19 @@ func displayTags(explicitTags []string, scores []TagRelevance) []string {
 		return []string{normalized[0].Tag}
 	}
 	return out
+}
+
+// displayScore blends relevance and specificity for display tag ranking.
+// displayScore = relevance * 0.5 + specificity * 0.5
+func displayScore(relevance float64, tagSpecificity map[string]*float64, tagName string) float64 {
+	if tagSpecificity == nil {
+		return relevance
+	}
+	s := 0.5
+	if p, ok := tagSpecificity[tagName]; ok && p != nil {
+		s = *p
+	}
+	return relevance*0.5 + s*0.5
 }
 
 func normalizeIssueEnrichment(issue Issue) Issue {
@@ -669,13 +694,33 @@ func cloneTags(input []Tag) []Tag {
 	items := make([]Tag, len(input))
 	for i, tag := range input {
 		items[i] = Tag{
-			Name:        tag.Name,
-			Description: tag.Description,
-			CreatedAt:   tag.CreatedAt,
-			Embedding:   copyEmbedding(tag.Embedding),
+			Name:                  tag.Name,
+			Description:           tag.Description,
+			CreatedAt:             tag.CreatedAt,
+			Embedding:             copyEmbedding(tag.Embedding),
+			Specificity:           copyFloat64Ptr(tag.Specificity),
+			SpecificityLLM:        copyFloat64Ptr(tag.SpecificityLLM),
+			SpecificityEmbedding:  copyFloat64Ptr(tag.SpecificityEmbedding),
+			SpecificityComputedAt: copyTimePtr(tag.SpecificityComputedAt),
 		}
 	}
 	return items
+}
+
+func copyFloat64Ptr(p *float64) *float64 {
+	if p == nil {
+		return nil
+	}
+	v := *p
+	return &v
+}
+
+func copyTimePtr(p *time.Time) *time.Time {
+	if p == nil {
+		return nil
+	}
+	v := *p
+	return &v
 }
 
 func sanitizeTagName(name string) string {

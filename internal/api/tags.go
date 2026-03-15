@@ -77,6 +77,16 @@ func (s *Server) handleTagMerge(w http.ResponseWriter, r *http.Request) {
 
 	s.revisions.Bump()
 
+	// Rescore the canonical tag's specificity after merge.
+	if s.catalog != nil {
+		if err := s.catalog.ScoreTagSpecificity(r.Context(), request.Canonical); err != nil {
+			s.logger.WarnContext(r.Context(), "failed to rescore tag specificity after merge",
+				"tag", request.Canonical,
+				"error", err,
+			)
+		}
+	}
+
 	writeJSON(w, http.StatusOK, map[string]string{"status": "merged"})
 }
 

@@ -82,6 +82,17 @@ func (a *Analyzer) EmbedText(ctx context.Context, text string) (EmbeddingResult,
 	return a.embedder.EmbedText(ctx, text)
 }
 
+func (a *Analyzer) ScoreTagSpecificity(ctx context.Context, tag Tag, catalog []Tag) (float64, error) {
+	if a == nil || a.tagger == nil {
+		return 0, ErrNotConfigured
+	}
+	scorer, ok := a.tagger.(SpecificityScorer)
+	if !ok {
+		return 0, fmt.Errorf("tagger does not support specificity scoring")
+	}
+	return scorer.ScoreSpecificity(ctx, tag, catalog)
+}
+
 func (a *Analyzer) CanonicalizeDiscussion(ctx context.Context, posts []string) (string, error) {
 	if a == nil || a.canonicalizer == nil {
 		return "", ErrNotConfigured

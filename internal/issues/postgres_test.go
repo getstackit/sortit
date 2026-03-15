@@ -1135,3 +1135,53 @@ func sparseUnitVector(dim, index int) []float64 { //nolint:unparam
 	}
 	return vector
 }
+
+func TestPostgresStoreListTagsPreservesSpecificity(t *testing.T) {
+	store := newPostgresTestStore(t)
+	ctx := context.Background()
+
+	if err := store.UpsertTags(ctx, []Tag{
+		{Name: "safari", Description: "webkit browser", Embedding: []float64{1, 0, 0}},
+	}); err != nil {
+		t.Fatalf("upsert tag: %v", err)
+	}
+
+	specificity := 0.85
+	llm := 0.9
+	emb := 0.73
+	now := time.Now().UTC().Truncate(time.Microsecond)
+	if err := store.UpdateTagSpecificity(ctx, "safari", &specificity, &llm, &emb, &now); err != nil {
+		t.Fatalf("update tag specificity: %v", err)
+	}
+
+	tags, err := store.ListTags(ctx)
+	if err != nil {
+		t.Fatalf("list tags: %v", err)
+	}
+	if len(tags) == 0 {
+		t.Fatal("expected at least one tag")
+	}
+
+	tag := tags[0]
+	if tag.Specificity == nil {
+		t.Fatal("Specificity is nil, want non-nil")
+	}
+	if diff := *tag.Specificity - specificity; diff < -0.01 || diff > 0.01 {
+		t.Errorf("Specificity: got %v, want ~%v", *tag.Specificity, specificity)
+	}
+	if tag.SpecificityLLM == nil {
+		t.Fatal("SpecificityLLM is nil, want non-nil")
+	}
+	if diff := *tag.SpecificityLLM - llm; diff < -0.01 || diff > 0.01 {
+		t.Errorf("SpecificityLLM: got %v, want ~%v", *tag.SpecificityLLM, llm)
+	}
+	if tag.SpecificityEmbedding == nil {
+		t.Fatal("SpecificityEmbedding is nil, want non-nil")
+	}
+	if diff := *tag.SpecificityEmbedding - emb; diff < -0.01 || diff > 0.01 {
+		t.Errorf("SpecificityEmbedding: got %v, want ~%v", *tag.SpecificityEmbedding, emb)
+	}
+	if tag.SpecificityComputedAt == nil || !tag.SpecificityComputedAt.Equal(now) {
+		t.Errorf("SpecificityComputedAt: got %v, want %v", tag.SpecificityComputedAt, now)
+	}
+}

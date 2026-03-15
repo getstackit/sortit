@@ -52,10 +52,12 @@ func TestSearchExcludesMergedAndDuplicateIssues(t *testing.T) {
 }
 
 func TestSearchTagsDeprioritizesGenericBucketTags(t *testing.T) {
+	lowSpecificity := 0.1
+	highSpecificity := 0.8
 	tags := []issues.Tag{
-		{Name: "backend", Embedding: []float64{1, 0}},
-		{Name: "billing", Embedding: []float64{0.98, 0.02}},
-		{Name: "payments", Embedding: []float64{0.96, 0.04}},
+		{Name: "backend", Embedding: []float64{1, 0}, Specificity: &lowSpecificity},
+		{Name: "billing", Embedding: []float64{0.98, 0.02}, Specificity: &highSpecificity},
+		{Name: "payments", Embedding: []float64{0.96, 0.04}, Specificity: &highSpecificity},
 	}
 
 	results := SearchTags(tags, []float64{1, 0}, 3)

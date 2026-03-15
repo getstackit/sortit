@@ -8,7 +8,6 @@ import (
 	"time"
 
 	"splat/internal/ai"
-	"splat/internal/domain"
 	"splat/internal/issues"
 )
 
@@ -48,7 +47,7 @@ func (s *IssueEnricher) AnalyzeCreateInput(ctx context.Context, input issues.Cre
 		return issues.CreateInput{}, err
 	}
 
-	input.TagScores = attenuateGenericBucketScores(IssueTagScoresFromAnalysis(analyzed.Tags))
+	input.TagScores = attenuateGenericScores(IssueTagScoresFromAnalysis(analyzed.Tags), s.tagSpecificityMap(ctx))
 	input.Embedding = Float32VectorToFloat64(analyzed.Embedding.Vector)
 	if len(input.Tags) == 0 {
 		input.Tags = nil
@@ -107,7 +106,7 @@ func (s *IssueEnricher) AnalyzeRefineInput(ctx context.Context, issue issues.Iss
 		PostRaw:      postRaw,
 		CanonicalRaw: canonicalRaw,
 		CreatedBy:    createdBy,
-		TagScores:    attenuateGenericBucketScores(IssueTagScoresFromAnalysis(analyzed.Tags)),
+		TagScores:    attenuateGenericScores(IssueTagScoresFromAnalysis(analyzed.Tags), s.tagSpecificityMap(ctx)),
 		Embedding:    Float32VectorToFloat64(analyzed.Embedding.Vector),
 	}, nil
 }
@@ -187,8 +186,8 @@ func (s *IssueEnricher) AnalyzePersistedIssue(
 	emptyError := ""
 	return issues.IssueFieldUpdate{
 		Raw:                      &canonicalRaw,
-		Tags:                     issues.DisplayTags(explicitTags, attenuateGenericBucketScores(IssueTagScoresFromAnalysis(analyzed.Tags))),
-		TagScores:                attenuateGenericBucketScores(IssueTagScoresFromAnalysis(analyzed.Tags)),
+		Tags:                     issues.DisplayTagsWithSpecificity(explicitTags, attenuateGenericScores(IssueTagScoresFromAnalysis(analyzed.Tags), s.tagSpecificityMap(ctx)), s.tagSpecificityMap(ctx)),
+		TagScores:                attenuateGenericScores(IssueTagScoresFromAnalysis(analyzed.Tags), s.tagSpecificityMap(ctx)),
 		Embedding:                Float32VectorToFloat64(analyzed.Embedding.Vector),
 		EnrichmentStatus:         &status,
 		EnrichmentError:          &emptyError,
@@ -250,21 +249,28 @@ func (s *IssueEnricher) AnalyzeCombineInput(
 		Raw:       canonicalRaw,
 		CreatedBy: createdBy,
 		Note:      note,
-		TagScores: attenuateGenericBucketScores(IssueTagScoresFromAnalysis(analyzed.Tags)),
+		TagScores: attenuateGenericScores(IssueTagScoresFromAnalysis(analyzed.Tags), s.tagSpecificityMap(ctx)),
 		Embedding: Float32VectorToFloat64(analyzed.Embedding.Vector),
 	}, nil
 }
 
-// attenuateGenericBucketScores reduces relevance of generic bucket tags
-// when more specific tags are also present, so that specific tags rank higher.
-func attenuateGenericBucketScores(scores []issues.TagRelevance) []issues.TagRelevance {
+const (
+	genericSpecificityThreshold = 0.3
+	genericMultiplier           = 0.6
+	defaultSpecificity          = 0.5
+)
+
+// attenuateGenericScores reduces relevance of low-specificity tags when more
+// specific tags are also present, so that specific tags rank higher.
+// tagSpecificity maps tag name → specificity score (nil = unscored, treated as 0.5).
+func attenuateGenericScores(scores []issues.TagRelevance, tagSpecificity map[string]*float64) []issues.TagRelevance {
 	if len(scores) == 0 {
 		return scores
 	}
 
 	hasSpecific := false
 	for _, s := range scores {
-		if !domain.IsGenericBucketTag(s.Tag) && s.Relevance > 0 {
+		if tagSpecificityValue(s.Tag, tagSpecificity) >= genericSpecificityThreshold && s.Relevance > 0 {
 			hasSpecific = true
 			break
 		}
@@ -273,15 +279,40 @@ func attenuateGenericBucketScores(scores []issues.TagRelevance) []issues.TagRele
 		return scores
 	}
 
-	const genericMultiplier = 0.6
 	out := make([]issues.TagRelevance, len(scores))
 	for i, s := range scores {
 		out[i] = s
-		if domain.IsGenericBucketTag(s.Tag) {
+		if tagSpecificityValue(s.Tag, tagSpecificity) < genericSpecificityThreshold {
 			out[i].Relevance = s.Relevance * genericMultiplier
 		}
 	}
 	return out
+}
+
+func tagSpecificityValue(name string, specificity map[string]*float64) float64 {
+	if specificity == nil {
+		return defaultSpecificity
+	}
+	p, ok := specificity[name]
+	if !ok || p == nil {
+		return defaultSpecificity
+	}
+	return *p
+}
+
+func (s *IssueEnricher) tagSpecificityMap(ctx context.Context) map[string]*float64 {
+	if s.catalog == nil {
+		return nil
+	}
+	tags, err := s.catalog.StoredTags(ctx)
+	if err != nil {
+		return nil
+	}
+	m := make(map[string]*float64, len(tags))
+	for i := range tags {
+		m[tags[i].Name] = tags[i].Specificity
+	}
+	return m
 }
 
 func IssueTagScoresFromAnalysis(scores []ai.TagScore) []issues.TagRelevance {

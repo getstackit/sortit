@@ -3,6 +3,7 @@ package services
 import (
 	"context"
 	"testing"
+	"time"
 
 	"splat/internal/ai"
 	"splat/internal/issues"
@@ -20,6 +21,10 @@ func (s *catalogTestStore) ListTags(context.Context) ([]issues.Tag, error) {
 func (s *catalogTestStore) UpsertTags(_ context.Context, tags []issues.Tag) error {
 	s.upserted = append([]issues.Tag(nil), tags...)
 	s.tags = append([]issues.Tag(nil), tags...)
+	return nil
+}
+
+func (s *catalogTestStore) UpdateTagSpecificity(_ context.Context, _ string, _, _, _ *float64, _ *time.Time) error {
 	return nil
 }
 

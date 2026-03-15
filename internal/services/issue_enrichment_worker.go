@@ -22,6 +22,7 @@ type IssueEnrichmentWorker struct {
 	DB            issues.UnitOfWorkBeginner
 	Jobs          issues.EnrichmentJobClaimer
 	Enricher      *IssueEnricher
+	Catalog       *CatalogService
 	PollInterval  time.Duration
 	LeaseDuration time.Duration
 	RetryDelay    time.Duration
@@ -111,6 +112,7 @@ func (w *IssueEnrichmentWorker) ProcessOne(ctx context.Context) (bool, error) {
 	w.Logger.InfoContext(ctx, "enrichment job completed",
 		"issue_id", job.IssueID,
 	)
+	w.scoreAffectedTags(ctx, fields)
 	return true, nil
 }
 
@@ -226,4 +228,20 @@ func (w *IssueEnrichmentWorker) withJobUnitOfWork(
 		return false, fmt.Errorf("commit enrichment unit of work: %w", err)
 	}
 	return changed, nil
+}
+
+// scoreAffectedTags re-scores the specificity of tags touched by an enrichment.
+// Errors are logged but do not fail the enrichment.
+func (w *IssueEnrichmentWorker) scoreAffectedTags(ctx context.Context, fields issues.IssueFieldUpdate) {
+	if w.Catalog == nil || len(fields.TagScores) == 0 {
+		return
+	}
+	for _, ts := range fields.TagScores {
+		if err := w.Catalog.ScoreTagSpecificity(ctx, ts.Tag); err != nil {
+			w.Logger.WarnContext(ctx, "failed to score tag specificity after enrichment",
+				"tag", ts.Tag,
+				"error", err,
+			)
+		}
+	}
 }

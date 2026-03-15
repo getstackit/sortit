@@ -821,6 +821,28 @@ func (s *PostgresStore) UpsertTags(ctx context.Context, tags []Tag) error {
 	return nil
 }
 
+func (s *PostgresStore) UpdateTagSpecificity(ctx context.Context, name string, specificity, llm, embedding *float64, computedAt *time.Time) error {
+	params := issuesdb.UpdateTagSpecificityParams{
+		Name: name,
+	}
+	if specificity != nil {
+		params.Specificity = sql.NullFloat64{Float64: *specificity, Valid: true}
+	}
+	if llm != nil {
+		params.SpecificityLlm = sql.NullFloat64{Float64: *llm, Valid: true}
+	}
+	if embedding != nil {
+		params.SpecificityEmbedding = sql.NullFloat64{Float64: *embedding, Valid: true}
+	}
+	if computedAt != nil {
+		params.SpecificityComputedAt = sql.NullTime{Time: computedAt.UTC(), Valid: true}
+	}
+	if err := s.queries.UpdateTagSpecificity(ctx, params); err != nil {
+		return fmt.Errorf("update tag specificity %q: %w", name, err)
+	}
+	return nil
+}
+
 func (s *PostgresStore) init(ctx context.Context) error {
 	return s.runMigrations(ctx)
 }
@@ -1154,12 +1176,31 @@ func tagFromQuery(row issuesdb.Tag) (Tag, error) {
 		return Tag{}, fmt.Errorf("decode embedding for tag %q: %w", row.Name, err)
 	}
 
-	return Tag{
+	tag := Tag{
 		Name:        row.Name,
 		Description: row.Description,
 		CreatedAt:   time.Unix(0, row.CreatedAtUnixNano).UTC(),
 		Embedding:   embedding,
-	}, nil
+	}
+
+	if row.Specificity.Valid {
+		v := row.Specificity.Float64
+		tag.Specificity = &v
+	}
+	if row.SpecificityLlm.Valid {
+		v := row.SpecificityLlm.Float64
+		tag.SpecificityLLM = &v
+	}
+	if row.SpecificityEmbedding.Valid {
+		v := row.SpecificityEmbedding.Float64
+		tag.SpecificityEmbedding = &v
+	}
+	if row.SpecificityComputedAt.Valid {
+		v := row.SpecificityComputedAt.Time.UTC()
+		tag.SpecificityComputedAt = &v
+	}
+
+	return tag, nil
 }
 
 func (s *PostgresStore) getIssueWithDiscussion(ctx context.Context, q issueQuerier, id string) (Issue, error) {
