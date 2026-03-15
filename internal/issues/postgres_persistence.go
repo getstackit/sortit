@@ -257,7 +257,7 @@ func (s *PostgresStore) MergeTags(ctx context.Context, canonical string, aliases
 	if err != nil {
 		return fmt.Errorf("list issues for tag merge: %w", err)
 	}
-	defer rows.Close()
+	defer rows.Close() //nolint:errcheck
 
 	type issueUpdate struct {
 		id        string
@@ -359,7 +359,7 @@ func (s *PostgresStore) ListDismissedTagMerges(ctx context.Context) ([]Dismissed
 	if err != nil {
 		return nil, fmt.Errorf("list dismissed tag merges: %w", err)
 	}
-	defer rows.Close()
+	defer rows.Close() //nolint:errcheck
 
 	var items []DismissedTagMerge
 	for rows.Next() {
