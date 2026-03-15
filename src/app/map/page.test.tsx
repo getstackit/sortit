@@ -3,6 +3,7 @@ import { act, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import MapPage from "@/app/map/page";
 import type { MapData } from "@/features/map/types";
+import * as urlStateModule from "@/features/map/url-state";
 
 let mockSearchParams = new URLSearchParams();
 
@@ -639,6 +640,96 @@ describe("MapPage", () => {
     ).map((option) => option.textContent);
 
     expect(optionLabels).toEqual(["Strongest tag", "ui", "bug", "feature"]);
+  });
+
+  it("memoizes parseMapURLState — does not re-parse when searchParams is unchanged", async () => {
+    // Without useMemo, parseMapURLState runs every render, producing new
+    // urlState.viewport/batchIds object references that cause the URL-read
+    // effect to fire spuriously, resetting interactive state (selectedId,
+    // viewport) before the URL has been updated via replaceState.
+    const spy = vi.spyOn(urlStateModule, "parseMapURLState");
+
+    const user = userEvent.setup();
+    const { container, rerender } = render(<MapPage />);
+
+    await waitFor(() => {
+      expect(container.querySelector("svg")).toBeInTheDocument();
+    });
+
+    // parseMapURLState called during render(s) while loading
+    const countAfterLoad = spy.mock.calls.length;
+
+    // Click an issue — triggers state changes and re-renders, but
+    // searchParams has NOT changed, so parseMapURLState must not be called again
+    const firstIssue = container.querySelector("[data-issue='issue-001']");
+    await user.click(firstIssue!);
+
+    await waitFor(() => {
+      expect(screen.getByRole("link", { name: "View issue" })).toBeInTheDocument();
+    });
+
+    const countAfterClick = spy.mock.calls.length;
+    expect(countAfterClick).toBe(countAfterLoad);
+
+    // Force multiple re-renders — parseMapURLState should still not be re-called
+    rerender(<MapPage />);
+    rerender(<MapPage />);
+    rerender(<MapPage />);
+
+    expect(spy.mock.calls.length).toBe(countAfterLoad);
+
+    spy.mockRestore();
+  });
+
+  it("re-parses URL state only when searchParams changes", async () => {
+    const spy = vi.spyOn(urlStateModule, "parseMapURLState");
+
+    const { container, rerender } = render(<MapPage />);
+
+    await waitFor(() => {
+      expect(container.querySelector("svg")).toBeInTheDocument();
+    });
+
+    const countAfterLoad = spy.mock.calls.length;
+
+    // Re-render with same searchParams reference — no new parse
+    rerender(<MapPage />);
+    expect(spy.mock.calls.length).toBe(countAfterLoad);
+
+    // Change searchParams — should trigger exactly one new parse
+    mockSearchParams = new URLSearchParams("issue=issue-001");
+    rerender(<MapPage />);
+    expect(spy.mock.calls.length).toBe(countAfterLoad + 1);
+
+    spy.mockRestore();
+  });
+
+  it("preserves issue selection when searchParams updates to match current state", async () => {
+    const user = userEvent.setup();
+    const { container, rerender } = render(<MapPage />);
+
+    await waitFor(() => {
+      expect(container.querySelector("svg")).toBeInTheDocument();
+    });
+
+    const firstIssue = container.querySelector("[data-issue='issue-001']");
+    await user.click(firstIssue!);
+
+    await waitFor(() => {
+      expect(screen.getByRole("link", { name: "View issue" })).toBeInTheDocument();
+    });
+
+    // Simulate Next.js picking up the replaceState with the selected issue in the URL
+    mockSearchParams = new URLSearchParams("issue=issue-001");
+    await act(async () => {
+      rerender(<MapPage />);
+    });
+
+    // Sidebar should still show the selected issue
+    expect(screen.queryByRole("link", { name: "View issue" })).toHaveAttribute(
+      "href",
+      "/issues/issue-001"
+    );
   });
 
   it("sizes issue nodes by the selected tag loading", async () => {
