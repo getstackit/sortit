@@ -488,7 +488,7 @@ func newTestHandlers() *handlers {
 		splitIssue:       commands.SplitIssueHandler{Runner: runner, Enricher: enricher, Events: eventBus},
 		combineIssues:    commands.CombineIssuesHandler{Runner: runner, Store: store, Enricher: enricher, Events: eventBus},
 		linkIssues:       commands.LinkIssuesHandler{Runner: runner, Events: eventBus},
-		getIssue:         queries.GetIssueHandler{Store: store},
+		getIssue:         queries.GetIssueHandler{Reader: store},
 		listTags:         queries.ListTagsHandler{Catalog: catalog},
 		searchIssues:     queries.SearchIssuesHandler{Analyzer: analyzer, Catalog: catalog, Store: store},
 		exploreIssue:     queries.ExploreIssueHandler{Store: store, Catalog: catalog},
@@ -514,13 +514,17 @@ func createTestIssue(t *testing.T, handler *handlers, raw string, createdBy stri
 func drainTestEnrichment(t *testing.T, handler *handlers) {
 	t.Helper()
 
-	claimer, ok := handler.getIssue.Store.(issues.EnrichmentJobClaimer)
+	claimer, ok := handler.getIssue.Reader.(issues.EnrichmentJobClaimer)
 	if !ok {
 		return
 	}
+	store, ok := handler.getIssue.Reader.(issues.Store)
+	if !ok {
+		t.Fatal("expected get issue reader to also implement issues.Store in tests")
+	}
 	worker := &services.IssueEnrichmentWorker{
 		Logger:   slog.Default(),
-		Store:    handler.getIssue.Store,
+		Store:    store,
 		DB:       handler.createIssue.Runner.DB,
 		Jobs:     claimer,
 		Enricher: handler.createIssue.Enricher,

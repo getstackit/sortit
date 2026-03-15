@@ -553,7 +553,7 @@ func NewServer(cfg ServerConfig) *Server {
 		},
 		listIssues:    queries.ListIssuesHandler{Store: store},
 		listActivity:  queries.ListActivityHandler{Events: events},
-		getIssue:      queries.GetIssueHandler{Store: store, Logger: logger.With("query", "get_issue")},
+		getIssue:      queries.GetIssueHandler{Reader: store, Logger: logger.With("query", "get_issue")},
 		compareIssues: queries.CompareIssuesHandler{Store: store},
 		searchIssues: queries.SearchIssuesHandler{
 			Analyzer: commandAnalyzer,

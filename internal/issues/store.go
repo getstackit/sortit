@@ -267,17 +267,22 @@ type IssueEnrichmentJob struct {
 	AttemptCount   int
 }
 
-type Store interface {
-	// Reads
+type Reader interface {
 	List(context.Context) ([]Issue, error)
 	Get(context.Context, string) (Issue, error)
+}
 
-	// Persistence-only writes
+type Writer interface {
 	SaveIssue(ctx context.Context, issue Issue) error
 	SaveIssuePost(ctx context.Context, post IssuePost) error
 	UpdateIssueFields(ctx context.Context, id string, fields IssueFieldUpdate) error
 	SaveOperation(ctx context.Context, op IssueOperation) error
 	SaveLink(ctx context.Context, link IssueLink) error
+}
+
+type Store interface {
+	Reader
+	Writer
 }
 
 type EnrichmentJobWriter interface {
