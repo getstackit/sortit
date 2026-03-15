@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { TAG_COLORS, dominantTag } from "@/features/map/model";
 import type { TagRelevance } from "@/features/map/types";
+import { TagBadge } from "@/components/tag-badge";
 import { cn } from "@/lib/utils";
 
 type IssueListItemIssue = {
@@ -65,16 +66,7 @@ export function IssueListItem({
             {issue.assignedTo ?? "Unassigned"}
           </span>
           {displayTags.map(({ tag }) => (
-            <span
-              key={tag}
-              className="rounded-full px-1.5 py-0.5 text-[9px] font-medium"
-              style={{
-                backgroundColor: `${TAG_COLORS[tag] ?? "#94a3b8"}20`,
-                color: TAG_COLORS[tag] ?? "#94a3b8",
-              }}
-            >
-              {tag}
-            </span>
+            <TagBadge key={tag} tag={tag} compact />
           ))}
         </div>
       </div>
