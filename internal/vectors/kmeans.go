@@ -6,16 +6,16 @@ import (
 )
 
 const (
-	kmeansMaxIterations       = 50
+	kmeansMaxIterations        = 50
 	kmeansConvergenceThreshold = 1e-6
-	kmeansMinK                = 2
-	specificityOutlierCap     = 0.8
+	kmeansMinK                 = 2
+	specificityOutlierCap      = 0.8
 )
 
 // KMeansResult holds the per-point cluster assignment and embedding specificity score.
 type KMeansResult struct {
-	Cluster    int
-	Distance   float64 // cosine distance from centroid
+	Cluster     int
+	Distance    float64 // cosine distance from centroid
 	Specificity float64 // normalized 0–1 within cluster, capped at outlierCap
 }
 

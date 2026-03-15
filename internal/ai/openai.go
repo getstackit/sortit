@@ -158,7 +158,7 @@ func (t *OpenAITagger) Score(ctx context.Context, text string, tags []Tag) ([]Ta
 	}
 
 	var response openAIChatCompletionResponse
-	if err := t.client.doJSON(ctx, http.MethodPost, "/chat/completions", request, &response); err != nil {
+	if err := t.client.doJSON(ctx, "/chat/completions", request, &response); err != nil {
 		return nil, err
 	}
 	if len(response.Choices) == 0 {
@@ -197,7 +197,7 @@ func (c *OpenAICanonicalizer) CanonicalizeDiscussion(ctx context.Context, posts 
 	}
 
 	var response openAIChatCompletionResponse
-	if err := c.client.doJSON(ctx, http.MethodPost, "/chat/completions", request, &response); err != nil {
+	if err := c.client.doJSON(ctx, "/chat/completions", request, &response); err != nil {
 		return "", err
 	}
 	if len(response.Choices) == 0 {
@@ -219,7 +219,7 @@ func (e *OpenAIEmbedder) embedTexts(ctx context.Context, texts []string) ([][]fl
 	}
 
 	var response openAIEmbeddingResponse
-	if err := e.client.doJSON(ctx, http.MethodPost, "/embeddings", request, &response); err != nil {
+	if err := e.client.doJSON(ctx, "/embeddings", request, &response); err != nil {
 		return nil, err
 	}
 
@@ -258,13 +258,13 @@ func newOpenAIClient(cfg OpenAIConfig) (*openAIClient, error) {
 	}, nil
 }
 
-func (c *openAIClient) doJSON(ctx context.Context, method string, requestPath string, requestBody any, responseBody any) error {
+func (c *openAIClient) doJSON(ctx context.Context, requestPath string, requestBody any, responseBody any) error {
 	body, err := json.Marshal(requestBody)
 	if err != nil {
 		return fmt.Errorf("encode request: %w", err)
 	}
 
-	req, err := http.NewRequestWithContext(ctx, method, c.baseURL+requestPath, bytes.NewReader(body))
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, c.baseURL+requestPath, bytes.NewReader(body))
 	if err != nil {
 		return fmt.Errorf("build request: %w", err)
 	}
@@ -363,7 +363,7 @@ func (t *OpenAITagger) ScoreSpecificity(ctx context.Context, tag Tag, catalog []
 	}
 
 	var response openAIChatCompletionResponse
-	if err := t.client.doJSON(ctx, http.MethodPost, "/chat/completions", request, &response); err != nil {
+	if err := t.client.doJSON(ctx, "/chat/completions", request, &response); err != nil {
 		return 0, err
 	}
 	if len(response.Choices) == 0 {

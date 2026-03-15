@@ -34,10 +34,10 @@ func TestKMeansSpecificityOutlierCap(t *testing.T) {
 func TestKMeansSpecificityDistinguishesClusters(t *testing.T) {
 	// Two clear clusters: X-axis vs Y-axis, with an outlier.
 	embeddings := [][]float64{
-		{1, 0, 0},    // cluster A
+		{1, 0, 0},     // cluster A
 		{0.9, 0.1, 0}, // cluster A
 		{0.8, 0.2, 0}, // cluster A
-		{0, 1, 0},    // cluster B
+		{0, 1, 0},     // cluster B
 		{0.1, 0.9, 0}, // cluster B
 		{0.2, 0.8, 0}, // cluster B
 	}
@@ -66,7 +66,7 @@ func TestKMeansSpecificityDistinguishesClusters(t *testing.T) {
 func TestKMeansSpecificityKEquation(t *testing.T) {
 	// Verify k = floor(sqrt(n)), min 2.
 	tests := []struct {
-		n    int
+		n     int
 		wantK int
 	}{
 		{2, 2},
