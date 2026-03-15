@@ -3,6 +3,7 @@ package queries
 import (
 	"context"
 	"encoding/json"
+	"log/slog"
 	"testing"
 
 	"splat/internal/issues"
@@ -96,7 +97,7 @@ func (m *memoryMapProjectionStore) SaveMapProjection(_ context.Context, revision
 func TestMapProjectionLoaderPersistsAndReloadsProjection(t *testing.T) {
 	ctx := context.Background()
 	store := issues.NewInMemoryStore(issues.FixtureIssues())
-	catalog := services.NewCatalogService(nil, services.FallbackAnalyzer(nil))
+	catalog := services.NewCatalogService(nil, services.FallbackAnalyzer(nil), slog.Default())
 	projections := &memoryMapProjectionStore{}
 	revisions := issues.NewRevisionTracker()
 
@@ -149,7 +150,7 @@ func TestMapProjectionLoaderUsesBulkProjectionStoreWhenAvailable(t *testing.T) {
 
 	loader := &MapProjectionLoader{
 		Store:     store,
-		Catalog:   services.NewCatalogService(nil, services.FallbackAnalyzer(nil)),
+		Catalog:   services.NewCatalogService(nil, services.FallbackAnalyzer(nil), slog.Default()),
 		Revisions: issues.NewRevisionTracker(),
 	}
 

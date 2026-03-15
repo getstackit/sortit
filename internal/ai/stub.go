@@ -148,6 +148,29 @@ func (e *StubEmbedder) Model() string {
 	return "hash-embedding-v1"
 }
 
+func (t *StubTagger) ScoreSpecificity(_ context.Context, tag Tag, catalog []Tag) (float64, error) {
+	// Stub: generic bucket tags get low specificity, others get moderate-to-high.
+	name := strings.ToLower(tag.Name)
+	switch name {
+	case "api", "backend", "client", "frontend", "server", "ui", "ux":
+		return 0.15, nil
+	case "bug", "feature", "improvement", "idea":
+		return 0.25, nil
+	}
+	// Longer, more compound names suggest more specificity.
+	score := 0.5
+	if strings.Contains(name, "-") {
+		score += 0.2
+	}
+	if len(name) > 15 {
+		score += 0.1
+	}
+	if score > 1 {
+		score = 1
+	}
+	return score, nil
+}
+
 func (c *StubCanonicalizer) CanonicalizeDiscussion(_ context.Context, posts []string) (string, error) {
 	normalized := make([]string, 0, len(posts))
 	for _, post := range posts {

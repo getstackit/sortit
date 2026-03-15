@@ -11,6 +11,8 @@ import (
 	"splat/internal/queries"
 )
 
+const testUser = "Casey"
+
 func TestPersonDetailReturnsAssignedQueueHeadAndRecommendations(t *testing.T) {
 	makeIssue := func(
 		id string,
@@ -23,7 +25,7 @@ func TestPersonDetailReturnsAssignedQueueHeadAndRecommendations(t *testing.T) {
 	) issues.Issue {
 		issue := issues.BuildNewIssue(id, issues.CreateInput{
 			Raw:       raw,
-			CreatedBy: "Casey",
+			CreatedBy: testUser,
 			TagScores: tagScores,
 			Embedding: embedding,
 		})
@@ -33,7 +35,7 @@ func TestPersonDetailReturnsAssignedQueueHeadAndRecommendations(t *testing.T) {
 		if status == issues.StatusClosed {
 			closedAt := createdAt.Add(2 * time.Hour)
 			issue.ClosedAt = &closedAt
-			issue.ClosedBy = "Casey"
+			issue.ClosedBy = testUser
 		}
 		return issue
 	}

@@ -2,7 +2,9 @@ package services
 
 import (
 	"context"
+	"log/slog"
 	"testing"
+	"time"
 
 	"splat/internal/ai"
 	"splat/internal/issues"
@@ -20,6 +22,10 @@ func (s *catalogTestStore) ListTags(context.Context) ([]issues.Tag, error) {
 func (s *catalogTestStore) UpsertTags(_ context.Context, tags []issues.Tag) error {
 	s.upserted = append([]issues.Tag(nil), tags...)
 	s.tags = append([]issues.Tag(nil), tags...)
+	return nil
+}
+
+func (s *catalogTestStore) UpdateTagSpecificity(_ context.Context, _ string, _, _, _ *float64, _ *time.Time) error {
 	return nil
 }
 
@@ -70,6 +76,7 @@ func TestEnsureStoredTagsReembedsWhenDescriptionChanges(t *testing.T) {
 	service := NewCatalogService(
 		store,
 		ai.NewAnalyzer(catalogTestTagger{}, embedder),
+		slog.Default(),
 	)
 
 	err := service.EnsureStoredTags(context.Background(), []issues.Tag{
@@ -113,6 +120,7 @@ func TestEnsureStoredTagsKeepsExistingEmbeddingWhenDescriptionUnchanged(t *testi
 	service := NewCatalogService(
 		store,
 		ai.NewAnalyzer(catalogTestTagger{}, embedder),
+		slog.Default(),
 	)
 
 	err := service.EnsureStoredTags(context.Background(), []issues.Tag{

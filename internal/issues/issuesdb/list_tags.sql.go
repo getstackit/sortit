@@ -10,7 +10,8 @@ import (
 )
 
 const listTags = `-- name: ListTags :many
-SELECT name, description, created_at_unix_nano, embedding_json
+SELECT name, description, created_at_unix_nano, embedding_json,
+       specificity, specificity_llm, specificity_embedding, specificity_computed_at
 FROM tags
 ORDER BY name ASC
 `
@@ -29,6 +30,10 @@ func (q *Queries) ListTags(ctx context.Context) ([]Tag, error) {
 			&i.Description,
 			&i.CreatedAtUnixNano,
 			&i.EmbeddingJson,
+			&i.Specificity,
+			&i.SpecificityLlm,
+			&i.SpecificityEmbedding,
+			&i.SpecificityComputedAt,
 		); err != nil {
 			return nil, err
 		}

@@ -5,6 +5,12 @@ func DisplayTags(explicitTags []string, scores []TagRelevance) []string {
 	return displayTags(explicitTags, scores)
 }
 
+// DisplayTagsWithSpecificity returns display tags ranked by a blend of relevance
+// and specificity (displayScore = relevance * 0.5 + specificity * 0.5).
+func DisplayTagsWithSpecificity(explicitTags []string, scores []TagRelevance, tagSpecificity map[string]*float64) []string {
+	return displayTagsWithSpecificity(explicitTags, scores, tagSpecificity)
+}
+
 // DefaultActor returns the actor name, falling back to "You" if empty.
 func DefaultActor(value string) string {
 	return defaultActor(value)

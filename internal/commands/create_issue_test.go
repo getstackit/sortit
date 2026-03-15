@@ -31,7 +31,7 @@ func TestCreateIssuePublishesReportEventAfterCommit(t *testing.T) {
 		ai.NewStubCanonicalizer(),
 	)
 	store := issues.NewInMemoryStore(nil)
-	catalog := services.NewCatalogService(nil, analyzer)
+	catalog := services.NewCatalogService(nil, analyzer, slog.Default())
 	handler := CreateIssueHandler{
 		Logger:   slog.Default(),
 		Runner:   &CommandRunner{DB: store},

@@ -322,6 +322,43 @@ export function TagDetailPage({ tagName }: { tagName: string }) {
                       {tag.description || "No description has been recorded for this tag yet."}
                     </p>
                   </div>
+
+                  <div className="app-subtle-surface rounded-[1.25rem] px-4 py-3 max-w-3xl">
+                    <p className="text-[11px] font-medium uppercase tracking-[0.14em] text-muted-foreground">
+                      Specificity
+                    </p>
+                    {tag.specificity != null ? (
+                      <div className="mt-3 space-y-2">
+                        <div className="flex items-center justify-between text-[11px] font-medium text-muted-foreground">
+                          <span>Generic</span>
+                          <span>Specific</span>
+                        </div>
+                        <div className="relative h-2 w-full rounded-full bg-border">
+                          <div
+                            className="absolute inset-y-0 left-0 rounded-full bg-primary/40"
+                            style={{ width: `${tag.specificity * 100}%` }}
+                          />
+                          <div
+                            className="absolute top-1/2 size-3.5 -translate-x-1/2 -translate-y-1/2 rounded-full border-2 border-primary bg-background shadow-sm"
+                            style={{ left: `${tag.specificity * 100}%` }}
+                            title={[
+                              `Specificity: ${tag.specificity.toFixed(2)}`,
+                              tag.specificityLlm != null ? `LLM: ${tag.specificityLlm.toFixed(2)}` : null,
+                              tag.specificityEmbedding != null ? `Embedding: ${tag.specificityEmbedding.toFixed(2)}` : null,
+                            ].filter(Boolean).join(" | ")}
+                          />
+                        </div>
+                        <p className="text-[11px] tabular-nums text-muted-foreground">
+                          {[
+                            tag.specificityLlm != null ? `LLM: ${tag.specificityLlm.toFixed(2)}` : null,
+                            tag.specificityEmbedding != null ? `Embedding: ${tag.specificityEmbedding.toFixed(2)}` : null,
+                          ].filter(Boolean).join(" | ") || `Score: ${tag.specificity.toFixed(2)}`}
+                        </p>
+                      </div>
+                    ) : (
+                      <p className="mt-2 text-sm text-muted-foreground">Not yet scored</p>
+                    )}
+                  </div>
                 </div>
                 <div className="grid min-w-[12rem] gap-3 sm:grid-cols-3 xl:grid-cols-1">
                   <div className="app-subtle-surface rounded-[1.25rem] px-4 py-3">

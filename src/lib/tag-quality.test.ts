@@ -2,6 +2,7 @@ import {
   buildConsolidationCandidates,
   buildMergeCandidates,
   buildSpecificTagSuggestions,
+  buildSpecificityLadder,
   isGenericBucketTag,
 } from "@/lib/tag-quality";
 import type { IssueRecord } from "@/lib/issues";
@@ -34,35 +35,46 @@ describe("tag quality helpers", () => {
     expect(isGenericBucketTag("Billing")).toBe(false);
   });
 
-  it("finds more specific co-occurring tags for generic buckets", () => {
+  it("returns more-specific suggestions for tags with low specificity", () => {
     const suggestions = buildSpecificTagSuggestions(
       "backend",
       [
-        makeTag({ name: "backend" }),
-        makeTag({ name: "billing", description: "Invoices and account charges" }),
-        makeTag({ name: "payments", description: "Payment processing" }),
-      ],
-      [
-        makeIssue({
-          id: "issue-1",
-          tags: ["backend", "billing"],
-          tagScores: [
-            { tag: "backend", relevance: 0.9 },
-            { tag: "billing", relevance: 0.8 },
-          ],
-        }),
-        makeIssue({
-          id: "issue-2",
-          tags: ["backend", "payments"],
-          tagScores: [
-            { tag: "backend", relevance: 0.85 },
-            { tag: "payments", relevance: 0.7 },
-          ],
-        }),
+        makeTag({ name: "backend", specificity: 0.2, embedding: [1, 0, 0] }),
+        makeTag({ name: "billing", description: "Invoices and account charges", specificity: 0.8, embedding: [0.9, 0.3, 0.1] }),
+        makeTag({ name: "payments", description: "Payment processing", specificity: 0.7, embedding: [0.85, 0.35, 0.15] }),
+        makeTag({ name: "unrelated", description: "Unrelated", specificity: 0.9, embedding: [0, 0, 1] }),
       ]
     );
 
     expect(suggestions.map((entry) => entry.name)).toEqual(["billing", "payments"]);
+  });
+
+  it("returns empty suggestions for tags with specificity >= 0.4", () => {
+    const suggestions = buildSpecificTagSuggestions(
+      "billing",
+      [
+        makeTag({ name: "billing", specificity: 0.8, embedding: [1, 0] }),
+        makeTag({ name: "payments", specificity: 0.9, embedding: [0.95, 0.05] }),
+      ]
+    );
+
+    expect(suggestions).toEqual([]);
+  });
+
+  it("builds specificity ladder with more-specific and more-generic entries", () => {
+    const ladder = buildSpecificityLadder(
+      "middleware",
+      [
+        makeTag({ name: "middleware", specificity: 0.5, embedding: [1, 0, 0] }),
+        makeTag({ name: "auth middleware", specificity: 0.8, embedding: [0.9, 0.3, 0.1] }),
+        makeTag({ name: "rate limiter", specificity: 0.9, embedding: [0.85, 0.35, 0.15] }),
+        makeTag({ name: "backend", specificity: 0.2, embedding: [0.8, 0.4, 0.2] }),
+        makeTag({ name: "unrelated", specificity: 0.1, embedding: [0, 0, 1] }),
+      ]
+    );
+
+    expect(ladder.moreSpecific.map((e) => e.name)).toEqual(["rate limiter", "auth middleware"]);
+    expect(ladder.moreGeneric.map((e) => e.name)).toEqual(["backend"]);
   });
 
   it("finds merge candidates from name variants and semantic overlap", () => {

@@ -58,6 +58,10 @@ type Embedder interface {
 	Model() string
 }
 
+type SpecificityScorer interface {
+	ScoreSpecificity(ctx context.Context, tag Tag, catalog []Tag) (float64, error)
+}
+
 type Canonicalizer interface {
 	CanonicalizeDiscussion(ctx context.Context, posts []string) (string, error)
 }
