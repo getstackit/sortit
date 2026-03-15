@@ -5,7 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
-	"log"
+	"log/slog"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -364,7 +364,7 @@ func TestIssuesEndpointRefinesIssue(t *testing.T) {
 	if len(refined.Discussion) != 2 {
 		t.Fatalf("expected 2 discussion posts, got %#v", refined.Discussion)
 	}
-	if refined.Discussion[1].CreatedBy != "Jordan" {
+	if refined.Discussion[1].CreatedBy != "Jordan" { //nolint:goconst
 		t.Fatalf("expected refinement author Jordan, got %q", refined.Discussion[1].CreatedBy)
 	}
 	if refined.Discussion[1].Raw != "Customer says it only happens in Safari after tapping share twice" {
@@ -1213,10 +1213,10 @@ func TestIssuesEndpointRejectsInvalidBody(t *testing.T) {
 
 func TestIssuesEndpointLogsInternalServerErrors(t *testing.T) {
 	var logOutput bytes.Buffer
-	originalWriter := log.Writer()
-	log.SetOutput(&logOutput)
+	originalHandler := slog.Default().Handler()
+	slog.SetDefault(slog.New(slog.NewTextHandler(&logOutput, nil)))
 	t.Cleanup(func() {
-		log.SetOutput(originalWriter)
+		slog.SetDefault(slog.New(originalHandler))
 	})
 
 	server := NewServer(ServerConfig{
@@ -1245,7 +1245,7 @@ func TestIssuesEndpointLogsInternalServerErrors(t *testing.T) {
 	}
 
 	logged := logOutput.String()
-	if !strings.Contains(logged, "500 GET /api/issues: failed to list issues: database offline") {
+	if !strings.Contains(logged, "failed to list issues") || !strings.Contains(logged, "database offline") {
 		t.Fatalf("expected internal error log, got %q", logged)
 	}
 }

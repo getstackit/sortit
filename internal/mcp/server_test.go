@@ -2,6 +2,7 @@ package mcp
 
 import (
 	"context"
+	"log/slog"
 	"strings"
 	"testing"
 
@@ -469,12 +470,13 @@ func newTestHandlers() *handlers {
 	)
 	store := issues.NewInMemoryStore(nil)
 	catalog := services.NewCatalogService(nil, analyzer)
-	enricher := services.NewIssueEnricher(analyzer, catalog)
+	enricher := services.NewIssueEnricher(analyzer, catalog, slog.Default())
 	runner := &commands.CommandRunner{DB: store}
 	eventBus := issues.NewEventBus()
 
 	return &handlers{
 		createIssue: commands.CreateIssueHandler{
+			Logger:   slog.Default(),
 			Runner:   runner,
 			Enricher: enricher,
 			Events:   eventBus,
@@ -517,6 +519,7 @@ func drainTestEnrichment(t *testing.T, handler *handlers) {
 		return
 	}
 	worker := &services.IssueEnrichmentWorker{
+		Logger:   slog.Default(),
 		Store:    handler.getIssue.Store,
 		DB:       handler.createIssue.Runner.DB,
 		Jobs:     claimer,

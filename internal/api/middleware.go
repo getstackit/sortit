@@ -1,7 +1,7 @@
 package api
 
 import (
-	"log"
+	"log/slog"
 	"net/http"
 	"strings"
 	"time"
@@ -110,12 +110,16 @@ func loggingMiddleware(next http.Handler) http.Handler {
 		start := time.Now()
 		recorder := &statusRecorder{ResponseWriter: w, status: http.StatusOK}
 		next.ServeHTTP(recorder, r)
-		log.Printf( //nolint:gosec
-			"%s %s %d %s",
-			r.Method,
-			r.URL.Path,
-			recorder.status,
-			time.Since(start).Round(time.Millisecond),
+		duration := time.Since(start).Round(time.Millisecond)
+		level := slog.LevelInfo
+		if recorder.status >= 500 {
+			level = slog.LevelError
+		}
+		slog.LogAttrs(r.Context(), level, "request",
+			slog.String("method", r.Method),
+			slog.String("path", r.URL.Path),
+			slog.Int("status", recorder.status),
+			slog.Duration("duration", duration),
 		)
 	})
 }

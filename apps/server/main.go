@@ -4,7 +4,7 @@ import (
 	"context"
 	"errors"
 	"flag"
-	"log"
+	"log/slog"
 	"net/http"
 	"os"
 	"os/signal"
@@ -19,7 +19,8 @@ import (
 
 func main() {
 	if err := run(); err != nil {
-		log.Fatal(err)
+		slog.Error("fatal", "error", err)
+		os.Exit(1)
 	}
 }
 
@@ -31,6 +32,9 @@ func run() error {
 		shutdownGrace = flag.Duration("shutdown-timeout", 10*time.Second, "Graceful shutdown timeout")
 	)
 	flag.Parse()
+
+	logger := slog.New(slog.NewTextHandler(os.Stderr, nil))
+	slog.SetDefault(logger)
 
 	analyzer, err := ai.NewAnalyzerFromEnv()
 	if err != nil {
@@ -66,6 +70,7 @@ func run() error {
 		Port:        *port,
 		CORSOrigins: api.ParseCSV(*corsOrigins),
 		APIPrefixes: []string{"/api/v1", "/api"},
+		Logger:      logger,
 		Analyzer:    analyzer,
 		IssueStore:  issueStore,
 		Auth:        authService,
@@ -84,7 +89,7 @@ func run() error {
 
 	select {
 	case sig := <-stop:
-		log.Printf("received %s, shutting down", sig)
+		logger.Info("shutting down", "signal", sig.String())
 		ctx, cancel := context.WithTimeout(context.Background(), *shutdownGrace)
 		defer cancel()
 		return server.Shutdown(ctx)

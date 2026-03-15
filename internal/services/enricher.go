@@ -3,6 +3,7 @@ package services
 import (
 	"context"
 	"fmt"
+	"log/slog"
 	"strings"
 	"time"
 
@@ -13,20 +14,25 @@ import (
 type IssueEnricher struct {
 	analyzer *ai.Analyzer
 	catalog  *CatalogService
+	logger   *slog.Logger
 }
 
 const issueEnrichmentTimeout = 20 * time.Second
 
-func NewIssueEnricher(analyzer *ai.Analyzer, catalog *CatalogService) *IssueEnricher {
+func NewIssueEnricher(analyzer *ai.Analyzer, catalog *CatalogService, logger *slog.Logger) *IssueEnricher {
 	return &IssueEnricher{
 		analyzer: analyzer,
 		catalog:  catalog,
+		logger:   logger,
 	}
 }
 
 func (s *IssueEnricher) AnalyzeCreateInput(ctx context.Context, input issues.CreateInput) (issues.CreateInput, error) {
 	ctx, cancel := context.WithTimeout(ctx, issueEnrichmentTimeout)
 	defer cancel()
+
+	start := time.Now()
+	s.logger.InfoContext(ctx, "analyzing create input", "tag_count", len(input.Tags))
 
 	taxonomy, err := s.catalog.IssueTaxonomy(ctx, input.Tags)
 	if err != nil {
@@ -46,6 +52,12 @@ func (s *IssueEnricher) AnalyzeCreateInput(ctx context.Context, input issues.Cre
 	if len(input.Tags) == 0 {
 		input.Tags = nil
 	}
+
+	s.logger.InfoContext(ctx, "create input analyzed",
+		"scored_tags", len(input.TagScores),
+		"has_embedding", len(input.Embedding) > 0,
+		"duration", time.Since(start).Round(time.Millisecond),
+	)
 	return input, nil
 }
 
@@ -107,6 +119,12 @@ func (s *IssueEnricher) AnalyzePersistedIssue(
 	ctx, cancel := context.WithTimeout(ctx, issueEnrichmentTimeout)
 	defer cancel()
 
+	start := time.Now()
+	s.logger.InfoContext(ctx, "enriching persisted issue",
+		"issue_id", issue.ID,
+		"target_sequence", targetSequence,
+	)
+
 	targetSequence = max(1, targetSequence)
 	discussionTexts := make([]string, 0, len(issue.Discussion))
 	for _, post := range issue.Discussion {
@@ -156,6 +174,13 @@ func (s *IssueEnricher) AnalyzePersistedIssue(
 	if err := s.catalog.EnsureStoredTags(ctx, CatalogTagsFromAnalysis(taxonomy, explicitTags, analyzed.Tags)); err != nil {
 		return issues.IssueFieldUpdate{}, err
 	}
+
+	s.logger.InfoContext(ctx, "persisted issue enriched",
+		"issue_id", issue.ID,
+		"scored_tags", len(analyzed.Tags),
+		"has_embedding", len(analyzed.Embedding.Vector) > 0,
+		"duration", time.Since(start).Round(time.Millisecond),
+	)
 
 	status := issues.EnrichmentStatusComplete
 	emptyError := ""

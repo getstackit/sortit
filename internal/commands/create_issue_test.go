@@ -2,6 +2,7 @@ package commands
 
 import (
 	"context"
+	"log/slog"
 	"testing"
 
 	"splat/internal/ai"
@@ -32,8 +33,9 @@ func TestCreateIssuePublishesReportEventAfterCommit(t *testing.T) {
 	store := issues.NewInMemoryStore(nil)
 	catalog := services.NewCatalogService(nil, analyzer)
 	handler := CreateIssueHandler{
+		Logger:   slog.Default(),
 		Runner:   &CommandRunner{DB: store},
-		Enricher: services.NewIssueEnricher(analyzer, catalog),
+		Enricher: services.NewIssueEnricher(analyzer, catalog, slog.Default()),
 		Events:   &recordingEventBus{},
 	}
 

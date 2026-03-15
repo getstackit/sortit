@@ -3,6 +3,7 @@ package commands
 import (
 	"context"
 	"fmt"
+	"log/slog"
 
 	"splat/internal/issues"
 	"splat/internal/services"
@@ -15,6 +16,7 @@ type CreateIssue struct {
 }
 
 type CreateIssueHandler struct {
+	Logger   *slog.Logger
 	Runner   *CommandRunner
 	Enricher *services.IssueEnricher
 	Events   issues.EventPublisher
@@ -26,6 +28,13 @@ func (h CreateIssueHandler) Handle(ctx context.Context, input CreateIssue) (crea
 	}
 
 	id := issues.NewIssueID()
+
+	h.Logger.InfoContext(ctx, "creating issue",
+		"issue_id", id,
+		"created_by", input.CreatedBy,
+		"tag_count", len(input.Tags),
+	)
+
 	issue := issues.BuildNewIssue(id, issues.CreateInput{
 		Raw:       input.Raw,
 		Tags:      input.Tags,
@@ -42,6 +51,7 @@ func (h CreateIssueHandler) Handle(ctx context.Context, input CreateIssue) (crea
 	}
 
 	defer FinishAndThen(&err, finish, func() {
+		h.Logger.InfoContext(ctx, "issue created", "issue_id", id)
 		h.Events.PublishOne(ctx, reportEvent)
 	})
 

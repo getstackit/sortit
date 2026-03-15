@@ -3,6 +3,7 @@ package commands
 import (
 	"context"
 	"errors"
+	"log/slog"
 	"testing"
 	"time"
 
@@ -29,7 +30,7 @@ func newCommandTestFixture() commandTestFixture {
 	return commandTestFixture{
 		store:    store,
 		runner:   &CommandRunner{DB: store},
-		enricher: services.NewIssueEnricher(analyzer, catalog),
+		enricher: services.NewIssueEnricher(analyzer, catalog, slog.Default()),
 		bus:      &recordingEventBus{},
 	}
 }

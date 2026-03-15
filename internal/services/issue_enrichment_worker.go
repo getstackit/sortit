@@ -3,6 +3,7 @@ package services
 import (
 	"context"
 	"fmt"
+	"log/slog"
 	"strings"
 	"time"
 
@@ -16,6 +17,7 @@ const (
 )
 
 type IssueEnrichmentWorker struct {
+	Logger        *slog.Logger
 	Store         issues.Store
 	DB            issues.UnitOfWorkBeginner
 	Jobs          issues.EnrichmentJobClaimer
@@ -65,14 +67,27 @@ func (w *IssueEnrichmentWorker) ProcessOne(ctx context.Context) (bool, error) {
 		return ok, err
 	}
 
+	w.Logger.InfoContext(ctx, "processing enrichment job",
+		"issue_id", job.IssueID,
+		"target_sequence", job.TargetSequence,
+	)
+
 	issue, err := w.Store.Get(ctx, job.IssueID)
 	if err != nil {
+		w.Logger.WarnContext(ctx, "issue not found for enrichment, completing job",
+			"issue_id", job.IssueID,
+		)
 		if err := w.completeJob(ctx, job); err != nil {
 			return true, err
 		}
 		return true, nil
 	}
 	if issue.EnrichmentTargetSequence != job.TargetSequence {
+		w.Logger.InfoContext(ctx, "enrichment job superseded",
+			"issue_id", job.IssueID,
+			"job_sequence", job.TargetSequence,
+			"current_sequence", issue.EnrichmentTargetSequence,
+		)
 		if err := w.completeJob(ctx, job); err != nil {
 			return true, err
 		}
@@ -81,6 +96,10 @@ func (w *IssueEnrichmentWorker) ProcessOne(ctx context.Context) (bool, error) {
 
 	fields, err := w.Enricher.AnalyzePersistedIssue(ctx, issue, job.TargetSequence)
 	if err != nil {
+		w.Logger.ErrorContext(ctx, "enrichment failed, scheduling retry",
+			"issue_id", job.IssueID,
+			"error", err,
+		)
 		if retryErr := w.failJob(ctx, job, err); retryErr != nil {
 			return true, retryErr
 		}
@@ -89,6 +108,9 @@ func (w *IssueEnrichmentWorker) ProcessOne(ctx context.Context) (bool, error) {
 	if err := w.applyJob(ctx, job, fields); err != nil {
 		return true, err
 	}
+	w.Logger.InfoContext(ctx, "enrichment job completed",
+		"issue_id", job.IssueID,
+	)
 	return true, nil
 }
 

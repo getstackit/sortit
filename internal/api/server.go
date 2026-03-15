@@ -4,7 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"log"
+	"log/slog"
 	"net/http"
 	"path"
 	"strings"
@@ -23,6 +23,7 @@ type ServerConfig struct {
 	Port        int
 	CORSOrigins []string
 	APIPrefixes []string
+	Logger      *slog.Logger
 	Analyzer    *ai.Analyzer
 	IssueStore  issues.Store
 	Auth        *auth.Service
@@ -30,6 +31,7 @@ type ServerConfig struct {
 
 type Server struct {
 	config              ServerConfig
+	logger              *slog.Logger
 	httpServer          *http.Server
 	startedAt           time.Time
 	revisions           *issues.RevisionTracker
@@ -320,7 +322,7 @@ func (s *Server) Start() error {
 		go func() {
 			defer close(s.enrichmentDone)
 			if err := s.enrichmentWorker.Run(runCtx); err != nil && runCtx.Err() == nil {
-				log.Printf("issue enrichment worker stopped: %v", err)
+				s.logger.Error("issue enrichment worker stopped", "error", err)
 			}
 		}()
 	}
@@ -331,7 +333,7 @@ func (s *Server) Start() error {
 		ReadHeaderTimeout: 10 * time.Second,
 	}
 
-	log.Printf("splat server listening on http://localhost:%d", s.config.Port)
+	s.logger.Info("server listening", "port", s.config.Port)
 	return s.httpServer.ListenAndServe()
 }
 
@@ -407,15 +409,24 @@ func writeError(w http.ResponseWriter, status int, message string) {
 }
 
 func writeInternalError(w http.ResponseWriter, r *http.Request, message string, err error) {
-	if err != nil {
-		log.Printf("500 %s %s: %s: %v", r.Method, r.URL.Path, message, err) //nolint:gosec
-	} else {
-		log.Printf("500 %s %s: %s", r.Method, r.URL.Path, message) //nolint:gosec
+	attrs := []any{
+		"status", 500,
+		"method", r.Method,
+		"path", r.URL.Path,
 	}
+	if err != nil {
+		attrs = append(attrs, "error", err)
+	}
+	slog.ErrorContext(r.Context(), message, attrs...)
 	writeError(w, http.StatusInternalServerError, message)
 }
 
 func NewServer(cfg ServerConfig) *Server {
+	logger := cfg.Logger
+	if logger == nil {
+		logger = slog.Default()
+	}
+
 	baseStore := cfg.IssueStore
 	if baseStore == nil {
 		baseStore = issues.NewInMemoryStore(nil)
@@ -443,11 +454,14 @@ func NewServer(cfg ServerConfig) *Server {
 	tagStore := tagStoreFromIssueStore(store)
 	commandAnalyzer := services.FallbackAnalyzer(cfg.Analyzer)
 	catalog := services.NewCatalogService(tagStore, commandAnalyzer)
-	enricher := services.NewIssueEnricher(commandAnalyzer, catalog)
+	enricherLogger := logger.With("component", "enricher")
+	enricher := services.NewIssueEnricher(commandAnalyzer, catalog, enricherLogger)
 	var enrichmentWorker *services.IssueEnrichmentWorker
+	workerLogger := logger.With("component", "enrichment_worker")
 	if claimer := enrichmentJobClaimerFromStore(baseStore); claimer != nil && uowBeginner != nil {
 		invalidator := mapProjectionInvalidatorFromIssueStore(baseStore)
 		enrichmentWorker = &services.IssueEnrichmentWorker{
+			Logger:   workerLogger,
 			Store:    baseStore,
 			DB:       uowBeginner,
 			Jobs:     claimer,
@@ -456,7 +470,7 @@ func NewServer(cfg ServerConfig) *Server {
 				revisions.Bump()
 				if applied && invalidator != nil {
 					if err := invalidator.InvalidateMapProjections(ctx); err != nil {
-						log.Printf("failed to invalidate map projections after enrichment: %v", err)
+						workerLogger.ErrorContext(ctx, "failed to invalidate map projections after enrichment", "error", err)
 					}
 				}
 			},
@@ -471,11 +485,13 @@ func NewServer(cfg ServerConfig) *Server {
 
 	return &Server{
 		config:              cfg,
+		logger:              logger,
 		startedAt:           time.Now().UTC(),
 		revisions:           revisions,
 		mapProjectionLoader: mapProjectionLoader,
 		enrichmentWorker:    enrichmentWorker,
 		createIssue: commands.CreateIssueHandler{
+			Logger:   logger.With("command", "create_issue"),
 			Runner:   runner,
 			Enricher: enricher,
 			Events:   eventBus,
@@ -551,11 +567,10 @@ func projectionInvalidationListener(
 		}
 
 		if err := invalidator.InvalidateMapProjections(ctx); err != nil {
-			log.Printf(
-				"failed to invalidate map projections after %s event for issue %s: %v",
-				event.Kind,
-				event.IssueID,
-				err,
+			slog.ErrorContext(ctx, "failed to invalidate map projections",
+				"event_kind", event.Kind,
+				"issue_id", event.IssueID,
+				"error", err,
 			)
 		}
 	}
