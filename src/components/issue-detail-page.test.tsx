@@ -669,4 +669,84 @@ describe("IssueDetailPage", () => {
       openNeighbor.compareDocumentPosition(closedNeighbor) & Node.DOCUMENT_POSITION_FOLLOWING
     ).toBeTruthy();
   });
+
+  it("clicking Close opens the close reason modal", async () => {
+    vi.mocked(fetchIssue).mockResolvedValue(makeIssue());
+
+    renderIssueDetail("issue-123");
+
+    await screen.findByText("Canonical summary");
+
+    await userEvent.click(screen.getByRole("button", { name: "Close issue" }));
+
+    expect(await screen.findByText("Close issue", { selector: "h2" })).toBeInTheDocument();
+    expect(screen.getByRole("radio", { name: "Fixed" })).toBeInTheDocument();
+    expect(screen.getByRole("radio", { name: "Stale" })).toBeInTheDocument();
+    expect(screen.getByRole("radio", { name: "Duplicate" })).toBeInTheDocument();
+    expect(screen.getByRole("radio", { name: "Won't fix" })).toBeInTheDocument();
+    expect(screen.getByRole("radio", { name: "By design" })).toBeInTheDocument();
+  });
+
+  it("confirming the modal calls closeIssue with reason and note", async () => {
+    const closedIssue = makeIssue({ status: "closed" });
+    vi.mocked(fetchIssue).mockResolvedValue(makeIssue());
+    vi.mocked(closeIssue).mockResolvedValue(closedIssue);
+
+    renderIssueDetail("issue-123");
+
+    await screen.findByText("Canonical summary");
+
+    await userEvent.click(screen.getByRole("button", { name: "Close issue" }));
+
+    await screen.findByText("Close issue", { selector: "h2" });
+
+    await userEvent.click(screen.getByRole("radio", { name: "Stale" }));
+    await userEvent.type(
+      screen.getByPlaceholderText("Add a note (optional)..."),
+      "No longer relevant"
+    );
+
+    await userEvent.click(screen.getByRole("button", { name: "Close issue" }));
+
+    await waitFor(() => {
+      expect(closeIssue).toHaveBeenCalledWith("issue-123", {
+        reason: "stale",
+        reasonNote: "No longer relevant",
+      });
+    });
+  });
+
+  it("cancelling the modal does not close the issue", async () => {
+    vi.mocked(fetchIssue).mockResolvedValue(makeIssue());
+
+    renderIssueDetail("issue-123");
+
+    await screen.findByText("Canonical summary");
+
+    await userEvent.click(screen.getByRole("button", { name: "Close issue" }));
+
+    await screen.findByText("Close issue", { selector: "h2" });
+
+    await userEvent.click(screen.getByRole("button", { name: "Cancel" }));
+
+    expect(closeIssue).not.toHaveBeenCalled();
+  });
+
+  it("reopen bypasses the modal", async () => {
+    const reopenedIssue = makeIssue({ status: "open" });
+    vi.mocked(fetchIssue).mockResolvedValue(makeIssue({ status: "closed" }));
+    vi.mocked(reopenIssue).mockResolvedValue(reopenedIssue);
+
+    renderIssueDetail("issue-123");
+
+    await screen.findByText("Canonical summary");
+
+    await userEvent.click(screen.getByRole("button", { name: "Reopen issue" }));
+
+    await waitFor(() => {
+      expect(reopenIssue).toHaveBeenCalledWith("issue-123");
+    });
+
+    expect(screen.queryByText("Close issue", { selector: "h2" })).not.toBeInTheDocument();
+  });
 });

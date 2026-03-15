@@ -47,6 +47,7 @@ import { rememberRecentIssue } from "@/hooks/use-recent-history";
 import { cn } from "@/lib/utils";
 import { formatRelativeTime } from "@/lib/format";
 import { Badge } from "@/components/ui/badge";
+import { CloseIssueModal } from "@/components/close-issue-modal";
 
 import { TagRelevanceBars } from "@/components/tag-relevance-bars";
 import { tagHref } from "@/lib/tags";
@@ -284,6 +285,7 @@ export function IssueDetailPage({ issueID }: { issueID: string }) {
     "idle" | "text-copied" | "link-copied" | "error"
   >("idle");
   const [statusPending, setStatusPending] = useState(false);
+  const [closeModalOpen, setCloseModalOpen] = useState(false);
   const [refineInput, setRefineInput] = useState("");
   const [refinePending, setRefinePending] = useState(false);
   const [postMode, setPostMode] = useState<"refinement" | "progress">("refinement");
@@ -351,14 +353,15 @@ export function IssueDetailPage({ issueID }: { issueID: string }) {
       return;
     }
 
+    if (issue.status === "open") {
+      setCloseModalOpen(true);
+      return;
+    }
+
     setStatusPending(true);
 
     try {
-      const updated =
-        issue.status === "closed"
-          ? await reopenIssue(issue.id)
-          : await closeIssue(issue.id);
-
+      const updated = await reopenIssue(issue.id);
       mutateIssue(updated, { revalidate: false });
       setActionError(null);
     } catch (caughtError) {
@@ -371,6 +374,25 @@ export function IssueDetailPage({ issueID }: { issueID: string }) {
       setStatusPending(false);
     }
   }, [issue, statusPending, mutateIssue]);
+
+  const handleCloseConfirm = useCallback(async (reason: string, reasonNote: string) => {
+    if (!issue) return;
+    setStatusPending(true);
+    try {
+      const updated = await closeIssue(issue.id, { reason, reasonNote });
+      mutateIssue(updated, { revalidate: false });
+      setActionError(null);
+      setCloseModalOpen(false);
+    } catch (caughtError) {
+      const message =
+        caughtError instanceof Error
+          ? caughtError.message
+          : "Unknown backend error";
+      setActionError(message);
+    } finally {
+      setStatusPending(false);
+    }
+  }, [issue, mutateIssue]);
 
   const handleRefine = useCallback(async () => {
     if (!issue || refinePending) {
@@ -1515,6 +1537,11 @@ export function IssueDetailPage({ issueID }: { issueID: string }) {
           )}
         </div>
       </div>
+      <CloseIssueModal
+        open={closeModalOpen}
+        onOpenChange={setCloseModalOpen}
+        onConfirm={handleCloseConfirm}
+      />
     </AppShell>
   );
 }
