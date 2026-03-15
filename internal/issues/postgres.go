@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"log/slog"
 	"math"
 	"slices"
 	"strconv"
@@ -33,6 +34,7 @@ var pgMigrationsFS embed.FS
 type PostgresStore struct {
 	db      *sql.DB
 	queries *issuesdb.Queries
+	logger  *slog.Logger
 }
 
 func OpenPostgresStore(ctx context.Context, connString string) (*PostgresStore, error) {
@@ -52,6 +54,7 @@ func OpenPostgresStore(ctx context.Context, connString string) (*PostgresStore, 
 	store := &PostgresStore{
 		db:      db,
 		queries: issuesdb.New(db),
+		logger:  slog.Default().With("component", "issues_store"),
 	}
 
 	if err := store.init(ctx); err != nil {
@@ -70,6 +73,14 @@ func (s *PostgresStore) DB() *sql.DB {
 	return s.db
 }
 
+func (s *PostgresStore) SetLogger(logger *slog.Logger) {
+	if logger == nil {
+		s.logger = slog.Default().With("component", "issues_store")
+		return
+	}
+	s.logger = logger.With("component", "issues_store")
+}
+
 func (s *PostgresStore) List(ctx context.Context) ([]Issue, error) {
 	rows, err := s.queries.ListIssues(ctx)
 	if err != nil {
@@ -84,7 +95,7 @@ func (s *PostgresStore) List(ctx context.Context) ([]Issue, error) {
 		}
 		items = append(items, issue)
 	}
-	states, err := loadIssueEnrichmentStates(ctx, s.db, issueIDs(items))
+	states, err := loadIssueEnrichmentStates(ctx, s.db, s.logger, issueIDs(items))
 	if err != nil {
 		return nil, err
 	}
@@ -335,7 +346,7 @@ func (s *PostgresStore) ListFiltered(ctx context.Context, opts ListOptions) ([]I
 		}
 		items = append(items, issue)
 	}
-	states, err := loadIssueEnrichmentStates(ctx, s.db, issueIDs(items))
+	states, err := loadIssueEnrichmentStates(ctx, s.db, s.logger, issueIDs(items))
 	if err != nil {
 		return nil, err
 	}
@@ -403,7 +414,7 @@ func (s *PostgresStore) SearchIssues(ctx context.Context, opts SemanticSearchOpt
 	for _, result := range results {
 		items = append(items, result.Issue)
 	}
-	states, err := loadIssueEnrichmentStates(ctx, s.db, issueIDs(items))
+	states, err := loadIssueEnrichmentStates(ctx, s.db, s.logger, issueIDs(items))
 	if err != nil {
 		return nil, err
 	}
@@ -421,11 +432,16 @@ func (s *PostgresStore) Get(ctx context.Context, id string) (Issue, error) {
 		return Issue{}, ErrNotFound
 	}
 
-	issue, err := s.getIssueWithDiscussion(ctx, s.queries, id)
+	defer s.logServiceTiming(ctx, "PostgresStore.Get", time.Now(), slog.String("issue_id", id))
+
+	issue, err := s.getIssueWithDiscussion(ctx, loggingIssueQuerier{
+		inner:  s.queries,
+		logger: s.logger,
+	}, id)
 	if err != nil {
 		return Issue{}, err
 	}
-	states, err := loadIssueEnrichmentStates(ctx, s.db, []string{id})
+	states, err := loadIssueEnrichmentStates(ctx, s.db, s.logger, []string{id})
 	if err != nil {
 		return Issue{}, err
 	}
@@ -902,6 +918,95 @@ type issueQuerier interface {
 	ListIssueOperationParticipants(context.Context, string) ([]issuesdb.IssueOperationParticipant, error)
 }
 
+type loggingIssueQuerier struct {
+	inner  issueQuerier
+	logger *slog.Logger
+}
+
+func (q loggingIssueQuerier) GetIssue(ctx context.Context, id string) (row issuesdb.GetIssueRow, err error) {
+	defer logSQLQueryTiming(ctx, q.logger, "GetIssue", time.Now(), slog.String("issue_id", id))
+	return q.inner.GetIssue(ctx, id)
+}
+
+func (q loggingIssueQuerier) ListIssues(ctx context.Context) (rows []issuesdb.ListIssuesRow, err error) {
+	defer func(start time.Time) {
+		logSQLQueryTiming(ctx, q.logger, "ListIssues", start, slog.Int("row_count", len(rows)))
+	}(time.Now())
+	return q.inner.ListIssues(ctx)
+}
+
+func (q loggingIssueQuerier) ListIssuePosts(ctx context.Context, id string) (rows []issuesdb.IssuePost, err error) {
+	defer func(start time.Time) {
+		logSQLQueryTiming(ctx, q.logger, "ListIssuePosts", start,
+			slog.String("issue_id", id),
+			slog.Int("row_count", len(rows)),
+		)
+	}(time.Now())
+	return q.inner.ListIssuePosts(ctx, id)
+}
+
+func (q loggingIssueQuerier) ListIssueLinksForIssue(
+	ctx context.Context,
+	arg issuesdb.ListIssueLinksForIssueParams,
+) (rows []issuesdb.IssueLink, err error) {
+	defer func(start time.Time) {
+		logSQLQueryTiming(ctx, q.logger, "ListIssueLinksForIssue", start,
+			slog.String("source_issue_id", arg.SourceIssueID),
+			slog.String("target_issue_id", arg.TargetIssueID),
+			slog.Int("row_count", len(rows)),
+		)
+	}(time.Now())
+	return q.inner.ListIssueLinksForIssue(ctx, arg)
+}
+
+func (q loggingIssueQuerier) ListIssueOperationsForIssue(
+	ctx context.Context,
+	issueID string,
+) (rows []issuesdb.IssueOperation, err error) {
+	defer func(start time.Time) {
+		logSQLQueryTiming(ctx, q.logger, "ListIssueOperationsForIssue", start,
+			slog.String("issue_id", issueID),
+			slog.Int("row_count", len(rows)),
+		)
+	}(time.Now())
+	return q.inner.ListIssueOperationsForIssue(ctx, issueID)
+}
+
+func (q loggingIssueQuerier) ListIssueOperationParticipants(
+	ctx context.Context,
+	operationID string,
+) (rows []issuesdb.IssueOperationParticipant, err error) {
+	defer func(start time.Time) {
+		logSQLQueryTiming(ctx, q.logger, "ListIssueOperationParticipants", start,
+			slog.String("operation_id", operationID),
+			slog.Int("row_count", len(rows)),
+		)
+	}(time.Now())
+	return q.inner.ListIssueOperationParticipants(ctx, operationID)
+}
+
+func logSQLQueryTiming(ctx context.Context, logger *slog.Logger, queryName string, start time.Time, attrs ...slog.Attr) {
+	if logger == nil {
+		return
+	}
+	allAttrs := make([]slog.Attr, 0, len(attrs)+2)
+	allAttrs = append(allAttrs, slog.String("query_name", queryName))
+	allAttrs = append(allAttrs, slog.Duration("duration", time.Since(start).Round(time.Millisecond)))
+	allAttrs = append(allAttrs, attrs...)
+	logger.LogAttrs(ctx, slog.LevelInfo, "sql query complete", allAttrs...)
+}
+
+func (s *PostgresStore) logServiceTiming(ctx context.Context, serviceName string, start time.Time, attrs ...slog.Attr) {
+	if s == nil || s.logger == nil {
+		return
+	}
+	allAttrs := make([]slog.Attr, 0, len(attrs)+2)
+	allAttrs = append(allAttrs, slog.String("service", serviceName))
+	allAttrs = append(allAttrs, slog.Duration("duration", time.Since(start).Round(time.Millisecond)))
+	allAttrs = append(allAttrs, attrs...)
+	s.logger.LogAttrs(ctx, slog.LevelInfo, "service call complete", allAttrs...)
+}
+
 func recordFromIssue(issue Issue) (issueRecord, error) {
 	tagsJSON, err := marshalJSONB(issue.Tags, []string{})
 	if err != nil {
@@ -977,11 +1082,16 @@ type issueEnrichmentStateRecord struct {
 func loadIssueEnrichmentStates(
 	ctx context.Context,
 	db issuesdb.DBTX,
+	logger *slog.Logger,
 	ids []string,
 ) (map[string]issueEnrichmentStateRecord, error) {
 	if len(ids) == 0 {
 		return map[string]issueEnrichmentStateRecord{}, nil
 	}
+
+	defer func(start time.Time) {
+		logSQLQueryTiming(ctx, logger, "LoadIssueEnrichmentStates", start, slog.Int("issue_count", len(ids)))
+	}(time.Now())
 
 	rows, err := db.QueryContext(
 		ctx,
