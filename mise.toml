@@ -14,7 +14,7 @@ go = "1.26"
 node = "22"
 "go:github.com/DarthSim/overmind/v2" = "latest"
 "aqua:watchexec/watchexec" = "latest"
-"go:github.com/golangci/golangci-lint/v2/cmd/golangci-lint" = "latest"
+golangci-lint = "2.10.1"
 
 [tasks.install]
 description = "Install app dependencies"
