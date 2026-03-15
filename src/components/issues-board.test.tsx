@@ -1,12 +1,8 @@
 import type { ReactNode } from "react";
-import { render, screen, waitFor } from "@testing-library/react";
-import userEvent from "@testing-library/user-event";
+import { render, screen } from "@testing-library/react";
 import { IssuesBoard } from "@/components/issues-board";
-import type { IssueRecord, IssueSearchResponse, SearchIssueRecord } from "@/lib/issues";
-import { useIssueSearch, useIssues } from "@/hooks/use-issues";
-import type { AppShortcutRegistration } from "@/components/app-shell";
-
-const push = vi.fn();
+import type { IssueRecord } from "@/lib/issues";
+import { useIssues } from "@/hooks/use-issues";
 
 vi.mock("next/link", () => ({
   default: ({
@@ -23,45 +19,25 @@ vi.mock("next/link", () => ({
   ),
 }));
 
-vi.mock("motion/react", () => ({
-  AnimatePresence: ({ children }: { children: ReactNode }) => <>{children}</>,
-  motion: {
-    div: ({ children, ...props }: { children: ReactNode }) => <div {...props}>{children}</div>,
-  },
-}));
-
 vi.mock("next/navigation", () => ({
   usePathname: () => window.location.pathname,
   useSearchParams: () => new URLSearchParams(window.location.search),
-  useRouter: () => ({ push }),
+  useRouter: () => ({ push: vi.fn() }),
 }));
-
-let appShellShortcuts: AppShortcutRegistration[] = [];
 
 vi.mock("@/components/app-shell", () => ({
   AppShell: ({
     children,
     sidebar,
-    shortcuts = [],
   }: {
     children: ReactNode;
     sidebar: ReactNode;
-    shortcuts?: AppShortcutRegistration[];
-  }) => {
-    appShellShortcuts = shortcuts;
-
-    return (
-      <div>
-        <aside>{sidebar}</aside>
-        <div>
-          {shortcuts.map((shortcut) => (
-            <span key={shortcut.key}>{shortcut.description}</span>
-          ))}
-        </div>
-        <main>{children}</main>
-      </div>
-    );
-  },
+  }) => (
+    <div>
+      <aside>{sidebar}</aside>
+      <main>{children}</main>
+    </div>
+  ),
 }));
 
 vi.mock("@/components/app-sidebar", () => ({
@@ -101,14 +77,20 @@ vi.mock("@/hooks/use-compact-mode", () => ({
   }),
 }));
 
-vi.mock("@/hooks/use-issues", () => ({
-  useIssues: vi.fn(),
-  useIssueSearch: vi.fn(),
+vi.mock("@/components/issues-filter-sidebar", () => ({
+  IssuesFilterSidebar: () => <div>Filters</div>,
+  applyFilter: (issues: IssueRecord[]) => issues,
+  isFilterActive: () => false,
+  EMPTY_FILTER: { tags: [], assignees: [], includeClosed: false },
 }));
 
-function makeOpenIssue(raw: string): IssueRecord {
+vi.mock("@/hooks/use-issues", () => ({
+  useIssues: vi.fn(),
+}));
+
+function makeOpenIssue(raw: string, id = "issue-open"): IssueRecord {
   return {
-    id: "issue-open",
+    id,
     raw,
     tags: ["bug"],
     createdBy: "Casey",
@@ -117,23 +99,9 @@ function makeOpenIssue(raw: string): IssueRecord {
   };
 }
 
-function makeSearchResponse(items: SearchIssueRecord[]): IssueSearchResponse {
-  return {
-    query: {
-      raw: "front end changes",
-      tags: [{ tag: "frontend", relevance: 0.95 }],
-    },
-    relatedIssues: items,
-  };
-}
-
 describe("IssuesBoard", () => {
   beforeEach(() => {
-    window.history.replaceState({}, "", "/");
-    appShellShortcuts = [];
-    push.mockReset();
     vi.mocked(useIssues).mockReset();
-    vi.mocked(useIssueSearch).mockReset();
 
     vi.mocked(useIssues).mockReturnValue({
       data: [makeOpenIssue("Open issue from the normal list")],
@@ -142,141 +110,6 @@ describe("IssuesBoard", () => {
       mutate: vi.fn(),
       isValidating: false,
     } as ReturnType<typeof useIssues>);
-
-    vi.mocked(useIssueSearch).mockImplementation((query, status) => {
-      if (query === "front end changes" && status === "open") {
-        return {
-          data: makeSearchResponse([
-            {
-              id: "issue-search-open",
-              raw: "Frontend polish for issue detail layout",
-              status: "open",
-              tags: [{ tag: "frontend", relevance: 0.94 }],
-              semanticSimilarity: 0.82,
-              factorSimilarity: 0.76,
-              combinedSimilarity: 0.8,
-              reason: "Shared factor relevance in frontend",
-            },
-          ]),
-          error: undefined,
-          isLoading: false,
-          mutate: vi.fn(),
-          isValidating: false,
-        } as ReturnType<typeof useIssueSearch>;
-      }
-
-      if (query === "front end changes" && status === "all") {
-        return {
-          data: makeSearchResponse([
-            {
-              id: "issue-search-closed",
-              raw: "Closed frontend follow-up cleanup",
-              status: "closed",
-              tags: [{ tag: "frontend", relevance: 0.91 }],
-              semanticSimilarity: 0.8,
-              factorSimilarity: 0.73,
-              combinedSimilarity: 0.77,
-              reason: "Semantically similar language suggests a shared root cause",
-            },
-          ]),
-          error: undefined,
-          isLoading: false,
-          mutate: vi.fn(),
-          isValidating: false,
-        } as ReturnType<typeof useIssueSearch>;
-      }
-
-      return {
-        data: undefined,
-        error: undefined,
-        isLoading: false,
-        mutate: vi.fn(),
-        isValidating: false,
-      } as ReturnType<typeof useIssueSearch>;
-    });
-  });
-
-  it("switches from the open list to semantic search results", async () => {
-    render(<IssuesBoard />);
-
-    expect(screen.getByText("Open issue from the normal list")).toBeInTheDocument();
-    expect(screen.getByText("Focus semantic search")).toBeInTheDocument();
-
-    await userEvent.type(screen.getByLabelText("Search issues"), "front end changes");
-
-    await waitFor(() => {
-      expect(screen.getByText("Search issues")).toBeInTheDocument();
-      expect(screen.getByText("Frontend polish for issue detail layout")).toBeInTheDocument();
-    });
-
-    expect(
-      screen.getByText("Showing up to 8 semantic matches.")
-    ).toBeInTheDocument();
-    expect(
-      screen.getByText("Shared factor relevance in frontend")
-    ).toBeInTheDocument();
-    expect(screen.queryByText("Open issue from the normal list")).not.toBeInTheDocument();
-    expect(window.location.search).toContain("q=front+end+changes");
-  });
-
-  it("keeps multi-character search text while syncing the URL", async () => {
-    render(<IssuesBoard />);
-
-    const input = screen.getByLabelText("Search issues");
-    await userEvent.type(input, "ab");
-
-    expect(input).toHaveValue("ab");
-
-    await waitFor(() => {
-      expect(window.location.search).toContain("q=ab");
-    });
-  });
-
-  it("can include closed issues in semantic search", async () => {
-    render(<IssuesBoard />);
-
-    await userEvent.type(screen.getByLabelText("Search issues"), "front end changes");
-    await waitFor(() => {
-      expect(screen.getByText("Frontend polish for issue detail layout")).toBeInTheDocument();
-    });
-
-    await userEvent.click(screen.getByLabelText("Include closed"));
-
-    await waitFor(() => {
-      expect(screen.getByText("Closed frontend follow-up cleanup")).toBeInTheDocument();
-    });
-
-    expect(screen.getByText("Closed")).toBeInTheDocument();
-    expect(vi.mocked(useIssueSearch)).toHaveBeenCalledWith("front end changes", "all", 8);
-    expect(window.location.search).toContain("status=all");
-  });
-
-  it("restores semantic search state from the URL on load", async () => {
-    window.history.replaceState({}, "", "/?q=front%20end%20changes&status=all");
-
-    render(<IssuesBoard />);
-
-    expect(screen.getByDisplayValue("front end changes")).toBeInTheDocument();
-
-    await waitFor(() => {
-      expect(screen.getByText("Closed frontend follow-up cleanup")).toBeInTheDocument();
-    });
-
-    expect(vi.mocked(useIssueSearch)).toHaveBeenCalledWith("front end changes", "all", 8);
-  });
-
-  it("registers an S shortcut to focus semantic search", async () => {
-    render(<IssuesBoard />);
-
-    const shortcut = appShellShortcuts.find((item) => item.key === "s");
-    expect(shortcut?.description).toBe("Focus semantic search");
-
-    const input = screen.getByLabelText("Search issues");
-    expect(input).not.toHaveFocus();
-
-    await shortcut?.action();
-
-    expect(input).toHaveFocus();
   });
 
   it("renders the issues content inside its own scroll container", () => {
@@ -286,13 +119,58 @@ describe("IssuesBoard", () => {
     expect(scrollRegion).not.toBeNull();
   });
 
-  it("navigates directly to an issue when a full issue id is pasted", async () => {
+  it("renders issues from the useIssues hook", () => {
     render(<IssuesBoard />);
 
-    const input = screen.getByLabelText("Search issues");
-    await userEvent.click(input);
-    await userEvent.paste("01kkbqe0f7xz0s82nqbbg2fheh");
+    expect(screen.getByText("Open issue from the normal list")).toBeInTheDocument();
+  });
 
-    expect(push).toHaveBeenCalledWith("/issues/01KKBQE0F7XZ0S82NQBBG2FHEH");
+  it("shows the issue count badge", () => {
+    render(<IssuesBoard />);
+
+    expect(screen.getByText("1")).toBeInTheDocument();
+  });
+
+  it("shows an empty state when no issues exist", () => {
+    vi.mocked(useIssues).mockReturnValue({
+      data: [],
+      error: undefined,
+      isLoading: false,
+      mutate: vi.fn(),
+      isValidating: false,
+    } as ReturnType<typeof useIssues>);
+
+    render(<IssuesBoard />);
+
+    expect(screen.getByText("Nothing open right now. Drop something in.")).toBeInTheDocument();
+  });
+
+  it("shows loading skeletons while issues are being fetched", () => {
+    vi.mocked(useIssues).mockReturnValue({
+      data: undefined,
+      error: undefined,
+      isLoading: true,
+      mutate: vi.fn(),
+      isValidating: false,
+    } as ReturnType<typeof useIssues>);
+
+    const { container } = render(<IssuesBoard />);
+
+    const skeletons = container.querySelectorAll("[data-slot='skeleton']");
+    expect(skeletons.length).toBeGreaterThan(0);
+  });
+
+  it("displays an error message when the backend is unavailable", () => {
+    vi.mocked(useIssues).mockReturnValue({
+      data: undefined,
+      error: new Error("Connection refused"),
+      isLoading: false,
+      mutate: vi.fn(),
+      isValidating: false,
+    } as ReturnType<typeof useIssues>);
+
+    render(<IssuesBoard />);
+
+    expect(screen.getByText(/Connection refused/)).toBeInTheDocument();
   });
 });

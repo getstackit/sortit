@@ -432,13 +432,10 @@ describe("MapPage", () => {
       expect(container.querySelector("svg")).toBeInTheDocument();
     });
 
-    const blobGroup = container.querySelector("path[stroke-linejoin='round']")?.parentElement;
-    expect(blobGroup).toBeInTheDocument();
+    const firstIssue = container.querySelector("[data-issue='issue-001']");
+    expect(firstIssue).toBeInTheDocument();
 
-    await user.click(blobGroup!);
-
-    const clusterMember = await screen.findByRole("button", { name: /First issue/i });
-    await user.click(clusterMember);
+    await user.click(firstIssue!);
 
     await waitFor(() => {
       expect(screen.getByRole("link", { name: "View issue" })).toHaveAttribute(
@@ -645,8 +642,7 @@ describe("MapPage", () => {
   });
 
   it("sizes issue nodes by the selected tag loading", async () => {
-    const user = userEvent.setup();
-    const { container } = render(<MapPage />);
+    const { container, rerender } = render(<MapPage />);
 
     await waitFor(() => {
       expect(container.querySelector("svg")).toBeInTheDocument();
@@ -662,7 +658,8 @@ describe("MapPage", () => {
     expect(issueOneCircle).toHaveAttribute("r", "18.6");
     expect(issueTwoCircle).toHaveAttribute("r", "17.200000000000003");
 
-    await user.selectOptions(screen.getByLabelText("Bubble size tag"), "feature");
+    mockSearchParams = new URLSearchParams("sizeTag=feature");
+    rerender(<MapPage />);
 
     await waitFor(() => {
       expect(

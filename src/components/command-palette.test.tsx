@@ -32,6 +32,16 @@ vi.mock("@base-ui/react/dialog", () => ({
     Popup: ({ children, className }: { children: ReactNode; className?: string }) => (
       <div className={className}>{children}</div>
     ),
+    Title: ({ children, className }: { children: ReactNode; className?: string }) => (
+      <span className={className}>{children}</span>
+    ),
+    Description: ({ children, className }: { children: ReactNode; className?: string }) => (
+      <span className={className}>{children}</span>
+    ),
+    Close: ({ children, className, render }: { children?: ReactNode; className?: string; render?: ReactNode }) => (
+      <button className={className}>{render}{children}</button>
+    ),
+    Trigger: ({ children }: { children: ReactNode }) => <div>{children}</div>,
   },
 }));
 
@@ -71,7 +81,7 @@ describe("CommandPalette", () => {
 
     const input = screen.getByPlaceholderText("Search issues and tags...");
     await user.type(input, "billing");
-    await user.click(await screen.findByRole("button", { name: /billing/i }));
+    await user.click(await screen.findByRole("option", { name: /billing/i }));
 
     expect(push).toHaveBeenCalledWith("/tags/billing");
   });
@@ -110,7 +120,7 @@ describe("CommandPalette", () => {
     expect(screen.getByText("Recent issue from detail page")).toBeInTheDocument();
     expect(screen.getAllByText("billing").length).toBeGreaterThan(0);
 
-    await user.click(screen.getByRole("button", { name: /recent issue from detail page/i }));
+    await user.click(screen.getByRole("option", { name: /recent issue from detail page/i }));
 
     expect(push).toHaveBeenCalledWith("/issues/issue-123");
   });

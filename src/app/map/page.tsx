@@ -285,7 +285,7 @@ function MapPageContent() {
       });
 
     return () => controller.abort();
-  }, []);
+  }, [urlState.edgeThreshold, urlState.showClosed, urlState.viewport]);
 
   useEffect(() => {
     if (showClosedRef.current === showClosed) {
