@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"strings"
+	"time"
 
 	"splat/internal/issues"
 	issuemap "splat/internal/map"
@@ -31,6 +32,9 @@ func (h ExploreIssueHandler) Handle(ctx context.Context, input ExploreIssue) (is
 	if err != nil {
 		return issuemap.ExploreResponse{}, err
 	}
+	if h.DetailReader != nil {
+		storeIssues = hydrateIssuesWithVelocity(ctx, h.DetailReader, storeIssues, time.Now().UTC())
+	}
 
 	storeTags, err := h.Catalog.StoredTags(ctx)
 	if err != nil {
@@ -49,6 +53,7 @@ func (h ExploreIssueHandler) handleSemanticExplore(
 	if err != nil {
 		return issuemap.ExploreResponse{}, err
 	}
+	target = hydrateIssueWithVelocity(ctx, nil, target, time.Now().UTC())
 
 	storeTags, err := h.Catalog.StoredTags(ctx)
 	if err != nil {
@@ -83,6 +88,7 @@ func exploreSemanticCandidateSet(
 	items := []issues.Issue{target}
 	seen := map[string]struct{}{target.ID: {}}
 
+	now := time.Now().UTC()
 	addDetailedIssue := func(id string, fallback *issues.Issue) error {
 		id = strings.TrimSpace(id)
 		if id == "" {
@@ -103,6 +109,7 @@ func exploreSemanticCandidateSet(
 				return err
 			}
 		}
+		issue = hydrateIssueWithVelocity(ctx, nil, issue, now)
 
 		seen[issue.ID] = struct{}{}
 		items = append(items, issue)

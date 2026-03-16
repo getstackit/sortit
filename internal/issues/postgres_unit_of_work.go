@@ -222,10 +222,12 @@ func (u *PostgresUnitOfWork) RecordEvent(ctx context.Context, event Event) error
 		return fmt.Errorf("marshal event participants: %w", err)
 	}
 
+	issueID := strings.TrimSpace(event.IssueID)
+
 	return u.queries.InsertEvent(ctx, issuesdb.InsertEventParams{
 		ID:                strings.TrimSpace(event.ID),
 		Kind:              strings.TrimSpace(event.Kind),
-		IssueID:           strings.TrimSpace(event.IssueID),
+		IssueID:           sql.NullString{String: issueID, Valid: issueID != ""},
 		CreatedBy:         strings.TrimSpace(event.CreatedBy),
 		CreatedAtUnixNano: event.CreatedAt.UTC().UnixNano(),
 		Body:              event.Body,

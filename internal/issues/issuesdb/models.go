@@ -29,7 +29,7 @@ type AuthAccount struct {
 type Event struct {
 	ID                string
 	Kind              string
-	IssueID           string
+	IssueID           sql.NullString
 	CreatedBy         string
 	CreatedAtUnixNano int64
 	Body              string
@@ -101,6 +101,16 @@ type IssuePost struct {
 	Kind              string
 }
 
+type IssueSnapshot struct {
+	IssueID           string
+	Sequence          int64
+	Raw               string
+	TagsJson          json.RawMessage
+	TagScoresJson     json.RawMessage
+	EmbeddingJson     json.RawMessage
+	CreatedAtUnixNano int64
+}
+
 type Session struct {
 	ID                string
 	UserID            string
@@ -118,6 +128,7 @@ type Tag struct {
 	SpecificityLlm        sql.NullFloat64
 	SpecificityEmbedding  sql.NullFloat64
 	SpecificityComputedAt sql.NullTime
+	EmbeddingVector       interface{}
 }
 
 type User struct {

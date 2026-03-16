@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"strings"
+	"time"
 
 	"splat/internal/ai"
 	"splat/internal/issues"
@@ -71,6 +72,8 @@ func (h SearchIssuesHandler) Handle(ctx context.Context, input SearchIssues) (is
 		if err != nil {
 			return issuemap.SearchResponse{}, err
 		}
+		detailReader, _ := h.Store.(issues.IssueDetailReader)
+		candidates = hydrateIssuesWithVelocity(ctx, detailReader, candidates, time.Now().UTC())
 
 		return issuemap.SearchFromQueryWithTags(
 			candidates,
@@ -91,6 +94,8 @@ func (h SearchIssuesHandler) Handle(ctx context.Context, input SearchIssues) (is
 	storeIssues = FilterIssuesByStatus(storeIssues, input.Status)
 	storeIssues = filterIssuesByAssignee(storeIssues, input.AssignedTo)
 	storeIssues = filterIssuesByTags(storeIssues, input.Tags)
+	detailReader, _ := h.Store.(issues.IssueDetailReader)
+	storeIssues = hydrateIssuesWithVelocity(ctx, detailReader, storeIssues, time.Now().UTC())
 
 	storeTags, err := h.Catalog.StoredTags(ctx)
 	if err != nil {

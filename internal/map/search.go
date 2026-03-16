@@ -2,6 +2,7 @@ package issuemap
 
 import (
 	"cmp"
+	"math"
 	"slices"
 	"strings"
 
@@ -11,6 +12,8 @@ import (
 )
 
 const defaultSearchLimit = 8
+const contentConfidenceTieWindow = 0.05
+const searchVelocityBoost = 0.08
 
 // SearchOptions holds optional search parameters.
 type SearchOptions struct {
@@ -107,6 +110,10 @@ func SearchFromQueryWithTags(
 	genericQuery := queryMatchesGenericTag(queryLower, tagSpecificity)
 
 	related := make([]RelatedIssue, 0, len(storeIssues))
+	rawCombined := make(map[string]float64, len(storeIssues))
+	rawSemantic := make(map[string]float64, len(storeIssues))
+	rawFactor := make(map[string]float64, len(storeIssues))
+	contentConfidence := make(map[string]float64, len(storeIssues))
 	for _, candidate := range storeIssues {
 		if _, ok := visible[candidate.ID]; !ok {
 			continue
@@ -116,11 +123,16 @@ func SearchFromQueryWithTags(
 		factor := vectors.CosineSimilarity(queryFactor, factorVectors[candidate.ID])
 		textMatch := textMatchScore(queryLower, candidate.Raw)
 		combined := blendScores(semantic, factor, textMatch, tagCorrelationBoost)
+		combined *= 1 + searchVelocityBoost*issueVelocityScore(candidate)
 		combined -= issueSpecificityPenalty(candidateSummary.Tags, tagSpecificity)
 		if genericQuery {
 			combined += specificCooccurrenceBoost(candidateSummary.Tags, tagSpecificity)
 		}
 		sharedTags := sharedRelevantTags(querySummary.Tags, candidateSummary.Tags, 3)
+		rawCombined[candidate.ID] = combined
+		rawSemantic[candidate.ID] = semantic
+		rawFactor[candidate.ID] = factor
+		contentConfidence[candidate.ID] = issues.ComputeContentConfidence(candidate.Raw)
 
 		related = append(related, RelatedIssue{
 			ID:                 candidateSummary.ID,
@@ -134,7 +146,7 @@ func SearchFromQueryWithTags(
 		})
 	}
 
-	sortSearchResults(related, storeIssues, cfg.sortBy)
+	sortSearchResults(related, storeIssues, cfg.sortBy, rawCombined, rawSemantic, rawFactor, contentConfidence)
 
 	// Apply offset then limit.
 	if cfg.offset > 0 && cfg.offset < len(related) {
@@ -153,7 +165,15 @@ func SearchFromQueryWithTags(
 }
 
 // sortSearchResults sorts results by the given sort key.
-func sortSearchResults(related []RelatedIssue, storeIssues []issues.Issue, sortBy string) {
+func sortSearchResults(
+	related []RelatedIssue,
+	storeIssues []issues.Issue,
+	sortBy string,
+	rawCombined map[string]float64,
+	rawSemantic map[string]float64,
+	rawFactor map[string]float64,
+	contentConfidence map[string]float64,
+) {
 	switch sortBy {
 	case "created_at":
 		issueIndex := make(map[string]issues.Issue, len(storeIssues))
@@ -170,13 +190,21 @@ func sortSearchResults(related []RelatedIssue, storeIssues []issues.Issue, sortB
 		})
 	default: // "relevance"
 		slices.SortFunc(related, func(a, b RelatedIssue) int {
-			if diff := cmp.Compare(b.CombinedSimilarity, a.CombinedSimilarity); diff != 0 {
+			combinedA := rawCombined[a.ID]
+			combinedB := rawCombined[b.ID]
+			if math.Abs(combinedB-combinedA) > contentConfidenceTieWindow {
+				return cmp.Compare(combinedB, combinedA)
+			}
+			if diff := cmp.Compare(contentConfidence[b.ID], contentConfidence[a.ID]); diff != 0 {
 				return diff
 			}
-			if diff := cmp.Compare(b.SemanticSimilarity, a.SemanticSimilarity); diff != 0 {
+			if diff := cmp.Compare(combinedB, combinedA); diff != 0 {
 				return diff
 			}
-			if diff := cmp.Compare(b.FactorSimilarity, a.FactorSimilarity); diff != 0 {
+			if diff := cmp.Compare(rawSemantic[b.ID], rawSemantic[a.ID]); diff != 0 {
+				return diff
+			}
+			if diff := cmp.Compare(rawFactor[b.ID], rawFactor[a.ID]); diff != 0 {
 				return diff
 			}
 			return cmp.Compare(a.ID, b.ID)

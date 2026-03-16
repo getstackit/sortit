@@ -3,6 +3,7 @@ package queries
 import (
 	"context"
 	"testing"
+	"time"
 
 	"splat/internal/issues"
 )
@@ -46,6 +47,17 @@ func TestGetIssueHandlerIncludesLifecycleMetricsFromSnapshots(t *testing.T) {
 	}); err != nil {
 		t.Fatalf("update issue fields seq2: %v", err)
 	}
+	if err := store.SaveIssuePost(context.Background(), issues.IssuePost{
+		ID:        issues.IssuePostID(issue.ID, 2),
+		IssueID:   issue.ID,
+		Raw:       "Add exact repro steps",
+		CreatedBy: "Jordan",
+		CreatedAt: time.Now().UTC().Add(-time.Minute),
+		Sequence:  2,
+		Kind:      "refinement",
+	}); err != nil {
+		t.Fatalf("save refinement post: %v", err)
+	}
 
 	handler := GetIssueHandler{Store: store}
 	loaded, err := handler.Handle(context.Background(), GetIssue{ID: issue.ID})
@@ -63,5 +75,17 @@ func TestGetIssueHandlerIncludesLifecycleMetricsFromSnapshots(t *testing.T) {
 	}
 	if *loaded.LifecycleMetrics.Churn <= 0 {
 		t.Fatalf("expected positive churn, got %#v", loaded.LifecycleMetrics)
+	}
+	if loaded.LifecycleMetrics.Maturity == nil {
+		t.Fatalf("expected maturity to be populated, got %#v", loaded.LifecycleMetrics)
+	}
+	if loaded.LifecycleMetrics.RefinementCount != 1 {
+		t.Fatalf("expected 1 refinement count, got %#v", loaded.LifecycleMetrics)
+	}
+	if loaded.LifecycleMetrics.Velocity == nil || *loaded.LifecycleMetrics.Velocity <= 0 {
+		t.Fatalf("expected positive velocity, got %#v", loaded.LifecycleMetrics)
+	}
+	if loaded.LifecycleMetrics.RecentActivityCount != 1 {
+		t.Fatalf("expected 1 recent activity event, got %#v", loaded.LifecycleMetrics)
 	}
 }

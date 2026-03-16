@@ -179,9 +179,7 @@ function distanceBetween(
 }
 
 function clusterContainsIssue(cluster: MapCluster, issue: MapIssue) {
-  return (
-    Math.hypot(issue.x - cluster.centerX, issue.y - cluster.centerY) <= cluster.radius
-  );
+  return cluster.issueIds.includes(issue.id);
 }
 
 function projectIssueNeighborhood(
@@ -580,8 +578,12 @@ export function IssueDetailPage({ issueID }: { issueID: string }) {
       entries.set(neighbor.id, neighbor);
     }
 
+    for (const { issue: neighbor } of clusterPeers) {
+      entries.set(neighbor.id, neighbor);
+    }
+
     return Array.from(entries.values());
-  }, [currentMapIssue, semanticNeighbors]);
+  }, [currentMapIssue, semanticNeighbors, clusterPeers]);
 
   const neighborhoodScale = useMemo(() => {
     if (!currentMapIssue) {
@@ -640,6 +642,7 @@ export function IssueDetailPage({ issueID }: { issueID: string }) {
       );
       const isCurrent = entry.id === currentMapIssue?.id;
       const isSemantic = semanticNeighborIds.has(entry.id);
+      const isClusterPeer = !isCurrent && !isSemantic;
       const label =
         isCurrent || isSemantic
           ? formatIssueTitle(entry.raw, isCurrent ? 32 : 24)
@@ -649,11 +652,13 @@ export function IssueDetailPage({ issueID }: { issueID: string }) {
         key: entry.id,
         cx: point.x,
         cy: point.y,
-        radius: isCurrent ? 7 : 4.5,
+        radius: isCurrent ? 7 : isClusterPeer ? 3.5 : 4.5,
         fill: isCurrent
           ? "#0f172a"
-          : "#f59e0b",
-        fillOpacity: isCurrent ? 1 : 0.95,
+          : isClusterPeer
+            ? "#2563eb"
+            : "#f59e0b",
+        fillOpacity: isCurrent ? 1 : isClusterPeer ? 0.7 : 0.95,
         stroke: isCurrent ? "#ffffff" : undefined,
         strokeWidth: isCurrent ? 2 : 0,
         label,
@@ -709,6 +714,15 @@ export function IssueDetailPage({ issueID }: { issueID: string }) {
         label: "Stability",
         value: formatPercent(issue.lifecycleMetrics.stability),
         meta: `${formatPercent(issue.lifecycleMetrics.churn)} churn across ${transitions} transition${transitions === 1 ? "" : "s"} from ${snapshots} snapshot${snapshots === 1 ? "" : "s"}`,
+      });
+    }
+
+    if (typeof issue.lifecycleMetrics?.velocity === "number") {
+      const recentActivityCount = issue.lifecycleMetrics.recentActivityCount ?? 0;
+      entries.push({
+        label: "Velocity",
+        value: formatPercent(issue.lifecycleMetrics.velocity),
+        meta: `${recentActivityCount} recent activity event${recentActivityCount === 1 ? "" : "s"} in the last 30 days`,
       });
     }
 
@@ -869,6 +883,7 @@ export function IssueDetailPage({ issueID }: { issueID: string }) {
                   </div>
                 </section>
 
+                {relationshipGroups.length > 0 && (
                 <section className="app-surface rounded-[1.75rem] p-6">
                   <div className="flex flex-wrap items-center justify-between gap-4">
                     <div>
@@ -882,70 +897,65 @@ export function IssueDetailPage({ issueID }: { issueID: string }) {
                     </Badge>
                   </div>
 
-                  {relationshipGroups.length === 0 ? (
-                    <div className="app-subtle-surface mt-5 rounded-[1.5rem] p-4 text-sm text-muted-foreground">
-                      No issue relationships recorded yet.
-                    </div>
-                  ) : (
-                    <div className="mt-5 space-y-4">
-                      {relationshipGroups.map((group) => (
-                        <div key={group.type} className="space-y-2">
-                          <p className="text-[11px] font-medium uppercase tracking-[0.14em] text-muted-foreground">
-                            {group.label}
-                          </p>
-                          <div className="space-y-2">
-                            {group.links.map((link) => (
-                              <Link
-                                key={link.id}
-                                href={
-                                  link.relatedIssue
-                                    ? `/issues/${link.relatedIssue.id}`
-                                    : `/issues/${link.direction === "outgoing" ? link.targetIssueId : link.sourceIssueId}`
-                                }
-                                className="group app-subtle-surface flex items-start gap-3 rounded-[1.25rem] px-4 py-3 transition-colors hover:bg-accent/70"
-                              >
-                                <span className="mt-1 size-2 rounded-full bg-emerald-500" />
-                                <div className="min-w-0 flex-1">
-                                  <div className="flex flex-wrap items-center gap-2">
-                                    <p className="truncate text-sm font-medium">
-                                      {formatIssueTitle(
-                                        link.relatedIssue?.raw ??
-                                          `${link.direction === "outgoing" ? link.targetIssueId : link.sourceIssueId}`,
-                                        72
-                                      )}
-                                    </p>
-                                    {link.relatedIssue && (
-                                      <span
-                                        className={cn(
-                                          "rounded-full px-1.5 py-0.5 text-[9px] font-medium leading-none",
-                                          statusClasses(link.relatedIssue.status)
-                                        )}
-                                      >
-                                        {link.relatedIssue.status === "closed" ? "Closed" : "Open"}
-                                      </span>
+                  <div className="mt-5 space-y-4">
+                    {relationshipGroups.map((group) => (
+                      <div key={group.type} className="space-y-2">
+                        <p className="text-[11px] font-medium uppercase tracking-[0.14em] text-muted-foreground">
+                          {group.label}
+                        </p>
+                        <div className="space-y-2">
+                          {group.links.map((link) => (
+                            <Link
+                              key={link.id}
+                              href={
+                                link.relatedIssue
+                                  ? `/issues/${link.relatedIssue.id}`
+                                  : `/issues/${link.direction === "outgoing" ? link.targetIssueId : link.sourceIssueId}`
+                              }
+                              className="group app-subtle-surface flex items-start gap-3 rounded-[1.25rem] px-4 py-3 transition-colors hover:bg-accent/70"
+                            >
+                              <span className="mt-1 size-2 rounded-full bg-emerald-500" />
+                              <div className="min-w-0 flex-1">
+                                <div className="flex flex-wrap items-center gap-2">
+                                  <p className="truncate text-sm font-medium">
+                                    {formatIssueTitle(
+                                      link.relatedIssue?.raw ??
+                                        `${link.direction === "outgoing" ? link.targetIssueId : link.sourceIssueId}`,
+                                      72
                                     )}
-                                    {link.direction && <Badge variant="outline">{link.direction}</Badge>}
-                                  </div>
-                                  <p className="mt-1 text-[11px] text-muted-foreground">
-                                    {link.relatedIssue?.id ??
-                                      (link.direction === "outgoing" ? link.targetIssueId : link.sourceIssueId)}
-                                    {" · "}
-                                    {formatRelativeTime(link.createdAt)} by {link.createdBy}
                                   </p>
-                                  {link.note && (
-                                    <p className="mt-2 text-sm text-muted-foreground">
-                                      {link.note}
-                                    </p>
+                                  {link.relatedIssue && (
+                                    <span
+                                      className={cn(
+                                        "rounded-full px-1.5 py-0.5 text-[9px] font-medium leading-none",
+                                        statusClasses(link.relatedIssue.status)
+                                      )}
+                                    >
+                                      {link.relatedIssue.status === "closed" ? "Closed" : "Open"}
+                                    </span>
                                   )}
+                                  {link.direction && <Badge variant="outline">{link.direction}</Badge>}
                                 </div>
-                              </Link>
-                            ))}
-                          </div>
+                                <p className="mt-1 text-[11px] text-muted-foreground">
+                                  {link.relatedIssue?.id ??
+                                    (link.direction === "outgoing" ? link.targetIssueId : link.sourceIssueId)}
+                                  {" · "}
+                                  {formatRelativeTime(link.createdAt)} by {link.createdBy}
+                                </p>
+                                {link.note && (
+                                  <p className="mt-2 text-sm text-muted-foreground">
+                                    {link.note}
+                                  </p>
+                                )}
+                              </div>
+                            </Link>
+                          ))}
                         </div>
-                      ))}
-                    </div>
-                  )}
+                      </div>
+                    ))}
+                  </div>
                 </section>
+                )}
 
                 {!mapError && currentMapIssue && (
                   <section className="app-surface rounded-[1.75rem] p-6">
@@ -1023,6 +1033,10 @@ export function IssueDetailPage({ issueID }: { issueID: string }) {
                         <Badge variant="outline" className="inline-flex items-center gap-1">
                           <span className="size-2 rounded-full bg-amber-500" />
                           Semantic
+                        </Badge>
+                        <Badge variant="outline" className="inline-flex items-center gap-1">
+                          <span className="size-2 rounded-full bg-blue-600" />
+                          Cluster
                         </Badge>
                       </div>
                     </div>
@@ -1387,9 +1401,6 @@ export function IssueDetailPage({ issueID }: { issueID: string }) {
                 {issue.tagScores && issue.tagScores.length > 0 && (
                   <section className="app-surface rounded-[1.5rem] p-5">
                     <h3 className="text-sm font-semibold">Classification confidence</h3>
-                    <p className="mt-1 text-[11px] text-muted-foreground">
-                      How strongly each tag applies to this issue.
-                    </p>
                     <div className="mt-3">
                       <TagRelevanceBars tags={issue.tagScores} />
                     </div>

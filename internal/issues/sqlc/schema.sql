@@ -45,6 +45,8 @@ CREATE TABLE issue_posts (
 CREATE INDEX issue_posts_issue_id_sequence_idx
 ON issue_posts(issue_id, sequence);
 
+CREATE INDEX issue_posts_kind_idx ON issue_posts(kind);
+
 CREATE TABLE issue_snapshots (
     issue_id TEXT NOT NULL,
     sequence BIGINT NOT NULL,
@@ -94,6 +96,9 @@ CREATE TABLE issue_operation_participants (
 CREATE INDEX issue_operation_participants_issue_id_idx
 ON issue_operation_participants(issue_id, sequence);
 
+CREATE INDEX issue_operation_participants_operation_id_idx
+ON issue_operation_participants(operation_id);
+
 CREATE TABLE issue_links (
     id TEXT PRIMARY KEY,
     source_issue_id TEXT NOT NULL,
@@ -116,11 +121,12 @@ ON issue_links(target_issue_id, created_at_unix_nano);
 CREATE TABLE events (
     id TEXT PRIMARY KEY,
     kind TEXT NOT NULL,
-    issue_id TEXT NOT NULL DEFAULT '',
+    issue_id TEXT DEFAULT NULL,
     created_by TEXT NOT NULL,
     created_at_unix_nano BIGINT NOT NULL,
     body TEXT NOT NULL DEFAULT '',
-    participants_json JSONB NOT NULL DEFAULT '[]'
+    participants_json JSONB NOT NULL DEFAULT '[]',
+    FOREIGN KEY(issue_id) REFERENCES issues(id) ON DELETE SET NULL
 );
 
 CREATE INDEX events_created_at_idx ON events(created_at_unix_nano DESC, id DESC);
@@ -135,8 +141,14 @@ CREATE TABLE tags (
     specificity REAL,
     specificity_llm REAL,
     specificity_embedding REAL,
-    specificity_computed_at TIMESTAMPTZ
+    specificity_computed_at TIMESTAMPTZ,
+    embedding_vector vector
 );
+
+CREATE INDEX tags_embedding_vector_cosine_hnsw_idx
+ON tags
+USING hnsw ((embedding_vector::vector(1536)) vector_cosine_ops)
+WHERE embedding_vector IS NOT NULL AND vector_dims(embedding_vector) = 1536;
 
 CREATE TABLE users (
     id TEXT PRIMARY KEY,
@@ -179,4 +191,5 @@ CREATE TABLE api_tokens (
 
 CREATE INDEX auth_accounts_user_id_idx ON auth_accounts(user_id);
 CREATE INDEX sessions_user_id_idx ON sessions(user_id);
+CREATE INDEX sessions_expires_at_unix_nano_idx ON sessions(expires_at_unix_nano);
 CREATE INDEX api_tokens_user_id_idx ON api_tokens(user_id);

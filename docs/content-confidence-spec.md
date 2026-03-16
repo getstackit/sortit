@@ -82,6 +82,8 @@ Before feature extraction:
 
 The score should be computed from canonical `issue.raw`, not from the full discussion history.
 
+If the normalized text has no tokens, confidence should be `0`.
+
 ## V1 Formula
 
 The v1 score should be:
@@ -132,10 +134,18 @@ unique_ratio = unique_content_tokens / max(content_token_count, 1)
 diversity_signal = clamp((unique_ratio - 0.25) / 0.45, 0, 1)
 ```
 
+4. Downweight diversity for very short text, where "all words are unique" is not yet strong evidence of rich signal:
+
+```text
+if content_token_count < 12:
+  diversity_signal *= clamp((content_token_count - 4) / 8, 0, 1)
+```
+
 Interpretation:
 
 - repeated generic phrasing stays low
 - varied content-bearing text rises
+- very short issues do not get an artificially high score just because they have no repeated words
 
 ### 3. Structure Signal
 

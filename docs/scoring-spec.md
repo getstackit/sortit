@@ -133,6 +133,8 @@ Measures how settled an issue is.
 
 Measures recent rate of meaningful activity.
 
+See [velocity-spec.md](./velocity-spec.md) for the v1 definition and rollout plan.
+
 - Interpretation:
   Higher means the issue is receiving substantial updates in a short window.
 - Expected range:

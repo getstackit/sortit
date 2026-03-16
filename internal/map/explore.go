@@ -110,7 +110,7 @@ func ExploreFromIssuesWithTags(storeIssues []issues.Issue, storeTags []issues.Ta
 	return ExploreResponse{
 		Issue:         targetSummary,
 		RelatedIssues: related,
-		Opportunities: buildExploreOpportunities(targetSummary, related),
+		Opportunities: buildExploreOpportunities(targetSummary, related, maturityByIssueID(candidateSet), velocityByIssueID(candidateSet)),
 	}, nil
 }
 
@@ -252,7 +252,7 @@ func relatedIssueReason(sharedTags []string, semantic, factor float64) string {
 	return "Related by blended semantic and factor similarity"
 }
 
-func buildExploreOpportunities(target ExploreIssue, related []RelatedIssue) []Opportunity {
+func buildExploreOpportunities(target ExploreIssue, related []RelatedIssue, maturity map[string]float64, velocity map[string]float64) []Opportunity {
 	if len(related) == 0 {
 		return []Opportunity{}
 	}
@@ -321,7 +321,9 @@ func buildExploreOpportunities(target ExploreIssue, related []RelatedIssue) []Op
 				Description: item.Raw,
 				Status:      item.Status,
 			})
-			total += item.CombinedSimilarity
+			pairMaturity := (maturity[target.ID] + maturity[item.ID]) / 2
+			pairVelocity := (velocity[target.ID] + velocity[item.ID]) / 2
+			total += item.CombinedSimilarity * (0.8 + 0.2*pairMaturity) * (0.9 + 0.1*pairVelocity)
 		}
 		confidence := round(total / float64(len(group.issues)))
 
@@ -355,6 +357,43 @@ func buildExploreOpportunities(target ExploreIssue, related []RelatedIssue) []Op
 	})
 
 	return opportunities
+}
+
+func maturityByIssueID(items []issues.Issue) map[string]float64 {
+	out := make(map[string]float64, len(items))
+	for _, item := range items {
+		out[item.ID] = issueMaturityScore(item)
+	}
+	return out
+}
+
+func issueMaturityScore(item issues.Issue) float64 {
+	if item.LifecycleMetrics != nil && item.LifecycleMetrics.Maturity != nil {
+		return minFloat(1, maxFloat(0, *item.LifecycleMetrics.Maturity))
+	}
+	return 0.5
+}
+
+func velocityByIssueID(items []issues.Issue) map[string]float64 {
+	out := make(map[string]float64, len(items))
+	for _, item := range items {
+		out[item.ID] = issueVelocityScore(item)
+	}
+	return out
+}
+
+func issueVelocityScore(item issues.Issue) float64 {
+	if item.LifecycleMetrics != nil && item.LifecycleMetrics.Velocity != nil {
+		return minFloat(1, maxFloat(0, *item.LifecycleMetrics.Velocity))
+	}
+	return 0
+}
+
+func maxFloat(a, b float64) float64 {
+	if a > b {
+		return a
+	}
+	return b
 }
 
 func pluralizeIssueCount(count int) string {

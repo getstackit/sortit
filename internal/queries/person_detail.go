@@ -5,6 +5,7 @@ import (
 	"context"
 	"slices"
 	"strings"
+	"time"
 
 	"splat/internal/issues"
 	"splat/internal/services"
@@ -124,15 +125,20 @@ func (h GetPersonDetailHandler) recommendOpenIssues(
 	}
 
 	recommendations := make([]PersonIssueRecommendation, 0, len(openIssues))
+	detailReader, _ := h.Store.(issues.IssueDetailReader)
+	now := time.Now().UTC()
 	for _, issue := range openIssues {
 		if strings.EqualFold(issue.AssignedTo, person) || strings.TrimSpace(issue.AssignedTo) != "" {
 			continue
 		}
+		issue = hydrateIssueWithVelocity(ctx, detailReader, issue, now)
 
 		issueTags := issueTagProfile(issue)
 		factorScore := tagProfileSimilarity(profile, issueTags)
 		semanticScore := vectors.CosineSimilarity(personEmbedding, issue.Embedding)
 		combinedScore := 0.65*factorScore + 0.35*semanticScore
+		combinedScore *= 0.8 + 0.2*issuesMaturity(issue)
+		combinedScore *= 1 - 0.15*issueVelocity(issue)
 		sharedTags := topSharedTags(profile, issueTags, 3)
 		reason := recommendationReason(sharedTags, factorScore, semanticScore)
 		recommendations = append(recommendations, PersonIssueRecommendation{
@@ -152,6 +158,28 @@ func (h GetPersonDetailHandler) recommendOpenIssues(
 		recommendations = recommendations[:5]
 	}
 	return recommendations, nil
+}
+
+func issuesMaturity(issue issues.Issue) float64 {
+	return issuesLifecycleMaturity(issue.LifecycleMetrics)
+}
+
+func issueVelocity(issue issues.Issue) float64 {
+	return issuesLifecycleVelocity(issue.LifecycleMetrics)
+}
+
+func issuesLifecycleMaturity(metrics *issues.IssueLifecycleMetrics) float64 {
+	if metrics != nil && metrics.Maturity != nil {
+		return roundTo2(*metrics.Maturity)
+	}
+	return 0.5
+}
+
+func issuesLifecycleVelocity(metrics *issues.IssueLifecycleMetrics) float64 {
+	if metrics != nil && metrics.Velocity != nil {
+		return roundTo2(*metrics.Velocity)
+	}
+	return 0
 }
 
 func issueTagProfile(item issues.Issue) []TagRelevance {

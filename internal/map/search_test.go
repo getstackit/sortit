@@ -112,3 +112,71 @@ func TestGenericQueryBoostsIssuesWithSpecificTags(t *testing.T) {
 		t.Errorf("expected issue with specific co-occurring tags to rank first when searching by generic tag, got %q first", resp.RelatedIssues[0].ID)
 	}
 }
+
+func TestSearchUsesContentConfidenceAsNearTieBreaker(t *testing.T) {
+	storeIssues := []issues.Issue{
+		{
+			ID:        "issue-vague",
+			Raw:       "export bug",
+			Status:    issues.StatusOpen,
+			TagScores: []domain.TagRelevance{{Tag: "export", Relevance: 0.9}},
+			Embedding: []float64{1, 0},
+		},
+		{
+			ID:     "issue-detailed",
+			Raw:    "Safari PDF export fails after tapping Share twice.\n1. Open the Share sheet.\n2. Tap Export as PDF.\nError: WebKit export exception in /app/export/pdf.ts:42.",
+			Status: issues.StatusOpen,
+			TagScores: []domain.TagRelevance{
+				{Tag: "export", Relevance: 0.9},
+			},
+			Embedding: []float64{1, 0},
+		},
+	}
+
+	storeTags := []issues.Tag{
+		{Name: "export", Embedding: []float64{1, 0}},
+	}
+
+	resp := SearchFromQueryWithTags(storeIssues, storeTags, "export", nil, []float64{1, 0}, 10)
+	if len(resp.RelatedIssues) != 2 {
+		t.Fatalf("expected 2 related issues, got %d", len(resp.RelatedIssues))
+	}
+	if resp.RelatedIssues[0].ID != "issue-detailed" {
+		t.Fatalf("expected detailed issue to win near-tie by content confidence, got %+v", resp.RelatedIssues)
+	}
+}
+
+func TestSearchBoostsRecentlyActiveIssues(t *testing.T) {
+	activeVelocity := 0.9
+	storeIssues := []issues.Issue{
+		{
+			ID:        "issue-dormant",
+			Raw:       "Safari export fails when generating a PDF attachment",
+			Status:    issues.StatusOpen,
+			TagScores: []domain.TagRelevance{{Tag: "export", Relevance: 0.9}},
+			Embedding: []float64{1, 0},
+		},
+		{
+			ID:        "issue-active",
+			Raw:       "Safari export fails when generating a PDF attachment",
+			Status:    issues.StatusOpen,
+			TagScores: []domain.TagRelevance{{Tag: "export", Relevance: 0.9}},
+			Embedding: []float64{1, 0},
+			LifecycleMetrics: &issues.IssueLifecycleMetrics{
+				Velocity: &activeVelocity,
+			},
+		},
+	}
+
+	storeTags := []issues.Tag{
+		{Name: "export", Embedding: []float64{1, 0}},
+	}
+
+	resp := SearchFromQueryWithTags(storeIssues, storeTags, "export pdf attachment", nil, []float64{1, 0}, 10)
+	if len(resp.RelatedIssues) != 2 {
+		t.Fatalf("expected 2 related issues, got %d", len(resp.RelatedIssues))
+	}
+	if resp.RelatedIssues[0].ID != "issue-active" {
+		t.Fatalf("expected active issue to rank first, got %+v", resp.RelatedIssues)
+	}
+}

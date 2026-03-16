@@ -2,6 +2,7 @@ package issues
 
 import (
 	"context"
+	"database/sql"
 	"encoding/json"
 	"fmt"
 	"strings"
@@ -16,10 +17,12 @@ func (s *PostgresStore) RecordEvent(ctx context.Context, event Event) error {
 		return fmt.Errorf("marshal event participants: %w", err)
 	}
 
+	issueID := strings.TrimSpace(event.IssueID)
+
 	return s.queries.InsertEvent(ctx, issuesdb.InsertEventParams{
 		ID:                strings.TrimSpace(event.ID),
 		Kind:              strings.TrimSpace(event.Kind),
-		IssueID:           strings.TrimSpace(event.IssueID),
+		IssueID:           sql.NullString{String: issueID, Valid: issueID != ""},
 		CreatedBy:         strings.TrimSpace(event.CreatedBy),
 		CreatedAtUnixNano: event.CreatedAt.UTC().UnixNano(),
 		Body:              event.Body,
@@ -104,7 +107,7 @@ func eventFromRow(row issuesdb.Event) (Event, error) {
 	return Event{
 		ID:           row.ID,
 		Kind:         row.Kind,
-		IssueID:      row.IssueID,
+		IssueID:      row.IssueID.String,
 		CreatedBy:    row.CreatedBy,
 		CreatedAt:    time.Unix(0, row.CreatedAtUnixNano).UTC(),
 		Body:         row.Body,

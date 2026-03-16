@@ -57,10 +57,15 @@ type Issue struct {
 }
 
 type IssueLifecycleMetrics struct {
-	Stability       *float64 `json:"stability,omitempty"`
-	Churn           *float64 `json:"churn,omitempty"`
-	SnapshotCount   int      `json:"snapshotCount,omitempty"`
-	TransitionCount int      `json:"transitionCount,omitempty"`
+	Stability           *float64 `json:"stability,omitempty"`
+	Churn               *float64 `json:"churn,omitempty"`
+	Maturity            *float64 `json:"maturity,omitempty"`
+	Velocity            *float64 `json:"velocity,omitempty"`
+	SnapshotCount       int      `json:"snapshotCount,omitempty"`
+	TransitionCount     int      `json:"transitionCount,omitempty"`
+	RefinementCount     int      `json:"refinementCount,omitempty"`
+	ProgressCount       int      `json:"progressCount,omitempty"`
+	RecentActivityCount int      `json:"recentActivityCount,omitempty"`
 }
 
 // MapProjectionIssue contains only the fields needed to rebuild the map
@@ -775,10 +780,15 @@ func cloneIssueLifecycleMetrics(value *IssueLifecycleMetrics) *IssueLifecycleMet
 	}
 
 	return &IssueLifecycleMetrics{
-		Stability:       cloneFloat64Ptr(value.Stability),
-		Churn:           cloneFloat64Ptr(value.Churn),
-		SnapshotCount:   value.SnapshotCount,
-		TransitionCount: value.TransitionCount,
+		Stability:           cloneFloat64Ptr(value.Stability),
+		Churn:               cloneFloat64Ptr(value.Churn),
+		Maturity:            cloneFloat64Ptr(value.Maturity),
+		Velocity:            cloneFloat64Ptr(value.Velocity),
+		SnapshotCount:       value.SnapshotCount,
+		TransitionCount:     value.TransitionCount,
+		RefinementCount:     value.RefinementCount,
+		ProgressCount:       value.ProgressCount,
+		RecentActivityCount: value.RecentActivityCount,
 	}
 }
 

@@ -220,6 +220,21 @@ describe("IssueDetailPage", () => {
     expect(screen.getByText("16% churn across 2 transitions from 3 snapshots")).toBeInTheDocument();
   });
 
+  it("shows lifecycle velocity when metrics are present", async () => {
+    vi.mocked(fetchIssue).mockResolvedValue(makeIssue({
+      lifecycleMetrics: {
+        velocity: 0.61,
+        recentActivityCount: 3,
+      },
+    }));
+
+    renderIssueDetail("issue-123");
+
+    expect(await screen.findByText("Velocity")).toBeInTheDocument();
+    expect(screen.getByText("61%")).toBeInTheDocument();
+    expect(screen.getByText("3 recent activity events in the last 30 days")).toBeInTheDocument();
+  });
+
   it("records the viewed issue in recent history", async () => {
     vi.mocked(fetchIssue).mockResolvedValue(makeIssue());
 
@@ -613,6 +628,8 @@ describe("IssueDetailPage", () => {
           centerY: 0.52,
           radius: 0.15,
           color: "#2563eb",
+          issueIds: ["issue-related-context", "issue-open-neighbor", "issue-cluster-peer"],
+          topTag: "export",
         },
       ],
     });
@@ -682,6 +699,8 @@ describe("IssueDetailPage", () => {
           centerY: 0.51,
           radius: 0.16,
           color: "#2563eb",
+          issueIds: ["issue-sorting", "issue-closed-neighbor", "issue-open-neighbor"],
+          topTag: "export",
         },
       ],
     });

@@ -7,6 +7,7 @@ package issuesdb
 
 import (
 	"context"
+	"database/sql"
 	"encoding/json"
 )
 
@@ -25,7 +26,7 @@ INSERT INTO events (
 type InsertEventParams struct {
 	ID                string
 	Kind              string
-	IssueID           string
+	IssueID           sql.NullString
 	CreatedBy         string
 	CreatedAtUnixNano int64
 	Body              string
