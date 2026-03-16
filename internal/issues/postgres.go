@@ -466,6 +466,10 @@ func (s *PostgresStore) ListIssueDetailPosts(ctx context.Context, id string) ([]
 	}, id)
 }
 
+func (s *PostgresStore) ListIssueSnapshots(ctx context.Context, id string) ([]IssueSnapshot, error) {
+	return listIssueSnapshots(ctx, s.db, id)
+}
+
 func (s *PostgresStore) ListIssueDetailLinks(ctx context.Context, id string) ([]IssueLink, error) {
 	return listIssueDetailLinks(ctx, loggingIssueQuerier{
 		inner:  s.queries,

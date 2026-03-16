@@ -6,7 +6,7 @@ import { AppShellToggle } from "@/components/app-shell";
 type SiteHeaderProps = {
   title: string;
   subtitle?: string;
-  eyebrow?: string;
+  eyebrow?: ReactNode;
   meta?: ReactNode;
   actions?: ReactNode;
 };
@@ -24,20 +24,22 @@ export function SiteHeader({
         <div className="flex min-h-14 min-w-0 items-center gap-2 py-2">
           <AppShellToggle className="-ml-1" />
           <div className="mr-2 h-4 w-px shrink-0 bg-border" />
-          <div className="min-w-0">
+          <div className="min-w-0 flex-1">
             {eyebrow && (
-              <p className="text-[11px] uppercase tracking-[0.18em] text-muted-foreground">
+              <div className="text-[11px] uppercase tracking-[0.18em] text-muted-foreground">
                 {eyebrow}
-              </p>
+              </div>
             )}
-            <div className="flex min-w-0 flex-wrap items-center gap-2">
-              <h1 className="truncate text-sm font-medium">{title}</h1>
-              {meta}
-            </div>
-            {subtitle && (
-              <p className="text-[11px] text-muted-foreground">{subtitle}</p>
-            )}
+            <h1 className="text-sm font-medium">{title}</h1>
           </div>
+          {(meta || subtitle) && (
+            <div className="ml-auto flex shrink-0 flex-col items-end gap-0.5">
+              {meta && <div className="flex items-center gap-2">{meta}</div>}
+              {subtitle && (
+                <p className="text-[11px] text-muted-foreground">{subtitle}</p>
+              )}
+            </div>
+          )}
         </div>
         {actions && (
           <div className="flex flex-wrap items-center gap-2 pb-3 pl-11">

@@ -91,6 +91,9 @@ func (s *InMemoryStore) UpdateIssueFields(_ context.Context, id string, fields I
 		}
 
 		s.issues[index] = normalizeIssueEnrichment(issue)
+		if snapshot, ok := issueSnapshotFromFieldUpdate(id, fields); ok {
+			s.snapshots[id] = appendOrReplaceIssueSnapshot(s.snapshots[id], snapshot)
+		}
 		return nil
 	}
 
@@ -275,4 +278,25 @@ func (s *InMemoryStore) RetryIssueEnrichment(
 	job.AvailableAt = nextAttemptAt.UTC()
 	s.enrichmentJobs[issueID] = job
 	return nil
+}
+
+func (s *InMemoryStore) ListIssueSnapshots(_ context.Context, id string) ([]IssueSnapshot, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	return cloneIssueSnapshots(s.snapshots[strings.TrimSpace(id)]), nil
+}
+
+func appendOrReplaceIssueSnapshot(existing []IssueSnapshot, snapshot IssueSnapshot) []IssueSnapshot {
+	for i, item := range existing {
+		if item.Sequence == snapshot.Sequence {
+			out := cloneIssueSnapshots(existing)
+			out[i] = snapshot
+			return out
+		}
+	}
+
+	out := cloneIssueSnapshots(existing)
+	out = append(out, snapshot)
+	return out
 }

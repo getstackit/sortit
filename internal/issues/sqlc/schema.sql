@@ -45,6 +45,21 @@ CREATE TABLE issue_posts (
 CREATE INDEX issue_posts_issue_id_sequence_idx
 ON issue_posts(issue_id, sequence);
 
+CREATE TABLE issue_snapshots (
+    issue_id TEXT NOT NULL,
+    sequence BIGINT NOT NULL,
+    raw TEXT NOT NULL,
+    tags_json JSONB NOT NULL DEFAULT '[]',
+    tag_scores_json JSONB NOT NULL DEFAULT '[]',
+    embedding_json JSONB NOT NULL DEFAULT '[]',
+    created_at_unix_nano BIGINT NOT NULL,
+    PRIMARY KEY (issue_id, sequence),
+    FOREIGN KEY(issue_id) REFERENCES issues(id) ON DELETE CASCADE
+);
+
+CREATE INDEX issue_snapshots_issue_id_sequence_idx
+ON issue_snapshots(issue_id, sequence);
+
 CREATE TABLE issue_enrichment_jobs (
     issue_id TEXT PRIMARY KEY,
     target_sequence BIGINT NOT NULL,

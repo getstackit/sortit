@@ -22,8 +22,15 @@ import {
   type IssueMapCanvasNode,
 } from "@/components/issue-map-canvas";
 import { AppSidebar } from "@/components/app-sidebar";
-import { TagBadge } from "@/components/tag-badge";
 import { SiteHeader } from "@/components/site-header";
+import {
+  Breadcrumb,
+  BreadcrumbItem,
+  BreadcrumbLink,
+  BreadcrumbList,
+  BreadcrumbPage,
+  BreadcrumbSeparator,
+} from "@/components/ui/breadcrumb";
 import { Button, buttonVariants } from "@/components/ui/button";
 import type {
   MapCluster,
@@ -51,7 +58,6 @@ import { CloseIssueModal } from "@/components/close-issue-modal";
 import { Markdown } from "@/components/markdown";
 
 import { TagRelevanceBars } from "@/components/tag-relevance-bars";
-import { tagHref } from "@/lib/tags";
 
 type SemanticNeighbor = {
   issue: MapIssue;
@@ -81,6 +87,10 @@ function formatIssueTitle(raw: string, maxLength = 84) {
   return normalized.length > maxLength
     ? `${normalized.slice(0, maxLength).trimEnd()}...`
     : normalized;
+}
+
+function formatPercent(value: number) {
+  return `${Math.round(value * 100)}%`;
 }
 
 function statusClasses(status: IssueRecord["status"]) {
@@ -278,7 +288,6 @@ export function IssueDetailPage({ issueID }: { issueID: string }) {
   }, [copyState]);
 
   const discussion = useMemo(() => fallbackDiscussion(issue), [issue]);
-  const issueTags = issue?.tags ?? [];
 
   useEffect(() => {
     if (!issue) {
@@ -692,6 +701,16 @@ export function IssueDetailPage({ issueID }: { issueID: string }) {
       });
     }
 
+    if (typeof issue.lifecycleMetrics?.stability === "number" && typeof issue.lifecycleMetrics?.churn === "number") {
+      const transitions = issue.lifecycleMetrics.transitionCount ?? 0;
+      const snapshots = issue.lifecycleMetrics.snapshotCount ?? transitions + 1;
+      entries.push({
+        label: "Stability",
+        value: formatPercent(issue.lifecycleMetrics.stability),
+        meta: `${formatPercent(issue.lifecycleMetrics.churn)} churn across ${transitions} transition${transitions === 1 ? "" : "s"} from ${snapshots} snapshot${snapshots === 1 ? "" : "s"}`,
+      });
+    }
+
     return entries;
   }, [issue]);
 
@@ -730,8 +749,20 @@ export function IssueDetailPage({ issueID }: { issueID: string }) {
       shortcuts={shortcuts}
     >
       <SiteHeader
-        title={issue ? formatIssueTitle(issue.raw, 68) : resolvedIssueID || "Issue"}
-        eyebrow={issue?.id ?? "Issue"}
+        title={issue ? formatIssueTitle(issue.raw) : resolvedIssueID || "Issue"}
+        eyebrow={
+          <Breadcrumb>
+            <BreadcrumbList>
+              <BreadcrumbItem>
+                <BreadcrumbLink render={<Link href="/" />}>All issues</BreadcrumbLink>
+              </BreadcrumbItem>
+              <BreadcrumbSeparator />
+              <BreadcrumbItem>
+                <BreadcrumbPage>{issue?.id ?? resolvedIssueID ?? "Issue"}</BreadcrumbPage>
+              </BreadcrumbItem>
+            </BreadcrumbList>
+          </Breadcrumb>
+        }
         subtitle={issue ? `${issue.createdBy} · ${formatRelativeTime(issue.createdAt)}` : undefined}
         meta={
           issue ? (
@@ -757,101 +788,8 @@ export function IssueDetailPage({ issueID }: { issueID: string }) {
                   </span>
                 </>
               )}
-              <span className="mx-1 text-border">·</span>
-              {assignEditing ? (
-                <span className="inline-flex items-center gap-1.5">
-                  <input
-                    type="text"
-                    value={assignInput}
-                    onChange={(e) => setAssignInput(e.target.value)}
-                    onKeyDown={(e) => {
-                      if (e.key === "Enter") {
-                        e.preventDefault();
-                        void handleAssign(assignInput);
-                      }
-                      if (e.key === "Escape") {
-                        setAssignEditing(false);
-                      }
-                    }}
-                    autoFocus
-                    placeholder="Name..."
-                    disabled={assignPending}
-                    className="min-w-0 w-28 rounded-md border border-input/80 bg-background/70 px-2 py-0.5 text-xs placeholder:text-muted-foreground/50 focus:outline-none focus:ring-2 focus:ring-ring/40"
-                  />
-                  <Button
-                    type="button"
-                    size="xs"
-                    onClick={() => void handleAssign(assignInput)}
-                    disabled={assignPending}
-                  >
-                    {assignPending ? "..." : "Save"}
-                  </Button>
-                  <Button
-                    type="button"
-                    size="xs"
-                    variant="ghost"
-                    onClick={() => setAssignEditing(false)}
-                    disabled={assignPending}
-                  >
-                    Cancel
-                  </Button>
-                </span>
-              ) : (
-                <button
-                  type="button"
-                  onClick={() => {
-                    setAssignInput(issue.assignedTo ?? "");
-                    setAssignEditing(true);
-                  }}
-                  className="group inline-flex items-center gap-1 rounded-md px-1.5 py-0.5 text-xs transition-colors hover:bg-accent/70"
-                >
-                  <UserIcon className="size-3 text-muted-foreground" />
-                  {issue.assignedTo ? (
-                    <span className="font-medium text-violet-700">{issue.assignedTo}</span>
-                  ) : (
-                    <span className="text-muted-foreground">Unassigned</span>
-                  )}
-                </button>
-              )}
-              {user && !assignEditing && issue.assignedTo !== user.displayName && (
-                <Button
-                  type="button"
-                  size="xs"
-                  variant="ghost"
-                  onClick={() => void handleAssign(user.displayName)}
-                  disabled={assignPending}
-                  className="text-[11px]"
-                >
-                  {assignPending ? "..." : "Assign to me"}
-                </Button>
-              )}
             </>
           ) : null
-        }
-        actions={
-          issue ? (
-            <div className="flex flex-wrap items-center gap-2">
-              {issueTags.length > 0 &&
-                issueTags.map((tag) => (
-                  <Link key={tag} href={tagHref(tag)} className="transition-colors hover:opacity-80">
-                    <TagBadge tag={tag} />
-                  </Link>
-                ))}
-              <Link
-                href="/"
-                className="rounded-md border border-border px-3 py-1 text-xs font-medium text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
-              >
-                All issues
-              </Link>
-            </div>
-          ) : (
-            <Link
-              href="/"
-              className="rounded-md border border-border px-3 py-1 text-xs font-medium text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
-            >
-              All issues
-            </Link>
-          )
         }
       />
 
@@ -897,21 +835,13 @@ export function IssueDetailPage({ issueID }: { issueID: string }) {
                 )}
 
                 <section className="app-surface rounded-[1.75rem] p-6">
-                  <div className="space-y-2">
+                  <div>
                     <p className="text-[11px] font-medium uppercase tracking-[0.18em] text-muted-foreground">
                       Canonical summary
                     </p>
-                    <h2 className="max-w-3xl text-2xl leading-tight font-semibold tracking-tight text-balance">
-                      {formatIssueTitle(issue.raw, 140)}
-                    </h2>
-                    <p className="text-sm text-muted-foreground">
-                      {issue.enrichmentStatus === "pending"
-                        ? "Showing the last completed summary while new discussion is analyzed."
-                        : "Synthesized from discussion. New posts can update it."}
-                    </p>
+                    <h2 className="sr-only">{issue.raw}</h2>
                   </div>
-
-                  <div className="app-subtle-surface mt-6 rounded-[1.5rem] p-5">
+                  <div className="mt-4">
                     <DiscussionBody text={issue.raw} />
                   </div>
                 </section>
@@ -1141,23 +1071,6 @@ export function IssueDetailPage({ issueID }: { issueID: string }) {
                   </section>
                 )}
 
-                {issue.tagScores && issue.tagScores.length > 0 && (
-                  <section className="app-surface rounded-[1.75rem] p-6">
-                    <p className="text-[11px] font-medium uppercase tracking-[0.18em] text-muted-foreground">
-                      Tag relevance
-                    </p>
-                    <h3 className="mt-1 text-lg font-semibold tracking-tight">
-                      Classification confidence
-                    </h3>
-                    <p className="mt-1 text-sm text-muted-foreground">
-                      How strongly each tag applies to this issue.
-                    </p>
-                    <div className="mt-4">
-                      <TagRelevanceBars tags={issue.tagScores} />
-                    </div>
-                  </section>
-                )}
-
                 <section className="app-surface rounded-[1.75rem] p-6">
                   <div className="flex flex-wrap items-center justify-between gap-4">
                     <h3 className="text-lg font-semibold tracking-tight">Discussion</h3>
@@ -1328,6 +1241,85 @@ export function IssueDetailPage({ issueID }: { issueID: string }) {
                   <dl className="mt-4 space-y-4 text-sm">
                     <div className="space-y-1">
                       <dt className="text-[11px] font-medium uppercase tracking-[0.14em] text-muted-foreground">
+                        Assigned to
+                      </dt>
+                      <dd>
+                        {assignEditing ? (
+                          <div className="flex flex-col gap-2">
+                            <input
+                              type="text"
+                              value={assignInput}
+                              onChange={(e) => setAssignInput(e.target.value)}
+                              onKeyDown={(e) => {
+                                if (e.key === "Enter") {
+                                  e.preventDefault();
+                                  void handleAssign(assignInput);
+                                }
+                                if (e.key === "Escape") {
+                                  setAssignEditing(false);
+                                }
+                              }}
+                              autoFocus
+                              placeholder="Name..."
+                              disabled={assignPending}
+                              className="w-full rounded-md border border-input/80 bg-background/70 px-2.5 py-1.5 text-sm placeholder:text-muted-foreground/50 focus:outline-none focus:ring-2 focus:ring-ring/40"
+                            />
+                            <div className="flex items-center gap-1.5">
+                              <Button
+                                type="button"
+                                size="xs"
+                                onClick={() => void handleAssign(assignInput)}
+                                disabled={assignPending}
+                              >
+                                {assignPending ? "..." : "Save"}
+                              </Button>
+                              <Button
+                                type="button"
+                                size="xs"
+                                variant="ghost"
+                                onClick={() => setAssignEditing(false)}
+                                disabled={assignPending}
+                              >
+                                Cancel
+                              </Button>
+                            </div>
+                          </div>
+                        ) : (
+                          <div className="flex items-center gap-2">
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setAssignInput(issue.assignedTo ?? "");
+                                setAssignEditing(true);
+                              }}
+                              className="inline-flex items-center gap-1.5 rounded-md px-1.5 py-0.5 text-sm transition-colors hover:bg-accent/70"
+                            >
+                              <UserIcon className="size-3 text-muted-foreground" />
+                              {issue.assignedTo ? (
+                                <span className="font-medium text-violet-700">{issue.assignedTo}</span>
+                              ) : (
+                                <span className="text-muted-foreground">Unassigned</span>
+                              )}
+                            </button>
+                            {user && issue.assignedTo !== user.displayName && (
+                              <Button
+                                type="button"
+                                size="xs"
+                                variant="ghost"
+                                onClick={() => void handleAssign(user.displayName)}
+                                disabled={assignPending}
+                                className="text-[11px]"
+                              >
+                                {assignPending ? "..." : "Assign to me"}
+                              </Button>
+                            )}
+                          </div>
+                        )}
+                      </dd>
+                    </div>
+
+                    <div className="space-y-1">
+                      <dt className="text-[11px] font-medium uppercase tracking-[0.14em] text-muted-foreground">
                         Discussion
                       </dt>
                       <dd className="text-sm">
@@ -1365,8 +1357,21 @@ export function IssueDetailPage({ issueID }: { issueID: string }) {
                         </dd>
                       </div>
                     ))}
+
                   </dl>
                 </section>
+
+                {issue.tagScores && issue.tagScores.length > 0 && (
+                  <section className="app-surface rounded-[1.5rem] p-5">
+                    <h3 className="text-sm font-semibold">Classification confidence</h3>
+                    <p className="mt-1 text-[11px] text-muted-foreground">
+                      How strongly each tag applies to this issue.
+                    </p>
+                    <div className="mt-3">
+                      <TagRelevanceBars tags={issue.tagScores} />
+                    </div>
+                  </section>
+                )}
 
                 <section className="app-surface rounded-[1.5rem] p-5">
                   <div className="flex flex-wrap items-center justify-between gap-3">

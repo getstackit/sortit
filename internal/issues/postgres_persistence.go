@@ -101,6 +101,11 @@ func (s *PostgresStore) UpdateIssueFields(ctx context.Context, id string, fields
 		if err := syncIssueEmbeddingVector(ctx, s.db, id, fields.Embedding); err != nil {
 			return err
 		}
+		if snapshot, ok := issueSnapshotFromFieldUpdate(id, fields); ok {
+			if err := saveIssueSnapshot(ctx, s.db, snapshot); err != nil {
+				return err
+			}
+		}
 	}
 	if err := updateIssueEnrichmentState(ctx, s.db, id, fields); err != nil {
 		return err

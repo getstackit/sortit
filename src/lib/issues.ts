@@ -69,6 +69,13 @@ export type IssueOperationRecord = {
   participants?: IssueOperationParticipantRecord[];
 };
 
+export type IssueLifecycleMetricsRecord = {
+  stability?: number;
+  churn?: number;
+  snapshotCount?: number;
+  transitionCount?: number;
+};
+
 export type IssueSearchQuery = {
   raw: string;
   tags: IssueTagScore[];
@@ -112,6 +119,7 @@ export type IssueRecord = {
   enrichmentStatus?: IssueEnrichmentStatus;
   enrichmentError?: string;
   enrichmentTargetSequence?: number;
+  lifecycleMetrics?: IssueLifecycleMetricsRecord;
 };
 
 type IssuesResponse = {

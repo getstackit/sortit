@@ -61,6 +61,11 @@ func (h GetIssueHandler) Handle(ctx context.Context, input GetIssue) (_ issues.I
 	issue.Discussion = hydrateIssueDiscussion(issue, discussion)
 	issue.Links = hydrateIssueLinks(issue.ID, links, references)
 	issue.Operations = hydrateIssueOperations(operations, references)
+	snapshots, err := h.Store.ListIssueSnapshots(ctx, id)
+	if err != nil {
+		return issues.Issue{}, err
+	}
+	issue.LifecycleMetrics = issues.ComputeIssueLifecycleMetrics(snapshots)
 	return issue, nil
 }
 

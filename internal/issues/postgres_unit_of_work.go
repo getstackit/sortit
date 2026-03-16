@@ -92,6 +92,10 @@ func (u *PostgresUnitOfWork) ListIssueDetailReferences(ctx context.Context, ids 
 	return listIssueDetailReferences(ctx, u.queries, ids)
 }
 
+func (u *PostgresUnitOfWork) ListIssueSnapshots(ctx context.Context, id string) ([]IssueSnapshot, error) {
+	return listIssueSnapshots(ctx, u.tx, id)
+}
+
 // Store writes
 
 func (u *PostgresUnitOfWork) SaveIssue(ctx context.Context, issue Issue) error {
@@ -180,6 +184,11 @@ func (u *PostgresUnitOfWork) UpdateIssueFields(ctx context.Context, id string, f
 		}
 		if err := syncIssueEmbeddingVector(ctx, u.tx, id, fields.Embedding); err != nil {
 			return err
+		}
+		if snapshot, ok := issueSnapshotFromFieldUpdate(id, fields); ok {
+			if err := saveIssueSnapshot(ctx, u.tx, snapshot); err != nil {
+				return err
+			}
 		}
 	}
 	if err := updateIssueEnrichmentState(ctx, u.tx, id, fields); err != nil {

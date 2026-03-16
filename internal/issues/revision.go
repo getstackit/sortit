@@ -140,6 +140,13 @@ func (s *ObservedStore) ListIssueDetailReferences(ctx context.Context, ids []str
 	return refs, nil
 }
 
+func (s *ObservedStore) ListIssueSnapshots(ctx context.Context, id string) ([]IssueSnapshot, error) {
+	if detailStore, ok := s.base.(IssueDetailStore); ok {
+		return detailStore.ListIssueSnapshots(ctx, id)
+	}
+	return nil, nil
+}
+
 func (s *ObservedStore) SaveIssue(ctx context.Context, issue Issue) error {
 	if err := s.base.SaveIssue(ctx, issue); err != nil {
 		return err

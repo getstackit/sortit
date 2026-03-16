@@ -203,6 +203,23 @@ describe("IssueDetailPage", () => {
     expect(screen.getByText("Refinement 1")).toBeInTheDocument();
   });
 
+  it("shows lifecycle stability when metrics are present", async () => {
+    vi.mocked(fetchIssue).mockResolvedValue(makeIssue({
+      lifecycleMetrics: {
+        stability: 0.84,
+        churn: 0.16,
+        snapshotCount: 3,
+        transitionCount: 2,
+      },
+    }));
+
+    renderIssueDetail("issue-123");
+
+    expect(await screen.findByText("Stability")).toBeInTheDocument();
+    expect(screen.getByText("84%")).toBeInTheDocument();
+    expect(screen.getByText("16% churn across 2 transitions from 3 snapshots")).toBeInTheDocument();
+  });
+
   it("records the viewed issue in recent history", async () => {
     vi.mocked(fetchIssue).mockResolvedValue(makeIssue());
 
@@ -364,10 +381,17 @@ describe("IssueDetailPage", () => {
     });
 
     expect(
-      await screen.findAllByText(
-        "Export fails in Safari on iPad after tapping share twice and hangs forever."
+      await screen.findByText(
+        "Export fails in Safari on iPad after tapping share twice and hangs forever.",
+        { selector: "h1" }
       )
-    ).toHaveLength(2);
+    ).toBeInTheDocument();
+    expect(
+      screen.getByText(
+        "Export fails in Safari on iPad after tapping share twice and hangs forever.",
+        { selector: "h2" }
+      )
+    ).toBeInTheDocument();
     expect(
       screen.getByText("It hangs forever after the second tap and never saves the file.")
     ).toBeInTheDocument();

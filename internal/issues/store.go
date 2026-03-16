@@ -34,25 +34,33 @@ const (
 )
 
 type Issue struct {
-	ID                       string                `json:"id"`
-	Raw                      string                `json:"raw"`
-	Tags                     []string              `json:"tags"`
-	CreatedBy                string                `json:"createdBy"`
-	CreatedAt                time.Time             `json:"createdAt"`
-	Status                   IssueStatus           `json:"status"`
-	ClosedAt                 *time.Time            `json:"closedAt"`
-	ClosedBy                 string                `json:"closedBy,omitempty"`
-	ClosedReason             string                `json:"closedReason,omitempty"`
-	ClosedReasonNote         string                `json:"closedReasonNote,omitempty"`
-	AssignedTo               string                `json:"assignedTo,omitempty"`
-	Discussion               []IssuePost           `json:"discussion,omitempty"`
-	Links                    []IssueLink           `json:"links,omitempty"`
-	Operations               []IssueOperation      `json:"operations,omitempty"`
-	TagScores                []TagRelevance        `json:"tagScores"`
-	EnrichmentStatus         IssueEnrichmentStatus `json:"enrichmentStatus"`
-	EnrichmentError          string                `json:"enrichmentError,omitempty"`
-	EnrichmentTargetSequence int                   `json:"enrichmentTargetSequence"`
-	Embedding                []float64             `json:"-"`
+	ID                       string                 `json:"id"`
+	Raw                      string                 `json:"raw"`
+	Tags                     []string               `json:"tags"`
+	CreatedBy                string                 `json:"createdBy"`
+	CreatedAt                time.Time              `json:"createdAt"`
+	Status                   IssueStatus            `json:"status"`
+	ClosedAt                 *time.Time             `json:"closedAt"`
+	ClosedBy                 string                 `json:"closedBy,omitempty"`
+	ClosedReason             string                 `json:"closedReason,omitempty"`
+	ClosedReasonNote         string                 `json:"closedReasonNote,omitempty"`
+	AssignedTo               string                 `json:"assignedTo,omitempty"`
+	Discussion               []IssuePost            `json:"discussion,omitempty"`
+	Links                    []IssueLink            `json:"links,omitempty"`
+	Operations               []IssueOperation       `json:"operations,omitempty"`
+	TagScores                []TagRelevance         `json:"tagScores"`
+	EnrichmentStatus         IssueEnrichmentStatus  `json:"enrichmentStatus"`
+	EnrichmentError          string                 `json:"enrichmentError,omitempty"`
+	EnrichmentTargetSequence int                    `json:"enrichmentTargetSequence"`
+	LifecycleMetrics         *IssueLifecycleMetrics `json:"lifecycleMetrics,omitempty"`
+	Embedding                []float64              `json:"-"`
+}
+
+type IssueLifecycleMetrics struct {
+	Stability       *float64 `json:"stability,omitempty"`
+	Churn           *float64 `json:"churn,omitempty"`
+	SnapshotCount   int      `json:"snapshotCount,omitempty"`
+	TransitionCount int      `json:"transitionCount,omitempty"`
 }
 
 // MapProjectionIssue contains only the fields needed to rebuild the map
@@ -87,6 +95,16 @@ type IssuePost struct {
 	CreatedAt time.Time `json:"createdAt"`
 	Sequence  int       `json:"sequence"`
 	Kind      string    `json:"kind,omitempty"`
+}
+
+type IssueSnapshot struct {
+	IssueID   string         `json:"issueId,omitempty"`
+	Sequence  int            `json:"sequence"`
+	Raw       string         `json:"raw"`
+	Tags      []string       `json:"tags,omitempty"`
+	TagScores []TagRelevance `json:"tagScores,omitempty"`
+	CreatedAt time.Time      `json:"createdAt"`
+	Embedding []float64      `json:"-"`
 }
 
 type Tag struct {
@@ -284,6 +302,7 @@ type IssueDetailStore interface {
 	ListIssueDetailLinks(context.Context, string) ([]IssueLink, error)
 	ListIssueDetailOperations(context.Context, string) ([]IssueOperation, error)
 	ListIssueDetailReferences(context.Context, []string) ([]IssueReference, error)
+	ListIssueSnapshots(context.Context, string) ([]IssueSnapshot, error)
 }
 
 type CompareIssueReader interface {
@@ -398,6 +417,7 @@ type InMemoryStore struct {
 	mu             sync.RWMutex
 	issues         []Issue
 	discussion     map[string][]IssuePost
+	snapshots      map[string][]IssueSnapshot
 	links          []IssueLink
 	operations     []IssueOperation
 	events         []Event
@@ -413,6 +433,7 @@ func NewInMemoryStore(seed []Issue) *InMemoryStore {
 	store := &InMemoryStore{
 		issues:         cloneIssues(seed),
 		discussion:     make(map[string][]IssuePost, len(seed)),
+		snapshots:      make(map[string][]IssueSnapshot, len(seed)),
 		enrichmentJobs: make(map[string]inMemoryEnrichmentJob),
 	}
 
@@ -741,7 +762,41 @@ func cloneIssues(input []Issue) []Issue {
 			EnrichmentStatus:         issue.EnrichmentStatus,
 			EnrichmentError:          issue.EnrichmentError,
 			EnrichmentTargetSequence: issue.EnrichmentTargetSequence,
+			LifecycleMetrics:         cloneIssueLifecycleMetrics(issue.LifecycleMetrics),
 			Embedding:                copyEmbedding(issue.Embedding),
+		}
+	}
+	return items
+}
+
+func cloneIssueLifecycleMetrics(value *IssueLifecycleMetrics) *IssueLifecycleMetrics {
+	if value == nil {
+		return nil
+	}
+
+	return &IssueLifecycleMetrics{
+		Stability:       cloneFloat64Ptr(value.Stability),
+		Churn:           cloneFloat64Ptr(value.Churn),
+		SnapshotCount:   value.SnapshotCount,
+		TransitionCount: value.TransitionCount,
+	}
+}
+
+func cloneIssueSnapshots(input []IssueSnapshot) []IssueSnapshot {
+	if len(input) == 0 {
+		return nil
+	}
+
+	items := make([]IssueSnapshot, len(input))
+	for i, snapshot := range input {
+		items[i] = IssueSnapshot{
+			IssueID:   snapshot.IssueID,
+			Sequence:  snapshot.Sequence,
+			Raw:       snapshot.Raw,
+			Tags:      append([]string(nil), snapshot.Tags...),
+			TagScores: copyTagScores(snapshot.TagScores),
+			CreatedAt: snapshot.CreatedAt,
+			Embedding: copyEmbedding(snapshot.Embedding),
 		}
 	}
 	return items
@@ -915,6 +970,15 @@ func cloneTimePtr(value *time.Time) *time.Time {
 	}
 
 	cloned := value.UTC()
+	return &cloned
+}
+
+func cloneFloat64Ptr(value *float64) *float64 {
+	if value == nil {
+		return nil
+	}
+
+	cloned := *value
 	return &cloned
 }
 

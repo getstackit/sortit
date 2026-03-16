@@ -157,6 +157,66 @@ func TestPostgresStoreRefineAppendsDiscussionAndUpdatesCanonicalIssue(t *testing
 	assertIssueEmbeddingVectorText(t, store, issue.ID, "[0.7,0.2]")
 }
 
+func TestPostgresStorePersistsIssueSnapshotsOnEnrichmentUpdate(t *testing.T) {
+	store := newPostgresTestStore(t)
+	ctx := context.Background()
+
+	issue := BuildNewIssue(NewIssueID(), CreateInput{
+		Raw:       "Export fails on iPad.",
+		CreatedBy: "Casey",
+	})
+	if err := store.SaveIssue(ctx, issue); err != nil {
+		t.Fatalf("save issue: %v", err)
+	}
+
+	raw1 := "Export fails on iPad in Safari."
+	seq1 := 1
+	if err := store.UpdateIssueFields(ctx, issue.ID, IssueFieldUpdate{
+		Raw:  &raw1,
+		Tags: []string{"export", "safari"},
+		TagScores: []TagRelevance{
+			{Tag: "export", Relevance: 0.9},
+			{Tag: "safari", Relevance: 0.7},
+		},
+		Embedding:                []float64{1, 0},
+		EnrichmentTargetSequence: &seq1,
+	}); err != nil {
+		t.Fatalf("update issue fields seq1: %v", err)
+	}
+
+	raw2 := "Export fails on iPad in Safari after tapping share twice."
+	seq2 := 2
+	if err := store.UpdateIssueFields(ctx, issue.ID, IssueFieldUpdate{
+		Raw:  &raw2,
+		Tags: []string{"export", "safari"},
+		TagScores: []TagRelevance{
+			{Tag: "export", Relevance: 0.95},
+			{Tag: "safari", Relevance: 0.8},
+		},
+		Embedding:                []float64{0.8, 0.2},
+		EnrichmentTargetSequence: &seq2,
+	}); err != nil {
+		t.Fatalf("update issue fields seq2: %v", err)
+	}
+
+	snapshots, err := store.ListIssueSnapshots(ctx, issue.ID)
+	if err != nil {
+		t.Fatalf("list issue snapshots: %v", err)
+	}
+	if len(snapshots) != 2 {
+		t.Fatalf("expected 2 snapshots, got %#v", snapshots)
+	}
+	if snapshots[0].Sequence != 1 || snapshots[0].Raw != raw1 {
+		t.Fatalf("unexpected first snapshot: %#v", snapshots[0])
+	}
+	if snapshots[1].Sequence != 2 || snapshots[1].Raw != raw2 {
+		t.Fatalf("unexpected second snapshot: %#v", snapshots[1])
+	}
+	if len(snapshots[1].Embedding) != 2 || snapshots[1].Embedding[0] != 0.8 || snapshots[1].Embedding[1] != 0.2 {
+		t.Fatalf("unexpected snapshot embedding: %#v", snapshots[1].Embedding)
+	}
+}
+
 func TestPostgresStoreCloseAndReopenIssue(t *testing.T) {
 	store := newPostgresTestStore(t)
 
