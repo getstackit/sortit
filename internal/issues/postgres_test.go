@@ -856,6 +856,17 @@ func TestPostgresStoreInitializesPgvectorIssueEmbeddingSchema(t *testing.T) {
 		t.Fatalf("expected vector extension, got %q", extensionName)
 	}
 
+	var pgSearchExtension string
+	if err := store.DB().QueryRowContext(
+		ctx,
+		`SELECT extname FROM pg_extension WHERE extname = 'pg_search'`,
+	).Scan(&pgSearchExtension); err != nil {
+		t.Fatalf("query pg_search extension: %v", err)
+	}
+	if pgSearchExtension != "pg_search" {
+		t.Fatalf("expected pg_search extension, got %q", pgSearchExtension)
+	}
+
 	var dataType, udtName string
 	if err := store.DB().QueryRowContext(
 		ctx,
@@ -883,6 +894,19 @@ func TestPostgresStoreInitializesPgvectorIssueEmbeddingSchema(t *testing.T) {
 	}
 	if !strings.Contains(definition, "vector_cosine_ops") {
 		t.Fatalf("expected cosine operator class in index definition, got %q", definition)
+	}
+
+	var bm25Definition string
+	if err := store.DB().QueryRowContext(
+		ctx,
+		`SELECT pg_get_indexdef(indexrelid)
+		 FROM pg_stat_user_indexes
+		 WHERE indexrelname = 'issue_content_projections_search_bm25_idx'`,
+	).Scan(&bm25Definition); err != nil {
+		t.Fatalf("query pg_search bm25 index: %v", err)
+	}
+	if !strings.Contains(bm25Definition, "USING bm25") {
+		t.Fatalf("expected bm25 index definition, got %q", bm25Definition)
 	}
 }
 
@@ -1051,6 +1075,66 @@ func TestPostgresStoreSearchIssuesSupportsCreatedAtFallback(t *testing.T) {
 	}
 }
 
+func TestPostgresStoreMaintainsPgSearchWriteColumns(t *testing.T) {
+	store := newPostgresTestStore(t)
+	ctx := context.Background()
+
+	issue := BuildNewIssue("issue-search-write-model", CreateInput{
+		Raw:       "Export fails on iPad",
+		CreatedBy: "Casey",
+		Tags:      []string{"export"},
+		TagScores: []TagRelevance{{Tag: "export", Relevance: 0.95}},
+		Embedding: []float64{0.2, 0.8},
+	})
+	if err := store.SaveIssue(ctx, issue); err != nil {
+		t.Fatalf("save issue: %v", err)
+	}
+
+	assertIssueSearchProjection(t, store, issue.ID, "Export fails on iPad", "Export fails on iPad", "export")
+
+	post := NewDiscussionPost(
+		issue.ID,
+		issue.Discussion,
+		"Customer says it breaks after tapping share twice.",
+		"Jordan",
+		"refinement",
+	)
+	if err := store.SaveIssuePost(ctx, post); err != nil {
+		t.Fatalf("save issue post: %v", err)
+	}
+
+	assertIssueSearchProjection(
+		t,
+		store,
+		issue.ID,
+		"Export fails on iPad",
+		"Export fails on iPad\n\nCustomer says it breaks after tapping share twice.",
+		"export",
+	)
+
+	raw := "Export fails in Safari on iPad after tapping share twice."
+	if err := store.UpdateIssueFields(ctx, issue.ID, IssueFieldUpdate{
+		Raw:  &raw,
+		Tags: []string{"export", "safari"},
+		TagScores: []TagRelevance{
+			{Tag: "export", Relevance: 0.95},
+			{Tag: "safari", Relevance: 0.8},
+		},
+		Embedding: []float64{0.6, 0.4},
+	}); err != nil {
+		t.Fatalf("update issue fields: %v", err)
+	}
+
+	assertIssueSearchProjection(
+		t,
+		store,
+		issue.ID,
+		"Export fails in Safari on iPad after tapping share twice.",
+		"Export fails on iPad\n\nCustomer says it breaks after tapping share twice.",
+		"export safari",
+	)
+}
+
 func assertIssueEmbeddingVectorText(t *testing.T, store *PostgresStore, id string, want string) {
 	t.Helper()
 
@@ -1067,6 +1151,30 @@ func assertIssueEmbeddingVectorText(t *testing.T, store *PostgresStore, id strin
 	}
 	if got != want {
 		t.Fatalf("unexpected embedding_vector for %s: got %q want %q", id, got, want)
+	}
+}
+
+func assertIssueSearchProjection(t *testing.T, store *PostgresStore, id, wantTitle, wantBody, wantTags string) {
+	t.Helper()
+
+	var gotTitle, gotBody, gotTags string
+	if err := store.DB().QueryRowContext(
+		context.Background(),
+		`SELECT search_title, search_body, search_tags
+		 FROM issue_content_projections
+		 WHERE issue_id = $1`,
+		id,
+	).Scan(&gotTitle, &gotBody, &gotTags); err != nil {
+		t.Fatalf("query issue search projection for %s: %v", id, err)
+	}
+	if gotTitle != wantTitle {
+		t.Fatalf("unexpected search_title for %s: got %q want %q", id, gotTitle, wantTitle)
+	}
+	if gotBody != wantBody {
+		t.Fatalf("unexpected search_body for %s: got %q want %q", id, gotBody, wantBody)
+	}
+	if gotTags != wantTags {
+		t.Fatalf("unexpected search_tags for %s: got %q want %q", id, gotTags, wantTags)
 	}
 }
 

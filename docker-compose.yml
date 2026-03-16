@@ -1,6 +1,6 @@
 services:
   postgres:
-    image: pgvector/pgvector:pg17
+    image: paradedb/paradedb:latest
     ports:
       - "${POSTGRES_PORT:-5432}:5432"
     environment:
@@ -8,7 +8,7 @@ services:
       POSTGRES_PASSWORD: splat
       POSTGRES_DB: splat
     volumes:
-      - pgdata:/var/lib/postgresql/data
+      - pgdata_paradedb18:/var/lib/postgresql
       - ./docker/initdb:/docker-entrypoint-initdb.d:ro
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U splat"]
@@ -17,4 +17,4 @@ services:
       retries: 10
 
 volumes:
-  pgdata:
+  pgdata_paradedb18:

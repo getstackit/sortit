@@ -1,3 +1,4 @@
+CREATE EXTENSION IF NOT EXISTS "pg_search" WITH SCHEMA "public";
 CREATE EXTENSION IF NOT EXISTS "vector" WITH SCHEMA "public";
 
 CREATE SEQUENCE "public"."dismissed_tag_merges_id_seq";
@@ -69,7 +70,10 @@ CREATE TABLE "public"."issue_content_projections" (
     "embedding_vector" vector,
     "last_event_id" text NOT NULL,
     "event_count" bigint NOT NULL,
-    "updated_at_unix_nano" bigint NOT NULL
+    "updated_at_unix_nano" bigint NOT NULL,
+    "search_title" text NOT NULL,
+    "search_body" text NOT NULL,
+    "search_tags" text NOT NULL
 );
 CREATE TABLE "public"."issue_enrichment_events" (
     "id" text NOT NULL,
@@ -273,6 +277,9 @@ ALTER TABLE ONLY "public"."issue_content_projections" ALTER COLUMN "tags_json" S
 ALTER TABLE ONLY "public"."issue_content_projections" ALTER COLUMN "tag_scores_json" SET DEFAULT '[]'::jsonb;
 ALTER TABLE ONLY "public"."issue_content_projections" ALTER COLUMN "last_event_id" SET DEFAULT ''::text;
 ALTER TABLE ONLY "public"."issue_content_projections" ALTER COLUMN "event_count" SET DEFAULT 0;
+ALTER TABLE ONLY "public"."issue_content_projections" ALTER COLUMN "search_title" SET DEFAULT ''::text;
+ALTER TABLE ONLY "public"."issue_content_projections" ALTER COLUMN "search_body" SET DEFAULT ''::text;
+ALTER TABLE ONLY "public"."issue_content_projections" ALTER COLUMN "search_tags" SET DEFAULT ''::text;
 ALTER TABLE ONLY "public"."issue_enrichment_events" ALTER COLUMN "created_by" SET DEFAULT ''::text;
 ALTER TABLE ONLY "public"."issue_enrichment_events" ALTER COLUMN "payload_json" SET DEFAULT '{}'::jsonb;
 ALTER TABLE ONLY "public"."issue_enrichment_jobs" ALTER COLUMN "lease_expires_at_unix_nano" SET DEFAULT 0;
@@ -386,6 +393,7 @@ CREATE INDEX issue_content_facts_issue_created_idx ON public.issue_content_facts
 CREATE UNIQUE INDEX issue_content_facts_issue_sequence_idx ON public.issue_content_facts USING btree (issue_id, sequence);
 CREATE UNIQUE INDEX issue_content_facts_source_idx ON public.issue_content_facts USING btree (source, source_id);
 CREATE INDEX issue_content_projections_embedding_vector_cosine_hnsw_idx ON public.issue_content_projections USING hnsw (((embedding_vector)::vector(1536)) vector_cosine_ops) WHERE ((embedding_vector IS NOT NULL) AND (vector_dims(embedding_vector) = 1536));
+CREATE INDEX issue_content_projections_search_bm25_idx ON public.issue_content_projections USING bm25 (issue_id, search_title, search_body, search_tags, updated_at_unix_nano) WITH (key_field='issue_id');
 CREATE INDEX issue_content_projections_updated_idx ON public.issue_content_projections USING btree (updated_at_unix_nano DESC, issue_id);
 CREATE INDEX issue_enrichment_events_issue_created_idx ON public.issue_enrichment_events USING btree (issue_id, created_at_unix_nano DESC, id DESC);
 CREATE INDEX issue_enrichment_events_target_idx ON public.issue_enrichment_events USING btree (issue_id, target_sequence, created_at_unix_nano, id);

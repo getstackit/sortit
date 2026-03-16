@@ -47,6 +47,9 @@ func (s *PostgresStore) SaveIssue(ctx context.Context, issue Issue) error {
 	if err := insertIssuePosts(ctx, s.queries, issue.Discussion); err != nil {
 		return err
 	}
+	if err := syncIssueSearchProjection(ctx, s.db, record.ID); err != nil {
+		return err
+	}
 
 	return nil
 }
@@ -63,6 +66,9 @@ func (s *PostgresStore) SaveIssuePost(ctx context.Context, post IssuePost) error
 	}); err != nil {
 		return fmt.Errorf("save issue post: %w", err)
 	}
+	if err := syncIssueSearchProjection(ctx, s.db, strings.TrimSpace(post.IssueID)); err != nil {
+		return err
+	}
 	return nil
 }
 
@@ -75,6 +81,9 @@ func (s *PostgresStore) UpdateIssueFields(ctx context.Context, id string, fields
 
 	if fields.Raw != nil {
 		if err := applyIssueContentFieldUpdate(ctx, s.db, id, fields); err != nil {
+			return err
+		}
+		if err := syncIssueSearchProjection(ctx, s.db, id); err != nil {
 			return err
 		}
 		if snapshot, ok := issueSnapshotFromFieldUpdate(id, fields); ok {

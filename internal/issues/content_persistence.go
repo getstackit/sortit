@@ -146,7 +146,10 @@ func applyIssueContentTagMerge(
 	state.LastEventID = fact.ID
 	state.EventCount++
 	state.UpdatedAt = createdAt.UTC()
-	return upsertIssueContentProjection(ctx, db, state)
+	if err := upsertIssueContentProjection(ctx, db, state); err != nil {
+		return err
+	}
+	return syncIssueSearchProjection(ctx, db, state.IssueID)
 }
 
 func loadIssueContentState(ctx context.Context, db issuesdb.DBTX, issueID string) (issueContentState, error) {
@@ -282,6 +285,105 @@ func upsertIssueContentProjection(ctx context.Context, db issuesdb.DBTX, state i
 		return fmt.Errorf("upsert issue content projection for %q: %w", state.IssueID, err)
 	}
 	return nil
+}
+
+type issueSearchProjection struct {
+	Title string
+	Body  string
+	Tags  string
+}
+
+func syncIssueSearchProjection(ctx context.Context, db issuesdb.DBTX, issueID string) error {
+	state, err := loadIssueContentState(ctx, db, issueID)
+	if err != nil {
+		return err
+	}
+
+	projection, err := buildIssueSearchProjection(ctx, db, state)
+	if err != nil {
+		return err
+	}
+
+	if _, err := db.ExecContext(
+		ctx,
+		`UPDATE issue_content_projections
+		 SET search_title = $2,
+		     search_body = $3,
+		     search_tags = $4
+		 WHERE issue_id = $1`,
+		strings.TrimSpace(state.IssueID),
+		projection.Title,
+		projection.Body,
+		projection.Tags,
+	); err != nil {
+		return fmt.Errorf("update issue search projection for %q: %w", state.IssueID, err)
+	}
+
+	return nil
+}
+
+func buildIssueSearchProjection(ctx context.Context, db issuesdb.DBTX, state issueContentState) (issueSearchProjection, error) {
+	title := strings.TrimSpace(state.Raw)
+
+	rows, err := db.QueryContext(
+		ctx,
+		`SELECT raw
+		 FROM issue_posts
+		 WHERE issue_id = $1
+		 ORDER BY sequence ASC, id ASC`,
+		strings.TrimSpace(state.IssueID),
+	)
+	if err != nil {
+		return issueSearchProjection{}, fmt.Errorf("list issue posts for %q search projection: %w", state.IssueID, err)
+	}
+	defer rows.Close() //nolint:errcheck
+
+	bodyParts := make([]string, 0, max(1, int(state.EventCount)))
+	for rows.Next() {
+		var raw string
+		if err := rows.Scan(&raw); err != nil {
+			return issueSearchProjection{}, fmt.Errorf("scan issue post for %q search projection: %w", state.IssueID, err)
+		}
+		raw = strings.TrimSpace(raw)
+		if raw == "" {
+			continue
+		}
+		bodyParts = append(bodyParts, raw)
+	}
+	if err := rows.Err(); err != nil {
+		return issueSearchProjection{}, fmt.Errorf("iterate issue posts for %q search projection: %w", state.IssueID, err)
+	}
+
+	body := strings.Join(bodyParts, "\n\n")
+	if body == "" {
+		body = title
+	}
+
+	tagParts := make([]string, 0, len(state.Tags)+len(state.TagScores))
+	seen := make(map[string]struct{}, len(state.Tags)+len(state.TagScores))
+	appendTag := func(value string) {
+		tag := sanitizeTagName(value)
+		if tag == "" {
+			return
+		}
+		if _, ok := seen[tag]; ok {
+			return
+		}
+		seen[tag] = struct{}{}
+		tagParts = append(tagParts, tag)
+	}
+	for _, tag := range state.Tags {
+		appendTag(tag)
+	}
+	for _, score := range state.TagScores {
+		appendTag(score.Tag)
+	}
+
+	return issueSearchProjection{
+		Title: title,
+		Body:  body,
+		Tags:  strings.Join(tagParts, " "),
+	}, nil
 }
 
 func mustIssueContentJSON(state issueContentState) json.RawMessage {
