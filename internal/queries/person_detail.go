@@ -137,6 +137,7 @@ func (h GetPersonDetailHandler) recommendOpenIssues(
 		factorScore := tagProfileSimilarity(profile, issueTags)
 		semanticScore := vectors.CosineSimilarity(personEmbedding, issue.Embedding)
 		combinedScore := 0.65*factorScore + 0.35*semanticScore
+		combinedScore *= issues.IssueFreshnessWeight(issue, now)
 		combinedScore *= 0.8 + 0.2*issuesMaturity(issue)
 		combinedScore *= 1 - 0.15*issueVelocity(issue)
 		sharedTags := topSharedTags(profile, issueTags, 3)

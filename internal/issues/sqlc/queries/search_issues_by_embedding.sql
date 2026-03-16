@@ -11,7 +11,7 @@ SELECT
   closed_reason,
   closed_reason_note,
   tag_scores_json,
-  embedding_json,
+  COALESCE(embedding_vector::text, '') AS embedding_text,
   assigned_to,
   (embedding_vector <=> sqlc.arg(query_vector)::vector) AS semantic_distance
 FROM issues

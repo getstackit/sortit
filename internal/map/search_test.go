@@ -2,6 +2,7 @@ package issuemap
 
 import (
 	"testing"
+	"time"
 
 	"splat/internal/domain"
 	"splat/internal/issues"
@@ -178,5 +179,37 @@ func TestSearchBoostsRecentlyActiveIssues(t *testing.T) {
 	}
 	if resp.RelatedIssues[0].ID != "issue-active" {
 		t.Fatalf("expected active issue to rank first, got %+v", resp.RelatedIssues)
+	}
+}
+
+func TestSearchPrefersFreshIssueWhenBaseSimilarityIsEqual(t *testing.T) {
+	now := time.Now().UTC()
+	storeIssues := []issues.Issue{
+		{
+			ID:        "issue-stale",
+			Raw:       "Safari export fails when generating a PDF attachment",
+			Status:    issues.StatusOpen,
+			CreatedAt: now.Add(-240 * 24 * time.Hour),
+			TagScores: []domain.TagRelevance{{Tag: "export", Relevance: 0.9}},
+			Embedding: []float64{1, 0},
+		},
+		{
+			ID:        "issue-fresh",
+			Raw:       "Safari export fails when generating a PDF attachment",
+			Status:    issues.StatusOpen,
+			CreatedAt: now.Add(-2 * 24 * time.Hour),
+			TagScores: []domain.TagRelevance{{Tag: "export", Relevance: 0.9}},
+			Embedding: []float64{1, 0},
+		},
+	}
+
+	storeTags := []issues.Tag{{Name: "export", Embedding: []float64{1, 0}}}
+
+	resp := SearchFromQueryWithTags(storeIssues, storeTags, "export pdf attachment", nil, []float64{1, 0}, 10)
+	if len(resp.RelatedIssues) != 2 {
+		t.Fatalf("expected 2 related issues, got %d", len(resp.RelatedIssues))
+	}
+	if resp.RelatedIssues[0].ID != "issue-fresh" {
+		t.Fatalf("expected fresh issue to rank first, got %+v", resp.RelatedIssues)
 	}
 }

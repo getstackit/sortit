@@ -2,9 +2,11 @@ package issuemap
 
 import (
 	"cmp"
+	"math"
 	"slices"
 	"strconv"
 	"strings"
+	"time"
 
 	"splat/internal/issues"
 	"splat/internal/vectors"
@@ -75,6 +77,7 @@ func ExploreFromIssuesWithTags(storeIssues []issues.Issue, storeTags []issues.Ta
 	targetSummary := exploreIssueSummary(target)
 	targetEmbedding := issueEmbeddings[target.ID]
 	targetFactor := factorVectors[target.ID]
+	now := time.Now().UTC()
 
 	related := make([]RelatedIssue, 0, len(candidateSet)-1)
 	for i := 1; i < len(candidateSet); i++ {
@@ -86,7 +89,7 @@ func ExploreFromIssuesWithTags(storeIssues []issues.Issue, storeTags []issues.Ta
 		semantic := vectors.UnitCosineSimilarity(targetEmbedding, issueEmbeddings[candidate.ID])
 		factor := vectors.UnitCosineSimilarity(targetFactor, factorVectors[candidate.ID])
 		boost := relationshipBoost(boosts, target.ID, candidate.ID)
-		combined := minFloat(1, 0.6*semantic+0.4*factor+boost)
+		combined := minFloat(1, (0.6*semantic+0.4*factor+boost)*math.Sqrt(issues.IssueFreshnessWeight(candidate, now)))
 		sharedTags := sharedRelevantTags(targetSummary.Tags, candidateSummary.Tags, 3)
 
 		related = append(related, RelatedIssue{

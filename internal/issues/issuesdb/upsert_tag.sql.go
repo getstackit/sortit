@@ -7,20 +7,19 @@ package issuesdb
 
 import (
 	"context"
-	"encoding/json"
 )
 
 const upsertTag = `-- name: UpsertTag :exec
-INSERT INTO tags (name, description, created_at_unix_nano, embedding_json)
-VALUES ($1, $2, $3, $4)
+INSERT INTO tags (name, description, created_at_unix_nano, embedding_vector)
+VALUES ($1, $2, $3, $4::vector)
 ON CONFLICT(name) DO UPDATE SET
     description = CASE
         WHEN excluded.description <> '' THEN excluded.description
         ELSE tags.description
     END,
-    embedding_json = CASE
-        WHEN excluded.embedding_json <> '[]' THEN excluded.embedding_json
-        ELSE tags.embedding_json
+    embedding_vector = CASE
+        WHEN excluded.embedding_vector IS NOT NULL THEN excluded.embedding_vector
+        ELSE tags.embedding_vector
     END
 `
 
@@ -28,7 +27,7 @@ type UpsertTagParams struct {
 	Name              string
 	Description       string
 	CreatedAtUnixNano int64
-	EmbeddingJson     json.RawMessage
+	Column4           interface{}
 }
 
 func (q *Queries) UpsertTag(ctx context.Context, arg UpsertTagParams) error {
@@ -36,7 +35,7 @@ func (q *Queries) UpsertTag(ctx context.Context, arg UpsertTagParams) error {
 		arg.Name,
 		arg.Description,
 		arg.CreatedAtUnixNano,
-		arg.EmbeddingJson,
+		arg.Column4,
 	)
 	return err
 }

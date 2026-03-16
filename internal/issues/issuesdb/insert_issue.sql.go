@@ -21,9 +21,9 @@ INSERT INTO issues (
     closed_at_unix_nano,
     closed_by,
     tag_scores_json,
-    embedding_json,
+    embedding_vector,
     assigned_to
-) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
+) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10::vector, $11)
 `
 
 type InsertIssueParams struct {
@@ -36,7 +36,7 @@ type InsertIssueParams struct {
 	ClosedAtUnixNano  int64
 	ClosedBy          string
 	TagScoresJson     json.RawMessage
-	EmbeddingJson     json.RawMessage
+	Column10          interface{}
 	AssignedTo        string
 }
 
@@ -51,7 +51,7 @@ func (q *Queries) InsertIssue(ctx context.Context, arg InsertIssueParams) error 
 		arg.ClosedAtUnixNano,
 		arg.ClosedBy,
 		arg.TagScoresJson,
-		arg.EmbeddingJson,
+		arg.Column10,
 		arg.AssignedTo,
 	)
 	return err

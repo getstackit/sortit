@@ -163,6 +163,9 @@ func TestPersonDetailRecommendationsPreferMatureIssueWhenBaseMatchIsNearEqual(t 
 		issue.AssignedTo = assignedTo
 		issue.Status = status
 		issue.CreatedAt = createdAt
+		if len(issue.Discussion) > 0 {
+			issue.Discussion[0].CreatedAt = createdAt
+		}
 		return issue
 	}
 
@@ -292,6 +295,9 @@ func TestPersonDetailRecommendationsDeprioritizeHighVelocityIssue(t *testing.T) 
 		issue.AssignedTo = assignedTo
 		issue.Status = status
 		issue.CreatedAt = createdAt
+		if len(issue.Discussion) > 0 {
+			issue.Discussion[0].CreatedAt = createdAt
+		}
 		return issue
 	}
 
@@ -310,7 +316,7 @@ func TestPersonDetailRecommendationsDeprioritizeHighVelocityIssue(t *testing.T) 
 			"Invited users land on a blank auth handoff screen",
 			"",
 			issues.StatusOpen,
-			time.Date(2026, 3, 2, 10, 0, 0, 0, time.UTC),
+			time.Now().UTC().Add(-24*time.Hour),
 			[]issues.TagRelevance{{Tag: "auth", Relevance: 0.85}, {Tag: "onboarding", Relevance: 0.7}},
 			[]float64{0.98, 0.02},
 		),
@@ -319,7 +325,7 @@ func TestPersonDetailRecommendationsDeprioritizeHighVelocityIssue(t *testing.T) 
 			"Invited users land on a blank auth handoff screen",
 			"",
 			issues.StatusOpen,
-			time.Date(2026, 3, 2, 11, 0, 0, 0, time.UTC),
+			time.Now().UTC().Add(-24*time.Hour),
 			[]issues.TagRelevance{{Tag: "auth", Relevance: 0.85}, {Tag: "onboarding", Relevance: 0.7}},
 			[]float64{0.98, 0.02},
 		),
@@ -357,5 +363,87 @@ func TestPersonDetailRecommendationsDeprioritizeHighVelocityIssue(t *testing.T) 
 	}
 	if payload.RecommendedIssues[0].Issue.ID != "issue-quiet" {
 		t.Fatalf("expected quieter issue to rank first, got %#v", payload.RecommendedIssues)
+	}
+}
+
+func TestPersonDetailRecommendationsPreferFreshIssueWhenBaseMatchIsEqual(t *testing.T) {
+	now := time.Now().UTC()
+	makeIssue := func(
+		id string,
+		raw string,
+		assignedTo string,
+		status issues.IssueStatus,
+		createdAt time.Time,
+		tagScores []issues.TagRelevance,
+		embedding []float64,
+	) issues.Issue {
+		issue := issues.BuildNewIssue(id, issues.CreateInput{
+			Raw:       raw,
+			CreatedBy: testUser,
+			TagScores: tagScores,
+			Embedding: embedding,
+		})
+		issue.AssignedTo = assignedTo
+		issue.Status = status
+		issue.CreatedAt = createdAt
+		if len(issue.Discussion) > 0 {
+			issue.Discussion[0].CreatedAt = createdAt
+		}
+		return issue
+	}
+
+	store := newPostgresIssueStore(t, []issues.Issue{
+		makeIssue(
+			"issue-assigned",
+			"Fix auth redirect loop for invited users",
+			"Avery",
+			issues.StatusOpen,
+			now.Add(-10*24*time.Hour),
+			[]issues.TagRelevance{{Tag: "auth", Relevance: 0.9}, {Tag: "onboarding", Relevance: 0.6}},
+			[]float64{1, 0},
+		),
+		makeIssue(
+			"issue-stale",
+			"Invited users land on a blank auth handoff screen",
+			"",
+			issues.StatusOpen,
+			now.Add(-320*24*time.Hour),
+			[]issues.TagRelevance{{Tag: "auth", Relevance: 0.85}, {Tag: "onboarding", Relevance: 0.7}},
+			[]float64{0.98, 0.02},
+		),
+		makeIssue(
+			"issue-fresh",
+			"Invited users land on a blank auth handoff screen",
+			"",
+			issues.StatusOpen,
+			now.Add(-24*time.Hour),
+			[]issues.TagRelevance{{Tag: "auth", Relevance: 0.85}, {Tag: "onboarding", Relevance: 0.7}},
+			[]float64{0.98, 0.02},
+		),
+	})
+
+	server := NewServer(ServerConfig{
+		CORSOrigins: []string{"http://localhost:3000"},
+		APIPrefixes: []string{"/api"},
+		IssueStore:  store,
+	})
+
+	req := httptest.NewRequest(http.MethodGet, "/api/people/Avery", nil)
+	rec := httptest.NewRecorder()
+	server.Handler().ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200 for person detail, got %d", rec.Code)
+	}
+
+	var payload queries.PersonDetail
+	if err := json.NewDecoder(rec.Body).Decode(&payload); err != nil {
+		t.Fatalf("decode person detail response: %v", err)
+	}
+	if len(payload.RecommendedIssues) < 2 {
+		t.Fatalf("expected at least 2 recommended issues, got %#v", payload.RecommendedIssues)
+	}
+	if payload.RecommendedIssues[0].Issue.ID != "issue-fresh" {
+		t.Fatalf("expected fresher issue first, got %#v", payload.RecommendedIssues)
 	}
 }

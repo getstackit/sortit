@@ -13,7 +13,7 @@ import (
 )
 
 const listIssuesFiltered = `-- name: ListIssuesFiltered :many
-SELECT id, raw, tags_json, created_by, created_at_unix_nano, status, closed_at_unix_nano, closed_by, closed_reason, closed_reason_note, tag_scores_json, embedding_json, assigned_to
+SELECT id, raw, tags_json, created_by, created_at_unix_nano, status, closed_at_unix_nano, closed_by, closed_reason, closed_reason_note, tag_scores_json, COALESCE(embedding_vector::text, '') AS embedding_text, assigned_to
 FROM issues
 WHERE (NOT $1::bool OR status = $2::text)
   AND (NOT $3::bool OR LOWER(assigned_to) = LOWER($4::text))
@@ -62,7 +62,7 @@ type ListIssuesFilteredRow struct {
 	ClosedReason      string
 	ClosedReasonNote  string
 	TagScoresJson     json.RawMessage
-	EmbeddingJson     json.RawMessage
+	EmbeddingText     interface{}
 	AssignedTo        string
 }
 
@@ -98,7 +98,7 @@ func (q *Queries) ListIssuesFiltered(ctx context.Context, arg ListIssuesFiltered
 			&i.ClosedReason,
 			&i.ClosedReasonNote,
 			&i.TagScoresJson,
-			&i.EmbeddingJson,
+			&i.EmbeddingText,
 			&i.AssignedTo,
 		); err != nil {
 			return nil, err

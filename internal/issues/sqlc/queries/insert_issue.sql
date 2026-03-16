@@ -9,6 +9,6 @@ INSERT INTO issues (
     closed_at_unix_nano,
     closed_by,
     tag_scores_json,
-    embedding_json,
+    embedding_vector,
     assigned_to
-) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11);
+) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10::vector, $11);

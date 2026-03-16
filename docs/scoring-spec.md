@@ -187,6 +187,8 @@ These signals matter, but their meaning depends on the surface.
 
 Time should not be treated as one global multiplier.
 
+See [time-decay-spec.md](./time-decay-spec.md) for the v1 definition and rollout plan.
+
 - For "what is active now," recency should boost.
 - For "what still needs attention," long-open age may deserve a capped boost.
 - For canonical closed issues, age may be neutral or even mildly positive if the issue remains referenced.
@@ -298,6 +300,8 @@ Each new signal should come with:
 - at least one failure mode it is meant to reduce
 
 Major consumer blends should be validated with offline examples before broad rollout. Search is the best first validation surface because quality changes are easiest to inspect there.
+
+See [resolution-weighting-spec.md](./resolution-weighting-spec.md) for the v1 `closed_reason` modifier definition.
 
 ## Recommended Sequencing
 

@@ -7,35 +7,46 @@ package issuesdb
 
 import (
 	"context"
+	"database/sql"
 )
 
 const listTags = `-- name: ListTags :many
-SELECT name, description, created_at_unix_nano, embedding_json,
-       specificity, specificity_llm, specificity_embedding, specificity_computed_at,
-       embedding_vector
+SELECT name, description, created_at_unix_nano,
+       COALESCE(embedding_vector::text, '') AS embedding_text,
+       specificity, specificity_llm, specificity_embedding, specificity_computed_at
 FROM tags
 ORDER BY name ASC
 `
 
-func (q *Queries) ListTags(ctx context.Context) ([]Tag, error) {
+type ListTagsRow struct {
+	Name                  string
+	Description           string
+	CreatedAtUnixNano     int64
+	EmbeddingText         interface{}
+	Specificity           sql.NullFloat64
+	SpecificityLlm        sql.NullFloat64
+	SpecificityEmbedding  sql.NullFloat64
+	SpecificityComputedAt sql.NullTime
+}
+
+func (q *Queries) ListTags(ctx context.Context) ([]ListTagsRow, error) {
 	rows, err := q.db.QueryContext(ctx, listTags)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
-	var items []Tag
+	var items []ListTagsRow
 	for rows.Next() {
-		var i Tag
+		var i ListTagsRow
 		if err := rows.Scan(
 			&i.Name,
 			&i.Description,
 			&i.CreatedAtUnixNano,
-			&i.EmbeddingJson,
+			&i.EmbeddingText,
 			&i.Specificity,
 			&i.SpecificityLlm,
 			&i.SpecificityEmbedding,
 			&i.SpecificityComputedAt,
-			&i.EmbeddingVector,
 		); err != nil {
 			return nil, err
 		}

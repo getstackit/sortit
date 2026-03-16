@@ -228,7 +228,7 @@ func (s *PostgresStore) ListPeopleAnalytics(ctx context.Context, opts ListOption
 
 	rows, err := s.db.QueryContext(
 		ctx,
-		`SELECT status, assigned_to, tag_scores_json, embedding_json
+		`SELECT status, assigned_to, tag_scores_json, COALESCE(embedding_vector::text, '')
 		 FROM issues
 		 WHERE (NOT $1::bool OR status = $2::text)
 		   AND (NOT $3::bool OR LOWER(assigned_to) = LOWER($4::text))
@@ -249,16 +249,16 @@ func (s *PostgresStore) ListPeopleAnalytics(ctx context.Context, opts ListOption
 			status        string
 			assignedTo    string
 			tagScoresJSON json.RawMessage
-			embeddingJSON json.RawMessage
+			embeddingText string
 		)
-		if err := rows.Scan(&status, &assignedTo, &tagScoresJSON, &embeddingJSON); err != nil {
+		if err := rows.Scan(&status, &assignedTo, &tagScoresJSON, &embeddingText); err != nil {
 			return nil, fmt.Errorf("scan people analytics issue: %w", err)
 		}
 		tagScores, err := unmarshalJSONB[[]TagRelevance](tagScoresJSON)
 		if err != nil {
 			return nil, fmt.Errorf("decode people analytics tag scores: %w", err)
 		}
-		embedding, err := unmarshalJSONB[[]float64](embeddingJSON)
+		embedding, err := parseEmbeddingText(embeddingText)
 		if err != nil {
 			return nil, fmt.Errorf("decode people analytics embedding: %w", err)
 		}
@@ -283,7 +283,7 @@ func (s *PostgresStore) ListCompareIssues(ctx context.Context, ids []string) ([]
 
 	rows, err := s.db.QueryContext(
 		ctx,
-		`SELECT id, embedding_json
+		`SELECT id, COALESCE(embedding_vector::text, '')
 		 FROM issues
 		 WHERE id = ANY($1)`,
 		ids,
@@ -297,12 +297,12 @@ func (s *PostgresStore) ListCompareIssues(ctx context.Context, ids []string) ([]
 	for rows.Next() {
 		var (
 			id            string
-			embeddingJSON json.RawMessage
+			embeddingText string
 		)
-		if err := rows.Scan(&id, &embeddingJSON); err != nil {
+		if err := rows.Scan(&id, &embeddingText); err != nil {
 			return nil, fmt.Errorf("scan compare issue: %w", err)
 		}
-		embedding, err := unmarshalJSONB[[]float64](embeddingJSON)
+		embedding, err := parseEmbeddingText(embeddingText)
 		if err != nil {
 			return nil, fmt.Errorf("decode compare issue embedding for %q: %w", id, err)
 		}
@@ -494,7 +494,7 @@ func (s *PostgresStore) ListIssueDetailReferences(ctx context.Context, ids []str
 func (s *PostgresStore) LoadMapProjectionData(ctx context.Context) ([]MapProjectionIssue, []Tag, error) {
 	rows, err := s.db.QueryContext(
 		ctx,
-		`SELECT id, raw, tags_json, status, tag_scores_json, embedding_json, assigned_to
+		`SELECT id, raw, tags_json, status, tag_scores_json, COALESCE(embedding_vector::text, ''), assigned_to
 		 FROM issues
 		 ORDER BY created_at_unix_nano DESC, id ASC`,
 	)
@@ -511,10 +511,10 @@ func (s *PostgresStore) LoadMapProjectionData(ctx context.Context) ([]MapProject
 			tagsJSON      json.RawMessage
 			status        string
 			tagScoresJSON json.RawMessage
-			embeddingJSON json.RawMessage
+			embeddingText string
 			assignedTo    string
 		)
-		if err := rows.Scan(&id, &raw, &tagsJSON, &status, &tagScoresJSON, &embeddingJSON, &assignedTo); err != nil {
+		if err := rows.Scan(&id, &raw, &tagsJSON, &status, &tagScoresJSON, &embeddingText, &assignedTo); err != nil {
 			return nil, nil, fmt.Errorf("scan issue for map projection: %w", err)
 		}
 
@@ -526,7 +526,7 @@ func (s *PostgresStore) LoadMapProjectionData(ctx context.Context) ([]MapProject
 		if err != nil {
 			return nil, nil, fmt.Errorf("decode tag scores for %q: %w", id, err)
 		}
-		embedding, err := unmarshalJSONB[[]float64](embeddingJSON)
+		embedding, err := parseEmbeddingText(embeddingText)
 		if err != nil {
 			return nil, nil, fmt.Errorf("decode embedding for %q: %w", id, err)
 		}
@@ -792,13 +792,10 @@ func (s *PostgresStore) Replace(ctx context.Context, next []Issue) error {
 			ClosedAtUnixNano:  record.ClosedAtUnixNano,
 			ClosedBy:          record.ClosedBy,
 			TagScoresJson:     record.TagScoresJSON,
-			EmbeddingJson:     record.EmbeddingJSON,
+			Column10:          record.EmbeddingVector,
 			AssignedTo:        record.AssignedTo,
 		}); err != nil {
 			return fmt.Errorf("replace issue %q: %w", issue.ID, err)
-		}
-		if err := syncIssueEmbeddingVector(ctx, tx, record.ID, issue.Embedding); err != nil {
-			return err
 		}
 
 		if err := insertIssuePosts(ctx, qtx, initialDiscussion(issue)); err != nil {
@@ -867,7 +864,7 @@ func (s *PostgresStore) UpsertTags(ctx context.Context, tags []Tag) error {
 			Name:              record.Name,
 			Description:       record.Description,
 			CreatedAtUnixNano: record.CreatedAtUnixNano,
-			EmbeddingJson:     record.EmbeddingJSON,
+			Column4:           record.EmbeddingVector,
 		}); err != nil {
 			return fmt.Errorf("upsert tag %q: %w", tag.Name, err)
 		}
@@ -943,7 +940,7 @@ type issueRecord struct {
 	ClosedReason      string
 	ClosedReasonNote  string
 	TagScoresJSON     json.RawMessage
-	EmbeddingJSON     json.RawMessage
+	EmbeddingVector   any
 	AssignedTo        string
 }
 
@@ -951,7 +948,28 @@ type tagRecord struct {
 	Name              string
 	Description       string
 	CreatedAtUnixNano int64
-	EmbeddingJSON     json.RawMessage
+	EmbeddingVector   any
+}
+
+// issueQueryRow is a common intermediate type for all issue query row types
+// that return embedding_vector::text AS embedding_text.
+type issueQueryRow struct {
+	ID                       string
+	Raw                      string
+	TagsJson                 json.RawMessage
+	CreatedBy                string
+	CreatedAtUnixNano        int64
+	Status                   string
+	ClosedAtUnixNano         int64
+	ClosedBy                 string
+	ClosedReason             string
+	ClosedReasonNote         string
+	TagScoresJson            json.RawMessage
+	EmbeddingText            any
+	AssignedTo               string
+	EnrichmentStatus         string
+	EnrichmentError          string
+	EnrichmentTargetSequence int64
 }
 
 type issueQuerier interface {
@@ -1067,9 +1085,9 @@ func recordFromIssue(issue Issue) (issueRecord, error) {
 	if err != nil {
 		return issueRecord{}, fmt.Errorf("marshal issue tag scores: %w", err)
 	}
-	embeddingJSON, err := marshalJSONB(issue.Embedding, []float64{})
+	embeddingVector, err := formatVectorLiteral(issue.Embedding)
 	if err != nil {
-		return issueRecord{}, fmt.Errorf("marshal issue embedding: %w", err)
+		return issueRecord{}, fmt.Errorf("format issue embedding vector: %w", err)
 	}
 
 	return issueRecord{
@@ -1084,12 +1102,12 @@ func recordFromIssue(issue Issue) (issueRecord, error) {
 		ClosedReason:      issue.ClosedReason,
 		ClosedReasonNote:  issue.ClosedReasonNote,
 		TagScoresJSON:     tagScoresJSON,
-		EmbeddingJSON:     embeddingJSON,
+		EmbeddingVector:   embeddingVector,
 		AssignedTo:        strings.TrimSpace(issue.AssignedTo),
 	}, nil
 }
 
-func issueFromQuery(row issuesdb.Issue) (Issue, error) {
+func issueFromQuery(row issueQueryRow) (Issue, error) {
 	tags, err := unmarshalJSONB[[]string](row.TagsJson)
 	if err != nil {
 		return Issue{}, fmt.Errorf("decode tags for %q: %w", row.ID, err)
@@ -1098,7 +1116,8 @@ func issueFromQuery(row issuesdb.Issue) (Issue, error) {
 	if err != nil {
 		return Issue{}, fmt.Errorf("decode tag scores for %q: %w", row.ID, err)
 	}
-	embedding, err := unmarshalJSONB[[]float64](row.EmbeddingJson)
+	embeddingStr, _ := row.EmbeddingText.(string)
+	embedding, err := parseEmbeddingText(embeddingStr)
 	if err != nil {
 		return Issue{}, fmt.Errorf("decode embedding for %q: %w", row.ID, err)
 	}
@@ -1205,8 +1224,8 @@ func applyIssueEnrichmentStates(items []Issue, states map[string]issueEnrichment
 	return items
 }
 
-func issueModelFromGetIssueRow(row issuesdb.GetIssueRow) issuesdb.Issue {
-	return issuesdb.Issue{
+func issueModelFromGetIssueRow(row issuesdb.GetIssueRow) issueQueryRow {
+	return issueQueryRow{
 		ID:                       row.ID,
 		Raw:                      row.Raw,
 		TagsJson:                 row.TagsJson,
@@ -1218,7 +1237,7 @@ func issueModelFromGetIssueRow(row issuesdb.GetIssueRow) issuesdb.Issue {
 		ClosedReason:             row.ClosedReason,
 		ClosedReasonNote:         row.ClosedReasonNote,
 		TagScoresJson:            row.TagScoresJson,
-		EmbeddingJson:            row.EmbeddingJson,
+		EmbeddingText:            row.EmbeddingText,
 		AssignedTo:               row.AssignedTo,
 		EnrichmentStatus:         row.EnrichmentStatus,
 		EnrichmentError:          row.EnrichmentError,
@@ -1226,8 +1245,8 @@ func issueModelFromGetIssueRow(row issuesdb.GetIssueRow) issuesdb.Issue {
 	}
 }
 
-func issueModelFromListIssuesRow(row issuesdb.ListIssuesRow) issuesdb.Issue {
-	return issuesdb.Issue{
+func issueModelFromListIssuesRow(row issuesdb.ListIssuesRow) issueQueryRow {
+	return issueQueryRow{
 		ID:                row.ID,
 		Raw:               row.Raw,
 		TagsJson:          row.TagsJson,
@@ -1239,13 +1258,13 @@ func issueModelFromListIssuesRow(row issuesdb.ListIssuesRow) issuesdb.Issue {
 		ClosedReason:      row.ClosedReason,
 		ClosedReasonNote:  row.ClosedReasonNote,
 		TagScoresJson:     row.TagScoresJson,
-		EmbeddingJson:     row.EmbeddingJson,
+		EmbeddingText:     row.EmbeddingText,
 		AssignedTo:        row.AssignedTo,
 	}
 }
 
-func issueModelFromListIssuesFilteredRow(row issuesdb.ListIssuesFilteredRow) issuesdb.Issue {
-	return issuesdb.Issue{
+func issueModelFromListIssuesFilteredRow(row issuesdb.ListIssuesFilteredRow) issueQueryRow {
+	return issueQueryRow{
 		ID:                row.ID,
 		Raw:               row.Raw,
 		TagsJson:          row.TagsJson,
@@ -1257,13 +1276,13 @@ func issueModelFromListIssuesFilteredRow(row issuesdb.ListIssuesFilteredRow) iss
 		ClosedReason:      row.ClosedReason,
 		ClosedReasonNote:  row.ClosedReasonNote,
 		TagScoresJson:     row.TagScoresJson,
-		EmbeddingJson:     row.EmbeddingJson,
+		EmbeddingText:     row.EmbeddingText,
 		AssignedTo:        row.AssignedTo,
 	}
 }
 
-func issueModelFromSearchIssuesByEmbeddingRow(row issuesdb.SearchIssuesByEmbeddingRow) issuesdb.Issue {
-	return issuesdb.Issue{
+func issueModelFromSearchIssuesByEmbeddingRow(row issuesdb.SearchIssuesByEmbeddingRow) issueQueryRow {
+	return issueQueryRow{
 		ID:                row.ID,
 		Raw:               row.Raw,
 		TagsJson:          row.TagsJson,
@@ -1275,7 +1294,7 @@ func issueModelFromSearchIssuesByEmbeddingRow(row issuesdb.SearchIssuesByEmbeddi
 		ClosedReason:      row.ClosedReason,
 		ClosedReasonNote:  row.ClosedReasonNote,
 		TagScoresJson:     row.TagScoresJson,
-		EmbeddingJson:     row.EmbeddingJson,
+		EmbeddingText:     row.EmbeddingText,
 		AssignedTo:        row.AssignedTo,
 	}
 }
@@ -1439,9 +1458,9 @@ func listIssueDetailReferences(ctx context.Context, q issueQuerier, ids []string
 }
 
 func recordFromTag(tag Tag) (tagRecord, error) {
-	embeddingJSON, err := marshalJSONB(tag.Embedding, []float64{})
+	embeddingVector, err := formatVectorLiteral(tag.Embedding)
 	if err != nil {
-		return tagRecord{}, fmt.Errorf("marshal tag embedding: %w", err)
+		return tagRecord{}, fmt.Errorf("format tag embedding vector: %w", err)
 	}
 
 	createdAt := tag.CreatedAt.UTC()
@@ -1453,12 +1472,13 @@ func recordFromTag(tag Tag) (tagRecord, error) {
 		Name:              sanitizeTagName(tag.Name),
 		Description:       strings.TrimSpace(tag.Description),
 		CreatedAtUnixNano: createdAt.UnixNano(),
-		EmbeddingJSON:     embeddingJSON,
+		EmbeddingVector:   embeddingVector,
 	}, nil
 }
 
-func tagFromQuery(row issuesdb.Tag) (Tag, error) {
-	embedding, err := unmarshalJSONB[[]float64](row.EmbeddingJson)
+func tagFromQuery(row issuesdb.ListTagsRow) (Tag, error) {
+	embeddingStr, _ := row.EmbeddingText.(string)
+	embedding, err := parseEmbeddingText(embeddingStr)
 	if err != nil {
 		return Tag{}, fmt.Errorf("decode embedding for tag %q: %w", row.Name, err)
 	}

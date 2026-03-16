@@ -405,33 +405,19 @@ func TestPostgresStoreInitializesPgvectorIssueEmbeddingSchema(t *testing.T) {
 	}
 }
 
-func TestPostgresStoreBackfillsIssueEmbeddingVectorFromJSON(t *testing.T) {
+func TestPostgresStoreEmbeddingVectorRoundTrip(t *testing.T) {
 	store := newPostgresTestStore(t)
 	ctx := context.Background()
 
-	id := "issue-backfill-vector"
-	embedding := `[0.11,0.22,0.33]`
-	if _, err := store.DB().ExecContext(
-		ctx,
-		`INSERT INTO issues (
-			id, raw, tags_json, created_by, created_at_unix_nano, status, closed_at_unix_nano, closed_by,
-			tag_scores_json, embedding_json, embedding_vector, assigned_to
-		) VALUES (
-			$1, 'legacy issue', '[]'::jsonb, 'Casey', 1, 'open', 0, '',
-			'[]'::jsonb, $2::jsonb, NULL, ''
-		)`,
-		id,
-		embedding,
-	); err != nil {
-		t.Fatalf("insert legacy issue row: %v", err)
-	}
-
-	if _, err := store.DB().ExecContext(ctx, "UPDATE schema_migrations SET version = 6, dirty = false"); err != nil {
-		t.Fatalf("set schema migration version to 6: %v", err)
-	}
-
-	if err := store.runMigrations(ctx); err != nil {
-		t.Fatalf("rerun migrations for backfill: %v", err)
+	id := "issue-embedding-rt"
+	embedding := []float64{0.11, 0.22, 0.33}
+	issue := BuildNewIssue(id, CreateInput{
+		Raw:       "embedding round-trip",
+		CreatedBy: "Casey",
+		Embedding: embedding,
+	})
+	if err := store.SaveIssue(ctx, issue); err != nil {
+		t.Fatalf("save issue: %v", err)
 	}
 
 	assertIssueEmbeddingVectorText(t, store, id, "[0.11,0.22,0.33]")

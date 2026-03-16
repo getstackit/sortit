@@ -15,7 +15,7 @@ UPDATE issues
 SET raw = $1,
     tags_json = $2,
     tag_scores_json = $3,
-    embedding_json = $4
+    embedding_vector = $4::vector
 WHERE id = $5
 `
 
@@ -23,7 +23,7 @@ type UpdateIssueRefinementParams struct {
 	Raw           string
 	TagsJson      json.RawMessage
 	TagScoresJson json.RawMessage
-	EmbeddingJson json.RawMessage
+	Column4       interface{}
 	ID            string
 }
 
@@ -32,7 +32,7 @@ func (q *Queries) UpdateIssueRefinement(ctx context.Context, arg UpdateIssueRefi
 		arg.Raw,
 		arg.TagsJson,
 		arg.TagScoresJson,
-		arg.EmbeddingJson,
+		arg.Column4,
 		arg.ID,
 	)
 	return err

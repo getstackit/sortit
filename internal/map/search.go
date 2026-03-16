@@ -5,6 +5,7 @@ import (
 	"math"
 	"slices"
 	"strings"
+	"time"
 
 	"splat/internal/domain"
 	"splat/internal/issues"
@@ -108,6 +109,7 @@ func SearchFromQueryWithTags(
 	tagCorrelationBoost := queryMatchesTagNames(queryLower, tagNames)
 	tagSpecificity := buildTagSpecificityMap(storeTags)
 	genericQuery := queryMatchesGenericTag(queryLower, tagSpecificity)
+	now := time.Now().UTC()
 
 	related := make([]RelatedIssue, 0, len(storeIssues))
 	rawCombined := make(map[string]float64, len(storeIssues))
@@ -123,6 +125,7 @@ func SearchFromQueryWithTags(
 		factor := vectors.CosineSimilarity(queryFactor, factorVectors[candidate.ID])
 		textMatch := textMatchScore(queryLower, candidate.Raw)
 		combined := blendScores(semantic, factor, textMatch, tagCorrelationBoost)
+		combined *= issues.IssueFreshnessWeight(candidate, now)
 		combined *= 1 + searchVelocityBoost*issueVelocityScore(candidate)
 		combined -= issueSpecificityPenalty(candidateSummary.Tags, tagSpecificity)
 		if genericQuery {

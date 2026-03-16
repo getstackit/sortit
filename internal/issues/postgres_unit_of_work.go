@@ -114,15 +114,12 @@ func (u *PostgresUnitOfWork) SaveIssue(ctx context.Context, issue Issue) error {
 		ClosedAtUnixNano:  record.ClosedAtUnixNano,
 		ClosedBy:          record.ClosedBy,
 		TagScoresJson:     record.TagScoresJSON,
-		EmbeddingJson:     record.EmbeddingJSON,
+		Column10:          record.EmbeddingVector,
 		AssignedTo:        record.AssignedTo,
 	}); err != nil {
 		return fmt.Errorf("save issue: %w", err)
 	}
 	if err := updateIssueEnrichmentState(ctx, u.tx, record.ID, issueFieldUpdateForIssue(issue)); err != nil {
-		return err
-	}
-	if err := syncIssueEmbeddingVector(ctx, u.tx, record.ID, issue.Embedding); err != nil {
 		return err
 	}
 	if err := insertIssuePosts(ctx, u.queries, issue.Discussion); err != nil {
@@ -181,9 +178,6 @@ func (u *PostgresUnitOfWork) UpdateIssueFields(ctx context.Context, id string, f
 		}
 		if err := u.queries.UpdateIssueRefinement(ctx, record); err != nil {
 			return fmt.Errorf("update issue refinement fields: %w", err)
-		}
-		if err := syncIssueEmbeddingVector(ctx, u.tx, id, fields.Embedding); err != nil {
-			return err
 		}
 		if snapshot, ok := issueSnapshotFromFieldUpdate(id, fields); ok {
 			if err := saveIssueSnapshot(ctx, u.tx, snapshot); err != nil {

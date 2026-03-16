@@ -1,8 +1,5 @@
 CREATE EXTENSION IF NOT EXISTS vector;
 
-CREATE SEQUENCE IF NOT EXISTS issue_seq START 1;
-CREATE SEQUENCE IF NOT EXISTS issue_operation_seq START 1;
-
 CREATE TABLE issues (
     id TEXT PRIMARY KEY,
     raw TEXT NOT NULL,
@@ -15,7 +12,6 @@ CREATE TABLE issues (
     closed_reason TEXT NOT NULL DEFAULT '',
     closed_reason_note TEXT NOT NULL DEFAULT '',
     tag_scores_json JSONB NOT NULL DEFAULT '[]',
-    embedding_json JSONB NOT NULL DEFAULT '[]',
     embedding_vector vector,
     assigned_to TEXT NOT NULL DEFAULT '',
     enrichment_status TEXT NOT NULL DEFAULT 'complete',
@@ -137,7 +133,6 @@ CREATE TABLE tags (
     name TEXT PRIMARY KEY,
     description TEXT NOT NULL,
     created_at_unix_nano BIGINT NOT NULL,
-    embedding_json JSONB NOT NULL DEFAULT '[]',
     specificity REAL,
     specificity_llm REAL,
     specificity_embedding REAL,

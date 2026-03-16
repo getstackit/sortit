@@ -275,6 +275,71 @@ func TestUnifiedSearchBoostsRecentVelocity(t *testing.T) {
 	}
 }
 
+func TestUnifiedSearchPrefersFreshIssueWhenBaseMatchIsEqual(t *testing.T) {
+	now := time.Now().UTC()
+	store := newPostgresIssueStore(t, nil)
+	if err := store.Replace(context.Background(), []issues.Issue{
+		{
+			ID:        "issue-stale",
+			Raw:       "Safari export fails when generating a PDF attachment",
+			CreatedBy: "Casey",
+			CreatedAt: now.Add(-300 * 24 * time.Hour),
+			Status:    issues.StatusOpen,
+			TagScores: []issues.TagRelevance{{Tag: "export", Relevance: 0.9}},
+			Embedding: []float64{1, 0, 0},
+		},
+		{
+			ID:        "issue-fresh",
+			Raw:       "Safari export fails when generating a PDF attachment",
+			CreatedBy: "Jordan",
+			CreatedAt: now.Add(-24 * time.Hour),
+			Status:    issues.StatusOpen,
+			TagScores: []issues.TagRelevance{{Tag: "export", Relevance: 0.9}},
+			Embedding: []float64{1, 0, 0},
+		},
+	}); err != nil {
+		t.Fatalf("seed issues: %v", err)
+	}
+	if err := store.UpsertTags(context.Background(), []issues.Tag{
+		{Name: "export", Embedding: []float64{1, 0, 0}},
+	}); err != nil {
+		t.Fatalf("seed tags: %v", err)
+	}
+
+	server := NewServer(ServerConfig{
+		CORSOrigins: []string{"http://localhost:3000"},
+		APIPrefixes: []string{"/api"},
+		Analyzer: ai.NewAnalyzer(&fakeTagger{
+			scores: []ai.TagScore{{Tag: "export", Relevance: 0.98}},
+		}, &fakeEmbedder{
+			result: ai.EmbeddingResult{
+				Vector: []float32{1, 0, 0},
+				Info:   ai.EmbeddingInfo{Dimensions: 3, Preview: []float32{1, 0, 0}, ChunkCount: 1, EstimatedTokenCount: 3, PooledFromChunks: false},
+			},
+		}),
+		IssueStore: store,
+	})
+
+	req := httptest.NewRequest(http.MethodGet, "/api/ui/search?q=export%20pdf%20attachment&limit=2", nil)
+	rec := httptest.NewRecorder()
+	server.Handler().ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200 for unified search, got %d", rec.Code)
+	}
+
+	var payload queries.SearchUnifiedResponse
+	if err := json.NewDecoder(rec.Body).Decode(&payload); err != nil {
+		t.Fatalf("decode unified search response: %v", err)
+	}
+	if len(payload.Issues) != 2 {
+		t.Fatalf("expected 2 unified search issues, got %#v", payload.Issues)
+	}
+	if payload.Issues[0].ID != "issue-fresh" {
+		t.Fatalf("expected fresh issue first, got %#v", payload.Issues)
+	}
+}
+
 func equalStrings(got, want []string) bool {
 	if len(got) != len(want) {
 		return false

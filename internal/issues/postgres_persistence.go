@@ -2,6 +2,7 @@ package issues
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"math"
 	"strconv"
@@ -26,15 +27,12 @@ func (s *PostgresStore) SaveIssue(ctx context.Context, issue Issue) error {
 		ClosedAtUnixNano:  record.ClosedAtUnixNano,
 		ClosedBy:          record.ClosedBy,
 		TagScoresJson:     record.TagScoresJSON,
-		EmbeddingJson:     record.EmbeddingJSON,
+		Column10:          record.EmbeddingVector,
 		AssignedTo:        record.AssignedTo,
 	}); err != nil {
 		return fmt.Errorf("save issue: %w", err)
 	}
 	if err := updateIssueEnrichmentState(ctx, s.db, record.ID, issueFieldUpdateForIssue(issue)); err != nil {
-		return err
-	}
-	if err := syncIssueEmbeddingVector(ctx, s.db, record.ID, issue.Embedding); err != nil {
 		return err
 	}
 
@@ -98,9 +96,6 @@ func (s *PostgresStore) UpdateIssueFields(ctx context.Context, id string, fields
 		if err := s.queries.UpdateIssueRefinement(ctx, record); err != nil {
 			return fmt.Errorf("update issue refinement fields: %w", err)
 		}
-		if err := syncIssueEmbeddingVector(ctx, s.db, id, fields.Embedding); err != nil {
-			return err
-		}
 		if snapshot, ok := issueSnapshotFromFieldUpdate(id, fields); ok {
 			if err := saveIssueSnapshot(ctx, s.db, snapshot); err != nil {
 				return err
@@ -142,38 +137,18 @@ func buildRefinementRecord(id string, fields IssueFieldUpdate) (issuesdb.UpdateI
 	if err != nil {
 		return issuesdb.UpdateIssueRefinementParams{}, fmt.Errorf("marshal tag scores: %w", err)
 	}
-	embedding := fields.Embedding
-	if embedding == nil {
-		embedding = []float64{}
-	}
-	embeddingJSON, err := marshalJSONB(embedding, []float64{})
+	embeddingVector, err := formatVectorLiteral(fields.Embedding)
 	if err != nil {
-		return issuesdb.UpdateIssueRefinementParams{}, fmt.Errorf("marshal embedding: %w", err)
+		return issuesdb.UpdateIssueRefinementParams{}, fmt.Errorf("format embedding vector: %w", err)
 	}
 
 	return issuesdb.UpdateIssueRefinementParams{
 		Raw:           *fields.Raw,
 		TagsJson:      tagsJSON,
 		TagScoresJson: tagScoresJSON,
-		EmbeddingJson: embeddingJSON,
+		Column4:       embeddingVector,
 		ID:            id,
 	}, nil
-}
-
-func syncIssueEmbeddingVector(ctx context.Context, db issuesdb.DBTX, issueID string, embedding []float64) error {
-	vectorLiteral, err := formatVectorLiteral(embedding)
-	if err != nil {
-		return fmt.Errorf("format embedding vector for issue %q: %w", issueID, err)
-	}
-	if _, err := db.ExecContext(
-		ctx,
-		`UPDATE issues SET embedding_vector = $1::vector WHERE id = $2`,
-		vectorLiteral,
-		issueID,
-	); err != nil {
-		return fmt.Errorf("sync embedding vector for issue %q: %w", issueID, err)
-	}
-	return nil
 }
 
 func updateIssueEnrichmentState(ctx context.Context, db issuesdb.DBTX, issueID string, fields IssueFieldUpdate) error {
@@ -233,6 +208,20 @@ func formatVectorLiteral(values []float64) (any, error) {
 	}
 	builder.WriteByte(']')
 	return builder.String(), nil
+}
+
+// parseEmbeddingText parses the pgvector ::text output format "[0.1,0.2,...]"
+// back into a float64 slice. Returns nil for empty strings.
+func parseEmbeddingText(text string) ([]float64, error) {
+	text = strings.TrimSpace(text)
+	if text == "" {
+		return nil, nil
+	}
+	var result []float64
+	if err := json.Unmarshal([]byte(text), &result); err != nil {
+		return nil, fmt.Errorf("parse embedding text: %w", err)
+	}
+	return result, nil
 }
 
 func derefString(p *string) string {

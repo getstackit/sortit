@@ -48,7 +48,6 @@ type Issue struct {
 	ClosedReason             string
 	ClosedReasonNote         string
 	TagScoresJson            json.RawMessage
-	EmbeddingJson            json.RawMessage
 	EmbeddingVector          interface{}
 	AssignedTo               string
 	EnrichmentStatus         string
@@ -123,7 +122,6 @@ type Tag struct {
 	Name                  string
 	Description           string
 	CreatedAtUnixNano     int64
-	EmbeddingJson         json.RawMessage
 	Specificity           sql.NullFloat64
 	SpecificityLlm        sql.NullFloat64
 	SpecificityEmbedding  sql.NullFloat64
