@@ -12,6 +12,8 @@ CREATE TABLE issues (
     status TEXT NOT NULL,
     closed_at_unix_nano BIGINT NOT NULL,
     closed_by TEXT NOT NULL,
+    closed_reason TEXT NOT NULL DEFAULT '',
+    closed_reason_note TEXT NOT NULL DEFAULT '',
     tag_scores_json JSONB NOT NULL DEFAULT '[]',
     embedding_json JSONB NOT NULL DEFAULT '[]',
     embedding_vector vector,

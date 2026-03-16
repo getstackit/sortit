@@ -38,6 +38,7 @@ const navItems = [
   { label: "Activity", href: "/activity" },
   { label: "Tag Map", href: "/tags" },
   { label: "People", href: "/people" },
+  { label: "Analytics", href: "/analytics" },
   { label: "Settings", href: "/settings" },
   { label: "Debug", href: "/debug" },
 ];

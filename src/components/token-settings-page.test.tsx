@@ -134,7 +134,12 @@ describe("TokenSettingsPage", () => {
       expect(screen.getByText("splat_abc...")).toBeInTheDocument();
     });
 
+    // Click Revoke on the token row to open confirmation dialog
     await user.click(screen.getByText("Revoke"));
+
+    // Confirm in the dialog (second "Revoke" button)
+    const revokeButtons = screen.getAllByText("Revoke");
+    await user.click(revokeButtons[revokeButtons.length - 1]);
 
     expect(mockedRevokeToken).toHaveBeenCalledWith("tok-1");
 
@@ -172,7 +177,12 @@ describe("TokenSettingsPage", () => {
       expect(screen.getByText("splat_abc...")).toBeInTheDocument();
     });
 
+    // Click Revoke on the token row to open confirmation dialog
     await user.click(screen.getByText("Revoke"));
+
+    // Confirm in the dialog (second "Revoke" button)
+    const revokeButtons = screen.getAllByText("Revoke");
+    await user.click(revokeButtons[revokeButtons.length - 1]);
 
     await waitFor(() => {
       expect(screen.getByText("Revoke failed")).toBeInTheDocument();

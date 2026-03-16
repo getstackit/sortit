@@ -42,6 +42,8 @@ type Issue struct {
 	Status                   IssueStatus           `json:"status"`
 	ClosedAt                 *time.Time            `json:"closedAt"`
 	ClosedBy                 string                `json:"closedBy,omitempty"`
+	ClosedReason             string                `json:"closedReason,omitempty"`
+	ClosedReasonNote         string                `json:"closedReasonNote,omitempty"`
 	AssignedTo               string                `json:"assignedTo,omitempty"`
 	Discussion               []IssuePost           `json:"discussion,omitempty"`
 	Links                    []IssueLink           `json:"links,omitempty"`
@@ -351,10 +353,27 @@ type IssueFieldUpdate struct {
 	Status                   *IssueStatus
 	ClosedAt                 *time.Time
 	ClosedBy                 *string
+	ClosedReason             *string
+	ClosedReasonNote         *string
 	AssignedTo               *string
 	EnrichmentStatus         *IssueEnrichmentStatus
 	EnrichmentError          *string
 	EnrichmentTargetSequence *int
+}
+
+var validCloseReasons = map[string]bool{
+	"fixed": true, "stale": true, "duplicate": true,
+	"wont_fix": true, "by_design": true,
+}
+
+func ValidateCloseReason(reason string) error {
+	if reason == "" {
+		return nil
+	}
+	if !validCloseReasons[reason] {
+		return fmt.Errorf("invalid close reason: %q", reason)
+	}
+	return nil
 }
 
 func DefaultTags() []Tag {
@@ -712,6 +731,8 @@ func cloneIssues(input []Issue) []Issue {
 			Status:                   normalizeIssueStatus(issue.Status),
 			ClosedAt:                 cloneTimePtr(issue.ClosedAt),
 			ClosedBy:                 issue.ClosedBy,
+			ClosedReason:             issue.ClosedReason,
+			ClosedReasonNote:         issue.ClosedReasonNote,
 			AssignedTo:               issue.AssignedTo,
 			Discussion:               cloneIssuePosts(issue.Discussion),
 			Links:                    cloneIssueLinks(issue.Links),

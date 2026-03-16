@@ -32,8 +32,8 @@ func NormalizeIssueLinkType(value IssueLinkType) IssueLinkType {
 }
 
 // CloseIssuePost returns the activity post body for closing an issue.
-func CloseIssuePost(closedBy string) string {
-	return closeIssuePost(closedBy)
+func CloseIssuePost(closedBy, reason, reasonNote string) string {
+	return closeIssuePost(closedBy, reason, reasonNote)
 }
 
 // ReopenIssuePost returns the activity post body for reopening an issue.

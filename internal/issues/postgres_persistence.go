@@ -68,6 +68,8 @@ func (s *PostgresStore) UpdateIssueFields(ctx context.Context, id string, fields
 			ID:               id,
 			ClosedAtUnixNano: fields.ClosedAt.UTC().UnixNano(),
 			ClosedBy:         *fields.ClosedBy,
+			ClosedReason:     derefString(fields.ClosedReason),
+			ClosedReasonNote: derefString(fields.ClosedReasonNote),
 		}); err != nil {
 			return fmt.Errorf("close issue fields: %w", err)
 		}
@@ -226,6 +228,13 @@ func formatVectorLiteral(values []float64) (any, error) {
 	}
 	builder.WriteByte(']')
 	return builder.String(), nil
+}
+
+func derefString(p *string) string {
+	if p == nil {
+		return ""
+	}
+	return *p
 }
 
 func (s *PostgresStore) MergeTags(ctx context.Context, canonical string, aliases []string) error {

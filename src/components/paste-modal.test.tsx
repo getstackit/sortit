@@ -43,7 +43,7 @@ describe("PasteModal", () => {
       />
     );
 
-    await userEvent.type(screen.getByPlaceholderText("paste anything..."), "Crash on export");
+    await userEvent.type(screen.getByPlaceholderText("paste anything... (markdown supported)"), "Crash on export");
     await userEvent.click(screen.getByRole("button", { name: "Submit" }));
 
     await waitFor(() => {

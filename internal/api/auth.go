@@ -15,6 +15,10 @@ type authSessionResponse struct {
 	User auth.User `json:"user"`
 }
 
+type createAPITokenRequest struct {
+	Name string `json:"name"`
+}
+
 type createAPITokenResponse struct {
 	Token    string        `json:"token"`
 	Metadata auth.APIToken `json:"metadata"`
@@ -139,7 +143,12 @@ func (s *Server) handleAuthTokens(w http.ResponseWriter, r *http.Request) {
 		}
 		writeJSON(w, http.StatusOK, apiTokensResponse{Tokens: tokens})
 	case http.MethodPost:
-		token, rawToken, err := s.authService.CreateAPIToken(r.Context(), principal)
+		request, err := decodeJSON[createAPITokenRequest](r)
+		if err != nil {
+			writeError(w, http.StatusBadRequest, err.Error())
+			return
+		}
+		token, rawToken, err := s.authService.CreateAPIToken(r.Context(), principal, strings.TrimSpace(request.Name))
 		if err != nil {
 			writeInternalError(w, r, "failed to create api token", err)
 			return

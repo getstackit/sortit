@@ -15,9 +15,11 @@ export type SessionResponse = {
 
 export type APITokenRecord = {
   id: string;
+  name: string;
   tokenPrefix: string;
   createdAt: string;
   revokedAt?: string | null;
+  lastUsedAt?: string | null;
 };
 
 type APITokensResponse = {
@@ -62,10 +64,10 @@ export async function listAPITokens(): Promise<APITokenRecord[]> {
   return payload.tokens ?? [];
 }
 
-export function createAPIToken() {
-  return postJSON<CreateAPITokenResponse, Record<string, never>>(
+export function createAPIToken(name: string) {
+  return postJSON<CreateAPITokenResponse, { name: string }>(
     uiAPIURL("/auth/tokens"),
-    {}
+    { name }
   );
 }
 

@@ -11,7 +11,7 @@ import (
 )
 
 const getIssue = `-- name: GetIssue :one
-SELECT id, raw, tags_json, created_by, created_at_unix_nano, status, closed_at_unix_nano, closed_by, tag_scores_json, embedding_json, assigned_to, enrichment_status, enrichment_error, enrichment_target_sequence
+SELECT id, raw, tags_json, created_by, created_at_unix_nano, status, closed_at_unix_nano, closed_by, closed_reason, closed_reason_note, tag_scores_json, embedding_json, assigned_to, enrichment_status, enrichment_error, enrichment_target_sequence
 FROM issues
 WHERE id = $1
 `
@@ -25,6 +25,8 @@ type GetIssueRow struct {
 	Status                   string
 	ClosedAtUnixNano         int64
 	ClosedBy                 string
+	ClosedReason             string
+	ClosedReasonNote         string
 	TagScoresJson            json.RawMessage
 	EmbeddingJson            json.RawMessage
 	AssignedTo               string
@@ -45,6 +47,8 @@ func (q *Queries) GetIssue(ctx context.Context, id string) (GetIssueRow, error) 
 		&i.Status,
 		&i.ClosedAtUnixNano,
 		&i.ClosedBy,
+		&i.ClosedReason,
+		&i.ClosedReasonNote,
 		&i.TagScoresJson,
 		&i.EmbeddingJson,
 		&i.AssignedTo,

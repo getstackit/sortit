@@ -182,7 +182,7 @@ func (s *Service) CLILoginExists(id string) error {
 }
 
 func (s *Service) CompleteCLILogin(ctx context.Context, id string, user User) (CLILoginResult, error) {
-	metadata, rawToken, err := s.store.CreateAPIToken(ctx, user.ID)
+	metadata, rawToken, err := s.store.CreateAPIToken(ctx, user.ID, "CLI login")
 	if err != nil {
 		return CLILoginResult{}, err
 	}

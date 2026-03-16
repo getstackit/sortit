@@ -1,4 +1,3 @@
-import type { ReactNode } from "react";
 import { render, screen } from "@testing-library/react";
 import { usePathname } from "next/navigation";
 import { AuthGate } from "@/components/auth-gate";

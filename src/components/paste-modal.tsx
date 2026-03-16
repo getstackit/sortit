@@ -77,7 +77,7 @@ export function PasteModal({
           <DialogTitle>Paste anything</DialogTitle>
           <DialogDescription>
             Drop in text, a URL, an error log &mdash; we&apos;ll turn it into an issue,
-            and this becomes the first discussion post.
+            and this becomes the first discussion post. Markdown is supported.
           </DialogDescription>
         </DialogHeader>
 
@@ -93,7 +93,7 @@ export function PasteModal({
               void submit();
             }
           }}
-          placeholder="paste anything..."
+          placeholder="paste anything... (markdown supported)"
           disabled={submitting}
           className="min-h-[100px] resize-none"
           rows={4}

@@ -142,7 +142,7 @@ func (s *Store) LookupSession(ctx context.Context, rawToken string) (Principal, 
 	)
 }
 
-func (s *Store) CreateAPIToken(ctx context.Context, userID string) (APIToken, string, error) {
+func (s *Store) CreateAPIToken(ctx context.Context, userID, name string) (APIToken, string, error) {
 	rawToken, tokenHash, err := newSecretToken("spt")
 	if err != nil {
 		return APIToken{}, "", err
@@ -151,18 +151,20 @@ func (s *Store) CreateAPIToken(ctx context.Context, userID string) (APIToken, st
 	createdAt := time.Now().UTC()
 	token := APIToken{
 		ID:          newID("tok"),
+		Name:        name,
 		TokenPrefix: tokenPrefix(rawToken),
 		CreatedAt:   createdAt,
 	}
 
 	if _, err := s.db.ExecContext(
 		ctx,
-		`INSERT INTO api_tokens (id, user_id, token_hash, token_prefix, created_at_unix_nano, revoked_at_unix_nano)
-		 VALUES ($1, $2, $3, $4, $5, 0)`,
+		`INSERT INTO api_tokens (id, user_id, token_hash, token_prefix, name, created_at_unix_nano, revoked_at_unix_nano)
+		 VALUES ($1, $2, $3, $4, $5, $6, 0)`,
 		token.ID,
 		userID,
 		tokenHash,
 		token.TokenPrefix,
+		name,
 		createdAt.UnixNano(),
 	); err != nil {
 		return APIToken{}, "", fmt.Errorf("insert api token: %w", err)
@@ -174,7 +176,7 @@ func (s *Store) CreateAPIToken(ctx context.Context, userID string) (APIToken, st
 func (s *Store) ListAPITokens(ctx context.Context, userID string) ([]APIToken, error) {
 	rows, err := s.db.QueryContext(
 		ctx,
-		`SELECT id, token_prefix, created_at_unix_nano, revoked_at_unix_nano
+		`SELECT id, name, token_prefix, created_at_unix_nano, revoked_at_unix_nano, last_used_at_unix_nano
 		 FROM api_tokens
 		 WHERE user_id = $1
 		 ORDER BY created_at_unix_nano DESC, id ASC`,
@@ -190,13 +192,18 @@ func (s *Store) ListAPITokens(ctx context.Context, userID string) ([]APIToken, e
 		var token APIToken
 		var createdAt int64
 		var revokedAt int64
-		if err := rows.Scan(&token.ID, &token.TokenPrefix, &createdAt, &revokedAt); err != nil {
+		var lastUsedAt int64
+		if err := rows.Scan(&token.ID, &token.Name, &token.TokenPrefix, &createdAt, &revokedAt, &lastUsedAt); err != nil {
 			return nil, fmt.Errorf("scan api token: %w", err)
 		}
 		token.CreatedAt = time.Unix(0, createdAt).UTC()
 		if revokedAt > 0 {
 			revokedAtTime := time.Unix(0, revokedAt).UTC()
 			token.RevokedAt = &revokedAtTime
+		}
+		if lastUsedAt > 0 {
+			lastUsedAtTime := time.Unix(0, lastUsedAt).UTC()
+			token.LastUsedAt = &lastUsedAtTime
 		}
 		tokens = append(tokens, token)
 	}
@@ -231,14 +238,28 @@ func (s *Store) RevokeAPIToken(ctx context.Context, userID, tokenID string) erro
 }
 
 func (s *Store) LookupAPIToken(ctx context.Context, rawToken string) (Principal, error) {
-	return s.lookupPrincipal(
+	tokenHash := hashToken(rawToken)
+	principal, err := s.lookupPrincipal(
 		ctx,
 		`SELECT u.id, u.login, u.display_name, u.avatar_url, u.email
 		 FROM api_tokens t
 		 JOIN users u ON u.id = t.user_id
 		 WHERE t.token_hash = $1 AND t.revoked_at_unix_nano = 0`,
-		hashToken(rawToken),
+		tokenHash,
 	)
+	if err != nil {
+		return Principal{}, err
+	}
+
+	// Best-effort update of last-used timestamp.
+	_, _ = s.db.ExecContext(
+		ctx,
+		`UPDATE api_tokens SET last_used_at_unix_nano = $1 WHERE token_hash = $2`,
+		time.Now().UTC().UnixNano(),
+		tokenHash,
+	)
+
+	return principal, nil
 }
 
 func (s *Store) lookupPrincipal(ctx context.Context, query string, args ...any) (Principal, error) {
