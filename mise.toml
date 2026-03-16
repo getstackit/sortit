@@ -31,6 +31,14 @@ run = """
   npm run test
 """
 
+[tasks."check:schema-drift"]
+description = "Verify internal/issues/sqlc/schema.sql matches a fresh migrated PostgreSQL schema"
+run = "go run ./cmd/check-schema-drift"
+
+[tasks."generate:schema"]
+description = "Regenerate internal/issues/sqlc/schema.sql from a fresh migrated PostgreSQL schema"
+run = "go run ./cmd/generate-schema-sql"
+
 [tasks."db:backup"]
 description = "Backup the local PostgreSQL app database"
 run = "sh scripts/db-backup.sh"

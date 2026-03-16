@@ -53,6 +53,11 @@ jobs:
       - name: Verify dependencies
         run: go mod verify
 
+      - name: Check schema drift
+        env:
+          SPLAT_TEST_DATABASE_URL: postgres://splat:splat@localhost:5432/splat_test?sslmode=disable
+        run: go run ./cmd/check-schema-drift
+
       - name: Run tests
         env:
           SPLAT_TEST_DATABASE_URL: postgres://splat:splat@localhost:5432/splat_test?sslmode=disable

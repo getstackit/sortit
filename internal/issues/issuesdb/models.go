@@ -7,15 +7,18 @@ package issuesdb
 import (
 	"database/sql"
 	"encoding/json"
+	"time"
 )
 
 type ApiToken struct {
-	ID                string
-	UserID            string
-	TokenHash         string
-	TokenPrefix       string
-	CreatedAtUnixNano int64
-	RevokedAtUnixNano int64
+	ID                 string
+	UserID             string
+	TokenHash          string
+	TokenPrefix        string
+	CreatedAtUnixNano  int64
+	RevokedAtUnixNano  int64
+	Name               string
+	LastUsedAtUnixNano int64
 }
 
 type AuthAccount struct {
@@ -24,6 +27,13 @@ type AuthAccount struct {
 	Provider          string
 	ProviderUserID    string
 	CreatedAtUnixNano int64
+}
+
+type DismissedTagMerge struct {
+	ID            int64
+	CanonicalName string
+	AliasName     string
+	DismissedAt   time.Time
 }
 
 type Event struct {
@@ -45,14 +55,14 @@ type Issue struct {
 	Status                   string
 	ClosedAtUnixNano         int64
 	ClosedBy                 string
-	ClosedReason             string
-	ClosedReasonNote         string
 	TagScoresJson            json.RawMessage
-	EmbeddingVector          interface{}
 	AssignedTo               string
+	EmbeddingVector          interface{}
 	EnrichmentStatus         string
 	EnrichmentError          string
 	EnrichmentTargetSequence int64
+	ClosedReason             string
+	ClosedReasonNote         string
 }
 
 type IssueEnrichmentJob struct {
@@ -110,6 +120,12 @@ type IssueSnapshot struct {
 	CreatedAtUnixNano int64
 }
 
+type MapProjection struct {
+	Revision          int64
+	PayloadJson       json.RawMessage
+	CreatedAtUnixNano int64
+}
+
 type Session struct {
 	ID                string
 	UserID            string
@@ -127,6 +143,14 @@ type Tag struct {
 	SpecificityEmbedding  sql.NullFloat64
 	SpecificityComputedAt sql.NullTime
 	EmbeddingVector       interface{}
+}
+
+type TagMergeHistory struct {
+	ID            int64
+	CanonicalName string
+	AliasName     string
+	MergedAt      time.Time
+	MergedBy      string
 }
 
 type User struct {
