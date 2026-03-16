@@ -13,9 +13,10 @@ SELECT
   i.tag_scores_json,
   COALESCE(i.embedding_vector::text, '') AS embedding_text,
   COALESCE(p.assigned_to, i.assigned_to) AS assigned_to,
-  i.enrichment_status,
-  i.enrichment_error,
-  i.enrichment_target_sequence
+  COALESCE(ep.status, i.enrichment_status) AS enrichment_status,
+  COALESCE(ep.error, i.enrichment_error) AS enrichment_error,
+  COALESCE(ep.target_sequence, i.enrichment_target_sequence) AS enrichment_target_sequence
 FROM issues i
 LEFT JOIN issue_lifecycle_projections p ON p.issue_id = i.id
+LEFT JOIN issue_enrichment_projections ep ON ep.issue_id = i.id
 WHERE i.id = $1;

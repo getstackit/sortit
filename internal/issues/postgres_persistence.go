@@ -5,8 +5,10 @@ import (
 	"encoding/json"
 	"fmt"
 	"math"
+	"slices"
 	"strconv"
 	"strings"
+	"time"
 
 	"splat/internal/issues/issuesdb"
 )
@@ -131,44 +133,6 @@ func buildRefinementRecord(id string, fields IssueFieldUpdate) (issuesdb.UpdateI
 	}, nil
 }
 
-func updateIssueEnrichmentState(ctx context.Context, db issuesdb.DBTX, issueID string, fields IssueFieldUpdate) error {
-	if fields.EnrichmentStatus == nil && fields.EnrichmentError == nil && fields.EnrichmentTargetSequence == nil {
-		return nil
-	}
-
-	var (
-		statusParam any
-		errorParam  any
-		targetParam any
-	)
-	if fields.EnrichmentStatus != nil {
-		status := string(normalizeIssueEnrichmentStatus(*fields.EnrichmentStatus))
-		statusParam = status
-	}
-	if fields.EnrichmentError != nil {
-		errorParam = strings.TrimSpace(*fields.EnrichmentError)
-	}
-	if fields.EnrichmentTargetSequence != nil {
-		targetParam = int64(*fields.EnrichmentTargetSequence)
-	}
-
-	if _, err := db.ExecContext(
-		ctx,
-		`UPDATE issues
-		 SET enrichment_status = COALESCE($1::text, enrichment_status),
-		     enrichment_error = COALESCE($2::text, enrichment_error),
-		     enrichment_target_sequence = COALESCE($3::bigint, enrichment_target_sequence)
-		 WHERE id = $4`,
-		statusParam,
-		errorParam,
-		targetParam,
-		issueID,
-	); err != nil {
-		return fmt.Errorf("update issue enrichment state for %q: %w", issueID, err)
-	}
-	return nil
-}
-
 func formatVectorLiteral(values []float64) (any, error) {
 	if len(values) == 0 {
 		return nil, nil
@@ -234,8 +198,14 @@ func (s *PostgresStore) MergeTags(ctx context.Context, canonical string, aliases
 		return nil
 	}
 
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return fmt.Errorf("begin merge tags tx: %w", err)
+	}
+	defer tx.Rollback() //nolint:errcheck
+
 	// Load all issues that reference any alias tag
-	rows, err := s.db.QueryContext(ctx,
+	rows, err := tx.QueryContext(ctx,
 		`SELECT id, tags_json, tag_scores_json FROM issues`)
 	if err != nil {
 		return fmt.Errorf("list issues for tag merge: %w", err)
@@ -271,7 +241,7 @@ func (s *PostgresStore) MergeTags(ctx context.Context, canonical string, aliases
 		newTags := mergeTagList(tags, canonical, aliasSet)
 		newScores := mergeTagScores(tagScores, canonical, aliasSet)
 
-		if len(newTags) != len(tags) || len(newScores) != len(tagScores) {
+		if !slices.Equal(newTags, tags) || !slices.Equal(newScores, tagScores) {
 			updates = append(updates, issueUpdate{id: id, tags: newTags, tagScores: newScores})
 		}
 	}
@@ -296,18 +266,21 @@ func (s *PostgresStore) MergeTags(ctx context.Context, canonical string, aliases
 		}
 	}
 
-	// Delete alias tags from the tags table
+	mergedAt := time.Now().UTC()
+	if _, err := ensureActiveTagProjection(ctx, tx, canonical, "", mergedAt, "tag_merge", "canonical:"+canonical); err != nil {
+		return err
+	}
+
 	for _, alias := range normalizedAliases {
-		if _, err := s.db.ExecContext(ctx,
-			`DELETE FROM tags WHERE LOWER(name) = $1`, alias,
-		); err != nil {
-			return fmt.Errorf("delete alias tag %q: %w", alias, err)
+		sourceID := canonical + "->" + alias + ":" + mergedAt.Format(time.RFC3339Nano)
+		if err := appendTagMerge(ctx, tx, canonical, alias, "", mergedAt, "tag_merge", sourceID); err != nil {
+			return err
 		}
 	}
 
 	// Record merge history
 	for _, alias := range normalizedAliases {
-		if _, err := s.db.ExecContext(ctx,
+		if _, err := tx.ExecContext(ctx,
 			`INSERT INTO tag_merge_history (canonical_name, alias_name) VALUES ($1, $2)`,
 			canonical, alias,
 		); err != nil {
@@ -315,6 +288,9 @@ func (s *PostgresStore) MergeTags(ctx context.Context, canonical string, aliases
 		}
 	}
 
+	if err := tx.Commit(); err != nil {
+		return fmt.Errorf("commit merge tags: %w", err)
+	}
 	return nil
 }
 

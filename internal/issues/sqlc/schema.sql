@@ -49,12 +49,31 @@ CREATE TABLE "public"."events" (
     "body" text NOT NULL,
     "participants_json" jsonb NOT NULL
 );
+CREATE TABLE "public"."issue_enrichment_events" (
+    "id" text NOT NULL,
+    "issue_id" text NOT NULL,
+    "target_sequence" bigint NOT NULL,
+    "kind" text NOT NULL,
+    "created_by" text NOT NULL,
+    "created_at_unix_nano" bigint NOT NULL,
+    "payload_json" jsonb NOT NULL
+);
 CREATE TABLE "public"."issue_enrichment_jobs" (
     "issue_id" text NOT NULL,
     "target_sequence" bigint NOT NULL,
     "lease_expires_at_unix_nano" bigint NOT NULL,
     "attempt_count" bigint NOT NULL,
     "created_at_unix_nano" bigint NOT NULL,
+    "updated_at_unix_nano" bigint NOT NULL
+);
+CREATE TABLE "public"."issue_enrichment_projections" (
+    "issue_id" text NOT NULL,
+    "status" text NOT NULL,
+    "error" text NOT NULL,
+    "target_sequence" bigint NOT NULL,
+    "attempt_count" bigint NOT NULL,
+    "lease_expires_at_unix_nano" bigint NOT NULL,
+    "latest_event_id" text NOT NULL,
     "updated_at_unix_nano" bigint NOT NULL
 );
 CREATE TABLE "public"."issue_lifecycle_facts" (
@@ -154,12 +173,39 @@ CREATE TABLE "public"."sessions" (
     "expires_at_unix_nano" bigint NOT NULL,
     "created_at_unix_nano" bigint NOT NULL
 );
+CREATE TABLE "public"."tag_events" (
+    "id" text NOT NULL,
+    "tag_name" text NOT NULL,
+    "sequence" bigint NOT NULL,
+    "kind" text NOT NULL,
+    "created_by" text NOT NULL,
+    "created_at_unix_nano" bigint NOT NULL,
+    "payload_json" jsonb NOT NULL,
+    "source" text NOT NULL,
+    "source_id" text NOT NULL,
+    "inferred" boolean NOT NULL
+);
 CREATE TABLE "public"."tag_merge_history" (
     "id" bigint NOT NULL,
     "canonical_name" text NOT NULL,
     "alias_name" text NOT NULL,
     "merged_at" timestamp with time zone NOT NULL,
     "merged_by" text NOT NULL
+);
+CREATE TABLE "public"."tag_projections" (
+    "name" text NOT NULL,
+    "description" text NOT NULL,
+    "created_at_unix_nano" bigint NOT NULL,
+    "embedding_vector" vector,
+    "specificity" real,
+    "specificity_llm" real,
+    "specificity_embedding" real,
+    "specificity_computed_at" timestamp with time zone,
+    "status" text NOT NULL,
+    "canonical_name" text NOT NULL,
+    "last_event_id" text NOT NULL,
+    "event_count" bigint NOT NULL,
+    "updated_at_unix_nano" bigint NOT NULL
 );
 CREATE TABLE "public"."tags" (
     "name" text NOT NULL,
@@ -195,8 +241,16 @@ ALTER TABLE ONLY "public"."dismissed_tag_merges" ALTER COLUMN "id" SET DEFAULT n
 ALTER TABLE ONLY "public"."dismissed_tag_merges" ALTER COLUMN "dismissed_at" SET DEFAULT now();
 ALTER TABLE ONLY "public"."events" ALTER COLUMN "body" SET DEFAULT ''::text;
 ALTER TABLE ONLY "public"."events" ALTER COLUMN "participants_json" SET DEFAULT '[]'::jsonb;
+ALTER TABLE ONLY "public"."issue_enrichment_events" ALTER COLUMN "created_by" SET DEFAULT ''::text;
+ALTER TABLE ONLY "public"."issue_enrichment_events" ALTER COLUMN "payload_json" SET DEFAULT '{}'::jsonb;
 ALTER TABLE ONLY "public"."issue_enrichment_jobs" ALTER COLUMN "lease_expires_at_unix_nano" SET DEFAULT 0;
 ALTER TABLE ONLY "public"."issue_enrichment_jobs" ALTER COLUMN "attempt_count" SET DEFAULT 0;
+ALTER TABLE ONLY "public"."issue_enrichment_projections" ALTER COLUMN "status" SET DEFAULT 'complete'::text;
+ALTER TABLE ONLY "public"."issue_enrichment_projections" ALTER COLUMN "error" SET DEFAULT ''::text;
+ALTER TABLE ONLY "public"."issue_enrichment_projections" ALTER COLUMN "target_sequence" SET DEFAULT 1;
+ALTER TABLE ONLY "public"."issue_enrichment_projections" ALTER COLUMN "attempt_count" SET DEFAULT 0;
+ALTER TABLE ONLY "public"."issue_enrichment_projections" ALTER COLUMN "lease_expires_at_unix_nano" SET DEFAULT 0;
+ALTER TABLE ONLY "public"."issue_enrichment_projections" ALTER COLUMN "latest_event_id" SET DEFAULT ''::text;
 ALTER TABLE ONLY "public"."issue_lifecycle_facts" ALTER COLUMN "created_by" SET DEFAULT ''::text;
 ALTER TABLE ONLY "public"."issue_lifecycle_facts" ALTER COLUMN "payload_json" SET DEFAULT '{}'::jsonb;
 ALTER TABLE ONLY "public"."issue_lifecycle_facts" ALTER COLUMN "source" SET DEFAULT ''::text;
@@ -226,9 +280,19 @@ ALTER TABLE ONLY "public"."issues" ALTER COLUMN "enrichment_error" SET DEFAULT '
 ALTER TABLE ONLY "public"."issues" ALTER COLUMN "enrichment_target_sequence" SET DEFAULT 1;
 ALTER TABLE ONLY "public"."issues" ALTER COLUMN "closed_reason" SET DEFAULT ''::text;
 ALTER TABLE ONLY "public"."issues" ALTER COLUMN "closed_reason_note" SET DEFAULT ''::text;
+ALTER TABLE ONLY "public"."tag_events" ALTER COLUMN "created_by" SET DEFAULT ''::text;
+ALTER TABLE ONLY "public"."tag_events" ALTER COLUMN "payload_json" SET DEFAULT '{}'::jsonb;
+ALTER TABLE ONLY "public"."tag_events" ALTER COLUMN "source" SET DEFAULT ''::text;
+ALTER TABLE ONLY "public"."tag_events" ALTER COLUMN "source_id" SET DEFAULT ''::text;
+ALTER TABLE ONLY "public"."tag_events" ALTER COLUMN "inferred" SET DEFAULT false;
 ALTER TABLE ONLY "public"."tag_merge_history" ALTER COLUMN "id" SET DEFAULT nextval('tag_merge_history_id_seq'::regclass);
 ALTER TABLE ONLY "public"."tag_merge_history" ALTER COLUMN "merged_at" SET DEFAULT now();
 ALTER TABLE ONLY "public"."tag_merge_history" ALTER COLUMN "merged_by" SET DEFAULT ''::text;
+ALTER TABLE ONLY "public"."tag_projections" ALTER COLUMN "description" SET DEFAULT ''::text;
+ALTER TABLE ONLY "public"."tag_projections" ALTER COLUMN "status" SET DEFAULT 'active'::text;
+ALTER TABLE ONLY "public"."tag_projections" ALTER COLUMN "canonical_name" SET DEFAULT ''::text;
+ALTER TABLE ONLY "public"."tag_projections" ALTER COLUMN "last_event_id" SET DEFAULT ''::text;
+ALTER TABLE ONLY "public"."tag_projections" ALTER COLUMN "event_count" SET DEFAULT 0;
 
 ALTER TABLE ONLY "public"."api_tokens" ADD CONSTRAINT "api_tokens_pkey" PRIMARY KEY (id);
 ALTER TABLE ONLY "public"."api_tokens" ADD CONSTRAINT "api_tokens_token_hash_key" UNIQUE (token_hash);
@@ -242,8 +306,12 @@ ALTER TABLE ONLY "public"."dismissed_tag_merges" ADD CONSTRAINT "dismissed_tag_m
 ALTER TABLE ONLY "public"."dismissed_tag_merges" ADD CONSTRAINT "dismissed_tag_merges_pkey" PRIMARY KEY (id);
 ALTER TABLE ONLY "public"."events" ADD CONSTRAINT "events_issue_id_fkey" FOREIGN KEY (issue_id) REFERENCES issues(id) ON DELETE SET NULL;
 ALTER TABLE ONLY "public"."events" ADD CONSTRAINT "events_pkey" PRIMARY KEY (id);
+ALTER TABLE ONLY "public"."issue_enrichment_events" ADD CONSTRAINT "issue_enrichment_events_issue_id_fkey" FOREIGN KEY (issue_id) REFERENCES issues(id) ON DELETE CASCADE;
+ALTER TABLE ONLY "public"."issue_enrichment_events" ADD CONSTRAINT "issue_enrichment_events_pkey" PRIMARY KEY (id);
 ALTER TABLE ONLY "public"."issue_enrichment_jobs" ADD CONSTRAINT "issue_enrichment_jobs_issue_id_fkey" FOREIGN KEY (issue_id) REFERENCES issues(id) ON DELETE CASCADE;
 ALTER TABLE ONLY "public"."issue_enrichment_jobs" ADD CONSTRAINT "issue_enrichment_jobs_pkey" PRIMARY KEY (issue_id);
+ALTER TABLE ONLY "public"."issue_enrichment_projections" ADD CONSTRAINT "issue_enrichment_projections_issue_id_fkey" FOREIGN KEY (issue_id) REFERENCES issues(id) ON DELETE CASCADE;
+ALTER TABLE ONLY "public"."issue_enrichment_projections" ADD CONSTRAINT "issue_enrichment_projections_pkey" PRIMARY KEY (issue_id);
 ALTER TABLE ONLY "public"."issue_lifecycle_facts" ADD CONSTRAINT "issue_lifecycle_facts_issue_id_fkey" FOREIGN KEY (issue_id) REFERENCES issues(id) ON DELETE CASCADE;
 ALTER TABLE ONLY "public"."issue_lifecycle_facts" ADD CONSTRAINT "issue_lifecycle_facts_pkey" PRIMARY KEY (id);
 ALTER TABLE ONLY "public"."issue_lifecycle_projections" ADD CONSTRAINT "issue_lifecycle_projections_issue_id_fkey" FOREIGN KEY (issue_id) REFERENCES issues(id) ON DELETE CASCADE;
@@ -266,7 +334,9 @@ ALTER TABLE ONLY "public"."map_projections" ADD CONSTRAINT "derived_corpus_proje
 ALTER TABLE ONLY "public"."sessions" ADD CONSTRAINT "sessions_pkey" PRIMARY KEY (id);
 ALTER TABLE ONLY "public"."sessions" ADD CONSTRAINT "sessions_token_hash_key" UNIQUE (token_hash);
 ALTER TABLE ONLY "public"."sessions" ADD CONSTRAINT "sessions_user_id_fkey" FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE;
+ALTER TABLE ONLY "public"."tag_events" ADD CONSTRAINT "tag_events_pkey" PRIMARY KEY (id);
 ALTER TABLE ONLY "public"."tag_merge_history" ADD CONSTRAINT "tag_merge_history_pkey" PRIMARY KEY (id);
+ALTER TABLE ONLY "public"."tag_projections" ADD CONSTRAINT "tag_projections_pkey" PRIMARY KEY (name);
 ALTER TABLE ONLY "public"."tags" ADD CONSTRAINT "tags_pkey" PRIMARY KEY (name);
 ALTER TABLE ONLY "public"."users" ADD CONSTRAINT "users_pkey" PRIMARY KEY (id);
 
@@ -276,7 +346,10 @@ CREATE INDEX auth_accounts_user_id_idx ON public.auth_accounts USING btree (user
 CREATE INDEX events_created_at_idx ON public.events USING btree (created_at_unix_nano DESC, id DESC);
 CREATE INDEX events_issue_id_idx ON public.events USING btree (issue_id);
 CREATE INDEX events_kind_idx ON public.events USING btree (kind);
+CREATE INDEX issue_enrichment_events_issue_created_idx ON public.issue_enrichment_events USING btree (issue_id, created_at_unix_nano DESC, id DESC);
+CREATE INDEX issue_enrichment_events_target_idx ON public.issue_enrichment_events USING btree (issue_id, target_sequence, created_at_unix_nano, id);
 CREATE INDEX issue_enrichment_jobs_lease_idx ON public.issue_enrichment_jobs USING btree (lease_expires_at_unix_nano, updated_at_unix_nano, issue_id);
+CREATE INDEX issue_enrichment_projections_status_idx ON public.issue_enrichment_projections USING btree (status, target_sequence, issue_id);
 CREATE INDEX issue_lifecycle_facts_issue_created_idx ON public.issue_lifecycle_facts USING btree (issue_id, created_at_unix_nano, sequence, id);
 CREATE UNIQUE INDEX issue_lifecycle_facts_source_idx ON public.issue_lifecycle_facts USING btree (source, source_id);
 CREATE INDEX issue_lifecycle_projections_status_idx ON public.issue_lifecycle_projections USING btree (status, assigned_to, issue_id);
@@ -291,6 +364,12 @@ CREATE INDEX issues_embedding_vector_cosine_hnsw_idx ON public.issues USING hnsw
 CREATE INDEX issues_status_idx ON public.issues USING btree (status);
 CREATE INDEX sessions_expires_at_unix_nano_idx ON public.sessions USING btree (expires_at_unix_nano);
 CREATE INDEX sessions_user_id_idx ON public.sessions USING btree (user_id);
+CREATE UNIQUE INDEX tag_events_source_idx ON public.tag_events USING btree (source, source_id);
+CREATE INDEX tag_events_tag_created_idx ON public.tag_events USING btree (tag_name, created_at_unix_nano, id);
+CREATE UNIQUE INDEX tag_events_tag_sequence_idx ON public.tag_events USING btree (tag_name, sequence);
 CREATE INDEX idx_tag_merge_history_alias ON public.tag_merge_history USING btree (alias_name);
 CREATE INDEX idx_tag_merge_history_canonical ON public.tag_merge_history USING btree (canonical_name);
+CREATE INDEX tag_projections_canonical_name_idx ON public.tag_projections USING btree (canonical_name, name) WHERE (canonical_name <> ''::text);
+CREATE INDEX tag_projections_embedding_vector_cosine_hnsw_idx ON public.tag_projections USING hnsw (((embedding_vector)::vector(1536)) vector_cosine_ops) WHERE ((embedding_vector IS NOT NULL) AND (vector_dims(embedding_vector) = 1536));
+CREATE INDEX tag_projections_status_name_idx ON public.tag_projections USING btree (status, name);
 CREATE INDEX tags_embedding_vector_cosine_hnsw_idx ON public.tags USING hnsw (((embedding_vector)::vector(1536)) vector_cosine_ops) WHERE ((embedding_vector IS NOT NULL) AND (vector_dims(embedding_vector) = 1536));

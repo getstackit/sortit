@@ -81,12 +81,33 @@ type Issue struct {
 	ClosedReasonNote         string
 }
 
+type IssueEnrichmentEvent struct {
+	ID                string
+	IssueID           string
+	TargetSequence    int64
+	Kind              string
+	CreatedBy         string
+	CreatedAtUnixNano int64
+	PayloadJson       json.RawMessage
+}
+
 type IssueEnrichmentJob struct {
 	IssueID                string
 	TargetSequence         int64
 	LeaseExpiresAtUnixNano int64
 	AttemptCount           int64
 	CreatedAtUnixNano      int64
+	UpdatedAtUnixNano      int64
+}
+
+type IssueEnrichmentProjection struct {
+	IssueID                string
+	Status                 string
+	Error                  string
+	TargetSequence         int64
+	AttemptCount           int64
+	LeaseExpiresAtUnixNano int64
+	LatestEventID          string
 	UpdatedAtUnixNano      int64
 }
 
@@ -189,12 +210,41 @@ type Tag struct {
 	EmbeddingVector       interface{}
 }
 
+type TagEvent struct {
+	ID                string
+	TagName           string
+	Sequence          int64
+	Kind              string
+	CreatedBy         string
+	CreatedAtUnixNano int64
+	PayloadJson       json.RawMessage
+	Source            string
+	SourceID          string
+	Inferred          bool
+}
+
 type TagMergeHistory struct {
 	ID            int64
 	CanonicalName string
 	AliasName     string
 	MergedAt      time.Time
 	MergedBy      string
+}
+
+type TagProjection struct {
+	Name                  string
+	Description           string
+	CreatedAtUnixNano     int64
+	EmbeddingVector       interface{}
+	Specificity           sql.NullFloat64
+	SpecificityLlm        sql.NullFloat64
+	SpecificityEmbedding  sql.NullFloat64
+	SpecificityComputedAt sql.NullTime
+	Status                string
+	CanonicalName         string
+	LastEventID           string
+	EventCount            int64
+	UpdatedAtUnixNano     int64
 }
 
 type User struct {

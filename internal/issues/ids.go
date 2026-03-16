@@ -20,3 +20,13 @@ func NewOperationID() string {
 func NewLifecycleFactID() string {
 	return ulid.MustNew(ulid.Now(), rand.Reader).String()
 }
+
+// NewEnrichmentEventID generates a new server-side ULID for an enrichment event.
+func NewEnrichmentEventID() string {
+	return ulid.MustNew(ulid.Now(), rand.Reader).String()
+}
+
+// NewTagEventID generates a new server-side ULID for a tag event.
+func NewTagEventID() string {
+	return ulid.MustNew(ulid.Now(), rand.Reader).String()
+}

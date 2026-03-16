@@ -484,6 +484,139 @@ func TestPostgresStoreLifecycleWritesAppendFactsAndProjection(t *testing.T) {
 	}
 }
 
+func TestPostgresStoreSnapshotsAreInsertOnlyPerSequence(t *testing.T) {
+	store := newPostgresTestStore(t)
+	ctx := context.Background()
+
+	issue := BuildNewIssue("issue-snapshot-insert-only", CreateInput{
+		Raw:       "Original snapshot candidate",
+		CreatedBy: "Casey",
+	})
+	if err := store.SaveIssue(ctx, issue); err != nil {
+		t.Fatalf("save issue: %v", err)
+	}
+
+	raw1 := "First snapshot body"
+	seq1 := 1
+	if err := store.UpdateIssueFields(ctx, issue.ID, IssueFieldUpdate{
+		Raw:                      &raw1,
+		Tags:                     []string{"export"},
+		TagScores:                []TagRelevance{{Tag: "export", Relevance: 0.9}},
+		Embedding:                []float64{1, 0},
+		EnrichmentTargetSequence: &seq1,
+	}); err != nil {
+		t.Fatalf("write first snapshot: %v", err)
+	}
+
+	raw2 := "Second snapshot body should be ignored for same sequence"
+	if err := store.UpdateIssueFields(ctx, issue.ID, IssueFieldUpdate{
+		Raw:                      &raw2,
+		Tags:                     []string{"export", "safari"},
+		TagScores:                []TagRelevance{{Tag: "safari", Relevance: 0.8}},
+		Embedding:                []float64{0, 1},
+		EnrichmentTargetSequence: &seq1,
+	}); err != nil {
+		t.Fatalf("attempt duplicate snapshot write: %v", err)
+	}
+
+	snapshots, err := store.ListIssueSnapshots(ctx, issue.ID)
+	if err != nil {
+		t.Fatalf("list snapshots: %v", err)
+	}
+	if len(snapshots) != 1 {
+		t.Fatalf("expected 1 snapshot row, got %#v", snapshots)
+	}
+	if snapshots[0].Raw != raw1 {
+		t.Fatalf("expected first snapshot to win, got %q", snapshots[0].Raw)
+	}
+	if len(snapshots[0].Tags) != 1 || snapshots[0].Tags[0] != "export" {
+		t.Fatalf("expected original snapshot tags to be preserved, got %#v", snapshots[0].Tags)
+	}
+}
+
+func TestPostgresStoreEnrichmentProjectionReadAndWriteCutover(t *testing.T) {
+	store := newPostgresTestStore(t)
+	ctx := context.Background()
+
+	issue := BuildNewIssue("issue-enrichment-cutover", CreateInput{
+		Raw:       "Use enrichment projection for reads",
+		CreatedBy: "Casey",
+	})
+	if err := store.SaveIssue(ctx, issue); err != nil {
+		t.Fatalf("save issue: %v", err)
+	}
+
+	pendingStatus := EnrichmentStatusPending
+	emptyError := ""
+	targetSequence := 2
+	if err := store.UpdateIssueFields(ctx, issue.ID, IssueFieldUpdate{
+		EnrichmentStatus:         &pendingStatus,
+		EnrichmentError:          &emptyError,
+		EnrichmentTargetSequence: &targetSequence,
+	}); err != nil {
+		t.Fatalf("set pending enrichment state: %v", err)
+	}
+	if err := store.EnqueueIssueEnrichment(ctx, issue.ID, targetSequence); err != nil {
+		t.Fatalf("enqueue enrichment job: %v", err)
+	}
+
+	if _, err := store.DB().ExecContext(
+		ctx,
+		`UPDATE issues
+		 SET enrichment_status = 'complete',
+		     enrichment_error = 'legacy stale state',
+		     enrichment_target_sequence = 1
+		 WHERE id = $1`,
+		issue.ID,
+	); err != nil {
+		t.Fatalf("desync legacy enrichment columns: %v", err)
+	}
+
+	loaded, err := store.Get(ctx, issue.ID)
+	if err != nil {
+		t.Fatalf("get issue through enrichment cutover: %v", err)
+	}
+	if loaded.EnrichmentStatus != EnrichmentStatusPending {
+		t.Fatalf("expected projection status pending, got %q", loaded.EnrichmentStatus)
+	}
+	if loaded.EnrichmentError != "" {
+		t.Fatalf("expected projection error to be empty, got %q", loaded.EnrichmentError)
+	}
+	if loaded.EnrichmentTargetSequence != targetSequence {
+		t.Fatalf("expected projection target sequence %d, got %d", targetSequence, loaded.EnrichmentTargetSequence)
+	}
+
+	job, ok, err := store.ClaimNextIssueEnrichment(ctx, time.Minute)
+	if err != nil {
+		t.Fatalf("claim enrichment job: %v", err)
+	}
+	if !ok || job.TargetSequence != targetSequence {
+		t.Fatalf("unexpected claimed job %#v", job)
+	}
+
+	var (
+		projStatus       string
+		projTarget       int
+		projAttemptCount int
+		projLease        int64
+	)
+	if err := store.DB().QueryRowContext(
+		ctx,
+		`SELECT status, target_sequence, attempt_count, lease_expires_at_unix_nano
+		 FROM issue_enrichment_projections
+		 WHERE issue_id = $1`,
+		issue.ID,
+	).Scan(&projStatus, &projTarget, &projAttemptCount, &projLease); err != nil {
+		t.Fatalf("read enrichment projection: %v", err)
+	}
+	if projStatus != string(EnrichmentStatusPending) || projTarget != targetSequence {
+		t.Fatalf("unexpected enrichment projection status=%q target=%d", projStatus, projTarget)
+	}
+	if projAttemptCount != 1 || projLease == 0 {
+		t.Fatalf("expected claimed projection attempt/lease to be set, got attempt=%d lease=%d", projAttemptCount, projLease)
+	}
+}
+
 func TestPostgresStoreListFiltered(t *testing.T) {
 	store := newPostgresTestStore(t)
 	ctx := context.Background()
@@ -1437,5 +1570,80 @@ func TestPostgresStoreListTagsPreservesSpecificity(t *testing.T) {
 	}
 	if tag.SpecificityComputedAt == nil || !tag.SpecificityComputedAt.Equal(now) {
 		t.Errorf("SpecificityComputedAt: got %v, want %v", tag.SpecificityComputedAt, now)
+	}
+}
+
+func TestPostgresStoreMergeTagsUsesAppendOnlyProjection(t *testing.T) {
+	store := newPostgresTestStore(t)
+	ctx := context.Background()
+
+	if err := store.UpsertTags(ctx, []Tag{
+		{Name: "bug", Description: "software defect", Embedding: []float64{0.1, 0.9}},
+		{Name: "defect", Description: "legacy alias", Embedding: []float64{0.2, 0.8}},
+	}); err != nil {
+		t.Fatalf("upsert tags: %v", err)
+	}
+
+	issue := BuildNewIssue("issue-tag-merge-append-only", CreateInput{
+		Raw:       "alias tag should merge",
+		CreatedBy: "Casey",
+		Tags:      []string{"defect"},
+		TagScores: []TagRelevance{{Tag: "defect", Relevance: 0.9}},
+	})
+	if err := store.SaveIssue(ctx, issue); err != nil {
+		t.Fatalf("save issue: %v", err)
+	}
+
+	if err := store.MergeTags(ctx, "bug", []string{"defect"}); err != nil {
+		t.Fatalf("merge tags: %v", err)
+	}
+
+	tags, err := store.ListTags(ctx)
+	if err != nil {
+		t.Fatalf("list tags: %v", err)
+	}
+	if len(tags) != 1 || tags[0].Name != "bug" {
+		t.Fatalf("expected only canonical active tag, got %#v", tags)
+	}
+
+	var (
+		status        string
+		canonicalName string
+		eventCount    int
+	)
+	if err := store.DB().QueryRowContext(
+		ctx,
+		`SELECT status, canonical_name, event_count
+		 FROM tag_projections
+		 WHERE name = $1`,
+		"defect",
+	).Scan(&status, &canonicalName, &eventCount); err != nil {
+		t.Fatalf("read merged tag projection: %v", err)
+	}
+	if status != "merged" || canonicalName != "bug" || eventCount == 0 {
+		t.Fatalf("unexpected merged tag projection status=%q canonical=%q eventCount=%d", status, canonicalName, eventCount)
+	}
+
+	var mergedEventCount int
+	if err := store.DB().QueryRowContext(
+		ctx,
+		`SELECT COUNT(*) FROM tag_events WHERE tag_name = $1 AND kind = 'merged'`,
+		"defect",
+	).Scan(&mergedEventCount); err != nil {
+		t.Fatalf("count merged tag events: %v", err)
+	}
+	if mergedEventCount != 1 {
+		t.Fatalf("expected 1 merged tag event, got %d", mergedEventCount)
+	}
+
+	updated, err := store.Get(ctx, issue.ID)
+	if err != nil {
+		t.Fatalf("get updated issue: %v", err)
+	}
+	if len(updated.Tags) != 1 || updated.Tags[0] != "bug" {
+		t.Fatalf("expected issue tags rewritten to canonical bug, got %#v", updated.Tags)
+	}
+	if len(updated.TagScores) != 1 || updated.TagScores[0].Tag != "bug" {
+		t.Fatalf("expected issue tag scores rewritten to canonical bug, got %#v", updated.TagScores)
 	}
 }

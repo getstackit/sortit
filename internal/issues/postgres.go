@@ -874,19 +874,8 @@ func (s *PostgresStore) UpsertTags(ctx context.Context, tags []Tag) error {
 	}
 	defer tx.Rollback() //nolint:errcheck
 
-	qtx := s.queries.WithTx(tx)
 	for _, tag := range normalized {
-		record, err := recordFromTag(tag)
-		if err != nil {
-			return err
-		}
-
-		if err := qtx.UpsertTag(ctx, issuesdb.UpsertTagParams{
-			Name:              record.Name,
-			Description:       record.Description,
-			CreatedAtUnixNano: record.CreatedAtUnixNano,
-			Column4:           record.EmbeddingVector,
-		}); err != nil {
+		if err := appendTagUpsert(ctx, tx, tag); err != nil {
 			return fmt.Errorf("upsert tag %q: %w", tag.Name, err)
 		}
 	}
@@ -899,23 +888,18 @@ func (s *PostgresStore) UpsertTags(ctx context.Context, tags []Tag) error {
 }
 
 func (s *PostgresStore) UpdateTagSpecificity(ctx context.Context, name string, specificity, llm, embedding *float64, computedAt *time.Time) error {
-	params := issuesdb.UpdateTagSpecificityParams{
-		Name: name,
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return fmt.Errorf("begin update tag specificity tx: %w", err)
 	}
-	if specificity != nil {
-		params.Specificity = sql.NullFloat64{Float64: *specificity, Valid: true}
-	}
-	if llm != nil {
-		params.SpecificityLlm = sql.NullFloat64{Float64: *llm, Valid: true}
-	}
-	if embedding != nil {
-		params.SpecificityEmbedding = sql.NullFloat64{Float64: *embedding, Valid: true}
-	}
-	if computedAt != nil {
-		params.SpecificityComputedAt = sql.NullTime{Time: computedAt.UTC(), Valid: true}
-	}
-	if err := s.queries.UpdateTagSpecificity(ctx, params); err != nil {
+	defer tx.Rollback() //nolint:errcheck
+
+	if err := appendTagSpecificityUpdate(ctx, tx, name, specificity, llm, embedding, computedAt); err != nil {
 		return fmt.Errorf("update tag specificity %q: %w", name, err)
+	}
+
+	if err := tx.Commit(); err != nil {
+		return fmt.Errorf("commit update tag specificity: %w", err)
 	}
 	return nil
 }
@@ -1197,9 +1181,13 @@ func loadIssueEnrichmentStates(
 
 	rows, err := db.QueryContext(
 		ctx,
-		`SELECT id, enrichment_status, enrichment_error, enrichment_target_sequence
-		 FROM issues
-		 WHERE id = ANY($1)`,
+		`SELECT i.id,
+		        COALESCE(p.status, i.enrichment_status) AS enrichment_status,
+		        COALESCE(p.error, i.enrichment_error) AS enrichment_error,
+		        COALESCE(p.target_sequence, i.enrichment_target_sequence) AS enrichment_target_sequence
+		 FROM issues i
+		 LEFT JOIN issue_enrichment_projections p ON p.issue_id = i.id
+		 WHERE i.id = ANY($1)`,
 		ids,
 	)
 	if err != nil {

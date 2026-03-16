@@ -44,12 +44,7 @@ func saveIssueSnapshot(ctx context.Context, db issuesdb.DBTX, snapshot IssueSnap
 		`INSERT INTO issue_snapshots (
 		    issue_id, sequence, raw, tags_json, tag_scores_json, embedding_json, created_at_unix_nano
 		) VALUES ($1, $2, $3, $4, $5, $6, $7)
-		ON CONFLICT (issue_id, sequence) DO UPDATE
-		SET raw = EXCLUDED.raw,
-		    tags_json = EXCLUDED.tags_json,
-		    tag_scores_json = EXCLUDED.tag_scores_json,
-		    embedding_json = EXCLUDED.embedding_json,
-		    created_at_unix_nano = EXCLUDED.created_at_unix_nano`,
+		ON CONFLICT (issue_id, sequence) DO NOTHING`,
 		strings.TrimSpace(snapshot.IssueID),
 		snapshot.Sequence,
 		strings.TrimSpace(snapshot.Raw),

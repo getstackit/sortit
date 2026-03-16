@@ -6,6 +6,8 @@ import (
 	"fmt"
 	"strings"
 	"time"
+
+	"splat/internal/issues/issuesdb"
 )
 
 func (s *PostgresStore) EnqueueIssueEnrichment(ctx context.Context, issueID string, targetSequence int) error {
@@ -38,6 +40,11 @@ func enqueueIssueEnrichment(ctx context.Context, db execContexter, issueID strin
 		now,
 	); err != nil {
 		return fmt.Errorf("enqueue issue enrichment for %q: %w", issueID, err)
+	}
+	if txdb, ok := db.(issuesdb.DBTX); ok {
+		if err := syncEnrichmentProjectionFromQueue(ctx, txdb, issueID, "queued"); err != nil {
+			return err
+		}
 	}
 	return nil
 }
@@ -80,6 +87,9 @@ func (s *PostgresStore) ClaimNextIssueEnrichment(
 	var job IssueEnrichmentJob
 	switch err := row.Scan(&job.IssueID, &job.TargetSequence, &job.AttemptCount); err {
 	case nil:
+		if err := syncEnrichmentProjectionFromQueue(ctx, tx, job.IssueID, "claimed"); err != nil {
+			return IssueEnrichmentJob{}, false, err
+		}
 		if commitErr := tx.Commit(); commitErr != nil {
 			return IssueEnrichmentJob{}, false, fmt.Errorf("commit enrichment job claim: %w", commitErr)
 		}
@@ -108,6 +118,11 @@ func completeIssueEnrichment(ctx context.Context, db execContexter, issueID stri
 		targetSequence,
 	); err != nil {
 		return fmt.Errorf("complete issue enrichment for %q: %w", issueID, err)
+	}
+	if txdb, ok := db.(issuesdb.DBTX); ok {
+		if err := syncEnrichmentProjectionFromQueue(ctx, txdb, issueID, "completed_job"); err != nil {
+			return err
+		}
 	}
 	return nil
 }
@@ -148,6 +163,11 @@ func retryIssueEnrichment(
 		nextAttemptAt.UTC().UnixNano(),
 	); err != nil {
 		return fmt.Errorf("retry issue enrichment for %q: %w", issueID, err)
+	}
+	if txdb, ok := db.(issuesdb.DBTX); ok {
+		if err := syncEnrichmentProjectionFromQueue(ctx, txdb, issueID, "retry_scheduled"); err != nil {
+			return err
+		}
 	}
 	return nil
 }
