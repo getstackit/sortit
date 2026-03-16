@@ -9,8 +9,10 @@ import (
 )
 
 type CloseIssue struct {
-	ID       string
-	ClosedBy string
+	ID         string
+	ClosedBy   string
+	Reason     string
+	ReasonNote string
 }
 
 type CloseIssueHandler struct {
@@ -20,6 +22,15 @@ type CloseIssueHandler struct {
 
 func (h CloseIssueHandler) Handle(ctx context.Context, input CloseIssue) (closed issues.Issue, err error) {
 	id := strings.TrimSpace(input.ID)
+
+	reason := strings.TrimSpace(input.Reason)
+	if reason == "" {
+		reason = "fixed"
+	}
+	if err := issues.ValidateCloseReason(reason); err != nil {
+		return issues.Issue{}, err
+	}
+	reasonNote := strings.TrimSpace(input.ReasonNote)
 
 	uow, finish, err := Begin(ctx, h.Runner)
 	if err != nil {
@@ -45,14 +56,17 @@ func (h CloseIssueHandler) Handle(ctx context.Context, input CloseIssue) (closed
 	status := issues.StatusClosed
 
 	if err := uow.UpdateIssueFields(ctx, id, issues.IssueFieldUpdate{
-		Status:   &status,
-		ClosedAt: &closedAt,
-		ClosedBy: &actor,
+		Status:           &status,
+		ClosedAt:         &closedAt,
+		ClosedBy:         &actor,
+		ClosedReason:     &reason,
+		ClosedReasonNote: &reasonNote,
 	}); err != nil {
 		return issues.Issue{}, err
 	}
 
-	post := issues.NewDiscussionPost(id, issue.Discussion, issues.CloseIssuePost(actor), actor, "closed")
+	postBody := issues.CloseIssuePost(actor, reason, reasonNote)
+	post := issues.NewDiscussionPost(id, issue.Discussion, postBody, actor, "closed")
 	if err := uow.SaveIssuePost(ctx, post); err != nil {
 		return issues.Issue{}, err
 	}
@@ -63,7 +77,7 @@ func (h CloseIssueHandler) Handle(ctx context.Context, input CloseIssue) (closed
 		IssueID:   id,
 		CreatedBy: actor,
 		CreatedAt: closedAt,
-		Body:      issues.CloseIssuePost(actor),
+		Body:      postBody,
 	}
 	_ = uow.RecordEvent(ctx, closedEvent)
 

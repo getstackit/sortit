@@ -103,6 +103,8 @@ export type IssueRecord = {
   status: IssueStatus;
   closedAt?: string | null;
   closedBy?: string;
+  closedReason?: string;
+  closedReasonNote?: string;
   assignedTo?: string;
   discussion?: IssuePostRecord[];
   links?: IssueLinkRecord[];
@@ -128,6 +130,8 @@ type CreateIssueInput = {
 
 type CloseIssueInput = {
   closedBy?: string;
+  reason?: string;
+  reasonNote?: string;
 };
 
 type RefineIssueInput = {

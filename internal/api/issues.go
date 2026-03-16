@@ -24,7 +24,9 @@ type createIssueRequest struct {
 }
 
 type closeIssueRequest struct {
-	ClosedBy string `json:"closedBy,omitempty"`
+	ClosedBy   string `json:"closedBy,omitempty"`
+	Reason     string `json:"reason,omitempty"`
+	ReasonNote string `json:"reasonNote,omitempty"`
 }
 
 type refineIssueRequest struct {
@@ -43,8 +45,10 @@ type assignIssueRequest struct {
 }
 
 type batchCloseIssuesRequest struct {
-	IDs      []string `json:"ids"`
-	ClosedBy string   `json:"closedBy,omitempty"`
+	IDs        []string `json:"ids"`
+	ClosedBy   string   `json:"closedBy,omitempty"`
+	Reason     string   `json:"reason,omitempty"`
+	ReasonNote string   `json:"reasonNote,omitempty"`
 }
 
 type batchRefineIssuesRequest struct {
@@ -358,8 +362,10 @@ func (s *Server) handleIssueCloseBatch(w http.ResponseWriter, r *http.Request) {
 
 	result, err := commands.RunIssueMutationBatch(request.IDs, func(id string) (issues.Issue, error) {
 		return s.closeIssue.Handle(r.Context(), commands.CloseIssue{
-			ID:       id,
-			ClosedBy: actorForRequest(r, request.ClosedBy),
+			ID:         id,
+			ClosedBy:   actorForRequest(r, request.ClosedBy),
+			Reason:     request.Reason,
+			ReasonNote: request.ReasonNote,
 		})
 	})
 	if err != nil {
@@ -478,8 +484,10 @@ func (s *Server) handleCloseIssue(w http.ResponseWriter, r *http.Request, id str
 	}
 
 	closed, err := s.closeIssue.Handle(r.Context(), commands.CloseIssue{
-		ID:       id,
-		ClosedBy: actorForRequest(r, request.ClosedBy),
+		ID:         id,
+		ClosedBy:   actorForRequest(r, request.ClosedBy),
+		Reason:     request.Reason,
+		ReasonNote: request.ReasonNote,
 	})
 	if err != nil {
 		if errors.Is(err, issues.ErrNotFound) {
@@ -770,6 +778,8 @@ func decodeBatchCloseIssuesRequest(r *http.Request) (batchCloseIssuesRequest, er
 
 	request.IDs = sanitizeIssueIDs(request.IDs)
 	request.ClosedBy = strings.TrimSpace(request.ClosedBy)
+	request.Reason = strings.TrimSpace(request.Reason)
+	request.ReasonNote = strings.TrimSpace(request.ReasonNote)
 	if len(request.IDs) == 0 {
 		return batchCloseIssuesRequest{}, errors.New("at least one issue id is required")
 	}
@@ -869,6 +879,8 @@ func decodeCloseIssueRequest(r *http.Request) (closeIssueRequest, error) {
 	}
 
 	request.ClosedBy = strings.TrimSpace(request.ClosedBy)
+	request.Reason = strings.TrimSpace(request.Reason)
+	request.ReasonNote = strings.TrimSpace(request.ReasonNote)
 	return request, nil
 }
 

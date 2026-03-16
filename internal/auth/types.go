@@ -51,7 +51,9 @@ type OAuthUser struct {
 
 type APIToken struct {
 	ID          string     `json:"id"`
+	Name        string     `json:"name"`
 	TokenPrefix string     `json:"tokenPrefix"`
 	CreatedAt   time.Time  `json:"createdAt"`
 	RevokedAt   *time.Time `json:"revokedAt,omitempty"`
+	LastUsedAt  *time.Time `json:"lastUsedAt,omitempty"`
 }

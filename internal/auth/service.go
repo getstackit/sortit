@@ -186,8 +186,8 @@ func (s *Service) Logout(w http.ResponseWriter, r *http.Request) error {
 	return nil
 }
 
-func (s *Service) CreateAPIToken(ctx context.Context, principal Principal) (APIToken, string, error) {
-	return s.store.CreateAPIToken(ctx, principal.UserID)
+func (s *Service) CreateAPIToken(ctx context.Context, principal Principal, name string) (APIToken, string, error) {
+	return s.store.CreateAPIToken(ctx, principal.UserID, name)
 }
 
 func (s *Service) ListAPITokens(ctx context.Context, principal Principal) ([]APIToken, error) {

@@ -24,8 +24,8 @@ type ListIssueReferencesByIDsRow struct {
 	Status string
 }
 
-func (q *Queries) ListIssueReferencesByIDs(ctx context.Context, ids []string) ([]ListIssueReferencesByIDsRow, error) {
-	rows, err := q.db.QueryContext(ctx, listIssueReferencesByIDs, pq.Array(ids))
+func (q *Queries) ListIssueReferencesByIDs(ctx context.Context, dollar_1 []string) ([]ListIssueReferencesByIDsRow, error) {
+	rows, err := q.db.QueryContext(ctx, listIssueReferencesByIDs, pq.Array(dollar_1))
 	if err != nil {
 		return nil, err
 	}

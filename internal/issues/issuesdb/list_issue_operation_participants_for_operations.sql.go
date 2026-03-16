@@ -18,26 +18,21 @@ WHERE operation_id = ANY($1::text[])
 ORDER BY operation_id ASC, sequence ASC, issue_id ASC
 `
 
-type ListIssueOperationParticipantsForOperationsRow struct {
-	OperationID string
-	IssueID     string
-	Role        string
-	Sequence    int64
-}
-
-func (q *Queries) ListIssueOperationParticipantsForOperations(
-	ctx context.Context,
-	operationIDs []string,
-) ([]ListIssueOperationParticipantsForOperationsRow, error) {
-	rows, err := q.db.QueryContext(ctx, listIssueOperationParticipantsForOperations, pq.Array(operationIDs))
+func (q *Queries) ListIssueOperationParticipantsForOperations(ctx context.Context, dollar_1 []string) ([]IssueOperationParticipant, error) {
+	rows, err := q.db.QueryContext(ctx, listIssueOperationParticipantsForOperations, pq.Array(dollar_1))
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
-	var items []ListIssueOperationParticipantsForOperationsRow
+	var items []IssueOperationParticipant
 	for rows.Next() {
-		var i ListIssueOperationParticipantsForOperationsRow
-		if err := rows.Scan(&i.OperationID, &i.IssueID, &i.Role, &i.Sequence); err != nil {
+		var i IssueOperationParticipant
+		if err := rows.Scan(
+			&i.OperationID,
+			&i.IssueID,
+			&i.Role,
+			&i.Sequence,
+		); err != nil {
 			return nil, err
 		}
 		items = append(items, i)

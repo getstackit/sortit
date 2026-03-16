@@ -48,10 +48,6 @@ vi.mock("@/components/tag-relevance-bars", () => ({
   TagRelevanceBars: () => <div>Tag bars</div>,
 }));
 
-vi.mock("@/components/closed-factor-attribution-chart", () => ({
-  ClosedFactorAttributionChart: () => <div>Closed factor chart</div>,
-}));
-
 vi.mock("@/hooks/use-issues", () => ({
   useIssues: vi.fn(),
 }));
@@ -140,10 +136,9 @@ describe("PeoplePage", () => {
     expect(screen.getByRole("link", { name: "Avery" })).toHaveAttribute("href", "/people/Avery");
   });
 
-  it("shows the closed factor timeline section", () => {
+  it("does not show the closed factor timeline (moved to analytics)", () => {
     render(<PeoplePage />);
 
-    expect(screen.getByText("Closed Factor Timeline")).toBeInTheDocument();
-    expect(screen.getByText("Closed factor chart")).toBeInTheDocument();
+    expect(screen.queryByText("Closed Factor Timeline")).not.toBeInTheDocument();
   });
 });

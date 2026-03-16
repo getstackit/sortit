@@ -47,6 +47,8 @@ import { rememberRecentIssue } from "@/hooks/use-recent-history";
 import { cn } from "@/lib/utils";
 import { formatRelativeTime } from "@/lib/format";
 import { Badge } from "@/components/ui/badge";
+import { CloseIssueModal } from "@/components/close-issue-modal";
+import { Markdown } from "@/components/markdown";
 
 import { TagRelevanceBars } from "@/components/tag-relevance-bars";
 import { tagHref } from "@/lib/tags";
@@ -79,23 +81,6 @@ function formatIssueTitle(raw: string, maxLength = 84) {
   return normalized.length > maxLength
     ? `${normalized.slice(0, maxLength).trimEnd()}...`
     : normalized;
-}
-
-function looksLikeStructuredText(text: string) {
-  return (
-    text.includes("\n") ||
-    text.includes("Error") ||
-    text.includes("Exception") ||
-    text.includes(" at ") ||
-    /^\s*(import|const|let|var|def|class)\b/m.test(text)
-  );
-}
-
-function splitParagraphs(text: string) {
-  return text
-    .split(/\n{2,}/)
-    .map((paragraph) => paragraph.trim())
-    .filter(Boolean);
 }
 
 function statusClasses(status: IssueRecord["status"]) {
@@ -248,21 +233,7 @@ async function copyText(value: string) {
 }
 
 function DiscussionBody({ text }: { text: string }) {
-  if (looksLikeStructuredText(text)) {
-    return (
-      <pre className="overflow-x-auto whitespace-pre-wrap break-words font-mono text-[13px] leading-6 text-foreground/85">
-        {text}
-      </pre>
-    );
-  }
-
-  return (
-    <div className="space-y-4 text-[15px] leading-7 text-foreground/90">
-      {splitParagraphs(text).map((paragraph, index) => (
-        <p key={index}>{paragraph}</p>
-      ))}
-    </div>
-  );
+  return <Markdown>{text}</Markdown>;
 }
 
 export function IssueDetailPage({ issueID }: { issueID: string }) {
@@ -284,6 +255,7 @@ export function IssueDetailPage({ issueID }: { issueID: string }) {
     "idle" | "text-copied" | "link-copied" | "error"
   >("idle");
   const [statusPending, setStatusPending] = useState(false);
+  const [closeModalOpen, setCloseModalOpen] = useState(false);
   const [refineInput, setRefineInput] = useState("");
   const [refinePending, setRefinePending] = useState(false);
   const [postMode, setPostMode] = useState<"refinement" | "progress">("refinement");
@@ -351,14 +323,15 @@ export function IssueDetailPage({ issueID }: { issueID: string }) {
       return;
     }
 
+    if (issue.status === "open") {
+      setCloseModalOpen(true);
+      return;
+    }
+
     setStatusPending(true);
 
     try {
-      const updated =
-        issue.status === "closed"
-          ? await reopenIssue(issue.id)
-          : await closeIssue(issue.id);
-
+      const updated = await reopenIssue(issue.id);
       mutateIssue(updated, { revalidate: false });
       setActionError(null);
     } catch (caughtError) {
@@ -371,6 +344,25 @@ export function IssueDetailPage({ issueID }: { issueID: string }) {
       setStatusPending(false);
     }
   }, [issue, statusPending, mutateIssue]);
+
+  const handleCloseConfirm = useCallback(async (reason: string, reasonNote: string) => {
+    if (!issue) return;
+    setStatusPending(true);
+    try {
+      const updated = await closeIssue(issue.id, { reason, reasonNote });
+      mutateIssue(updated, { revalidate: false });
+      setActionError(null);
+      setCloseModalOpen(false);
+    } catch (caughtError) {
+      const message =
+        caughtError instanceof Error
+          ? caughtError.message
+          : "Unknown backend error";
+      setActionError(message);
+    } finally {
+      setStatusPending(false);
+    }
+  }, [issue, mutateIssue]);
 
   const handleRefine = useCallback(async () => {
     if (!issue || refinePending) {
@@ -1304,7 +1296,7 @@ export function IssueDetailPage({ issueID }: { issueID: string }) {
                           />
                           <div className="mt-3 flex flex-wrap items-center justify-between gap-3">
                             <p className="text-[11px] text-muted-foreground">
-                              Press <span className="font-medium text-foreground">Cmd/Ctrl + Enter</span>{" "}
+                              Markdown supported. Press <span className="font-medium text-foreground">Cmd/Ctrl + Enter</span>{" "}
                               to post.
                             </p>
                             <Button
@@ -1515,6 +1507,11 @@ export function IssueDetailPage({ issueID }: { issueID: string }) {
           )}
         </div>
       </div>
+      <CloseIssueModal
+        open={closeModalOpen}
+        onOpenChange={setCloseModalOpen}
+        onConfirm={handleCloseConfirm}
+      />
     </AppShell>
   );
 }
