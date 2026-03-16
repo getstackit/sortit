@@ -6,17 +6,7 @@ import { StatusBadge } from "@/components/status-badge";
 import { TagBadge } from "@/components/tag-badge";
 import { cn } from "@/lib/utils";
 import type { IssueRecord } from "@/lib/issues";
-
-function looksLikeCode(text: string) {
-  return (
-    text.includes("Error") ||
-    text.includes("at ") ||
-    text.includes("=>") ||
-    text.includes("function") ||
-    text.includes("{") ||
-    /^\s*(import|const|let|var|def|class)\b/m.test(text)
-  );
-}
+import { Markdown } from "@/components/markdown";
 
 function timeAgo(timestamp: string) {
   const date = new Date(timestamp);
@@ -39,19 +29,14 @@ type IssueCardProps = {
 export function IssueCard({ issue, href, className, compact }: IssueCardProps) {
   const content = (
     <>
-      <p
+      <div
         className={cn(
-          "whitespace-pre-wrap leading-relaxed",
           issue.status === "closed" && "text-muted-foreground",
-          compact
-            ? "line-clamp-2 text-xs"
-            : looksLikeCode(issue.raw)
-              ? "font-mono text-[13px] text-foreground/80"
-              : "text-[15px]"
+          compact && "line-clamp-2"
         )}
       >
-        {issue.raw}
-      </p>
+        <Markdown compact={compact}>{issue.raw}</Markdown>
+      </div>
       <div className={cn("flex items-center gap-2", compact ? "mt-1.5" : "mt-3")}>
         <div className="flex flex-wrap gap-1.5">
           {issue.enrichmentStatus === "pending" && (

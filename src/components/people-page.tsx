@@ -5,7 +5,6 @@ import { useMemo, useState } from "react";
 import { AppShell } from "@/components/app-shell";
 import { AppSidebar } from "@/components/app-sidebar";
 import { AvatarCircle } from "@/components/avatar-circle";
-import { ClosedFactorAttributionChart } from "@/components/closed-factor-attribution-chart";
 import { FilterToggleGroup } from "@/components/filter-toggle";
 import { IssueListItem } from "@/components/issue-list-item";
 import { SiteHeader } from "@/components/site-header";
@@ -127,12 +126,6 @@ export function PeoplePage() {
   const { data: correlationsData, error: correlationsError, isLoading: correlationsLoading } =
     useWorkCorrelations(status);
   const { data: allIssues, isLoading: issuesLoading } = useIssues(status);
-  const {
-    data: closedIssues,
-    error: closedIssuesError,
-    isLoading: closedIssuesLoading,
-  } = useIssues("closed");
-
   const people = useMemo(() => {
     if (!allIssues) return [];
 
@@ -200,29 +193,6 @@ export function PeoplePage() {
             value={status}
             onChange={setStatus}
           />
-
-          <section>
-            <h2 className="text-lg font-semibold tracking-tight">Closed Factor Timeline</h2>
-            <p className="mt-1 text-sm text-muted-foreground">
-              Factor attribution across tickets as they close, shown as a stacked time series of closed issues.
-            </p>
-
-            {closedIssuesLoading && (
-              <div className="mt-4 text-sm text-muted-foreground">Loading...</div>
-            )}
-
-            {closedIssuesError && (
-              <div className="app-status-warning mt-4 text-sm">
-                Failed to load closed issue timeline: {closedIssuesError.message}
-              </div>
-            )}
-
-            {!closedIssuesLoading && !closedIssuesError && (
-              <div className="mt-4">
-                <ClosedFactorAttributionChart issues={closedIssues ?? []} />
-              </div>
-            )}
-          </section>
 
           <section>
             <h2 className="text-lg font-semibold tracking-tight">People</h2>

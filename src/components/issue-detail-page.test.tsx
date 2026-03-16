@@ -75,6 +75,10 @@ vi.mock("@/features/map/api", () => ({
   fetchMapData: vi.fn(),
 }));
 
+vi.mock("@/components/markdown", () => ({
+  Markdown: ({ children }: { children: string }) => <div>{children}</div>,
+}));
+
 vi.mock("@/lib/issues", async () => {
   const actual = await vi.importActual<typeof import("@/lib/issues")>("@/lib/issues");
   return {

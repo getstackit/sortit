@@ -316,6 +316,95 @@
   }
 }
 
+@layer components {
+  .prose-splat {
+    @apply text-[15px] leading-7 text-foreground/90;
+  }
+
+  .prose-splat > * + * {
+    margin-top: 1em;
+  }
+
+  .prose-splat h1 {
+    @apply text-xl font-semibold leading-tight;
+  }
+
+  .prose-splat h2 {
+    @apply text-lg font-semibold leading-tight;
+  }
+
+  .prose-splat h3 {
+    @apply text-base font-semibold leading-snug;
+  }
+
+  .prose-splat p {
+    margin-top: 0.75em;
+    margin-bottom: 0.75em;
+  }
+
+  .prose-splat p:first-child {
+    margin-top: 0;
+  }
+
+  .prose-splat p:last-child {
+    margin-bottom: 0;
+  }
+
+  .prose-splat ul {
+    @apply list-disc pl-6;
+  }
+
+  .prose-splat ol {
+    @apply list-decimal pl-6;
+  }
+
+  .prose-splat li {
+    margin-top: 0.25em;
+    margin-bottom: 0.25em;
+  }
+
+  .prose-splat li > p {
+    margin-top: 0.25em;
+    margin-bottom: 0.25em;
+  }
+
+  .prose-splat blockquote {
+    @apply border-l-2 border-border pl-4 italic text-muted-foreground;
+  }
+
+  .prose-splat a {
+    @apply font-medium text-primary underline underline-offset-2;
+  }
+
+  .prose-splat hr {
+    @apply my-4 border-border;
+  }
+
+  .prose-splat table {
+    @apply w-full border-collapse text-sm;
+  }
+
+  .prose-splat th {
+    @apply border border-border bg-muted/50 px-3 py-1.5 text-left font-medium;
+  }
+
+  .prose-splat td {
+    @apply border border-border px-3 py-1.5;
+  }
+
+  .prose-splat img {
+    @apply max-w-full rounded;
+  }
+
+  .prose-splat-compact {
+    @apply text-xs leading-relaxed;
+  }
+
+  .prose-splat-compact > * + * {
+    margin-top: 0.5em;
+  }
+}
+
 @media (prefers-reduced-motion: reduce) {
   .animate-shimmer,
   .animate-gradient-shift,
