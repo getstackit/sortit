@@ -18,6 +18,17 @@ import {
 } from "@/components/ui/sidebar";
 import type { IssueRecord } from "@/lib/issues";
 import { cn } from "@/lib/utils";
+import {
+  CircleDot,
+  Map,
+  Activity,
+  Tags,
+  Users,
+  BarChart3,
+  Settings,
+  Bug,
+} from "lucide-react";
+import type { LucideIcon } from "lucide-react";
 
 type Thing = {
   id: string;
@@ -32,20 +43,21 @@ type AppSidebarProps = {
   showThingsSection?: boolean;
 };
 
-const navItems = [
-  { label: "Issues", href: "/" },
-  { label: "Map", href: "/map" },
-  { label: "Activity", href: "/activity" },
-  { label: "Tag Map", href: "/tags" },
-  { label: "People", href: "/people" },
-  { label: "Analytics", href: "/analytics" },
-  { label: "Settings", href: "/settings" },
-  { label: "Debug", href: "/debug" },
+const navItems: { label: string; href: string; icon: LucideIcon }[] = [
+  { label: "Issues", href: "/", icon: CircleDot },
+  { label: "Map", href: "/map", icon: Map },
+  { label: "Activity", href: "/activity", icon: Activity },
+  { label: "Tag Map", href: "/tags", icon: Tags },
+  { label: "People", href: "/people", icon: Users },
+  { label: "Analytics", href: "/analytics", icon: BarChart3 },
+  { label: "Settings", href: "/settings", icon: Settings },
+  { label: "Debug", href: "/debug", icon: Bug },
 ];
 
 function NavLink({
   href,
   label,
+  icon: Icon,
   active,
   collapsed,
   onClick,
@@ -54,6 +66,7 @@ function NavLink({
 }: {
   href: string;
   label: string;
+  icon?: LucideIcon;
   active?: boolean;
   collapsed: boolean;
   onClick: () => void;
@@ -75,12 +88,8 @@ function NavLink({
     >
       {children ?? (
         <>
+          {Icon && <Icon className={cn("size-4 shrink-0", !collapsed && "mr-2")} />}
           <span className={cn("truncate", collapsed && "sr-only")}>{label}</span>
-          {collapsed && (
-            <span aria-hidden="true" className="text-[11px] font-medium uppercase">
-              {label.charAt(0)}
-            </span>
-          )}
         </>
       )}
     </Link>
@@ -173,6 +182,7 @@ export function AppSidebar({
                   <NavLink
                     href={item.href}
                     label={item.label}
+                    icon={item.icon}
                     active={pathname === item.href}
                     collapsed={collapsed}
                     onClick={closeMobileSidebar}

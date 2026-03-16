@@ -1,6 +1,7 @@
 package services
 
 import (
+	"cmp"
 	"context"
 	"fmt"
 	"log/slog"
@@ -262,14 +263,11 @@ func CatalogTagsFromAnalysis(taxonomy []ai.Tag, explicit []string, scores []ai.T
 	return catalog
 }
 
-const (
-	specificityLLMWeight       = 0.7
-	specificityEmbeddingWeight = 0.3
-)
+const minSpecificityCatalogSize = 4
 
-// ScoreTagSpecificity computes the blended specificity score for a single tag
-// (LLM * 0.7 + embedding * 0.3) using the full tag catalog as context, and
-// persists the result.
+// ScoreTagSpecificity computes the canonical deterministic specificity score
+// for a single tag and persists it. The stored LLM sub-score is cleared so the
+// canonical field remains reproducible and embedding-derived.
 func (s *CatalogService) ScoreTagSpecificity(ctx context.Context, tagName string) error {
 	tagName = normalizeCatalogTagName(tagName)
 	if tagName == "" {
@@ -284,47 +282,35 @@ func (s *CatalogService) ScoreTagSpecificity(ctx context.Context, tagName string
 		return fmt.Errorf("list tags for specificity: %w", err)
 	}
 
-	catalog := aiTagsFromCatalog(tags)
-	embeddingScores := computeEmbeddingSpecificity(tags)
-
-	var target ai.Tag
-	var embScore float64
-	for i, t := range catalog {
-		if t.Name == tagName {
-			target = t
-			if i < len(embeddingScores) {
-				embScore = embeddingScores[i]
-			}
+	found := false
+	for _, tag := range tags {
+		if normalizeCatalogTagName(tag.Name) == tagName {
+			found = true
 			break
 		}
 	}
-	if target.Name == "" {
+	if !found {
 		return fmt.Errorf("tag %q not found in catalog", tagName)
 	}
 
-	llmScore, err := s.analyzer.ScoreTagSpecificity(ctx, target, catalog)
-	if err != nil {
-		return fmt.Errorf("score specificity for %q: %w", tagName, err)
-	}
-
-	blended := llmScore*specificityLLMWeight + embScore*specificityEmbeddingWeight
+	score := cloneFloat64Pointer(computeEmbeddingSpecificity(tags)[tagName])
 	now := time.Now().UTC()
-	if err := s.store.UpdateTagSpecificity(ctx, tagName, &blended, &llmScore, &embScore, &now); err != nil {
+	if err := s.store.UpdateTagSpecificity(ctx, tagName, score, nil, cloneFloat64Pointer(score), &now); err != nil {
 		return fmt.Errorf("persist specificity for %q: %w", tagName, err)
 	}
 
 	s.logger.InfoContext(ctx, "tag specificity scored",
 		"tag", tagName,
-		"blended", blended,
-		"llm", llmScore,
-		"embedding", embScore,
+		"specificity", float64LogValue(score),
+		"scored", score != nil,
 		"duration", time.Since(start).Round(time.Millisecond),
 	)
 	return nil
 }
 
-// ScoreAllTagsSpecificity computes the blended specificity score for every tag
-// in the catalog. This is a bulk operation for initial scoring or re-scoring.
+// ScoreAllTagsSpecificity computes the canonical deterministic specificity score
+// for every tag in the catalog. This is a bulk operation for initial scoring or
+// re-scoring.
 func (s *CatalogService) ScoreAllTagsSpecificity(ctx context.Context) error {
 	start := time.Now()
 	s.logger.InfoContext(ctx, "rescoring all tag specificity")
@@ -338,83 +324,121 @@ func (s *CatalogService) ScoreAllTagsSpecificity(ctx context.Context) error {
 		return nil
 	}
 
-	catalog := aiTagsFromCatalog(tags)
+	orderedNames := sortedCatalogTagNames(tags)
 	embeddingScores := computeEmbeddingSpecificity(tags)
 	now := time.Now().UTC()
 
 	s.logger.InfoContext(ctx, "computed embedding specificity",
-		"tag_count", len(catalog),
-		"embedding_count", countEmbeddings(tags),
+		"tag_count", len(orderedNames),
+		"scored_count", countComputedScores(embeddingScores),
 	)
 
-	for i, tag := range catalog {
+	for i, tagName := range orderedNames {
 		tagStart := time.Now()
-		llmScore, err := s.analyzer.ScoreTagSpecificity(ctx, tag, catalog)
-		if err != nil {
-			return fmt.Errorf("score specificity for %q: %w", tag.Name, err)
-		}
-
-		var embScore float64
-		if i < len(embeddingScores) {
-			embScore = embeddingScores[i]
-		}
-		blended := llmScore*specificityLLMWeight + embScore*specificityEmbeddingWeight
-
-		if err := s.store.UpdateTagSpecificity(ctx, tag.Name, &blended, &llmScore, &embScore, &now); err != nil {
-			return fmt.Errorf("persist specificity for %q: %w", tag.Name, err)
+		score := cloneFloat64Pointer(embeddingScores[tagName])
+		if err := s.store.UpdateTagSpecificity(ctx, tagName, score, nil, cloneFloat64Pointer(score), &now); err != nil {
+			return fmt.Errorf("persist specificity for %q: %w", tagName, err)
 		}
 
 		s.logger.InfoContext(ctx, "tag scored",
-			"tag", tag.Name,
-			"blended", blended,
-			"llm", llmScore,
-			"embedding", embScore,
-			"progress", fmt.Sprintf("%d/%d", i+1, len(catalog)),
+			"tag", tagName,
+			"specificity", float64LogValue(score),
+			"scored", score != nil,
+			"progress", fmt.Sprintf("%d/%d", i+1, len(orderedNames)),
 			"duration", time.Since(tagStart).Round(time.Millisecond),
 		)
 	}
 
 	s.logger.InfoContext(ctx, "all tags rescored",
-		"tag_count", len(catalog),
+		"tag_count", len(orderedNames),
 		"duration", time.Since(start).Round(time.Millisecond),
 	)
 	return nil
 }
 
-func countEmbeddings(tags []issues.Tag) int {
-	n := 0
-	for _, t := range tags {
-		if len(t.Embedding) > 0 {
-			n++
+func countComputedScores(scores map[string]*float64) int {
+	count := 0
+	for _, score := range scores {
+		if score != nil {
+			count++
 		}
 	}
-	return n
+	return count
 }
 
-// computeEmbeddingSpecificity computes the embedding-based specificity score
-// for each tag using k-means clustering. Tags must be in the same order as
-// returned by aiTagsFromCatalog. Tags without embeddings receive a score of 0.
-func computeEmbeddingSpecificity(tags []issues.Tag) []float64 {
-	// Build embedding matrix, tracking which tags have embeddings.
-	embeddings := make([][]float64, 0, len(tags))
-	indexMap := make([]int, 0, len(tags)) // maps embedding index → tag index
-	for i, tag := range tags {
-		if len(tag.Embedding) > 0 {
-			indexMap = append(indexMap, i)
-			embeddings = append(embeddings, tag.Embedding)
-		}
+// computeEmbeddingSpecificity computes canonical embedding-based specificity
+// scores by tag name. Tags without embeddings, or catalogs too small to support
+// a meaningful relative measure, receive nil.
+func computeEmbeddingSpecificity(tags []issues.Tag) map[string]*float64 {
+	type scoredTag struct {
+		name      string
+		embedding []float64
 	}
 
-	scores := make([]float64, len(tags))
-	if len(embeddings) < 2 {
+	scored := make([]scoredTag, 0, len(tags))
+	for _, tag := range tags {
+		name := normalizeCatalogTagName(tag.Name)
+		if name == "" || len(tag.Embedding) == 0 {
+			continue
+		}
+		scored = append(scored, scoredTag{
+			name:      name,
+			embedding: append([]float64(nil), tag.Embedding...),
+		})
+	}
+	slices.SortStableFunc(scored, func(a, b scoredTag) int {
+		return cmp.Compare(a.name, b.name)
+	})
+
+	scores := make(map[string]*float64, len(scored))
+	if len(scored) < minSpecificityCatalogSize {
 		return scores
 	}
 
-	results := vectors.KMeansSpecificity(embeddings)
-	for j, r := range results {
-		scores[indexMap[j]] = r.Specificity
+	embeddings := make([][]float64, len(scored))
+	for i, tag := range scored {
+		embeddings[i] = tag.embedding
+	}
+
+	results := vectors.NeighborhoodSpecificity(embeddings)
+	for i, result := range results {
+		score := result.Specificity
+		scores[scored[i].name] = &score
 	}
 	return scores
+}
+
+func sortedCatalogTagNames(tags []issues.Tag) []string {
+	seen := make(map[string]struct{}, len(tags))
+	names := make([]string, 0, len(tags))
+	for _, tag := range tags {
+		name := normalizeCatalogTagName(tag.Name)
+		if name == "" {
+			continue
+		}
+		if _, ok := seen[name]; ok {
+			continue
+		}
+		seen[name] = struct{}{}
+		names = append(names, name)
+	}
+	slices.Sort(names)
+	return names
+}
+
+func cloneFloat64Pointer(value *float64) *float64 {
+	if value == nil {
+		return nil
+	}
+	out := *value
+	return &out
+}
+
+func float64LogValue(value *float64) any {
+	if value == nil {
+		return nil
+	}
+	return *value
 }
 
 func normalizeCatalogTagName(name string) string {
