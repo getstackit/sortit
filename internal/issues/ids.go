@@ -15,3 +15,8 @@ func NewIssueID() string {
 func NewOperationID() string {
 	return ulid.MustNew(ulid.Now(), rand.Reader).String()
 }
+
+// NewLifecycleFactID generates a new server-side ULID for a lifecycle fact.
+func NewLifecycleFactID() string {
+	return ulid.MustNew(ulid.Now(), rand.Reader).String()
+}

@@ -102,9 +102,11 @@ func (h CombineIssuesHandler) Handle(ctx context.Context, input CombineIssues) (
 
 		status := issues.StatusClosed
 		if err := uow.UpdateIssueFields(ctx, id, issues.IssueFieldUpdate{
-			Status:   &status,
-			ClosedAt: &createdAt,
-			ClosedBy: &actor,
+			LifecycleCreatedAt: &createdAt,
+			LifecycleCreatedBy: &actor,
+			Status:             &status,
+			ClosedAt:           &createdAt,
+			ClosedBy:           &actor,
 		}); err != nil {
 			return issues.IssueOperationResult{}, err
 		}

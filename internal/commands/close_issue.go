@@ -56,11 +56,13 @@ func (h CloseIssueHandler) Handle(ctx context.Context, input CloseIssue) (closed
 	status := issues.StatusClosed
 
 	if err := uow.UpdateIssueFields(ctx, id, issues.IssueFieldUpdate{
-		Status:           &status,
-		ClosedAt:         &closedAt,
-		ClosedBy:         &actor,
-		ClosedReason:     &reason,
-		ClosedReasonNote: &reasonNote,
+		LifecycleCreatedAt: &closedAt,
+		LifecycleCreatedBy: &actor,
+		Status:             &status,
+		ClosedAt:           &closedAt,
+		ClosedBy:           &actor,
+		ClosedReason:       &reason,
+		ClosedReasonNote:   &reasonNote,
 	}); err != nil {
 		return issues.Issue{}, err
 	}

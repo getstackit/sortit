@@ -11,9 +11,26 @@ import (
 )
 
 const getIssue = `-- name: GetIssue :one
-SELECT id, raw, tags_json, created_by, created_at_unix_nano, status, closed_at_unix_nano, closed_by, closed_reason, closed_reason_note, tag_scores_json, COALESCE(embedding_vector::text, '') AS embedding_text, assigned_to, enrichment_status, enrichment_error, enrichment_target_sequence
-FROM issues
-WHERE id = $1
+SELECT
+  i.id,
+  i.raw,
+  i.tags_json,
+  COALESCE(p.created_by, i.created_by) AS created_by,
+  COALESCE(p.created_at_unix_nano, i.created_at_unix_nano) AS created_at_unix_nano,
+  COALESCE(p.status, i.status) AS status,
+  COALESCE(p.closed_at_unix_nano, i.closed_at_unix_nano) AS closed_at_unix_nano,
+  COALESCE(p.closed_by, i.closed_by) AS closed_by,
+  COALESCE(p.closed_reason, i.closed_reason) AS closed_reason,
+  COALESCE(p.closed_reason_note, i.closed_reason_note) AS closed_reason_note,
+  i.tag_scores_json,
+  COALESCE(i.embedding_vector::text, '') AS embedding_text,
+  COALESCE(p.assigned_to, i.assigned_to) AS assigned_to,
+  i.enrichment_status,
+  i.enrichment_error,
+  i.enrichment_target_sequence
+FROM issues i
+LEFT JOIN issue_lifecycle_projections p ON p.issue_id = i.id
+WHERE i.id = $1
 `
 
 type GetIssueRow struct {

@@ -374,6 +374,8 @@ type IssueFieldUpdate struct {
 	Tags                     []string
 	TagScores                []TagRelevance
 	Embedding                []float64
+	LifecycleCreatedAt       *time.Time
+	LifecycleCreatedBy       *string
 	Status                   *IssueStatus
 	ClosedAt                 *time.Time
 	ClosedBy                 *string

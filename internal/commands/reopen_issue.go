@@ -3,6 +3,7 @@ package commands
 import (
 	"context"
 	"strings"
+	"time"
 
 	"splat/internal/issues"
 )
@@ -38,9 +39,11 @@ func (h ReopenIssueHandler) Handle(ctx context.Context, input ReopenIssue) (reop
 		return issue, nil
 	}
 
+	reopenedAt := time.Now().UTC()
 	status := issues.StatusOpen
 	if err := uow.UpdateIssueFields(ctx, id, issues.IssueFieldUpdate{
-		Status: &status,
+		LifecycleCreatedAt: &reopenedAt,
+		Status:             &status,
 	}); err != nil {
 		return issues.Issue{}, err
 	}

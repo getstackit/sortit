@@ -21,6 +21,22 @@ type ApiToken struct {
 	LastUsedAtUnixNano int64
 }
 
+type AppendOnlyMigrationCheckpoint struct {
+	Name              string
+	Phase             string
+	CursorJson        json.RawMessage
+	SummaryJson       json.RawMessage
+	UpdatedAtUnixNano int64
+}
+
+type AppendOnlyParityRun struct {
+	ID                string
+	Domain            string
+	Status            string
+	DetailsJson       json.RawMessage
+	CreatedAtUnixNano int64
+}
+
 type AuthAccount struct {
 	ID                string
 	UserID            string
@@ -72,6 +88,34 @@ type IssueEnrichmentJob struct {
 	AttemptCount           int64
 	CreatedAtUnixNano      int64
 	UpdatedAtUnixNano      int64
+}
+
+type IssueLifecycleFact struct {
+	ID                string
+	IssueID           string
+	Sequence          int64
+	Kind              string
+	CreatedBy         string
+	CreatedAtUnixNano int64
+	PayloadJson       json.RawMessage
+	Source            string
+	SourceID          string
+	Inferred          bool
+}
+
+type IssueLifecycleProjection struct {
+	IssueID           string
+	CreatedBy         string
+	CreatedAtUnixNano int64
+	Status            string
+	ClosedAtUnixNano  int64
+	ClosedBy          string
+	ClosedReason      string
+	ClosedReasonNote  string
+	AssignedTo        string
+	LastFactID        string
+	FactCount         int64
+	UpdatedAtUnixNano int64
 }
 
 type IssueLink struct {

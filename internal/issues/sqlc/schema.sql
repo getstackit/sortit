@@ -13,6 +13,20 @@ CREATE TABLE "public"."api_tokens" (
     "name" text NOT NULL,
     "last_used_at_unix_nano" bigint NOT NULL
 );
+CREATE TABLE "public"."append_only_migration_checkpoints" (
+    "name" text NOT NULL,
+    "phase" text NOT NULL,
+    "cursor_json" jsonb NOT NULL,
+    "summary_json" jsonb NOT NULL,
+    "updated_at_unix_nano" bigint NOT NULL
+);
+CREATE TABLE "public"."append_only_parity_runs" (
+    "id" text NOT NULL,
+    "domain" text NOT NULL,
+    "status" text NOT NULL,
+    "details_json" jsonb NOT NULL,
+    "created_at_unix_nano" bigint NOT NULL
+);
 CREATE TABLE "public"."auth_accounts" (
     "id" text NOT NULL,
     "user_id" text NOT NULL,
@@ -41,6 +55,32 @@ CREATE TABLE "public"."issue_enrichment_jobs" (
     "lease_expires_at_unix_nano" bigint NOT NULL,
     "attempt_count" bigint NOT NULL,
     "created_at_unix_nano" bigint NOT NULL,
+    "updated_at_unix_nano" bigint NOT NULL
+);
+CREATE TABLE "public"."issue_lifecycle_facts" (
+    "id" text NOT NULL,
+    "issue_id" text NOT NULL,
+    "sequence" bigint NOT NULL,
+    "kind" text NOT NULL,
+    "created_by" text NOT NULL,
+    "created_at_unix_nano" bigint NOT NULL,
+    "payload_json" jsonb NOT NULL,
+    "source" text NOT NULL,
+    "source_id" text NOT NULL,
+    "inferred" boolean NOT NULL
+);
+CREATE TABLE "public"."issue_lifecycle_projections" (
+    "issue_id" text NOT NULL,
+    "created_by" text NOT NULL,
+    "created_at_unix_nano" bigint NOT NULL,
+    "status" text NOT NULL,
+    "closed_at_unix_nano" bigint NOT NULL,
+    "closed_by" text NOT NULL,
+    "closed_reason" text NOT NULL,
+    "closed_reason_note" text NOT NULL,
+    "assigned_to" text NOT NULL,
+    "last_fact_id" text NOT NULL,
+    "fact_count" bigint NOT NULL,
     "updated_at_unix_nano" bigint NOT NULL
 );
 CREATE TABLE "public"."issue_links" (
@@ -147,12 +187,30 @@ ALTER SEQUENCE "public"."tag_merge_history_id_seq" OWNED BY "public"."tag_merge_
 ALTER TABLE ONLY "public"."api_tokens" ALTER COLUMN "revoked_at_unix_nano" SET DEFAULT 0;
 ALTER TABLE ONLY "public"."api_tokens" ALTER COLUMN "name" SET DEFAULT ''::text;
 ALTER TABLE ONLY "public"."api_tokens" ALTER COLUMN "last_used_at_unix_nano" SET DEFAULT 0;
+ALTER TABLE ONLY "public"."append_only_migration_checkpoints" ALTER COLUMN "phase" SET DEFAULT ''::text;
+ALTER TABLE ONLY "public"."append_only_migration_checkpoints" ALTER COLUMN "cursor_json" SET DEFAULT '{}'::jsonb;
+ALTER TABLE ONLY "public"."append_only_migration_checkpoints" ALTER COLUMN "summary_json" SET DEFAULT '{}'::jsonb;
+ALTER TABLE ONLY "public"."append_only_parity_runs" ALTER COLUMN "details_json" SET DEFAULT '{}'::jsonb;
 ALTER TABLE ONLY "public"."dismissed_tag_merges" ALTER COLUMN "id" SET DEFAULT nextval('dismissed_tag_merges_id_seq'::regclass);
 ALTER TABLE ONLY "public"."dismissed_tag_merges" ALTER COLUMN "dismissed_at" SET DEFAULT now();
 ALTER TABLE ONLY "public"."events" ALTER COLUMN "body" SET DEFAULT ''::text;
 ALTER TABLE ONLY "public"."events" ALTER COLUMN "participants_json" SET DEFAULT '[]'::jsonb;
 ALTER TABLE ONLY "public"."issue_enrichment_jobs" ALTER COLUMN "lease_expires_at_unix_nano" SET DEFAULT 0;
 ALTER TABLE ONLY "public"."issue_enrichment_jobs" ALTER COLUMN "attempt_count" SET DEFAULT 0;
+ALTER TABLE ONLY "public"."issue_lifecycle_facts" ALTER COLUMN "created_by" SET DEFAULT ''::text;
+ALTER TABLE ONLY "public"."issue_lifecycle_facts" ALTER COLUMN "payload_json" SET DEFAULT '{}'::jsonb;
+ALTER TABLE ONLY "public"."issue_lifecycle_facts" ALTER COLUMN "source" SET DEFAULT ''::text;
+ALTER TABLE ONLY "public"."issue_lifecycle_facts" ALTER COLUMN "source_id" SET DEFAULT ''::text;
+ALTER TABLE ONLY "public"."issue_lifecycle_facts" ALTER COLUMN "inferred" SET DEFAULT false;
+ALTER TABLE ONLY "public"."issue_lifecycle_projections" ALTER COLUMN "created_by" SET DEFAULT ''::text;
+ALTER TABLE ONLY "public"."issue_lifecycle_projections" ALTER COLUMN "status" SET DEFAULT 'open'::text;
+ALTER TABLE ONLY "public"."issue_lifecycle_projections" ALTER COLUMN "closed_at_unix_nano" SET DEFAULT 0;
+ALTER TABLE ONLY "public"."issue_lifecycle_projections" ALTER COLUMN "closed_by" SET DEFAULT ''::text;
+ALTER TABLE ONLY "public"."issue_lifecycle_projections" ALTER COLUMN "closed_reason" SET DEFAULT ''::text;
+ALTER TABLE ONLY "public"."issue_lifecycle_projections" ALTER COLUMN "closed_reason_note" SET DEFAULT ''::text;
+ALTER TABLE ONLY "public"."issue_lifecycle_projections" ALTER COLUMN "assigned_to" SET DEFAULT ''::text;
+ALTER TABLE ONLY "public"."issue_lifecycle_projections" ALTER COLUMN "last_fact_id" SET DEFAULT ''::text;
+ALTER TABLE ONLY "public"."issue_lifecycle_projections" ALTER COLUMN "fact_count" SET DEFAULT 0;
 ALTER TABLE ONLY "public"."issue_links" ALTER COLUMN "note" SET DEFAULT ''::text;
 ALTER TABLE ONLY "public"."issue_links" ALTER COLUMN "operation_id" SET DEFAULT ''::text;
 ALTER TABLE ONLY "public"."issue_operations" ALTER COLUMN "note" SET DEFAULT ''::text;
@@ -175,6 +233,8 @@ ALTER TABLE ONLY "public"."tag_merge_history" ALTER COLUMN "merged_by" SET DEFAU
 ALTER TABLE ONLY "public"."api_tokens" ADD CONSTRAINT "api_tokens_pkey" PRIMARY KEY (id);
 ALTER TABLE ONLY "public"."api_tokens" ADD CONSTRAINT "api_tokens_token_hash_key" UNIQUE (token_hash);
 ALTER TABLE ONLY "public"."api_tokens" ADD CONSTRAINT "api_tokens_user_id_fkey" FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE;
+ALTER TABLE ONLY "public"."append_only_migration_checkpoints" ADD CONSTRAINT "append_only_migration_checkpoints_pkey" PRIMARY KEY (name);
+ALTER TABLE ONLY "public"."append_only_parity_runs" ADD CONSTRAINT "append_only_parity_runs_pkey" PRIMARY KEY (id);
 ALTER TABLE ONLY "public"."auth_accounts" ADD CONSTRAINT "auth_accounts_pkey" PRIMARY KEY (id);
 ALTER TABLE ONLY "public"."auth_accounts" ADD CONSTRAINT "auth_accounts_provider_provider_user_id_key" UNIQUE (provider, provider_user_id);
 ALTER TABLE ONLY "public"."auth_accounts" ADD CONSTRAINT "auth_accounts_user_id_fkey" FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE;
@@ -184,6 +244,10 @@ ALTER TABLE ONLY "public"."events" ADD CONSTRAINT "events_issue_id_fkey" FOREIGN
 ALTER TABLE ONLY "public"."events" ADD CONSTRAINT "events_pkey" PRIMARY KEY (id);
 ALTER TABLE ONLY "public"."issue_enrichment_jobs" ADD CONSTRAINT "issue_enrichment_jobs_issue_id_fkey" FOREIGN KEY (issue_id) REFERENCES issues(id) ON DELETE CASCADE;
 ALTER TABLE ONLY "public"."issue_enrichment_jobs" ADD CONSTRAINT "issue_enrichment_jobs_pkey" PRIMARY KEY (issue_id);
+ALTER TABLE ONLY "public"."issue_lifecycle_facts" ADD CONSTRAINT "issue_lifecycle_facts_issue_id_fkey" FOREIGN KEY (issue_id) REFERENCES issues(id) ON DELETE CASCADE;
+ALTER TABLE ONLY "public"."issue_lifecycle_facts" ADD CONSTRAINT "issue_lifecycle_facts_pkey" PRIMARY KEY (id);
+ALTER TABLE ONLY "public"."issue_lifecycle_projections" ADD CONSTRAINT "issue_lifecycle_projections_issue_id_fkey" FOREIGN KEY (issue_id) REFERENCES issues(id) ON DELETE CASCADE;
+ALTER TABLE ONLY "public"."issue_lifecycle_projections" ADD CONSTRAINT "issue_lifecycle_projections_pkey" PRIMARY KEY (issue_id);
 ALTER TABLE ONLY "public"."issue_links" ADD CONSTRAINT "issue_links_no_self_links" CHECK (source_issue_id <> target_issue_id);
 ALTER TABLE ONLY "public"."issue_links" ADD CONSTRAINT "issue_links_pkey" PRIMARY KEY (id);
 ALTER TABLE ONLY "public"."issue_links" ADD CONSTRAINT "issue_links_source_issue_id_fkey" FOREIGN KEY (source_issue_id) REFERENCES issues(id) ON DELETE CASCADE;
@@ -207,11 +271,15 @@ ALTER TABLE ONLY "public"."tags" ADD CONSTRAINT "tags_pkey" PRIMARY KEY (name);
 ALTER TABLE ONLY "public"."users" ADD CONSTRAINT "users_pkey" PRIMARY KEY (id);
 
 CREATE INDEX api_tokens_user_id_idx ON public.api_tokens USING btree (user_id);
+CREATE INDEX append_only_parity_runs_domain_created_idx ON public.append_only_parity_runs USING btree (domain, created_at_unix_nano DESC, id DESC);
 CREATE INDEX auth_accounts_user_id_idx ON public.auth_accounts USING btree (user_id);
 CREATE INDEX events_created_at_idx ON public.events USING btree (created_at_unix_nano DESC, id DESC);
 CREATE INDEX events_issue_id_idx ON public.events USING btree (issue_id);
 CREATE INDEX events_kind_idx ON public.events USING btree (kind);
 CREATE INDEX issue_enrichment_jobs_lease_idx ON public.issue_enrichment_jobs USING btree (lease_expires_at_unix_nano, updated_at_unix_nano, issue_id);
+CREATE INDEX issue_lifecycle_facts_issue_created_idx ON public.issue_lifecycle_facts USING btree (issue_id, created_at_unix_nano, sequence, id);
+CREATE UNIQUE INDEX issue_lifecycle_facts_source_idx ON public.issue_lifecycle_facts USING btree (source, source_id);
+CREATE INDEX issue_lifecycle_projections_status_idx ON public.issue_lifecycle_projections USING btree (status, assigned_to, issue_id);
 CREATE INDEX issue_links_source_issue_id_idx ON public.issue_links USING btree (source_issue_id, created_at_unix_nano);
 CREATE INDEX issue_links_target_issue_id_idx ON public.issue_links USING btree (target_issue_id, created_at_unix_nano);
 CREATE UNIQUE INDEX issue_links_unique_logical_idx ON public.issue_links USING btree (source_issue_id, target_issue_id, type);

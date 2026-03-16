@@ -106,9 +106,13 @@ func (s *PostgresStore) List(ctx context.Context) ([]Issue, error) {
 func (s *PostgresStore) ListIssueMetadata(ctx context.Context) ([]Issue, error) {
 	rows, err := s.db.QueryContext(
 		ctx,
-		`SELECT id, raw, status, assigned_to
-		 FROM issues
-		 ORDER BY created_at_unix_nano DESC, id ASC`,
+		`SELECT i.id,
+		        i.raw,
+		        COALESCE(p.status, i.status) AS status,
+		        COALESCE(p.assigned_to, i.assigned_to) AS assigned_to
+		 FROM issues i
+		 LEFT JOIN issue_lifecycle_projections p ON p.issue_id = i.id
+		 ORDER BY COALESCE(p.created_at_unix_nano, i.created_at_unix_nano) DESC, i.id ASC`,
 	)
 	if err != nil {
 		return nil, fmt.Errorf("list issue metadata: %w", err)
@@ -176,11 +180,17 @@ func (s *PostgresStore) ListIssueEmbeddingSimilarities(
 
 	rows, err := s.db.QueryContext(
 		ctx,
-		`SELECT id, raw, tags_json, (1 - (embedding_vector <=> $1::vector)) AS similarity
-		 FROM issues
-		 WHERE embedding_vector IS NOT NULL
-		   AND vector_dims(embedding_vector) = $2
-		 ORDER BY embedding_vector <=> $1::vector ASC, created_at_unix_nano DESC, id ASC
+		`SELECT i.id,
+		        i.raw,
+		        i.tags_json,
+		        (1 - (i.embedding_vector <=> $1::vector)) AS similarity
+		 FROM issues i
+		 LEFT JOIN issue_lifecycle_projections p ON p.issue_id = i.id
+		 WHERE i.embedding_vector IS NOT NULL
+		   AND vector_dims(i.embedding_vector) = $2
+		 ORDER BY i.embedding_vector <=> $1::vector ASC,
+		          COALESCE(p.created_at_unix_nano, i.created_at_unix_nano) DESC,
+		          i.id ASC
 		 LIMIT $3`,
 		vectorLiteral,
 		len(query),
@@ -228,11 +238,15 @@ func (s *PostgresStore) ListPeopleAnalytics(ctx context.Context, opts ListOption
 
 	rows, err := s.db.QueryContext(
 		ctx,
-		`SELECT status, assigned_to, tag_scores_json, COALESCE(embedding_vector::text, '')
-		 FROM issues
-		 WHERE (NOT $1::bool OR status = $2::text)
-		   AND (NOT $3::bool OR LOWER(assigned_to) = LOWER($4::text))
-		 ORDER BY created_at_unix_nano DESC, id ASC`,
+		`SELECT COALESCE(p.status, i.status) AS status,
+		        COALESCE(p.assigned_to, i.assigned_to) AS assigned_to,
+		        i.tag_scores_json,
+		        COALESCE(i.embedding_vector::text, '')
+		 FROM issues i
+		 LEFT JOIN issue_lifecycle_projections p ON p.issue_id = i.id
+		 WHERE (NOT $1::bool OR COALESCE(p.status, i.status) = $2::text)
+		   AND (NOT $3::bool OR LOWER(COALESCE(p.assigned_to, i.assigned_to)) = LOWER($4::text))
+		 ORDER BY COALESCE(p.created_at_unix_nano, i.created_at_unix_nano) DESC, i.id ASC`,
 		params.filterStatus,
 		params.statusValue,
 		params.filterAssignedTo,
@@ -494,9 +508,16 @@ func (s *PostgresStore) ListIssueDetailReferences(ctx context.Context, ids []str
 func (s *PostgresStore) LoadMapProjectionData(ctx context.Context) ([]MapProjectionIssue, []Tag, error) {
 	rows, err := s.db.QueryContext(
 		ctx,
-		`SELECT id, raw, tags_json, status, tag_scores_json, COALESCE(embedding_vector::text, ''), assigned_to
-		 FROM issues
-		 ORDER BY created_at_unix_nano DESC, id ASC`,
+		`SELECT i.id,
+		        i.raw,
+		        i.tags_json,
+		        COALESCE(p.status, i.status) AS status,
+		        i.tag_scores_json,
+		        COALESCE(i.embedding_vector::text, ''),
+		        COALESCE(p.assigned_to, i.assigned_to) AS assigned_to
+		 FROM issues i
+		 LEFT JOIN issue_lifecycle_projections p ON p.issue_id = i.id
+		 ORDER BY COALESCE(p.created_at_unix_nano, i.created_at_unix_nano) DESC, i.id ASC`,
 	)
 	if err != nil {
 		return nil, nil, fmt.Errorf("list issues for map projection: %w", err)

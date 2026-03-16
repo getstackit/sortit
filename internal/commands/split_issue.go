@@ -177,9 +177,11 @@ func (h SplitIssueHandler) Handle(ctx context.Context, input SplitIssue) (result
 	if input.CloseSource {
 		status := issues.StatusClosed
 		if err := uow.UpdateIssueFields(ctx, sourceID, issues.IssueFieldUpdate{
-			Status:   &status,
-			ClosedAt: &createdAt,
-			ClosedBy: &actor,
+			LifecycleCreatedAt: &createdAt,
+			LifecycleCreatedBy: &actor,
+			Status:             &status,
+			ClosedAt:           &createdAt,
+			ClosedBy:           &actor,
 		}); err != nil {
 			return issues.IssueOperationResult{}, err
 		}

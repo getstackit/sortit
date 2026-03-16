@@ -32,6 +32,9 @@ func (s *PostgresStore) SaveIssue(ctx context.Context, issue Issue) error {
 	}); err != nil {
 		return fmt.Errorf("save issue: %w", err)
 	}
+	if err := syncIssueLifecycleOnCreate(ctx, s.db, issue); err != nil {
+		return err
+	}
 	if err := updateIssueEnrichmentState(ctx, s.db, record.ID, issueFieldUpdateForIssue(issue)); err != nil {
 		return err
 	}
@@ -61,31 +64,8 @@ func (s *PostgresStore) SaveIssuePost(ctx context.Context, post IssuePost) error
 func (s *PostgresStore) UpdateIssueFields(ctx context.Context, id string, fields IssueFieldUpdate) error {
 	id = strings.TrimSpace(id)
 
-	if fields.Status != nil && *fields.Status == StatusClosed && fields.ClosedAt != nil && fields.ClosedBy != nil {
-		if err := s.queries.CloseIssue(ctx, issuesdb.CloseIssueParams{
-			ID:               id,
-			ClosedAtUnixNano: fields.ClosedAt.UTC().UnixNano(),
-			ClosedBy:         *fields.ClosedBy,
-			ClosedReason:     derefString(fields.ClosedReason),
-			ClosedReasonNote: derefString(fields.ClosedReasonNote),
-		}); err != nil {
-			return fmt.Errorf("close issue fields: %w", err)
-		}
-	}
-
-	if fields.Status != nil && *fields.Status == StatusOpen {
-		if err := s.queries.ReopenIssue(ctx, id); err != nil {
-			return fmt.Errorf("reopen issue fields: %w", err)
-		}
-	}
-
-	if fields.AssignedTo != nil {
-		if err := s.queries.AssignIssue(ctx, issuesdb.AssignIssueParams{
-			AssignedTo: *fields.AssignedTo,
-			ID:         id,
-		}); err != nil {
-			return fmt.Errorf("assign issue fields: %w", err)
-		}
+	if err := applyLifecycleIssueFieldUpdate(ctx, s.db, id, fields); err != nil {
+		return err
 	}
 
 	if fields.Raw != nil {

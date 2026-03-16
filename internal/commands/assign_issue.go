@@ -3,6 +3,7 @@ package commands
 import (
 	"context"
 	"strings"
+	"time"
 
 	"splat/internal/issues"
 )
@@ -37,8 +38,12 @@ func (h AssignIssueHandler) Handle(ctx context.Context, input AssignIssue) (assi
 		return issues.Issue{}, err
 	}
 
+	createdAt := time.Now().UTC()
+	actor := issues.DefaultActor(input.CreatedBy)
 	if err := uow.UpdateIssueFields(ctx, id, issues.IssueFieldUpdate{
-		AssignedTo: &assignee,
+		AssignedTo:         &assignee,
+		LifecycleCreatedAt: &createdAt,
+		LifecycleCreatedBy: &actor,
 	}); err != nil {
 		return issues.Issue{}, err
 	}
@@ -47,7 +52,7 @@ func (h AssignIssueHandler) Handle(ctx context.Context, input AssignIssue) (assi
 		id,
 		issue.Discussion,
 		issues.AssignIssuePost(assignee),
-		issues.DefaultActor(input.CreatedBy),
+		actor,
 		"assigned",
 	)
 	if err := uow.SaveIssuePost(ctx, post); err != nil {

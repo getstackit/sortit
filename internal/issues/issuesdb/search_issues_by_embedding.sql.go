@@ -14,41 +14,42 @@ import (
 
 const searchIssuesByEmbedding = `-- name: SearchIssuesByEmbedding :many
 SELECT
-  id,
-  raw,
-  tags_json,
-  created_by,
-  created_at_unix_nano,
-  status,
-  closed_at_unix_nano,
-  closed_by,
-  closed_reason,
-  closed_reason_note,
-  tag_scores_json,
-  COALESCE(embedding_vector::text, '') AS embedding_text,
-  assigned_to,
-  (embedding_vector <=> $1::vector) AS semantic_distance
-FROM issues
-WHERE embedding_vector IS NOT NULL
-  AND vector_dims(embedding_vector) = $2
-  AND (NOT $3::bool OR status = $4::text)
-  AND (NOT $5::bool OR LOWER(assigned_to) = LOWER($6::text))
-  AND (NOT $7::bool OR id <> $8::text)
+  i.id,
+  i.raw,
+  i.tags_json,
+  COALESCE(p.created_by, i.created_by) AS created_by,
+  COALESCE(p.created_at_unix_nano, i.created_at_unix_nano) AS created_at_unix_nano,
+  COALESCE(p.status, i.status) AS status,
+  COALESCE(p.closed_at_unix_nano, i.closed_at_unix_nano) AS closed_at_unix_nano,
+  COALESCE(p.closed_by, i.closed_by) AS closed_by,
+  COALESCE(p.closed_reason, i.closed_reason) AS closed_reason,
+  COALESCE(p.closed_reason_note, i.closed_reason_note) AS closed_reason_note,
+  i.tag_scores_json,
+  COALESCE(i.embedding_vector::text, '') AS embedding_text,
+  COALESCE(p.assigned_to, i.assigned_to) AS assigned_to,
+  (i.embedding_vector <=> $1::vector) AS semantic_distance
+FROM issues i
+LEFT JOIN issue_lifecycle_projections p ON p.issue_id = i.id
+WHERE i.embedding_vector IS NOT NULL
+  AND vector_dims(i.embedding_vector) = $2
+  AND (NOT $3::bool OR COALESCE(p.status, i.status) = $4::text)
+  AND (NOT $5::bool OR LOWER(COALESCE(p.assigned_to, i.assigned_to)) = LOWER($6::text))
+  AND (NOT $7::bool OR i.id <> $8::text)
   AND (
     NOT $9::bool
     OR EXISTS (
       SELECT 1
-      FROM jsonb_array_elements_text(tags_json) AS tag
+      FROM jsonb_array_elements_text(i.tags_json) AS tag
       WHERE LOWER(tag) = ANY($10::text[])
     )
     OR EXISTS (
       SELECT 1
-      FROM jsonb_to_recordset(tag_scores_json) AS score(tag text, relevance double precision)
+      FROM jsonb_to_recordset(i.tag_scores_json) AS score(tag text, relevance double precision)
       WHERE score.relevance >= 0.3
         AND LOWER(score.tag) = ANY($10::text[])
     )
   )
-ORDER BY semantic_distance ASC, created_at_unix_nano DESC, id ASC
+ORDER BY semantic_distance ASC, COALESCE(p.created_at_unix_nano, i.created_at_unix_nano) DESC, i.id ASC
 LIMIT $12
 OFFSET $11
 `

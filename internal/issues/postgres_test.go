@@ -276,6 +276,214 @@ func TestPostgresStoreCloseAndReopenIssue(t *testing.T) {
 	}
 }
 
+func TestPostgresStoreLifecycleProjectionReadCutover(t *testing.T) {
+	store := newPostgresTestStore(t)
+	ctx := context.Background()
+
+	issue := BuildNewIssue("issue-lifecycle-cutover", CreateInput{
+		Raw:       "Read lifecycle state from projection",
+		CreatedBy: "Casey",
+	})
+	if err := store.SaveIssue(ctx, issue); err != nil {
+		t.Fatalf("save issue: %v", err)
+	}
+
+	legacyClosedAt := issue.CreatedAt.Add(time.Hour)
+	if _, err := store.DB().ExecContext(
+		ctx,
+		`UPDATE issues
+		 SET status = 'closed',
+		     closed_at_unix_nano = $1,
+		     closed_by = 'Legacy',
+		     closed_reason = 'fixed',
+		     closed_reason_note = 'stale row',
+		     assigned_to = 'Legacy'
+		 WHERE id = $2`,
+		legacyClosedAt.UTC().UnixNano(),
+		issue.ID,
+	); err != nil {
+		t.Fatalf("desync legacy issue row: %v", err)
+	}
+
+	if _, err := store.DB().ExecContext(
+		ctx,
+		`INSERT INTO issue_lifecycle_projections (
+		     issue_id,
+		     created_by,
+		     created_at_unix_nano,
+		     status,
+		     closed_at_unix_nano,
+		     closed_by,
+		     closed_reason,
+		     closed_reason_note,
+		     assigned_to,
+		     last_fact_id,
+		     fact_count,
+		     updated_at_unix_nano
+		 ) VALUES ($1, $2, $3, $4, 0, '', '', '', $5, $6, $7, $8)
+		 ON CONFLICT (issue_id) DO UPDATE
+		 SET created_by = EXCLUDED.created_by,
+		     created_at_unix_nano = EXCLUDED.created_at_unix_nano,
+		     status = EXCLUDED.status,
+		     closed_at_unix_nano = EXCLUDED.closed_at_unix_nano,
+		     closed_by = EXCLUDED.closed_by,
+		     closed_reason = EXCLUDED.closed_reason,
+		     closed_reason_note = EXCLUDED.closed_reason_note,
+		     assigned_to = EXCLUDED.assigned_to,
+		     last_fact_id = EXCLUDED.last_fact_id,
+		     fact_count = EXCLUDED.fact_count,
+		     updated_at_unix_nano = EXCLUDED.updated_at_unix_nano`,
+		issue.ID,
+		issue.CreatedBy,
+		issue.CreatedAt.UTC().UnixNano(),
+		string(StatusOpen),
+		"Jordan",
+		"projection-fact",
+		1,
+		time.Now().UTC().UnixNano(),
+	); err != nil {
+		t.Fatalf("seed lifecycle projection: %v", err)
+	}
+
+	loaded, err := store.Get(ctx, issue.ID)
+	if err != nil {
+		t.Fatalf("get issue through cutover: %v", err)
+	}
+	if loaded.Status != StatusOpen {
+		t.Fatalf("expected projection status open, got %q", loaded.Status)
+	}
+	if loaded.AssignedTo != "Jordan" {
+		t.Fatalf("expected projection assignee Jordan, got %q", loaded.AssignedTo)
+	}
+	if loaded.ClosedAt != nil {
+		t.Fatalf("expected projection closed_at cleared, got %v", loaded.ClosedAt)
+	}
+	if loaded.ClosedBy != "" || loaded.ClosedReason != "" || loaded.ClosedReasonNote != "" {
+		t.Fatalf("expected projection close fields cleared, got %#v", loaded)
+	}
+
+	openItems, err := store.ListFiltered(ctx, ListOptions{Status: StatusOpen})
+	if err != nil {
+		t.Fatalf("list open issues: %v", err)
+	}
+	if len(openItems) != 1 || openItems[0].ID != issue.ID {
+		t.Fatalf("expected projection-backed issue in open filter, got %#v", openItems)
+	}
+
+	closedItems, err := store.ListFiltered(ctx, ListOptions{Status: StatusClosed})
+	if err != nil {
+		t.Fatalf("list closed issues: %v", err)
+	}
+	if len(closedItems) != 0 {
+		t.Fatalf("expected no closed issues after projection cutover, got %#v", closedItems)
+	}
+}
+
+func TestPostgresStoreLifecycleWritesAppendFactsAndProjection(t *testing.T) {
+	store := newPostgresTestStore(t)
+	ctx := context.Background()
+
+	issue := BuildNewIssue("issue-lifecycle-writes", CreateInput{
+		Raw:       "Move lifecycle writes to append-only path",
+		CreatedBy: "Casey",
+	})
+	if err := store.SaveIssue(ctx, issue); err != nil {
+		t.Fatalf("save issue: %v", err)
+	}
+
+	assignActor := "Jordan"
+	assignAt := issue.CreatedAt.Add(time.Minute)
+	assignee := "Jordan"
+	if err := store.UpdateIssueFields(ctx, issue.ID, IssueFieldUpdate{
+		AssignedTo:         &assignee,
+		LifecycleCreatedBy: &assignActor,
+		LifecycleCreatedAt: &assignAt,
+	}); err != nil {
+		t.Fatalf("assign issue: %v", err)
+	}
+
+	closeActor := "Taylor"
+	closeAt := issue.CreatedAt.Add(2 * time.Minute)
+	closeStatus := StatusClosed
+	reason := "fixed"
+	reasonNote := "landed elsewhere"
+	if err := store.UpdateIssueFields(ctx, issue.ID, IssueFieldUpdate{
+		LifecycleCreatedBy: &closeActor,
+		LifecycleCreatedAt: &closeAt,
+		Status:             &closeStatus,
+		ClosedAt:           &closeAt,
+		ClosedBy:           &closeActor,
+		ClosedReason:       &reason,
+		ClosedReasonNote:   &reasonNote,
+	}); err != nil {
+		t.Fatalf("close issue: %v", err)
+	}
+
+	reopenAt := issue.CreatedAt.Add(3 * time.Minute)
+	openStatus := StatusOpen
+	if err := store.UpdateIssueFields(ctx, issue.ID, IssueFieldUpdate{
+		LifecycleCreatedAt: &reopenAt,
+		Status:             &openStatus,
+	}); err != nil {
+		t.Fatalf("reopen issue: %v", err)
+	}
+
+	loaded, err := store.Get(ctx, issue.ID)
+	if err != nil {
+		t.Fatalf("get issue after lifecycle writes: %v", err)
+	}
+	if loaded.Status != StatusOpen {
+		t.Fatalf("expected reopened issue to read as open, got %q", loaded.Status)
+	}
+	if loaded.AssignedTo != "Jordan" {
+		t.Fatalf("expected projection assignee Jordan, got %q", loaded.AssignedTo)
+	}
+
+	var (
+		factCount    int
+		projStatus   string
+		projAssignee string
+	)
+	if err := store.DB().QueryRowContext(
+		ctx,
+		`SELECT COUNT(*) FROM issue_lifecycle_facts WHERE issue_id = $1`,
+		issue.ID,
+	).Scan(&factCount); err != nil {
+		t.Fatalf("count lifecycle facts: %v", err)
+	}
+	if factCount != 4 {
+		t.Fatalf("expected 4 lifecycle facts, got %d", factCount)
+	}
+
+	if err := store.DB().QueryRowContext(
+		ctx,
+		`SELECT status, assigned_to
+		 FROM issue_lifecycle_projections
+		 WHERE issue_id = $1`,
+		issue.ID,
+	).Scan(&projStatus, &projAssignee); err != nil {
+		t.Fatalf("read lifecycle projection: %v", err)
+	}
+	if projStatus != string(StatusOpen) {
+		t.Fatalf("expected projection status open, got %q", projStatus)
+	}
+	if projAssignee != "Jordan" {
+		t.Fatalf("expected projection assignee Jordan, got %q", projAssignee)
+	}
+
+	var legacyAssignedTo string
+	if err := store.DB().QueryRowContext(
+		ctx,
+		`SELECT assigned_to FROM issues WHERE id = $1`,
+		issue.ID,
+	).Scan(&legacyAssignedTo); err != nil {
+		t.Fatalf("read legacy issue row: %v", err)
+	}
+	if legacyAssignedTo != "" {
+		t.Fatalf("expected legacy issue lifecycle column to remain untouched, got %q", legacyAssignedTo)
+	}
+}
+
 func TestPostgresStoreListFiltered(t *testing.T) {
 	store := newPostgresTestStore(t)
 	ctx := context.Background()
