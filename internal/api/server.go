@@ -14,6 +14,7 @@ import (
 	"splat/internal/auth"
 	"splat/internal/commands"
 	"splat/internal/issues"
+	"splat/internal/tracing"
 	mcpserver "splat/internal/mcp"
 	"splat/internal/queries"
 	"splat/internal/services"
@@ -196,7 +197,8 @@ func (s *Server) Handler() http.Handler {
 
 	handler := authMiddleware(s.authService, publicAPIRoutes, root)
 	handler = corsMiddleware(s.config.CORSOrigins, apiRoutes, handler)
-	return loggingMiddleware(handler)
+	handler = loggingMiddleware(handler)
+	return tracing.Middleware(handler)
 }
 
 func (s *Server) registerDedicatedAPIRoutes(

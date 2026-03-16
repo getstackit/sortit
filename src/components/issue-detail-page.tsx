@@ -264,6 +264,7 @@ export function IssueDetailPage({ issueID }: { issueID: string }) {
   const [copyState, setCopyState] = useState<
     "idle" | "text-copied" | "link-copied" | "error"
   >("idle");
+  const [idCopied, setIdCopied] = useState(false);
   const [statusPending, setStatusPending] = useState(false);
   const [closeModalOpen, setCloseModalOpen] = useState(false);
   const [refineInput, setRefineInput] = useState("");
@@ -758,7 +759,29 @@ export function IssueDetailPage({ issueID }: { issueID: string }) {
               </BreadcrumbItem>
               <BreadcrumbSeparator />
               <BreadcrumbItem>
-                <BreadcrumbPage>{issue?.id ?? resolvedIssueID ?? "Issue"}</BreadcrumbPage>
+                <BreadcrumbPage className="inline-flex items-center gap-1">
+                  {issue?.id ?? resolvedIssueID ?? "Issue"}
+                  {(issue?.id ?? resolvedIssueID) && (
+                    <button
+                      type="button"
+                      className="inline-flex items-center justify-center rounded-sm p-0.5 text-muted-foreground hover:text-foreground transition-colors"
+                      aria-label="Copy issue ID"
+                      onClick={() => {
+                        const id = issue?.id ?? resolvedIssueID;
+                        if (id) void copyText(id).then(() => {
+                          setIdCopied(true);
+                          setTimeout(() => setIdCopied(false), 1500);
+                        });
+                      }}
+                    >
+                      {idCopied ? (
+                        <CheckIcon className="size-3" aria-hidden="true" />
+                      ) : (
+                        <CopyIcon className="size-3" aria-hidden="true" />
+                      )}
+                    </button>
+                  )}
+                </BreadcrumbPage>
               </BreadcrumbItem>
             </BreadcrumbList>
           </Breadcrumb>

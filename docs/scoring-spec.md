@@ -81,6 +81,8 @@ Measures how narrow and discriminative a tag is.
 
 Measures how much signal exists in the issue text.
 
+This narrower v1 definition now lives in [content-confidence-spec.md](./content-confidence-spec.md).
+
 - Interpretation:
   Higher means the issue text is rich enough to support more trustworthy tags, embeddings, and retrieval.
 - Expected range:
@@ -93,6 +95,7 @@ Measures how much signal exists in the issue text.
   - text length should affect confidence, not importance
   - use saturating transforms such as `log(1 + x)`
   - very long text should not keep increasing confidence without bound
+  - prefer search as the first validation surface before using confidence in map or PCA weighting
 
 ### Maturity
 

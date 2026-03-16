@@ -15,6 +15,7 @@ import (
 	"splat/internal/api"
 	"splat/internal/auth"
 	"splat/internal/issues"
+	"splat/internal/tracing"
 )
 
 func main() {
@@ -33,7 +34,13 @@ func run() error {
 	)
 	flag.Parse()
 
-	logger := slog.New(slog.NewTextHandler(os.Stderr, nil))
+	shutdownTracing, err := tracing.Init(context.Background(), "splat-server")
+	if err != nil {
+		return err
+	}
+	defer shutdownTracing(context.Background()) //nolint:errcheck
+
+	logger := slog.New(tracing.NewSlogHandler(slog.NewTextHandler(os.Stderr, nil)))
 	slog.SetDefault(logger)
 
 	analyzer, err := ai.NewAnalyzerFromEnv()
