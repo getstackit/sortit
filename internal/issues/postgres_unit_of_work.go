@@ -122,6 +122,9 @@ func (u *PostgresUnitOfWork) SaveIssue(ctx context.Context, issue Issue) error {
 	if err := syncIssueLifecycleOnCreate(ctx, u.tx, issue); err != nil {
 		return err
 	}
+	if err := syncIssueContentOnCreate(ctx, u.tx, issue); err != nil {
+		return err
+	}
 	if err := updateIssueEnrichmentState(ctx, u.tx, record.ID, issueFieldUpdateForIssue(issue)); err != nil {
 		return err
 	}
@@ -154,12 +157,8 @@ func (u *PostgresUnitOfWork) UpdateIssueFields(ctx context.Context, id string, f
 	}
 
 	if fields.Raw != nil {
-		record, err := buildRefinementRecord(id, fields)
-		if err != nil {
+		if err := applyIssueContentFieldUpdate(ctx, u.tx, id, fields); err != nil {
 			return err
-		}
-		if err := u.queries.UpdateIssueRefinement(ctx, record); err != nil {
-			return fmt.Errorf("update issue refinement fields: %w", err)
 		}
 		if snapshot, ok := issueSnapshotFromFieldUpdate(id, fields); ok {
 			if err := saveIssueSnapshot(ctx, u.tx, snapshot); err != nil {

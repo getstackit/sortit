@@ -379,6 +379,81 @@ func TestPostgresStoreLifecycleProjectionReadCutover(t *testing.T) {
 	}
 }
 
+func TestPostgresStoreContentProjectionReadCutover(t *testing.T) {
+	store := newPostgresTestStore(t)
+	ctx := context.Background()
+
+	issue := BuildNewIssue("issue-content-cutover", CreateInput{
+		Raw:       "legacy content should not win",
+		CreatedBy: "Casey",
+		Tags:      []string{"bug"},
+		TagScores: []TagRelevance{{Tag: "bug", Relevance: 0.4}},
+		Embedding: []float64{0.1, 0.9},
+	})
+	if err := store.SaveIssue(ctx, issue); err != nil {
+		t.Fatalf("save issue: %v", err)
+	}
+
+	if _, err := store.DB().ExecContext(
+		ctx,
+		`UPDATE issues
+		 SET raw = $2,
+		     tags_json = $3::jsonb,
+		     tag_scores_json = $4::jsonb,
+		     embedding_vector = $5::vector
+		 WHERE id = $1`,
+		issue.ID,
+		"stale legacy row",
+		`["legacy"]`,
+		`[{"tag":"legacy","relevance":0.2}]`,
+		"[1,0]",
+	); err != nil {
+		t.Fatalf("desync legacy issue row: %v", err)
+	}
+
+	if _, err := store.DB().ExecContext(
+		ctx,
+		`INSERT INTO issue_content_projections (
+		     issue_id, raw, tags_json, tag_scores_json, embedding_vector, last_event_id, event_count, updated_at_unix_nano
+		 ) VALUES ($1, $2, $3::jsonb, $4::jsonb, $5::vector, $6, $7, $8)
+		 ON CONFLICT (issue_id) DO UPDATE
+		 SET raw = EXCLUDED.raw,
+		     tags_json = EXCLUDED.tags_json,
+		     tag_scores_json = EXCLUDED.tag_scores_json,
+		     embedding_vector = EXCLUDED.embedding_vector,
+		     last_event_id = EXCLUDED.last_event_id,
+		     event_count = EXCLUDED.event_count,
+		     updated_at_unix_nano = EXCLUDED.updated_at_unix_nano`,
+		issue.ID,
+		"projection content",
+		`["projection"]`,
+		`[{"tag":"projection","relevance":0.95}]`,
+		"[0,1]",
+		"fact-projection",
+		99,
+		time.Now().UTC().UnixNano(),
+	); err != nil {
+		t.Fatalf("seed issue content projection: %v", err)
+	}
+
+	loaded, err := store.Get(ctx, issue.ID)
+	if err != nil {
+		t.Fatalf("get issue through cutover: %v", err)
+	}
+	if loaded.Raw != "projection content" {
+		t.Fatalf("expected content projection raw, got %q", loaded.Raw)
+	}
+	if len(loaded.Tags) != 1 || loaded.Tags[0] != "projection" {
+		t.Fatalf("expected content projection tags, got %#v", loaded.Tags)
+	}
+	if len(loaded.TagScores) != 1 || loaded.TagScores[0].Tag != "projection" {
+		t.Fatalf("expected content projection tag scores, got %#v", loaded.TagScores)
+	}
+	if len(loaded.Embedding) != 2 || loaded.Embedding[0] != 0 || loaded.Embedding[1] != 1 {
+		t.Fatalf("expected content projection embedding, got %#v", loaded.Embedding)
+	}
+}
+
 func TestPostgresStoreLifecycleWritesAppendFactsAndProjection(t *testing.T) {
 	store := newPostgresTestStore(t)
 	ctx := context.Background()
@@ -481,6 +556,71 @@ func TestPostgresStoreLifecycleWritesAppendFactsAndProjection(t *testing.T) {
 	}
 	if legacyAssignedTo != "" {
 		t.Fatalf("expected legacy issue lifecycle column to remain untouched, got %q", legacyAssignedTo)
+	}
+}
+
+func TestPostgresStoreContentWritesAppendFactsAndProjection(t *testing.T) {
+	store := newPostgresTestStore(t)
+	ctx := context.Background()
+
+	issue := BuildNewIssue("issue-content-writes", CreateInput{
+		Raw:       "original content",
+		CreatedBy: "Casey",
+		Tags:      []string{"bug"},
+		TagScores: []TagRelevance{{Tag: "bug", Relevance: 0.4}},
+		Embedding: []float64{0.1, 0.9},
+	})
+	if err := store.SaveIssue(ctx, issue); err != nil {
+		t.Fatalf("save issue: %v", err)
+	}
+
+	raw := "refined canonical content"
+	if err := store.UpdateIssueFields(ctx, issue.ID, IssueFieldUpdate{
+		Raw:       &raw,
+		Tags:      []string{"bug", "ux"},
+		TagScores: []TagRelevance{{Tag: "bug", Relevance: 0.7}, {Tag: "ux", Relevance: 0.6}},
+		Embedding: []float64{0.3, 0.7},
+	}); err != nil {
+		t.Fatalf("update issue content fields: %v", err)
+	}
+
+	var (
+		contentRaw string
+		eventCount int
+	)
+	if err := store.DB().QueryRowContext(
+		ctx,
+		`SELECT raw, event_count FROM issue_content_projections WHERE issue_id = $1`,
+		issue.ID,
+	).Scan(&contentRaw, &eventCount); err != nil {
+		t.Fatalf("read issue content projection: %v", err)
+	}
+	if contentRaw != raw || eventCount != 2 {
+		t.Fatalf("unexpected content projection raw=%q eventCount=%d", contentRaw, eventCount)
+	}
+
+	var factCount int
+	if err := store.DB().QueryRowContext(
+		ctx,
+		`SELECT COUNT(*) FROM issue_content_facts WHERE issue_id = $1`,
+		issue.ID,
+	).Scan(&factCount); err != nil {
+		t.Fatalf("count issue content facts: %v", err)
+	}
+	if factCount != 2 {
+		t.Fatalf("expected 2 issue content facts, got %d", factCount)
+	}
+
+	var legacyRaw string
+	if err := store.DB().QueryRowContext(
+		ctx,
+		`SELECT raw FROM issues WHERE id = $1`,
+		issue.ID,
+	).Scan(&legacyRaw); err != nil {
+		t.Fatalf("read legacy issue row: %v", err)
+	}
+	if legacyRaw != "original content" {
+		t.Fatalf("expected legacy issue row to remain unchanged, got %q", legacyRaw)
 	}
 }
 
@@ -917,7 +1057,10 @@ func assertIssueEmbeddingVectorText(t *testing.T, store *PostgresStore, id strin
 	var got string
 	if err := store.DB().QueryRowContext(
 		context.Background(),
-		`SELECT COALESCE(embedding_vector::text, '') FROM issues WHERE id = $1`,
+		`SELECT COALESCE(c.embedding_vector::text, i.embedding_vector::text, '')
+		 FROM issues i
+		 LEFT JOIN issue_content_projections c ON c.issue_id = i.id
+		 WHERE i.id = $1`,
 		id,
 	).Scan(&got); err != nil {
 		t.Fatalf("query embedding_vector for %s: %v", id, err)

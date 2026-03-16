@@ -37,6 +37,9 @@ func (s *PostgresStore) SaveIssue(ctx context.Context, issue Issue) error {
 	if err := syncIssueLifecycleOnCreate(ctx, s.db, issue); err != nil {
 		return err
 	}
+	if err := syncIssueContentOnCreate(ctx, s.db, issue); err != nil {
+		return err
+	}
 	if err := updateIssueEnrichmentState(ctx, s.db, record.ID, issueFieldUpdateForIssue(issue)); err != nil {
 		return err
 	}
@@ -71,12 +74,8 @@ func (s *PostgresStore) UpdateIssueFields(ctx context.Context, id string, fields
 	}
 
 	if fields.Raw != nil {
-		record, err := buildRefinementRecord(id, fields)
-		if err != nil {
+		if err := applyIssueContentFieldUpdate(ctx, s.db, id, fields); err != nil {
 			return err
-		}
-		if err := s.queries.UpdateIssueRefinement(ctx, record); err != nil {
-			return fmt.Errorf("update issue refinement fields: %w", err)
 		}
 		if snapshot, ok := issueSnapshotFromFieldUpdate(id, fields); ok {
 			if err := saveIssueSnapshot(ctx, s.db, snapshot); err != nil {
@@ -249,24 +248,13 @@ func (s *PostgresStore) MergeTags(ctx context.Context, canonical string, aliases
 		return fmt.Errorf("iterate issues for tag merge: %w", err)
 	}
 
+	mergedAt := time.Now().UTC()
 	for _, update := range updates {
-		tagsJSON, err := marshalJSONB(update.tags, []string{})
-		if err != nil {
-			return fmt.Errorf("marshal merged tags for %q: %w", update.id, err)
-		}
-		tagScoresJSON, err := marshalJSONB(update.tagScores, []TagRelevance{})
-		if err != nil {
-			return fmt.Errorf("marshal merged tag scores for %q: %w", update.id, err)
-		}
-		if _, err := s.db.ExecContext(ctx,
-			`UPDATE issues SET tags_json = $1, tag_scores_json = $2 WHERE id = $3`,
-			tagsJSON, tagScoresJSON, update.id,
-		); err != nil {
-			return fmt.Errorf("update merged tags for issue %q: %w", update.id, err)
+		if err := applyIssueContentTagMerge(ctx, tx, update.id, update.tags, update.tagScores, mergedAt); err != nil {
+			return fmt.Errorf("update merged content for issue %q: %w", update.id, err)
 		}
 	}
 
-	mergedAt := time.Now().UTC()
 	if _, err := ensureActiveTagProjection(ctx, tx, canonical, "", mergedAt, "tag_merge", "canonical:"+canonical); err != nil {
 		return err
 	}

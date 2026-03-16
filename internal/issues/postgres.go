@@ -107,10 +107,11 @@ func (s *PostgresStore) ListIssueMetadata(ctx context.Context) ([]Issue, error) 
 	rows, err := s.db.QueryContext(
 		ctx,
 		`SELECT i.id,
-		        i.raw,
+		        COALESCE(c.raw, i.raw) AS raw,
 		        COALESCE(p.status, i.status) AS status,
 		        COALESCE(p.assigned_to, i.assigned_to) AS assigned_to
 		 FROM issues i
+		 LEFT JOIN issue_content_projections c ON c.issue_id = i.id
 		 LEFT JOIN issue_lifecycle_projections p ON p.issue_id = i.id
 		 ORDER BY COALESCE(p.created_at_unix_nano, i.created_at_unix_nano) DESC, i.id ASC`,
 	)
@@ -168,10 +169,11 @@ func (s *PostgresStore) ListIssueEmbeddingSimilarities(
 	if err := s.db.QueryRowContext(
 		ctx,
 		`SELECT COUNT(*),
-		        COALESCE(AVG(1 - (embedding_vector <=> $1::vector)), 0)
-		 FROM issues
-		 WHERE embedding_vector IS NOT NULL
-		   AND vector_dims(embedding_vector) = $2`,
+		        COALESCE(AVG(1 - (COALESCE(c.embedding_vector, i.embedding_vector) <=> $1::vector)), 0)
+		 FROM issues i
+		 LEFT JOIN issue_content_projections c ON c.issue_id = i.id
+		 WHERE COALESCE(c.embedding_vector, i.embedding_vector) IS NOT NULL
+		   AND vector_dims(COALESCE(c.embedding_vector, i.embedding_vector)) = $2`,
 		vectorLiteral,
 		len(query),
 	).Scan(&compared, &average); err != nil {
@@ -181,14 +183,15 @@ func (s *PostgresStore) ListIssueEmbeddingSimilarities(
 	rows, err := s.db.QueryContext(
 		ctx,
 		`SELECT i.id,
-		        i.raw,
-		        i.tags_json,
-		        (1 - (i.embedding_vector <=> $1::vector)) AS similarity
+		        COALESCE(c.raw, i.raw) AS raw,
+		        COALESCE(c.tags_json, i.tags_json) AS tags_json,
+		        (1 - (COALESCE(c.embedding_vector, i.embedding_vector) <=> $1::vector)) AS similarity
 		 FROM issues i
+		 LEFT JOIN issue_content_projections c ON c.issue_id = i.id
 		 LEFT JOIN issue_lifecycle_projections p ON p.issue_id = i.id
-		 WHERE i.embedding_vector IS NOT NULL
-		   AND vector_dims(i.embedding_vector) = $2
-		 ORDER BY i.embedding_vector <=> $1::vector ASC,
+		 WHERE COALESCE(c.embedding_vector, i.embedding_vector) IS NOT NULL
+		   AND vector_dims(COALESCE(c.embedding_vector, i.embedding_vector)) = $2
+		 ORDER BY COALESCE(c.embedding_vector, i.embedding_vector) <=> $1::vector ASC,
 		          COALESCE(p.created_at_unix_nano, i.created_at_unix_nano) DESC,
 		          i.id ASC
 		 LIMIT $3`,
@@ -240,9 +243,10 @@ func (s *PostgresStore) ListPeopleAnalytics(ctx context.Context, opts ListOption
 		ctx,
 		`SELECT COALESCE(p.status, i.status) AS status,
 		        COALESCE(p.assigned_to, i.assigned_to) AS assigned_to,
-		        i.tag_scores_json,
-		        COALESCE(i.embedding_vector::text, '')
+		        COALESCE(c.tag_scores_json, i.tag_scores_json),
+		        COALESCE(c.embedding_vector::text, i.embedding_vector::text, '')
 		 FROM issues i
+		 LEFT JOIN issue_content_projections c ON c.issue_id = i.id
 		 LEFT JOIN issue_lifecycle_projections p ON p.issue_id = i.id
 		 WHERE (NOT $1::bool OR COALESCE(p.status, i.status) = $2::text)
 		   AND (NOT $3::bool OR LOWER(COALESCE(p.assigned_to, i.assigned_to)) = LOWER($4::text))
@@ -297,8 +301,9 @@ func (s *PostgresStore) ListCompareIssues(ctx context.Context, ids []string) ([]
 
 	rows, err := s.db.QueryContext(
 		ctx,
-		`SELECT id, COALESCE(embedding_vector::text, '')
-		 FROM issues
+		`SELECT i.id, COALESCE(c.embedding_vector::text, i.embedding_vector::text, '')
+		 FROM issues i
+		 LEFT JOIN issue_content_projections c ON c.issue_id = i.id
 		 WHERE id = ANY($1)`,
 		ids,
 	)
@@ -509,13 +514,14 @@ func (s *PostgresStore) LoadMapProjectionData(ctx context.Context) ([]MapProject
 	rows, err := s.db.QueryContext(
 		ctx,
 		`SELECT i.id,
-		        i.raw,
-		        i.tags_json,
+		        COALESCE(c.raw, i.raw) AS raw,
+		        COALESCE(c.tags_json, i.tags_json) AS tags_json,
 		        COALESCE(p.status, i.status) AS status,
-		        i.tag_scores_json,
-		        COALESCE(i.embedding_vector::text, ''),
+		        COALESCE(c.tag_scores_json, i.tag_scores_json) AS tag_scores_json,
+		        COALESCE(c.embedding_vector::text, i.embedding_vector::text, ''),
 		        COALESCE(p.assigned_to, i.assigned_to) AS assigned_to
 		 FROM issues i
+		 LEFT JOIN issue_content_projections c ON c.issue_id = i.id
 		 LEFT JOIN issue_lifecycle_projections p ON p.issue_id = i.id
 		 ORDER BY COALESCE(p.created_at_unix_nano, i.created_at_unix_nano) DESC, i.id ASC`,
 	)

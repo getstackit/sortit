@@ -30,3 +30,8 @@ func NewEnrichmentEventID() string {
 func NewTagEventID() string {
 	return ulid.MustNew(ulid.Now(), rand.Reader).String()
 }
+
+// NewIssueContentFactID generates a new server-side ULID for an issue content fact.
+func NewIssueContentFactID() string {
+	return ulid.MustNew(ulid.Now(), rand.Reader).String()
+}

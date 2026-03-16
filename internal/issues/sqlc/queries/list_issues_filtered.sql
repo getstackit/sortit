@@ -1,8 +1,8 @@
 -- name: ListIssuesFiltered :many
 SELECT
   i.id,
-  i.raw,
-  i.tags_json,
+  COALESCE(c.raw, i.raw) AS raw,
+  COALESCE(c.tags_json, i.tags_json) AS tags_json,
   COALESCE(p.created_by, i.created_by) AS created_by,
   COALESCE(p.created_at_unix_nano, i.created_at_unix_nano) AS created_at_unix_nano,
   COALESCE(p.status, i.status) AS status,
@@ -10,10 +10,11 @@ SELECT
   COALESCE(p.closed_by, i.closed_by) AS closed_by,
   COALESCE(p.closed_reason, i.closed_reason) AS closed_reason,
   COALESCE(p.closed_reason_note, i.closed_reason_note) AS closed_reason_note,
-  i.tag_scores_json,
-  COALESCE(i.embedding_vector::text, '') AS embedding_text,
+  COALESCE(c.tag_scores_json, i.tag_scores_json) AS tag_scores_json,
+  COALESCE(c.embedding_vector::text, i.embedding_vector::text, '') AS embedding_text,
   COALESCE(p.assigned_to, i.assigned_to) AS assigned_to
 FROM issues i
+LEFT JOIN issue_content_projections c ON c.issue_id = i.id
 LEFT JOIN issue_lifecycle_projections p ON p.issue_id = i.id
 WHERE (NOT sqlc.arg(filter_status)::bool OR COALESCE(p.status, i.status) = sqlc.arg(status)::text)
   AND (NOT sqlc.arg(filter_assigned_to)::bool OR LOWER(COALESCE(p.assigned_to, i.assigned_to)) = LOWER(sqlc.arg(assigned_to)::text))
@@ -22,12 +23,12 @@ WHERE (NOT sqlc.arg(filter_status)::bool OR COALESCE(p.status, i.status) = sqlc.
     NOT sqlc.arg(filter_tags)::bool
     OR EXISTS (
       SELECT 1
-      FROM jsonb_array_elements_text(i.tags_json) AS tag
+      FROM jsonb_array_elements_text(COALESCE(c.tags_json, i.tags_json)) AS tag
       WHERE LOWER(tag) = ANY(sqlc.arg(tags)::text[])
     )
     OR EXISTS (
       SELECT 1
-      FROM jsonb_to_recordset(i.tag_scores_json) AS score(tag text, relevance double precision)
+      FROM jsonb_to_recordset(COALESCE(c.tag_scores_json, i.tag_scores_json)) AS score(tag text, relevance double precision)
       WHERE score.relevance >= 0.3
         AND LOWER(score.tag) = ANY(sqlc.arg(tags)::text[])
     )

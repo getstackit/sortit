@@ -45,6 +45,7 @@ func run(ctx context.Context, args []string) error {
 	framework := appendonly.NewFrameworkStore(store.DB())
 	lifecycle := appendonly.NewLifecycleStore(store.DB())
 	enrichment := appendonly.NewEnrichmentStore(store.DB())
+	content := appendonly.NewIssueContentStore(store.DB())
 	tags := appendonly.NewTagStore(store.DB())
 
 	switch args[0] {
@@ -62,6 +63,10 @@ func run(ctx context.Context, args []string) error {
 		return runIssueEnrichmentBackfill(ctx, enrichment, args[1:])
 	case "issue-enrichment-parity":
 		return runIssueEnrichmentParity(ctx, framework, enrichment, args[1:])
+	case "issue-content-backfill":
+		return runIssueContentBackfill(ctx, content, args[1:])
+	case "issue-content-parity":
+		return runIssueContentParity(ctx, framework, content, args[1:])
 	case "tag-backfill":
 		return runTagBackfill(ctx, tags, args[1:])
 	case "tag-parity":
@@ -375,6 +380,84 @@ func runTagBackfill(
 	return printJSON(result)
 }
 
+func runIssueContentBackfill(
+	ctx context.Context,
+	content *appendonly.IssueContentStore,
+	args []string,
+) error {
+	fs := flag.NewFlagSet("issue-content-backfill", flag.ContinueOnError)
+	fs.SetOutput(os.Stderr)
+
+	var (
+		batchSize  int
+		checkpoint string
+	)
+	fs.IntVar(&batchSize, "batch-size", 100, "Maximum number of issues to backfill in one batch")
+	fs.StringVar(&checkpoint, "checkpoint", "issue-content-backfill", "Checkpoint name to update")
+	if err := fs.Parse(args); err != nil {
+		return err
+	}
+
+	result, err := content.BackfillBatch(ctx, checkpoint, batchSize)
+	if err != nil {
+		return err
+	}
+	return printJSON(result)
+}
+
+func runIssueContentParity(
+	ctx context.Context,
+	framework *appendonly.FrameworkStore,
+	content *appendonly.IssueContentStore,
+	args []string,
+) error {
+	fs := flag.NewFlagSet("issue-content-parity", flag.ContinueOnError)
+	fs.SetOutput(os.Stderr)
+
+	var (
+		detailLimit int
+		recordID    string
+	)
+	fs.IntVar(&detailLimit, "detail-limit", 20, "Maximum number of mismatches to include in the output")
+	fs.StringVar(&recordID, "record-id", "", "Parity run id (default: generated)")
+	if err := fs.Parse(args); err != nil {
+		return err
+	}
+
+	result, err := content.CheckParity(ctx, detailLimit)
+	if err != nil {
+		return err
+	}
+
+	status := "pass"
+	if result.MissingProjections > 0 || result.MismatchedIssues > 0 {
+		status = "fail"
+	}
+	if strings.TrimSpace(recordID) == "" {
+		recordID = "parity-" + randomSuffix()
+	}
+
+	if err := framework.RecordParityRun(ctx, appendonly.ParityRun{
+		ID:          recordID,
+		Domain:      "issue-content",
+		Status:      status,
+		DetailsJSON: mustJSON(result),
+		CreatedAt:   time.Now().UTC(),
+	}); err != nil {
+		return err
+	}
+
+	return printJSON(struct {
+		RunID  string                              `json:"runId"`
+		Status string                              `json:"status"`
+		Result appendonly.IssueContentParityResult `json:"result"`
+	}{
+		RunID:  recordID,
+		Status: status,
+		Result: result,
+	})
+}
+
 func runTagParity(
 	ctx context.Context,
 	framework *appendonly.FrameworkStore,
@@ -438,7 +521,7 @@ func randomSuffix() string {
 
 func usageError() error {
 	return fmt.Errorf(
-		"usage: go run ./cmd/append-only-migration <status|checkpoint|parity|issue-lifecycle-backfill|issue-lifecycle-parity|issue-enrichment-backfill|issue-enrichment-parity|tag-backfill|tag-parity> [flags]",
+		"usage: go run ./cmd/append-only-migration <status|checkpoint|parity|issue-lifecycle-backfill|issue-lifecycle-parity|issue-enrichment-backfill|issue-enrichment-parity|issue-content-backfill|issue-content-parity|tag-backfill|tag-parity> [flags]",
 	)
 }
 

@@ -49,6 +49,28 @@ CREATE TABLE "public"."events" (
     "body" text NOT NULL,
     "participants_json" jsonb NOT NULL
 );
+CREATE TABLE "public"."issue_content_facts" (
+    "id" text NOT NULL,
+    "issue_id" text NOT NULL,
+    "sequence" bigint NOT NULL,
+    "kind" text NOT NULL,
+    "created_by" text NOT NULL,
+    "created_at_unix_nano" bigint NOT NULL,
+    "payload_json" jsonb NOT NULL,
+    "source" text NOT NULL,
+    "source_id" text NOT NULL,
+    "inferred" boolean NOT NULL
+);
+CREATE TABLE "public"."issue_content_projections" (
+    "issue_id" text NOT NULL,
+    "raw" text NOT NULL,
+    "tags_json" jsonb NOT NULL,
+    "tag_scores_json" jsonb NOT NULL,
+    "embedding_vector" vector,
+    "last_event_id" text NOT NULL,
+    "event_count" bigint NOT NULL,
+    "updated_at_unix_nano" bigint NOT NULL
+);
 CREATE TABLE "public"."issue_enrichment_events" (
     "id" text NOT NULL,
     "issue_id" text NOT NULL,
@@ -241,6 +263,16 @@ ALTER TABLE ONLY "public"."dismissed_tag_merges" ALTER COLUMN "id" SET DEFAULT n
 ALTER TABLE ONLY "public"."dismissed_tag_merges" ALTER COLUMN "dismissed_at" SET DEFAULT now();
 ALTER TABLE ONLY "public"."events" ALTER COLUMN "body" SET DEFAULT ''::text;
 ALTER TABLE ONLY "public"."events" ALTER COLUMN "participants_json" SET DEFAULT '[]'::jsonb;
+ALTER TABLE ONLY "public"."issue_content_facts" ALTER COLUMN "created_by" SET DEFAULT ''::text;
+ALTER TABLE ONLY "public"."issue_content_facts" ALTER COLUMN "payload_json" SET DEFAULT '{}'::jsonb;
+ALTER TABLE ONLY "public"."issue_content_facts" ALTER COLUMN "source" SET DEFAULT ''::text;
+ALTER TABLE ONLY "public"."issue_content_facts" ALTER COLUMN "source_id" SET DEFAULT ''::text;
+ALTER TABLE ONLY "public"."issue_content_facts" ALTER COLUMN "inferred" SET DEFAULT false;
+ALTER TABLE ONLY "public"."issue_content_projections" ALTER COLUMN "raw" SET DEFAULT ''::text;
+ALTER TABLE ONLY "public"."issue_content_projections" ALTER COLUMN "tags_json" SET DEFAULT '[]'::jsonb;
+ALTER TABLE ONLY "public"."issue_content_projections" ALTER COLUMN "tag_scores_json" SET DEFAULT '[]'::jsonb;
+ALTER TABLE ONLY "public"."issue_content_projections" ALTER COLUMN "last_event_id" SET DEFAULT ''::text;
+ALTER TABLE ONLY "public"."issue_content_projections" ALTER COLUMN "event_count" SET DEFAULT 0;
 ALTER TABLE ONLY "public"."issue_enrichment_events" ALTER COLUMN "created_by" SET DEFAULT ''::text;
 ALTER TABLE ONLY "public"."issue_enrichment_events" ALTER COLUMN "payload_json" SET DEFAULT '{}'::jsonb;
 ALTER TABLE ONLY "public"."issue_enrichment_jobs" ALTER COLUMN "lease_expires_at_unix_nano" SET DEFAULT 0;
@@ -306,6 +338,10 @@ ALTER TABLE ONLY "public"."dismissed_tag_merges" ADD CONSTRAINT "dismissed_tag_m
 ALTER TABLE ONLY "public"."dismissed_tag_merges" ADD CONSTRAINT "dismissed_tag_merges_pkey" PRIMARY KEY (id);
 ALTER TABLE ONLY "public"."events" ADD CONSTRAINT "events_issue_id_fkey" FOREIGN KEY (issue_id) REFERENCES issues(id) ON DELETE SET NULL;
 ALTER TABLE ONLY "public"."events" ADD CONSTRAINT "events_pkey" PRIMARY KEY (id);
+ALTER TABLE ONLY "public"."issue_content_facts" ADD CONSTRAINT "issue_content_facts_issue_id_fkey" FOREIGN KEY (issue_id) REFERENCES issues(id) ON DELETE CASCADE;
+ALTER TABLE ONLY "public"."issue_content_facts" ADD CONSTRAINT "issue_content_facts_pkey" PRIMARY KEY (id);
+ALTER TABLE ONLY "public"."issue_content_projections" ADD CONSTRAINT "issue_content_projections_issue_id_fkey" FOREIGN KEY (issue_id) REFERENCES issues(id) ON DELETE CASCADE;
+ALTER TABLE ONLY "public"."issue_content_projections" ADD CONSTRAINT "issue_content_projections_pkey" PRIMARY KEY (issue_id);
 ALTER TABLE ONLY "public"."issue_enrichment_events" ADD CONSTRAINT "issue_enrichment_events_issue_id_fkey" FOREIGN KEY (issue_id) REFERENCES issues(id) ON DELETE CASCADE;
 ALTER TABLE ONLY "public"."issue_enrichment_events" ADD CONSTRAINT "issue_enrichment_events_pkey" PRIMARY KEY (id);
 ALTER TABLE ONLY "public"."issue_enrichment_jobs" ADD CONSTRAINT "issue_enrichment_jobs_issue_id_fkey" FOREIGN KEY (issue_id) REFERENCES issues(id) ON DELETE CASCADE;
@@ -346,6 +382,11 @@ CREATE INDEX auth_accounts_user_id_idx ON public.auth_accounts USING btree (user
 CREATE INDEX events_created_at_idx ON public.events USING btree (created_at_unix_nano DESC, id DESC);
 CREATE INDEX events_issue_id_idx ON public.events USING btree (issue_id);
 CREATE INDEX events_kind_idx ON public.events USING btree (kind);
+CREATE INDEX issue_content_facts_issue_created_idx ON public.issue_content_facts USING btree (issue_id, created_at_unix_nano, id);
+CREATE UNIQUE INDEX issue_content_facts_issue_sequence_idx ON public.issue_content_facts USING btree (issue_id, sequence);
+CREATE UNIQUE INDEX issue_content_facts_source_idx ON public.issue_content_facts USING btree (source, source_id);
+CREATE INDEX issue_content_projections_embedding_vector_cosine_hnsw_idx ON public.issue_content_projections USING hnsw (((embedding_vector)::vector(1536)) vector_cosine_ops) WHERE ((embedding_vector IS NOT NULL) AND (vector_dims(embedding_vector) = 1536));
+CREATE INDEX issue_content_projections_updated_idx ON public.issue_content_projections USING btree (updated_at_unix_nano DESC, issue_id);
 CREATE INDEX issue_enrichment_events_issue_created_idx ON public.issue_enrichment_events USING btree (issue_id, created_at_unix_nano DESC, id DESC);
 CREATE INDEX issue_enrichment_events_target_idx ON public.issue_enrichment_events USING btree (issue_id, target_sequence, created_at_unix_nano, id);
 CREATE INDEX issue_enrichment_jobs_lease_idx ON public.issue_enrichment_jobs USING btree (lease_expires_at_unix_nano, updated_at_unix_nano, issue_id);

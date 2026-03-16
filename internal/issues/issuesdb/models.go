@@ -81,6 +81,30 @@ type Issue struct {
 	ClosedReasonNote         string
 }
 
+type IssueContentFact struct {
+	ID                string
+	IssueID           string
+	Sequence          int64
+	Kind              string
+	CreatedBy         string
+	CreatedAtUnixNano int64
+	PayloadJson       json.RawMessage
+	Source            string
+	SourceID          string
+	Inferred          bool
+}
+
+type IssueContentProjection struct {
+	IssueID           string
+	Raw               string
+	TagsJson          json.RawMessage
+	TagScoresJson     json.RawMessage
+	EmbeddingVector   interface{}
+	LastEventID       string
+	EventCount        int64
+	UpdatedAtUnixNano int64
+}
+
 type IssueEnrichmentEvent struct {
 	ID                string
 	IssueID           string
