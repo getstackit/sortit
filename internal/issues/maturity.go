@@ -35,7 +35,7 @@ func CountIssuePostKinds(posts []IssuePost) (refinementCount int, progressCount 
 		switch issuePostKind(post) {
 		case "progress":
 			progressCount++
-		case "refinement":
+		case "refinement": //nolint:goconst
 			refinementCount++
 		}
 	}
@@ -70,11 +70,4 @@ func issueStabilitySignal(metrics *IssueLifecycleMetrics) float64 {
 		return clamp01(*metrics.Stability)
 	}
 	return 0.35
-}
-
-func lifecycleMaturityOrDefault(metrics *IssueLifecycleMetrics, fallback float64) float64 {
-	if metrics != nil && metrics.Maturity != nil {
-		return clamp01(*metrics.Maturity)
-	}
-	return clamp01(fallback)
 }

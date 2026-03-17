@@ -46,12 +46,6 @@ type debugRescoreTagsResponse struct {
 }
 
 func (s *Server) handleDebugIssueAnalyze(w http.ResponseWriter, r *http.Request) {
-	if r.Method != http.MethodPost {
-		w.Header().Set("Allow", http.MethodPost)
-		http.Error(w, http.StatusText(http.StatusMethodNotAllowed), http.StatusMethodNotAllowed)
-		return
-	}
-
 	request, err := decodeDebugIssueAnalyzeRequest(r)
 	if err != nil {
 		writeError(w, http.StatusBadRequest, err.Error())
@@ -86,12 +80,6 @@ func (s *Server) handleDebugIssueAnalyze(w http.ResponseWriter, r *http.Request)
 }
 
 func (s *Server) handleDebugInvalidateMapProjection(w http.ResponseWriter, r *http.Request) {
-	if r.Method != http.MethodPost {
-		w.Header().Set("Allow", http.MethodPost)
-		http.Error(w, http.StatusText(http.StatusMethodNotAllowed), http.StatusMethodNotAllowed)
-		return
-	}
-
 	invalidator := mapProjectionInvalidatorFromIssueStore(s.config.IssueStore)
 	if invalidator == nil {
 		writeError(w, http.StatusNotImplemented, "map projection invalidation is unavailable")
@@ -110,12 +98,6 @@ func (s *Server) handleDebugInvalidateMapProjection(w http.ResponseWriter, r *ht
 }
 
 func (s *Server) handleDebugRescoreTags(w http.ResponseWriter, r *http.Request) {
-	if r.Method != http.MethodPost {
-		w.Header().Set("Allow", http.MethodPost)
-		http.Error(w, http.StatusText(http.StatusMethodNotAllowed), http.StatusMethodNotAllowed)
-		return
-	}
-
 	if s.catalog == nil {
 		writeError(w, http.StatusNotImplemented, "tag specificity scoring is unavailable")
 		return

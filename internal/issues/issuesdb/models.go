@@ -103,6 +103,9 @@ type IssueContentProjection struct {
 	LastEventID       string
 	EventCount        int64
 	UpdatedAtUnixNano int64
+	SearchTitle       string
+	SearchBody        string
+	SearchTags        string
 }
 
 type IssueEnrichmentEvent struct {

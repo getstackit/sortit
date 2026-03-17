@@ -8,12 +8,6 @@ import (
 )
 
 func (s *Server) handleUnifiedSearch(w http.ResponseWriter, r *http.Request) {
-	if r.Method != http.MethodGet {
-		w.Header().Set("Allow", http.MethodGet)
-		http.Error(w, http.StatusText(http.StatusMethodNotAllowed), http.StatusMethodNotAllowed)
-		return
-	}
-
 	query := strings.TrimSpace(r.URL.Query().Get("q"))
 	if query == "" {
 		query = strings.TrimSpace(r.URL.Query().Get("query"))

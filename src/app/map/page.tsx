@@ -1301,7 +1301,7 @@ function MapPageContent() {
   const staticNodeData = useMemo(() => {
     return visibleIssues.map((issue) => {
       const color = TAG_COLORS[dominantTag(issue.tags)] ?? "#94a3b8";
-      const radius = issueRadius(issue.tags, bubbleSizeTag);
+      const radius = issueRadius(issue.tags, bubbleSizeTag, issue.hubness);
       const isActive = issue.id === hoveredId || issue.id === selectedId;
       const isNeighbor = neighborIds.has(issue.id);
       const highlighted = isHighlighted(issue.id);

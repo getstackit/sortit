@@ -55,6 +55,7 @@ func (h SearchUnifiedHandler) Handle(ctx context.Context, input SearchUnified) (
 			return SearchUnifiedResponse{}, err
 		}
 		candidates, err := semanticSearchCandidateIssues(ctx, searcher, issues.SemanticSearchOptions{
+			QueryText:      query,
 			QueryEmbedding: queryEmbedding,
 			Status:         issues.StatusOpen,
 			Limit:          semanticSearchCandidateLimit(limit, 0),

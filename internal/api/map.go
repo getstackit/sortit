@@ -7,12 +7,6 @@ import (
 )
 
 func (s *Server) handleMap(w http.ResponseWriter, r *http.Request) {
-	if r.Method != http.MethodGet {
-		w.Header().Set("Allow", http.MethodGet)
-		http.Error(w, http.StatusText(http.StatusMethodNotAllowed), http.StatusMethodNotAllowed)
-		return
-	}
-
 	viewport, err := ParseViewport(r.URL.Query())
 	if err != nil {
 		writeError(w, http.StatusBadRequest, "invalid viewport query")
@@ -44,12 +38,6 @@ func (s *Server) handleMap(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleMapEdges(w http.ResponseWriter, r *http.Request) {
-	if r.Method != http.MethodGet {
-		w.Header().Set("Allow", http.MethodGet)
-		http.Error(w, http.StatusText(http.StatusMethodNotAllowed), http.StatusMethodNotAllowed)
-		return
-	}
-
 	viewport, err := ParseViewport(r.URL.Query())
 	if err != nil {
 		writeError(w, http.StatusBadRequest, "invalid viewport query")

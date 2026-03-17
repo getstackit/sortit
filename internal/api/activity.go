@@ -8,12 +8,6 @@ import (
 )
 
 func (s *Server) handleActivity(w http.ResponseWriter, r *http.Request) {
-	if r.Method != http.MethodGet {
-		w.Header().Set("Allow", http.MethodGet)
-		http.Error(w, http.StatusText(http.StatusMethodNotAllowed), http.StatusMethodNotAllowed)
-		return
-	}
-
 	limit, err := ParsePositiveIntQuery(r.URL.Query(), "limit")
 	if err != nil {
 		writeError(w, http.StatusBadRequest, "invalid limit query")

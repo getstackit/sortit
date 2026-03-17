@@ -90,6 +90,7 @@ func buildBaseMapDataFromIssues(storeIssues []issues.Issue, storeTags []issues.T
 			Tags:       issue.TagScores,
 			X:          rounded.X,
 			Y:          rounded.Y,
+			Hubness:    issues.IssueHubness(storeIssues[i]),
 		}
 	}
 

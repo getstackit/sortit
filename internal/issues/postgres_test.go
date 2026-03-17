@@ -1075,6 +1075,94 @@ func TestPostgresStoreSearchIssuesSupportsCreatedAtFallback(t *testing.T) {
 	}
 }
 
+func TestPostgresStoreSearchIssuesPrefersParadeDBTextMatches(t *testing.T) {
+	store := newPostgresTestStore(t)
+	ctx := context.Background()
+
+	textHit := BuildNewIssue("issue-search-text-hit", CreateInput{
+		Raw:       "Authority canonicality scoring needs clearer semantics",
+		CreatedBy: "Casey",
+		Tags:      []string{"search"},
+		TagScores: []TagRelevance{{Tag: "search", Relevance: 0.9}},
+		Embedding: sparseUnitVector(24, 5),
+	})
+	if err := store.SaveIssue(ctx, textHit); err != nil {
+		t.Fatalf("save textHit: %v", err)
+	}
+
+	textMiss := BuildNewIssue("issue-search-text-miss", CreateInput{
+		Raw:       "Graph leverage ranking needs more explanation",
+		CreatedBy: "Jordan",
+		Tags:      []string{"search"},
+		TagScores: []TagRelevance{{Tag: "search", Relevance: 0.9}},
+		Embedding: sparseUnitVector(24, 5),
+	})
+	if err := store.SaveIssue(ctx, textMiss); err != nil {
+		t.Fatalf("save textMiss: %v", err)
+	}
+
+	results, err := store.SearchIssues(ctx, SemanticSearchOptions{
+		QueryText:      "authority canonicality",
+		QueryEmbedding: sparseUnitVector(24, 5),
+		Status:         StatusOpen,
+		Limit:          10,
+	})
+	if err != nil {
+		t.Fatalf("search issues by text: %v", err)
+	}
+
+	if len(results) == 0 {
+		t.Fatalf("expected text search results, got none")
+	}
+	if results[0].Issue.ID != textHit.ID {
+		t.Fatalf("expected text-matching issue first, got %#v", results)
+	}
+}
+
+func TestPostgresStoreSearchIssuesFallsBackToEmbeddingWhenTextMisses(t *testing.T) {
+	store := newPostgresTestStore(t)
+	ctx := context.Background()
+
+	alpha := BuildNewIssue("issue-search-fallback-alpha", CreateInput{
+		Raw:       "Safari export regression in PDF flow",
+		CreatedBy: "Casey",
+		Tags:      []string{"export"},
+		TagScores: []TagRelevance{{Tag: "export", Relevance: 0.95}},
+		Embedding: sparseUnitVector(24, 6),
+	})
+	if err := store.SaveIssue(ctx, alpha); err != nil {
+		t.Fatalf("save alpha: %v", err)
+	}
+
+	beta := BuildNewIssue("issue-search-fallback-beta", CreateInput{
+		Raw:       "Analytics backfill is too slow",
+		CreatedBy: "Jordan",
+		Tags:      []string{"backend"},
+		TagScores: []TagRelevance{{Tag: "backend", Relevance: 0.95}},
+		Embedding: sparseUnitVector(24, 7),
+	})
+	if err := store.SaveIssue(ctx, beta); err != nil {
+		t.Fatalf("save beta: %v", err)
+	}
+
+	results, err := store.SearchIssues(ctx, SemanticSearchOptions{
+		QueryText:      "zzzz-no-text-hit",
+		QueryEmbedding: sparseUnitVector(24, 6),
+		Status:         StatusOpen,
+		Limit:          10,
+	})
+	if err != nil {
+		t.Fatalf("search issues with embedding fallback: %v", err)
+	}
+
+	if len(results) == 0 {
+		t.Fatalf("expected embedding fallback results, got none")
+	}
+	if results[0].Issue.ID != alpha.ID {
+		t.Fatalf("expected embedding-nearest issue first after text miss, got %#v", results)
+	}
+}
+
 func TestPostgresStoreMaintainsPgSearchWriteColumns(t *testing.T) {
 	store := newPostgresTestStore(t)
 	ctx := context.Background()
@@ -1722,7 +1810,7 @@ func TestPostgresStoreUpsertAndListTags(t *testing.T) {
 	if len(tags) != 2 {
 		t.Fatalf("expected 2 tags, got %d", len(tags))
 	}
-	if tags[0].Name != "bug" {
+	if tags[0].Name != "bug" { //nolint:goconst
 		t.Fatalf("expected tags sorted by name, got %q first", tags[0].Name)
 	}
 	if len(tags[0].Embedding) != 2 {

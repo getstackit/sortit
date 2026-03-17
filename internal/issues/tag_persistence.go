@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"strings"
 	"time"
@@ -160,7 +161,7 @@ func appendTagSpecificityUpdate(
 	return upsertTagProjection(ctx, tx, next)
 }
 
-func ensureActiveTagProjection(ctx context.Context, tx *sql.Tx, name string, createdBy string, createdAt time.Time, source string, sourceID string) (tagProjectionState, error) {
+func ensureActiveTagProjection(ctx context.Context, tx *sql.Tx, name string, createdBy string, createdAt time.Time, source string, sourceID string) (tagProjectionState, error) { //nolint:unparam
 	name = sanitizeTagName(name)
 	if name == "" {
 		return tagProjectionState{}, fmt.Errorf("tag name is required")
@@ -306,7 +307,7 @@ func loadTagProjectionState(ctx context.Context, tx *sql.Tx, name string) (*tagP
 		&updatedAtUnixNano,
 	)
 	if err != nil {
-		if err == sql.ErrNoRows {
+		if errors.Is(err, sql.ErrNoRows) {
 			return nil, nil
 		}
 		return nil, fmt.Errorf("load tag projection %q: %w", name, err)

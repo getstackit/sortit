@@ -62,6 +62,7 @@ func (h SearchIssuesHandler) Handle(ctx context.Context, input SearchIssues) (is
 			return issuemap.SearchResponse{}, err
 		}
 		candidates, err := semanticSearchCandidateIssues(ctx, searcher, issues.SemanticSearchOptions{
+			QueryText:      searchOpts.Query,
 			QueryEmbedding: searchOpts.QueryEmbed,
 			Status:         issueStatusFromFilter(input.Status),
 			AssignedTo:     input.AssignedTo,

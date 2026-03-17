@@ -40,7 +40,7 @@ func TestLifecycleBackfillRebuildsProjectionFromLegacyPosts(t *testing.T) {
 	if err := store.SaveIssuePost(ctx, assignPost); err != nil {
 		t.Fatalf("save assign post: %v", err)
 	}
-	assignee := "Jordan"
+	assignee := "Jordan" //nolint:goconst
 	if err := store.UpdateIssueFields(ctx, issue.ID, issues.IssueFieldUpdate{
 		AssignedTo: &assignee,
 	}); err != nil {
@@ -159,7 +159,7 @@ func TestLifecycleBackfillAddsInferredFactForMissingAssignmentHistory(t *testing
 		t.Fatalf("save issue: %v", err)
 	}
 
-	assignee := "Jordan"
+	assignee := "Jordan" //nolint:goconst
 	if err := store.UpdateIssueFields(ctx, issue.ID, issues.IssueFieldUpdate{
 		AssignedTo: &assignee,
 	}); err != nil {

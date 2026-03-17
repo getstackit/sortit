@@ -6,18 +6,19 @@ import (
 	"fmt"
 	"log/slog"
 	"net/http"
-	"path"
 	"strings"
 	"time"
+
+	"github.com/go-chi/chi/v5"
 
 	"splat/internal/ai"
 	"splat/internal/auth"
 	"splat/internal/commands"
 	"splat/internal/issues"
-	"splat/internal/tracing"
 	mcpserver "splat/internal/mcp"
 	"splat/internal/queries"
 	"splat/internal/services"
+	"splat/internal/tracing"
 )
 
 type ServerConfig struct {
@@ -142,14 +143,10 @@ func (s *Server) Initialize(ctx context.Context) error {
 }
 
 func (s *Server) Handler() http.Handler {
-	apiMux := http.NewServeMux()
-	apiRoutes := make(map[string]struct{})
-	publicAPIRoutes := make(map[string]struct{})
+	r := chi.NewRouter()
 
-	for _, prefix := range normalizeAPIPrefixes(s.config.APIPrefixes) {
-		s.registerDedicatedAPIRoutes(apiMux, apiRoutes, publicAPIRoutes, prefix)
-	}
-	s.registerUIRoutes(apiMux, apiRoutes, publicAPIRoutes, "/api/ui")
+	r.Use(tracing.Middleware)
+	r.Use(loggingMiddleware)
 
 	mcpHandler := mcpserver.NewHandler(mcpserver.ServerConfig{
 		CreateIssue:      s.createIssue,
@@ -168,178 +165,124 @@ func (s *Server) Handler() http.Handler {
 		WorkCorrelations: s.workCorrelations,
 	})
 
-	root := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if isRegisteredAPIRoute(r.URL.Path, apiRoutes) {
-			apiMux.ServeHTTP(w, r)
-			return
-		}
+	r.Get("/", func(w http.ResponseWriter, r *http.Request) {
+		writeJSON(w, http.StatusOK, map[string]string{
+			"name":   "splat-server",
+			"status": "ok",
+		})
+	})
 
-		if r.URL.Path == "/mcp" {
-			mcpHandler.ServeHTTP(w, r)
-			return
-		}
+	r.Handle("/mcp", bearerAuthMiddleware(s.authService, mcpHandler))
 
-		if r.URL.Path == "/" {
-			writeJSON(w, http.StatusOK, map[string]string{
-				"name":   "splat-server",
-				"status": "ok",
-			})
-			return
-		}
+	for _, prefix := range normalizeAPIPrefixes(s.config.APIPrefixes) {
+		r.Route(prefix, func(r chi.Router) {
+			r.Use(corsMiddleware(s.config.CORSOrigins))
+			s.registerDedicatedAPIRoutes(r)
+		})
+	}
 
+	r.Route("/api/ui", func(r chi.Router) {
+		r.Use(corsMiddleware(s.config.CORSOrigins))
+		s.registerUIRoutes(r)
+	})
+
+	r.NotFound(func(w http.ResponseWriter, r *http.Request) {
 		if strings.HasPrefix(r.URL.Path, "/api/") || r.URL.Path == "/api" {
 			writeError(w, http.StatusNotFound, "route not found")
 			return
 		}
-
 		http.NotFound(w, r)
 	})
 
-	handler := authMiddleware(s.authService, publicAPIRoutes, root)
-	handler = corsMiddleware(s.config.CORSOrigins, apiRoutes, handler)
-	handler = loggingMiddleware(handler)
-	return tracing.Middleware(handler)
+	return r
 }
 
-func (s *Server) registerDedicatedAPIRoutes(
-	apiMux *http.ServeMux,
-	apiRoutes map[string]struct{},
-	publicAPIRoutes map[string]struct{},
-	prefix string,
-) {
-	healthRoute := path.Join(prefix, "health")
-	authGitHubStartRoute := path.Join(prefix, "auth", "github", "start")
-	authGitHubCallbackRoute := path.Join(prefix, "auth", "github", "callback")
-	authSessionRoute := path.Join(prefix, "auth", "session")
-	authLogoutRoute := path.Join(prefix, "auth", "logout")
-	authTokensRoute := path.Join(prefix, "auth", "tokens")
-	authTokenItemSubtreeRoute := authTokenItemRoute(prefix)
-	authCLILoginRoute := path.Join(prefix, "auth", "cli", "login")
-	authCLILoginExchangeSubtreeRoute := authCLILoginExchangeRoute(prefix)
-	issuesRoute := path.Join(prefix, "issues")
-	issuesSearchRoute := path.Join(prefix, "issues", "search")
-	issuesCombineRoute := path.Join(prefix, "issues", "combine")
-	issuesLinkRoute := path.Join(prefix, "issues", "link")
-	issuesRefineRoute := path.Join(prefix, "issues", "refine")
-	issuesProgressRoute := path.Join(prefix, "issues", "progress")
-	issuesCloseRoute := path.Join(prefix, "issues", "close")
-	issuesAssignRoute := path.Join(prefix, "issues", "assign")
-	issueItemSubtreeRoute := issueItemRoute(prefix)
-	tagsRoute := path.Join(prefix, "tags")
-	tagsMergeRoute := path.Join(prefix, "tags", "merge")
-	tagsDismissRoute := path.Join(prefix, "tags", "dismiss")
-	tagsDismissedRoute := path.Join(prefix, "tags", "dismissed")
-	peopleSubtreeRoute := path.Join(prefix, "people") + "/"
-	peopleCorrelationsRoute := path.Join(prefix, "people", "correlations")
+func (s *Server) registerPublicRoutes(r chi.Router) {
+	r.Get("/health", s.handleHealth)
 
-	registerPublicRoute(apiMux, apiRoutes, publicAPIRoutes, healthRoute, s.handleHealth)
-	registerPublicRoute(apiMux, apiRoutes, publicAPIRoutes, authGitHubStartRoute, s.handleAuthGitHubStart)
-	registerPublicRoute(apiMux, apiRoutes, publicAPIRoutes, authGitHubCallbackRoute, s.handleAuthGitHubCallback)
-	registerPublicRoute(apiMux, apiRoutes, publicAPIRoutes, authSessionRoute, s.handleAuthSession)
-	registerPublicRoute(apiMux, apiRoutes, publicAPIRoutes, authLogoutRoute, s.handleAuthLogout)
-	registerPublicRoute(apiMux, apiRoutes, publicAPIRoutes, authCLILoginRoute, s.handleAuthCLILogin)
-	registerPublicRoute(apiMux, apiRoutes, publicAPIRoutes, authCLILoginExchangeSubtreeRoute, s.handleAuthCLILoginExchange(authCLILoginExchangeSubtreeRoute))
-
-	registerProtectedRoute(apiMux, apiRoutes, authTokensRoute, s.handleAuthTokens)
-	registerProtectedRoute(apiMux, apiRoutes, authTokenItemSubtreeRoute, s.handleAuthTokenByID(authTokenItemSubtreeRoute))
-	registerProtectedRoute(apiMux, apiRoutes, issuesRoute, s.handleIssues)
-	registerProtectedRoute(apiMux, apiRoutes, issuesSearchRoute, s.handleIssueSearch)
-	registerProtectedRoute(apiMux, apiRoutes, issuesCombineRoute, s.handleIssueCombine)
-	registerProtectedRoute(apiMux, apiRoutes, issuesLinkRoute, s.handleIssueLink)
-	registerProtectedRoute(apiMux, apiRoutes, issuesRefineRoute, s.handleIssueRefineBatch)
-	registerProtectedRoute(apiMux, apiRoutes, issuesProgressRoute, s.handleIssueProgressBatch)
-	registerProtectedRoute(apiMux, apiRoutes, issuesCloseRoute, s.handleIssueCloseBatch)
-	registerProtectedRoute(apiMux, apiRoutes, issuesAssignRoute, s.handleIssueAssignBatch)
-	registerProtectedRoute(apiMux, apiRoutes, issueItemSubtreeRoute, s.handleIssueByID(issueItemSubtreeRoute))
-	registerProtectedRoute(apiMux, apiRoutes, tagsRoute, s.handleTags)
-	registerProtectedRoute(apiMux, apiRoutes, tagsMergeRoute, s.handleTagMerge)
-	registerProtectedRoute(apiMux, apiRoutes, tagsDismissRoute, s.handleTagDismiss)
-	registerProtectedRoute(apiMux, apiRoutes, tagsDismissedRoute, s.handleTagDismissedList)
-	registerProtectedRoute(apiMux, apiRoutes, peopleCorrelationsRoute, s.handleWorkCorrelations)
-	registerProtectedRoute(apiMux, apiRoutes, peopleSubtreeRoute, s.handlePersonProfile(peopleSubtreeRoute))
+	r.Route("/auth", func(r chi.Router) {
+		r.Get("/github/start", s.handleAuthGitHubStart)
+		r.Get("/github/callback", s.handleAuthGitHubCallback)
+		r.Get("/session", s.handleAuthSession)
+		r.Post("/logout", s.handleAuthLogout)
+	})
 }
 
-func (s *Server) registerUIRoutes(
-	apiMux *http.ServeMux,
-	apiRoutes map[string]struct{},
-	publicAPIRoutes map[string]struct{},
-	prefix string,
-) {
-	healthRoute := path.Join(prefix, "health")
-	authGitHubStartRoute := path.Join(prefix, "auth", "github", "start")
-	authGitHubCallbackRoute := path.Join(prefix, "auth", "github", "callback")
-	authSessionRoute := path.Join(prefix, "auth", "session")
-	authLogoutRoute := path.Join(prefix, "auth", "logout")
-	authTokensRoute := path.Join(prefix, "auth", "tokens")
-	authTokenItemSubtreeRoute := authTokenItemRoute(prefix)
-	authCLILoginCompleteSubtreeRoute := authCLILoginCompleteRoute(prefix)
-	issuesRoute := path.Join(prefix, "issues")
-	activityRoute := path.Join(prefix, "activity")
-	issuesCompareRoute := path.Join(prefix, "issues", "compare")
-	issuesSearchRoute := path.Join(prefix, "issues", "search")
-	searchRoute := path.Join(prefix, "search")
-	issueItemSubtreeRoute := issueItemRoute(prefix)
-	tagsRoute := path.Join(prefix, "tags")
-	tagsMergeRoute := path.Join(prefix, "tags", "merge")
-	tagsDismissRoute := path.Join(prefix, "tags", "dismiss")
-	tagsDismissedRoute := path.Join(prefix, "tags", "dismissed")
-	revisionRoute := path.Join(prefix, "revision")
-	mapRoute := path.Join(prefix, "map")
-	mapEdgesRoute := path.Join(prefix, "map", "edges")
-	debugAnalyzeRoute := path.Join(prefix, "debug", "issues", "analyze")
-	debugInvalidateMapProjectionRoute := path.Join(prefix, "debug", "map-projection", "invalidate")
-	debugRescoreTagsRoute := path.Join(prefix, "debug", "tags", "rescore")
-	peopleSubtreeRoute := path.Join(prefix, "people") + "/"
-	peopleCorrelationsRoute := path.Join(prefix, "people", "correlations")
-
-	registerPublicRoute(apiMux, apiRoutes, publicAPIRoutes, healthRoute, s.handleHealth)
-	registerPublicRoute(apiMux, apiRoutes, publicAPIRoutes, authGitHubStartRoute, s.handleAuthGitHubStart)
-	registerPublicRoute(apiMux, apiRoutes, publicAPIRoutes, authGitHubCallbackRoute, s.handleAuthGitHubCallback)
-	registerPublicRoute(apiMux, apiRoutes, publicAPIRoutes, authSessionRoute, s.handleAuthSession)
-	registerPublicRoute(apiMux, apiRoutes, publicAPIRoutes, authLogoutRoute, s.handleAuthLogout)
-
-	registerProtectedRoute(apiMux, apiRoutes, authTokensRoute, s.handleAuthTokens)
-	registerProtectedRoute(apiMux, apiRoutes, authTokenItemSubtreeRoute, s.handleAuthTokenByID(authTokenItemSubtreeRoute))
-	registerProtectedRoute(apiMux, apiRoutes, authCLILoginCompleteSubtreeRoute, s.handleAuthCLILoginComplete(authCLILoginCompleteSubtreeRoute))
-	registerProtectedRoute(apiMux, apiRoutes, issuesRoute, s.handleIssues)
-	registerProtectedRoute(apiMux, apiRoutes, activityRoute, s.handleActivity)
-	registerProtectedRoute(apiMux, apiRoutes, issuesCompareRoute, s.handleIssueCompare)
-	registerProtectedRoute(apiMux, apiRoutes, issuesSearchRoute, s.handleIssueSearch)
-	registerProtectedRoute(apiMux, apiRoutes, searchRoute, s.handleUnifiedSearch)
-	registerProtectedRoute(apiMux, apiRoutes, issueItemSubtreeRoute, s.handleIssueByID(issueItemSubtreeRoute))
-	registerProtectedRoute(apiMux, apiRoutes, tagsRoute, s.handleTags)
-	registerProtectedRoute(apiMux, apiRoutes, tagsMergeRoute, s.handleTagMerge)
-	registerProtectedRoute(apiMux, apiRoutes, tagsDismissRoute, s.handleTagDismiss)
-	registerProtectedRoute(apiMux, apiRoutes, tagsDismissedRoute, s.handleTagDismissedList)
-	registerProtectedRoute(apiMux, apiRoutes, revisionRoute, s.handleRevision)
-	registerProtectedRoute(apiMux, apiRoutes, mapRoute, s.handleMap)
-	registerProtectedRoute(apiMux, apiRoutes, mapEdgesRoute, s.handleMapEdges)
-	registerProtectedRoute(apiMux, apiRoutes, peopleCorrelationsRoute, s.handleWorkCorrelations)
-	registerProtectedRoute(apiMux, apiRoutes, peopleSubtreeRoute, s.handlePersonProfile(peopleSubtreeRoute))
-	registerProtectedRoute(apiMux, apiRoutes, debugAnalyzeRoute, s.handleDebugIssueAnalyze)
-	registerProtectedRoute(apiMux, apiRoutes, debugInvalidateMapProjectionRoute, s.handleDebugInvalidateMapProjection)
-	registerProtectedRoute(apiMux, apiRoutes, debugRescoreTagsRoute, s.handleDebugRescoreTags)
+func (s *Server) registerAuthRoutes(r chi.Router) {
+	r.Get("/auth/tokens", s.handleAuthTokenListOrCreate)
+	r.Post("/auth/tokens", s.handleAuthTokenListOrCreate)
+	r.Post("/auth/tokens/{tokenID}/revoke", s.handleAuthTokenRevoke)
 }
 
-func registerProtectedRoute(
-	apiMux *http.ServeMux,
-	apiRoutes map[string]struct{},
-	route string,
-	handler http.HandlerFunc,
-) {
-	apiRoutes[route] = struct{}{}
-	apiMux.HandleFunc(route, handler)
+func (s *Server) registerDedicatedAPIRoutes(r chi.Router) {
+	r.Group(func(r chi.Router) {
+		s.registerPublicRoutes(r)
+		r.Post("/auth/cli/login", s.handleAuthCLILogin)
+		r.Post("/auth/cli/login/{loginID}/exchange", s.handleAuthCLILoginExchange)
+	})
+
+	r.Group(func(r chi.Router) {
+		r.Use(authRequiredMiddleware(s.authService))
+		s.registerAuthRoutes(r)
+		s.registerIssueRoutes(r)
+		s.registerTagRoutes(r)
+		r.Get("/people/correlations", s.handleWorkCorrelations)
+		r.Get("/people/{person}", s.handlePersonDetail)
+		r.Get("/people/{person}/profile", s.handlePersonProfileRoute)
+	})
 }
 
-func registerPublicRoute(
-	apiMux *http.ServeMux,
-	apiRoutes map[string]struct{},
-	publicAPIRoutes map[string]struct{},
-	route string,
-	handler http.HandlerFunc,
-) {
-	registerProtectedRoute(apiMux, apiRoutes, route, handler)
-	publicAPIRoutes[route] = struct{}{}
+func (s *Server) registerUIRoutes(r chi.Router) {
+	r.Group(func(r chi.Router) {
+		s.registerPublicRoutes(r)
+	})
+
+	r.Group(func(r chi.Router) {
+		r.Use(authRequiredMiddleware(s.authService))
+		s.registerAuthRoutes(r)
+		r.Post("/auth/cli/login/{loginID}/complete", s.handleAuthCLILoginComplete)
+		s.registerIssueRoutes(r)
+		r.Get("/activity", s.handleActivity)
+		r.Post("/issues/compare", s.handleIssueCompare)
+		r.Get("/search", s.handleUnifiedSearch)
+		s.registerTagRoutes(r)
+		r.Get("/revision", s.handleRevision)
+		r.Get("/map", s.handleMap)
+		r.Get("/map/edges", s.handleMapEdges)
+		r.Get("/people/correlations", s.handleWorkCorrelations)
+		r.Get("/people/{person}", s.handlePersonDetail)
+		r.Get("/people/{person}/profile", s.handlePersonProfileRoute)
+		r.Post("/debug/issues/analyze", s.handleDebugIssueAnalyze)
+		r.Post("/debug/map-projection/invalidate", s.handleDebugInvalidateMapProjection)
+		r.Post("/debug/tags/rescore", s.handleDebugRescoreTags)
+	})
+}
+
+func (s *Server) registerIssueRoutes(r chi.Router) {
+	r.Get("/issues", s.handleIssueList)
+	r.Post("/issues", s.handleIssueCreate)
+	r.Get("/issues/search", s.handleIssueSearch)
+	r.Post("/issues/combine", s.handleIssueCombine)
+	r.Post("/issues/link", s.handleIssueLink)
+	r.Post("/issues/refine", s.handleIssueRefineBatch)
+	r.Post("/issues/progress", s.handleIssueProgressBatch)
+	r.Post("/issues/close", s.handleIssueCloseBatch)
+	r.Post("/issues/assign", s.handleIssueAssignBatch)
+	r.Get("/issues/{id}", s.handleGetIssue)
+	r.Post("/issues/{id}/close", s.handleCloseIssue)
+	r.Post("/issues/{id}/refine", s.handleRefineIssue)
+	r.Get("/issues/{id}/explore", s.handleExploreIssue)
+	r.Post("/issues/{id}/progress", s.handleProgressIssue)
+	r.Post("/issues/{id}/reopen", s.handleReopenIssue)
+	r.Post("/issues/{id}/assign", s.handleAssignIssue)
+	r.Post("/issues/{id}/split", s.handleSplitIssue)
+}
+
+func (s *Server) registerTagRoutes(r chi.Router) {
+	r.Get("/tags", s.handleTags)
+	r.Post("/tags/merge", s.handleTagMerge)
+	r.Post("/tags/dismiss", s.handleTagDismiss)
+	r.Get("/tags/dismissed", s.handleTagDismissedList)
 }
 
 func (s *Server) Start() error {
@@ -401,12 +344,6 @@ func (s *Server) ProcessPendingEnrichment(ctx context.Context) error {
 }
 
 func (s *Server) handleHealth(w http.ResponseWriter, r *http.Request) {
-	if r.Method != http.MethodGet {
-		w.Header().Set("Allow", http.MethodGet)
-		http.Error(w, http.StatusText(http.StatusMethodNotAllowed), http.StatusMethodNotAllowed)
-		return
-	}
-
 	writeJSON(w, http.StatusOK, healthResponse{
 		Name:      "splat-server",
 		Status:    "ok",
@@ -416,12 +353,6 @@ func (s *Server) handleHealth(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleRevision(w http.ResponseWriter, r *http.Request) {
-	if r.Method != http.MethodGet {
-		w.Header().Set("Allow", http.MethodGet)
-		http.Error(w, http.StatusText(http.StatusMethodNotAllowed), http.StatusMethodNotAllowed)
-		return
-	}
-
 	writeJSON(w, http.StatusOK, revisionResponse{
 		Revision: s.revisions.Revision(),
 	})

@@ -128,6 +128,7 @@ func BuildMapProjectionProfiled(
 				Tags:       item.TagScores,
 				X:          position.X,
 				Y:          position.Y,
+				Hubness:    issues.MapProjectionIssueHubness(storeIssues[i]),
 			}
 			mapIssues[i] = mapIssue
 		}

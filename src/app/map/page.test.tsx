@@ -82,17 +82,17 @@ vi.mock("@/features/map/api", () => ({
 function makeMapData(overrides?: Partial<MapData>): MapData {
   return {
     issues: [
-      { id: "issue-001", raw: "First issue", status: "open", assignedTo: "Avery", x: 0.1, y: 0.1, tags: [{ tag: "bug", relevance: 0.9 }] },
-      { id: "issue-002", raw: "Second issue", status: "open", x: 0.2, y: 0.2, tags: [{ tag: "feature", relevance: 0.8 }] },
-      { id: "issue-003", raw: "Third issue", status: "open", x: 0.3, y: 0.3, tags: [{ tag: "bug", relevance: 0.7 }] },
-      { id: "issue-004", raw: "Fourth issue", status: "open", x: 0.15, y: 0.15, tags: [{ tag: "bug", relevance: 0.6 }] },
-      { id: "issue-005", raw: "Fifth issue", status: "open", x: 0.12, y: 0.12, tags: [{ tag: "bug", relevance: 0.5 }] },
-      { id: "issue-006", raw: "Sixth issue", status: "open", x: 0.25, y: 0.25, tags: [{ tag: "feature", relevance: 0.7 }] },
-      { id: "issue-007", raw: "Seventh issue", status: "open", x: 0.8, y: 0.8, tags: [{ tag: "ui", relevance: 0.9 }] },
-      { id: "issue-008", raw: "Eighth issue", status: "open", x: 0.82, y: 0.82, tags: [{ tag: "ui", relevance: 0.8 }] },
-      { id: "issue-009", raw: "Ninth issue", status: "open", x: 0.85, y: 0.85, tags: [{ tag: "ui", relevance: 0.7 }] },
-      { id: "issue-010", raw: "Tenth issue", status: "open", x: 0.83, y: 0.81, tags: [{ tag: "ui", relevance: 0.6 }] },
-      { id: "issue-011", raw: "Eleventh issue", status: "open", x: 0.84, y: 0.86, tags: [{ tag: "ui", relevance: 0.5 }] },
+      { id: "issue-001", raw: "First issue", status: "open", assignedTo: "Avery", x: 0.1, y: 0.1, hubness: 0, tags: [{ tag: "bug", relevance: 0.9 }] },
+      { id: "issue-002", raw: "Second issue", status: "open", x: 0.2, y: 0.2, hubness: 0, tags: [{ tag: "feature", relevance: 0.8 }] },
+      { id: "issue-003", raw: "Third issue", status: "open", x: 0.3, y: 0.3, hubness: 0, tags: [{ tag: "bug", relevance: 0.7 }] },
+      { id: "issue-004", raw: "Fourth issue", status: "open", x: 0.15, y: 0.15, hubness: 0, tags: [{ tag: "bug", relevance: 0.6 }] },
+      { id: "issue-005", raw: "Fifth issue", status: "open", x: 0.12, y: 0.12, hubness: 0, tags: [{ tag: "bug", relevance: 0.5 }] },
+      { id: "issue-006", raw: "Sixth issue", status: "open", x: 0.25, y: 0.25, hubness: 0, tags: [{ tag: "feature", relevance: 0.7 }] },
+      { id: "issue-007", raw: "Seventh issue", status: "open", x: 0.8, y: 0.8, hubness: 0, tags: [{ tag: "ui", relevance: 0.9 }] },
+      { id: "issue-008", raw: "Eighth issue", status: "open", x: 0.82, y: 0.82, hubness: 0, tags: [{ tag: "ui", relevance: 0.8 }] },
+      { id: "issue-009", raw: "Ninth issue", status: "open", x: 0.85, y: 0.85, hubness: 0, tags: [{ tag: "ui", relevance: 0.7 }] },
+      { id: "issue-010", raw: "Tenth issue", status: "open", x: 0.83, y: 0.81, hubness: 0, tags: [{ tag: "ui", relevance: 0.6 }] },
+      { id: "issue-011", raw: "Eleventh issue", status: "open", x: 0.84, y: 0.86, hubness: 0, tags: [{ tag: "ui", relevance: 0.5 }] },
     ],
     edges: [],
     clusters: [

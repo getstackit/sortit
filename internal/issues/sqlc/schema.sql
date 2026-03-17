@@ -1,4 +1,4 @@
-CREATE EXTENSION IF NOT EXISTS "pg_search" WITH SCHEMA "public";
+CREATE EXTENSION IF NOT EXISTS "pg_search" WITH SCHEMA "paradedb";
 CREATE EXTENSION IF NOT EXISTS "vector" WITH SCHEMA "public";
 
 CREATE SEQUENCE "public"."dismissed_tag_merges_id_seq";
@@ -393,7 +393,7 @@ CREATE INDEX issue_content_facts_issue_created_idx ON public.issue_content_facts
 CREATE UNIQUE INDEX issue_content_facts_issue_sequence_idx ON public.issue_content_facts USING btree (issue_id, sequence);
 CREATE UNIQUE INDEX issue_content_facts_source_idx ON public.issue_content_facts USING btree (source, source_id);
 CREATE INDEX issue_content_projections_embedding_vector_cosine_hnsw_idx ON public.issue_content_projections USING hnsw (((embedding_vector)::vector(1536)) vector_cosine_ops) WHERE ((embedding_vector IS NOT NULL) AND (vector_dims(embedding_vector) = 1536));
-CREATE INDEX issue_content_projections_search_bm25_idx ON public.issue_content_projections USING bm25 (issue_id, search_title, search_body, search_tags, updated_at_unix_nano) WITH (key_field='issue_id');
+CREATE INDEX issue_content_projections_search_bm25_idx ON public.issue_content_projections USING bm25 (issue_id, search_title, search_body, search_tags, updated_at_unix_nano) WITH (key_field=issue_id);
 CREATE INDEX issue_content_projections_updated_idx ON public.issue_content_projections USING btree (updated_at_unix_nano DESC, issue_id);
 CREATE INDEX issue_enrichment_events_issue_created_idx ON public.issue_enrichment_events USING btree (issue_id, created_at_unix_nano DESC, id DESC);
 CREATE INDEX issue_enrichment_events_target_idx ON public.issue_enrichment_events USING btree (issue_id, target_sequence, created_at_unix_nano, id);
