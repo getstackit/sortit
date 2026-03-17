@@ -61,6 +61,59 @@ func TestComputePositionsSingleTagUsesFallbackLayout(t *testing.T) {
 	}
 }
 
+func TestIssueProjectionWeights(t *testing.T) {
+	mat := func(v float64) *float64 { return &v }
+
+	items := []issues.Issue{
+		{ID: "rich", Raw: "This is a detailed issue with plenty of structured content describing the problem, proposed solution, and acceptance criteria for the implementation.", LifecycleMetrics: &issues.IssueLifecycleMetrics{Maturity: mat(0.8)}},
+		{ID: "sparse", Raw: "fix bug", LifecycleMetrics: &issues.IssueLifecycleMetrics{Maturity: mat(0.2)}},
+		{ID: "no-metrics", Raw: "A moderately detailed issue without lifecycle metrics populated yet."},
+	}
+
+	weights := issueProjectionWeights(items)
+
+	if len(weights) != 3 {
+		t.Fatalf("expected 3 weights, got %d", len(weights))
+	}
+
+	// Rich + mature issue should have higher weight than sparse + immature
+	if weights[0] <= weights[1] {
+		t.Errorf("expected rich issue weight (%v) > sparse issue weight (%v)", weights[0], weights[1])
+	}
+
+	// All weights should be >= floor
+	for i, w := range weights {
+		if w < 0.1 {
+			t.Errorf("weight[%d] = %v, below floor 0.1", i, w)
+		}
+	}
+}
+
+func TestWeightedPCAProducesValidPositions(t *testing.T) {
+	mat := func(v float64) *float64 { return &v }
+
+	items := []issues.Issue{
+		{ID: "a", Raw: "A well-described feature request about improving search ranking quality.", TagScores: []TagRelevance{{Tag: "search", Relevance: 0.9}, {Tag: "backend", Relevance: 0.7}}, LifecycleMetrics: &issues.IssueLifecycleMetrics{Maturity: mat(0.9)}},
+		{ID: "b", Raw: "Fix the bug in the login page that causes a crash.", TagScores: []TagRelevance{{Tag: "bug", Relevance: 0.8}, {Tag: "frontend", Relevance: 0.6}}, LifecycleMetrics: &issues.IssueLifecycleMetrics{Maturity: mat(0.5)}},
+		{ID: "c", Raw: "short", TagScores: []TagRelevance{{Tag: "search", Relevance: 0.5}, {Tag: "bug", Relevance: 0.3}}, LifecycleMetrics: &issues.IssueLifecycleMetrics{Maturity: mat(0.1)}},
+	}
+
+	positions, err := ComputePositions(items, []string{"search", "backend", "bug", "frontend"}, nil)
+	if err != nil {
+		t.Fatalf("ComputePositions returned error: %v", err)
+	}
+
+	for _, item := range items {
+		pos, ok := positions[item.ID]
+		if !ok {
+			t.Fatalf("missing position for %s", item.ID)
+		}
+		if pos.X < 0 || pos.X > 1 || pos.Y < 0 || pos.Y > 1 {
+			t.Fatalf("position out of range for %s: %+v", item.ID, pos)
+		}
+	}
+}
+
 func TestNormalizeRobustClipsOutliersBeforeScaling(t *testing.T) {
 	vals := []float64{0, 1, 2, 3, 100}
 

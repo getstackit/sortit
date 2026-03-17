@@ -793,14 +793,27 @@ function computePCA(vectors: number[][]): number[][] {
   const centered = centerVectors(vectors);
   const covariance = buildCovariance(centered);
   const first = powerIteration(covariance);
-  const deflated = deflateMatrix(covariance, first.vector, first.eigenvalue);
-  const second = powerIteration(deflated);
 
-  if (first.vector.length === 0 || second.vector.length === 0) {
+  // If the dominant eigenvalue is near-zero, all vectors are essentially
+  // identical — no meaningful structure exists to project.
+  if (first.eigenvalue < 1e-10 || first.vector.length === 0) {
     return fallbackPoints(vectors.length);
   }
 
-  return centered.map((vector) => [dot(vector, first.vector), dot(vector, second.vector)]);
+  const deflated = deflateMatrix(covariance, first.vector, first.eigenvalue);
+  const second = powerIteration(deflated);
+
+  // If the second eigenvalue is negligible relative to the first, the data
+  // is effectively 1D (collinear). Collapse to a line along PC1 rather than
+  // stretching numerical residue across a fake second axis.
+  const secondIsDegenerate =
+    second.vector.length === 0 || second.eigenvalue < first.eigenvalue * 1e-4;
+
+  return centered.map((vector) => {
+    const pc1 = dot(vector, first.vector);
+    const pc2 = secondIsDegenerate ? 0 : dot(vector, second.vector);
+    return [pc1, pc2];
+  });
 }
 
 function buildEdges(tags: TagRecord[], threshold: number): TagEdge[] {

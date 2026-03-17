@@ -49,23 +49,37 @@ func ComputePositions(issues []issues.Issue, tags []string, tagEmbeddings map[st
 	var Xprime mat.Dense
 	Xprime.Mul(X, tagCov)
 
-	// Mean-center each column
+	// Per-issue quality weights for projection stability.
+	// Uses content confidence and maturity — NOT search-side boosts.
+	weights := issueProjectionWeights(issues)
+
+	// Weighted mean-center each column
+	sumW := 0.0
+	for _, w := range weights {
+		sumW += w
+	}
 	for j := range t {
-		col := mat.Col(nil, j, &Xprime)
-		mean := 0.0
-		for _, v := range col {
-			mean += v
-		}
-		mean /= float64(n)
+		wMean := 0.0
 		for i := range n {
-			Xprime.Set(i, j, Xprime.At(i, j)-mean)
+			wMean += weights[i] * Xprime.At(i, j)
+		}
+		wMean /= sumW
+		for i := range n {
+			Xprime.Set(i, j, Xprime.At(i, j)-wMean)
 		}
 	}
 
-	// Covariance: C = (1/(N-1)) * X'ᵀ * X'
+	// Weighted covariance: C = X'ᵀ * W * X' / (sum(W) - 1)
+	// Apply sqrt(w) to each row so that X'ᵀ * X' becomes X'ᵀ * W * X'
+	for i := range n {
+		sw := math.Sqrt(weights[i])
+		for j := range t {
+			Xprime.Set(i, j, Xprime.At(i, j)*sw)
+		}
+	}
 	var covRaw mat.Dense
 	covRaw.Mul(Xprime.T(), &Xprime)
-	covRaw.Scale(1.0/float64(n-1), &covRaw)
+	covRaw.Scale(1.0/math.Max(sumW-1, 1), &covRaw)
 
 	// Convert to SymDense for EigenSym
 	covSym := mat.NewSymDense(t, nil)
@@ -245,4 +259,25 @@ func fallbackPositions(issues []issues.Issue) map[string]Position {
 	}
 
 	return positions
+}
+
+// issueProjectionWeights computes a per-issue weight for the PCA covariance.
+// Weight = contentConfidence * maturity. Both are 0..1, so the product is 0..1.
+// A floor of 0.1 ensures no issue is completely ignored.
+func issueProjectionWeights(items []issues.Issue) []float64 {
+	const floor = 0.1
+	weights := make([]float64, len(items))
+	for i, item := range items {
+		cc := issues.ComputeContentConfidence(item.Raw)
+		maturity := 0.5
+		if item.LifecycleMetrics != nil && item.LifecycleMetrics.Maturity != nil {
+			maturity = *item.LifecycleMetrics.Maturity
+		}
+		w := cc * maturity
+		if w < floor {
+			w = floor
+		}
+		weights[i] = w
+	}
+	return weights
 }
