@@ -30,6 +30,7 @@ export const MAX_RENDERED_AMBIENT_EDGES = 180;
 export const MAX_RENDERED_SELECTED_EDGES = 40;
 export const DEFAULT_ISSUE_RADIUS = 6;
 export const ISSUE_RADIUS_SCALE = 14;
+export const HUBNESS_RADIUS_SCALE = 4;
 
 export function dominantTag(tags: TagRelevance[]): string {
   if (tags.length === 0) {
@@ -58,9 +59,14 @@ export function issueLoading(
 
 export function issueRadius(
   tags: TagRelevance[],
-  bubbleSizeTag?: string | null
+  bubbleSizeTag?: string | null,
+  hubness?: number
 ): number {
-  return DEFAULT_ISSUE_RADIUS + issueLoading(tags, bubbleSizeTag) * ISSUE_RADIUS_SCALE;
+  return (
+    DEFAULT_ISSUE_RADIUS +
+    issueLoading(tags, bubbleSizeTag) * ISSUE_RADIUS_SCALE +
+    (hubness ?? 0) * HUBNESS_RADIUS_SCALE
+  );
 }
 
 export function pointInPolygon(
@@ -282,6 +288,26 @@ export function computeConvexHull(points: { x: number; y: number }[]) {
   return lower.concat(upper);
 }
 
+/** Chaikin corner-cutting on a closed polygon. Each iteration replaces every
+ *  edge with two points at the 25% and 75% marks, rounding off sharp corners. */
+function chaikinSmooth(
+  pts: { x: number; y: number }[],
+  iterations: number,
+): { x: number; y: number }[] {
+  let cur = pts;
+  for (let iter = 0; iter < iterations; iter++) {
+    const next: { x: number; y: number }[] = [];
+    for (let i = 0; i < cur.length; i++) {
+      const a = cur[i];
+      const b = cur[(i + 1) % cur.length];
+      next.push({ x: 0.75 * a.x + 0.25 * b.x, y: 0.75 * a.y + 0.25 * b.y });
+      next.push({ x: 0.25 * a.x + 0.75 * b.x, y: 0.25 * a.y + 0.75 * b.y });
+    }
+    cur = next;
+  }
+  return cur;
+}
+
 export function computeBlobPath(screenPoints: { x: number; y: number }[], padding: number): string {
   if (screenPoints.length < 3) return "";
 
@@ -301,14 +327,17 @@ export function computeBlobPath(screenPoints: { x: number; y: number }[], paddin
     };
   });
 
-  const n = expanded.length;
+  // Chaikin corner-cutting: 3 iterations to smooth out kinks and spikes
+  const smoothed = chaikinSmooth(expanded, 3);
+
+  const n = smoothed.length;
   const parts: string[] = [];
 
   for (let i = 0; i < n; i++) {
-    const p0 = expanded[(i - 1 + n) % n];
-    const p1 = expanded[i];
-    const p2 = expanded[(i + 1) % n];
-    const p3 = expanded[(i + 2) % n];
+    const p0 = smoothed[(i - 1 + n) % n];
+    const p1 = smoothed[i];
+    const p2 = smoothed[(i + 1) % n];
+    const p3 = smoothed[(i + 2) % n];
 
     const cp1x = p1.x + (p2.x - p0.x) / 6;
     const cp1y = p1.y + (p2.y - p0.y) / 6;

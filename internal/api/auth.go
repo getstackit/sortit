@@ -8,6 +8,8 @@ import (
 	"strings"
 	"time"
 
+	"github.com/go-chi/chi/v5"
+
 	"splat/internal/auth"
 )
 
@@ -52,11 +54,6 @@ func (s *Server) handleAuthGitHubStart(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusNotImplemented, "authentication is not configured")
 		return
 	}
-	if r.Method != http.MethodGet {
-		w.Header().Set("Allow", http.MethodGet)
-		http.Error(w, http.StatusText(http.StatusMethodNotAllowed), http.StatusMethodNotAllowed)
-		return
-	}
 	if err := s.authService.BeginGitHubLogin(w, r, authCallbackPath(r.URL.Path)); err != nil {
 		writeInternalError(w, r, "failed to start github login", err)
 		return
@@ -66,11 +63,6 @@ func (s *Server) handleAuthGitHubStart(w http.ResponseWriter, r *http.Request) {
 func (s *Server) handleAuthGitHubCallback(w http.ResponseWriter, r *http.Request) {
 	if s.authService == nil {
 		writeError(w, http.StatusNotImplemented, "authentication is not configured")
-		return
-	}
-	if r.Method != http.MethodGet {
-		w.Header().Set("Allow", http.MethodGet)
-		http.Error(w, http.StatusText(http.StatusMethodNotAllowed), http.StatusMethodNotAllowed)
 		return
 	}
 	if err := s.authService.CompleteGitHubLogin(w, r, r.URL.Path); err != nil {
@@ -88,11 +80,6 @@ func (s *Server) handleAuthSession(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusNotImplemented, "authentication is not configured")
 		return
 	}
-	if r.Method != http.MethodGet {
-		w.Header().Set("Allow", http.MethodGet)
-		http.Error(w, http.StatusText(http.StatusMethodNotAllowed), http.StatusMethodNotAllowed)
-		return
-	}
 
 	principal, err := s.authService.CurrentPrincipal(r)
 	if err != nil {
@@ -107,11 +94,6 @@ func (s *Server) handleAuthLogout(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusNotImplemented, "authentication is not configured")
 		return
 	}
-	if r.Method != http.MethodPost {
-		w.Header().Set("Allow", http.MethodPost)
-		http.Error(w, http.StatusText(http.StatusMethodNotAllowed), http.StatusMethodNotAllowed)
-		return
-	}
 	if err := s.authService.Logout(w, r); err != nil {
 		writeInternalError(w, r, "failed to logout", err)
 		return
@@ -119,7 +101,7 @@ func (s *Server) handleAuthLogout(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]string{"status": "ok"})
 }
 
-func (s *Server) handleAuthTokens(w http.ResponseWriter, r *http.Request) {
+func (s *Server) handleAuthTokenListOrCreate(w http.ResponseWriter, r *http.Request) {
 	if s.authService == nil {
 		writeError(w, http.StatusNotImplemented, "authentication is not configured")
 		return
@@ -163,51 +145,34 @@ func (s *Server) handleAuthTokens(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-func (s *Server) handleAuthTokenByID(route string) http.HandlerFunc {
-	return func(w http.ResponseWriter, r *http.Request) {
-		if s.authService == nil {
-			writeError(w, http.StatusNotImplemented, "authentication is not configured")
-			return
-		}
-
-		principal, ok := auth.PrincipalFromContext(r.Context())
-		if !ok {
-			writeError(w, http.StatusUnauthorized, "authentication required")
-			return
-		}
-
-		tail := strings.TrimSpace(strings.TrimPrefix(r.URL.Path, route))
-		segments := strings.Split(tail, "/")
-		if len(segments) != 2 || strings.TrimSpace(segments[0]) == "" || segments[1] != "revoke" {
-			writeError(w, http.StatusNotFound, "route not found")
-			return
-		}
-		if r.Method != http.MethodPost {
-			w.Header().Set("Allow", http.MethodPost)
-			http.Error(w, http.StatusText(http.StatusMethodNotAllowed), http.StatusMethodNotAllowed)
-			return
-		}
-
-		if err := s.authService.RevokeAPIToken(r.Context(), principal, segments[0]); err != nil {
-			if errors.Is(err, auth.ErrTokenNotFound) {
-				writeError(w, http.StatusNotFound, "token not found")
-				return
-			}
-			writeInternalError(w, r, "failed to revoke api token", err)
-			return
-		}
-		writeJSON(w, http.StatusOK, map[string]string{"status": "revoked"})
+func (s *Server) handleAuthTokenRevoke(w http.ResponseWriter, r *http.Request) {
+	if s.authService == nil {
+		writeError(w, http.StatusNotImplemented, "authentication is not configured")
+		return
 	}
+
+	principal, ok := auth.PrincipalFromContext(r.Context())
+	if !ok {
+		writeError(w, http.StatusUnauthorized, "authentication required")
+		return
+	}
+
+	tokenID := chi.URLParam(r, "tokenID")
+
+	if err := s.authService.RevokeAPIToken(r.Context(), principal, tokenID); err != nil {
+		if errors.Is(err, auth.ErrTokenNotFound) {
+			writeError(w, http.StatusNotFound, "token not found")
+			return
+		}
+		writeInternalError(w, r, "failed to revoke api token", err)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]string{"status": "revoked"})
 }
 
 func (s *Server) handleAuthCLILogin(w http.ResponseWriter, r *http.Request) {
 	if s.authService == nil {
 		writeError(w, http.StatusNotImplemented, "authentication is not configured")
-		return
-	}
-	if r.Method != http.MethodPost {
-		w.Header().Set("Allow", http.MethodPost)
-		http.Error(w, http.StatusText(http.StatusMethodNotAllowed), http.StatusMethodNotAllowed)
 		return
 	}
 
@@ -226,101 +191,79 @@ func (s *Server) handleAuthCLILogin(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
-func (s *Server) handleAuthCLILoginExchange(route string) http.HandlerFunc {
-	return func(w http.ResponseWriter, r *http.Request) {
-		if s.authService == nil {
-			writeError(w, http.StatusNotImplemented, "authentication is not configured")
-			return
-		}
-		if r.Method != http.MethodPost {
-			w.Header().Set("Allow", http.MethodPost)
-			http.Error(w, http.StatusText(http.StatusMethodNotAllowed), http.StatusMethodNotAllowed)
-			return
-		}
-
-		loginID, err := parseCLILoginID(route, r.URL.Path, "exchange")
-		if err != nil {
-			writeError(w, http.StatusNotFound, "route not found")
-			return
-		}
-		request, err := decodeJSON[cliLoginExchangeRequest](r)
-		if err != nil {
-			writeError(w, http.StatusBadRequest, err.Error())
-			return
-		}
-
-		result, err := s.authService.ExchangeCLILogin(loginID, strings.TrimSpace(request.ExchangeToken))
-		if err != nil {
-			switch {
-			case errors.Is(err, auth.ErrCLILoginPending):
-				writeJSON(w, http.StatusAccepted, cliLoginExchangeResponse{Status: "pending"})
-				return
-			case errors.Is(err, auth.ErrCLILoginNotFound), errors.Is(err, auth.ErrCLILoginConsumed):
-				writeError(w, http.StatusNotFound, "cli login not found")
-				return
-			case errors.Is(err, auth.ErrCLILoginExpired):
-				writeError(w, http.StatusGone, "cli login expired")
-				return
-			case errors.Is(err, auth.ErrUnauthorized):
-				writeError(w, http.StatusUnauthorized, "authentication failed")
-				return
-			default:
-				writeInternalError(w, r, "failed to exchange cli login", err)
-				return
-			}
-		}
-
-		writeJSON(w, http.StatusOK, cliLoginExchangeResponse{
-			Status:   "complete",
-			User:     result.User,
-			Token:    result.Token,
-			Metadata: result.Metadata,
-		})
+func (s *Server) handleAuthCLILoginExchange(w http.ResponseWriter, r *http.Request) {
+	if s.authService == nil {
+		writeError(w, http.StatusNotImplemented, "authentication is not configured")
+		return
 	}
+
+	loginID := chi.URLParam(r, "loginID")
+	request, err := decodeJSON[cliLoginExchangeRequest](r)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+
+	result, err := s.authService.ExchangeCLILogin(loginID, strings.TrimSpace(request.ExchangeToken))
+	if err != nil {
+		switch {
+		case errors.Is(err, auth.ErrCLILoginPending):
+			writeJSON(w, http.StatusAccepted, cliLoginExchangeResponse{Status: "pending"})
+			return
+		case errors.Is(err, auth.ErrCLILoginNotFound), errors.Is(err, auth.ErrCLILoginConsumed):
+			writeError(w, http.StatusNotFound, "cli login not found")
+			return
+		case errors.Is(err, auth.ErrCLILoginExpired):
+			writeError(w, http.StatusGone, "cli login expired")
+			return
+		case errors.Is(err, auth.ErrUnauthorized):
+			writeError(w, http.StatusUnauthorized, "authentication failed")
+			return
+		default:
+			writeInternalError(w, r, "failed to exchange cli login", err)
+			return
+		}
+	}
+
+	writeJSON(w, http.StatusOK, cliLoginExchangeResponse{
+		Status:   "complete",
+		User:     result.User,
+		Token:    result.Token,
+		Metadata: result.Metadata,
+	})
 }
 
-func (s *Server) handleAuthCLILoginComplete(route string) http.HandlerFunc {
-	return func(w http.ResponseWriter, r *http.Request) {
-		if s.authService == nil {
-			writeError(w, http.StatusNotImplemented, "authentication is not configured")
-			return
-		}
-		principal, ok := auth.PrincipalFromContext(r.Context())
-		if !ok {
-			writeError(w, http.StatusUnauthorized, "authentication required")
-			return
-		}
-		if r.Method != http.MethodPost {
-			w.Header().Set("Allow", http.MethodPost)
-			http.Error(w, http.StatusText(http.StatusMethodNotAllowed), http.StatusMethodNotAllowed)
-			return
-		}
-
-		loginID, err := parseCLILoginID(route, r.URL.Path, "complete")
-		if err != nil {
-			writeError(w, http.StatusNotFound, "route not found")
-			return
-		}
-
-		result, err := s.authService.CompleteCLILogin(r.Context(), loginID, principal.User())
-		if err != nil {
-			switch {
-			case errors.Is(err, auth.ErrCLILoginNotFound):
-				writeError(w, http.StatusNotFound, "cli login not found")
-			case errors.Is(err, auth.ErrCLILoginExpired):
-				writeError(w, http.StatusGone, "cli login expired")
-			default:
-				writeInternalError(w, r, "failed to complete cli login", err)
-			}
-			return
-		}
-
-		writeJSON(w, http.StatusOK, cliLoginExchangeResponse{
-			Status:   "complete",
-			User:     result.User,
-			Metadata: result.Metadata,
-		})
+func (s *Server) handleAuthCLILoginComplete(w http.ResponseWriter, r *http.Request) {
+	if s.authService == nil {
+		writeError(w, http.StatusNotImplemented, "authentication is not configured")
+		return
 	}
+	principal, ok := auth.PrincipalFromContext(r.Context())
+	if !ok {
+		writeError(w, http.StatusUnauthorized, "authentication required")
+		return
+	}
+
+	loginID := chi.URLParam(r, "loginID")
+
+	result, err := s.authService.CompleteCLILogin(r.Context(), loginID, principal.User())
+	if err != nil {
+		switch {
+		case errors.Is(err, auth.ErrCLILoginNotFound):
+			writeError(w, http.StatusNotFound, "cli login not found")
+		case errors.Is(err, auth.ErrCLILoginExpired):
+			writeError(w, http.StatusGone, "cli login expired")
+		default:
+			writeInternalError(w, r, "failed to complete cli login", err)
+		}
+		return
+	}
+
+	writeJSON(w, http.StatusOK, cliLoginExchangeResponse{
+		Status:   "complete",
+		User:     result.User,
+		Metadata: result.Metadata,
+	})
 }
 
 func authCallbackPath(startPath string) string {
@@ -329,38 +272,6 @@ func authCallbackPath(startPath string) string {
 		return "/" + callbackPath
 	}
 	return callbackPath
-}
-
-func authTokenItemRoute(prefix string) string {
-	return path.Join(prefix, "auth", "tokens") + "/"
-}
-
-func authCLILoginExchangeRoute(prefix string) string {
-	return path.Join(prefix, "auth", "cli", "login") + "/"
-}
-
-func authCLILoginCompleteRoute(prefix string) string {
-	return path.Join(prefix, "auth", "cli", "login") + "/"
-}
-
-func parseCLILoginAction(route, requestPath string) (string, string, error) {
-	tail := strings.TrimSpace(strings.TrimPrefix(requestPath, route))
-	segments := strings.Split(tail, "/")
-	if len(segments) != 2 || strings.TrimSpace(segments[0]) == "" || strings.TrimSpace(segments[1]) == "" {
-		return "", "", fmt.Errorf("invalid cli auth route")
-	}
-	return segments[0], segments[1], nil
-}
-
-func parseCLILoginID(route, requestPath, action string) (string, error) {
-	loginID, gotAction, err := parseCLILoginAction(route, requestPath)
-	if err != nil {
-		return "", err
-	}
-	if gotAction != action {
-		return "", fmt.Errorf("invalid cli auth action")
-	}
-	return loginID, nil
 }
 
 func cliLoginPageURL(webOrigin, loginID string) string {

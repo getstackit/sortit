@@ -11,6 +11,7 @@ export type MapIssue = {
   tags: TagRelevance[];
   x: number;
   y: number;
+  hubness: number;
 };
 
 export type MapEdge = {

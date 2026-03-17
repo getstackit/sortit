@@ -4,8 +4,9 @@ import (
 	"errors"
 	"io"
 	"net/http"
-	"path"
 	"strings"
+
+	"github.com/go-chi/chi/v5"
 
 	"splat/internal/auth"
 	"splat/internal/commands"
@@ -111,25 +112,7 @@ type pairwiseIssueSimilarity struct {
 	Similarity float64 `json:"similarity"`
 }
 
-func (s *Server) handleIssues(w http.ResponseWriter, r *http.Request) {
-	switch r.Method {
-	case http.MethodGet:
-		s.handleIssueList(w, r)
-	case http.MethodPost:
-		s.handleIssueCreate(w, r)
-	default:
-		w.Header().Set("Allow", strings.Join([]string{http.MethodGet, http.MethodPost}, ", "))
-		http.Error(w, http.StatusText(http.StatusMethodNotAllowed), http.StatusMethodNotAllowed)
-	}
-}
-
 func (s *Server) handleIssueCompare(w http.ResponseWriter, r *http.Request) {
-	if r.Method != http.MethodPost {
-		w.Header().Set("Allow", http.MethodPost)
-		http.Error(w, http.StatusText(http.StatusMethodNotAllowed), http.StatusMethodNotAllowed)
-		return
-	}
-
 	request, err := decodeCompareIssuesRequest(r)
 	if err != nil {
 		writeError(w, http.StatusBadRequest, err.Error())
@@ -156,12 +139,6 @@ func (s *Server) handleIssueCompare(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleIssueSearch(w http.ResponseWriter, r *http.Request) {
-	if r.Method != http.MethodGet {
-		w.Header().Set("Allow", http.MethodGet)
-		http.Error(w, http.StatusText(http.StatusMethodNotAllowed), http.StatusMethodNotAllowed)
-		return
-	}
-
 	query := strings.TrimSpace(r.URL.Query().Get("q"))
 	if query == "" {
 		query = strings.TrimSpace(r.URL.Query().Get("query"))
@@ -222,12 +199,6 @@ func (s *Server) handleIssueSearch(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleIssueCombine(w http.ResponseWriter, r *http.Request) {
-	if r.Method != http.MethodPost {
-		w.Header().Set("Allow", http.MethodPost)
-		http.Error(w, http.StatusText(http.StatusMethodNotAllowed), http.StatusMethodNotAllowed)
-		return
-	}
-
 	request, err := decodeCombineIssuesRequest(r)
 	if err != nil {
 		writeError(w, http.StatusBadRequest, err.Error())
@@ -252,12 +223,6 @@ func (s *Server) handleIssueCombine(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleIssueLink(w http.ResponseWriter, r *http.Request) {
-	if r.Method != http.MethodPost {
-		w.Header().Set("Allow", http.MethodPost)
-		http.Error(w, http.StatusText(http.StatusMethodNotAllowed), http.StatusMethodNotAllowed)
-		return
-	}
-
 	request, err := decodeLinkIssuesRequest(r)
 	if err != nil {
 		writeError(w, http.StatusBadRequest, err.Error())
@@ -292,12 +257,6 @@ func (s *Server) handleIssueLink(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleIssueRefineBatch(w http.ResponseWriter, r *http.Request) {
-	if r.Method != http.MethodPost {
-		w.Header().Set("Allow", http.MethodPost)
-		http.Error(w, http.StatusText(http.StatusMethodNotAllowed), http.StatusMethodNotAllowed)
-		return
-	}
-
 	request, err := decodeBatchRefineIssuesRequest(r)
 	if err != nil {
 		writeError(w, http.StatusBadRequest, err.Error())
@@ -320,12 +279,6 @@ func (s *Server) handleIssueRefineBatch(w http.ResponseWriter, r *http.Request) 
 }
 
 func (s *Server) handleIssueProgressBatch(w http.ResponseWriter, r *http.Request) {
-	if r.Method != http.MethodPost {
-		w.Header().Set("Allow", http.MethodPost)
-		http.Error(w, http.StatusText(http.StatusMethodNotAllowed), http.StatusMethodNotAllowed)
-		return
-	}
-
 	request, err := decodeBatchProgressIssuesRequest(r)
 	if err != nil {
 		writeError(w, http.StatusBadRequest, err.Error())
@@ -348,12 +301,6 @@ func (s *Server) handleIssueProgressBatch(w http.ResponseWriter, r *http.Request
 }
 
 func (s *Server) handleIssueCloseBatch(w http.ResponseWriter, r *http.Request) {
-	if r.Method != http.MethodPost {
-		w.Header().Set("Allow", http.MethodPost)
-		http.Error(w, http.StatusText(http.StatusMethodNotAllowed), http.StatusMethodNotAllowed)
-		return
-	}
-
 	request, err := decodeBatchCloseIssuesRequest(r)
 	if err != nil {
 		writeError(w, http.StatusBadRequest, err.Error())
@@ -377,12 +324,6 @@ func (s *Server) handleIssueCloseBatch(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleIssueAssignBatch(w http.ResponseWriter, r *http.Request) {
-	if r.Method != http.MethodPost {
-		w.Header().Set("Allow", http.MethodPost)
-		http.Error(w, http.StatusText(http.StatusMethodNotAllowed), http.StatusMethodNotAllowed)
-		return
-	}
-
 	request, err := decodeBatchAssignIssuesRequest(r)
 	if err != nil {
 		writeError(w, http.StatusBadRequest, err.Error())
@@ -404,58 +345,8 @@ func (s *Server) handleIssueAssignBatch(w http.ResponseWriter, r *http.Request) 
 	writeJSON(w, http.StatusOK, result)
 }
 
-func (s *Server) handleIssueByID(route string) http.HandlerFunc {
-	return func(w http.ResponseWriter, r *http.Request) {
-		tail := strings.TrimSpace(strings.TrimPrefix(r.URL.Path, route))
-		if tail == "" {
-			writeError(w, http.StatusNotFound, "route not found")
-			return
-		}
-
-		segments := strings.Split(tail, "/")
-		if len(segments) == 0 || len(segments) > 2 {
-			writeError(w, http.StatusNotFound, "route not found")
-			return
-		}
-
-		id := strings.TrimSpace(segments[0])
-		if id == "" {
-			writeError(w, http.StatusNotFound, "route not found")
-			return
-		}
-
-		if len(segments) == 1 {
-			s.handleGetIssue(w, r, id)
-			return
-		}
-
-		switch segments[1] {
-		case "close":
-			s.handleCloseIssue(w, r, id)
-		case "refine":
-			s.handleRefineIssue(w, r, id)
-		case "explore":
-			s.handleExploreIssue(w, r, id)
-		case "progress":
-			s.handleProgressIssue(w, r, id)
-		case "reopen":
-			s.handleReopenIssue(w, r, id)
-		case "assign":
-			s.handleAssignIssue(w, r, id)
-		case "split":
-			s.handleSplitIssue(w, r, id)
-		default:
-			writeError(w, http.StatusNotFound, "route not found")
-		}
-	}
-}
-
-func (s *Server) handleGetIssue(w http.ResponseWriter, r *http.Request, id string) {
-	if r.Method != http.MethodGet {
-		w.Header().Set("Allow", http.MethodGet)
-		http.Error(w, http.StatusText(http.StatusMethodNotAllowed), http.StatusMethodNotAllowed)
-		return
-	}
+func (s *Server) handleGetIssue(w http.ResponseWriter, r *http.Request) {
+	id := chi.URLParam(r, "id")
 
 	issue, err := s.getIssue.Handle(r.Context(), queries.GetIssue{ID: id})
 	if err != nil {
@@ -470,12 +361,8 @@ func (s *Server) handleGetIssue(w http.ResponseWriter, r *http.Request, id strin
 	writeJSON(w, http.StatusOK, issue)
 }
 
-func (s *Server) handleCloseIssue(w http.ResponseWriter, r *http.Request, id string) {
-	if r.Method != http.MethodPost {
-		w.Header().Set("Allow", http.MethodPost)
-		http.Error(w, http.StatusText(http.StatusMethodNotAllowed), http.StatusMethodNotAllowed)
-		return
-	}
+func (s *Server) handleCloseIssue(w http.ResponseWriter, r *http.Request) {
+	id := chi.URLParam(r, "id")
 
 	request, err := decodeCloseIssueRequest(r)
 	if err != nil {
@@ -501,12 +388,8 @@ func (s *Server) handleCloseIssue(w http.ResponseWriter, r *http.Request, id str
 	writeJSON(w, http.StatusOK, closed)
 }
 
-func (s *Server) handleRefineIssue(w http.ResponseWriter, r *http.Request, id string) {
-	if r.Method != http.MethodPost {
-		w.Header().Set("Allow", http.MethodPost)
-		http.Error(w, http.StatusText(http.StatusMethodNotAllowed), http.StatusMethodNotAllowed)
-		return
-	}
+func (s *Server) handleRefineIssue(w http.ResponseWriter, r *http.Request) {
+	id := chi.URLParam(r, "id")
 
 	request, err := decodeRefineIssueRequest(r)
 	if err != nil {
@@ -535,12 +418,8 @@ func (s *Server) handleRefineIssue(w http.ResponseWriter, r *http.Request, id st
 	writeJSON(w, http.StatusOK, refined)
 }
 
-func (s *Server) handleExploreIssue(w http.ResponseWriter, r *http.Request, id string) {
-	if r.Method != http.MethodGet {
-		w.Header().Set("Allow", http.MethodGet)
-		http.Error(w, http.StatusText(http.StatusMethodNotAllowed), http.StatusMethodNotAllowed)
-		return
-	}
+func (s *Server) handleExploreIssue(w http.ResponseWriter, r *http.Request) {
+	id := chi.URLParam(r, "id")
 
 	limit, err := ParsePositiveIntQuery(r.URL.Query(), "limit")
 	if err != nil {
@@ -569,12 +448,8 @@ func (s *Server) handleExploreIssue(w http.ResponseWriter, r *http.Request, id s
 	writeJSON(w, http.StatusOK, result)
 }
 
-func (s *Server) handleProgressIssue(w http.ResponseWriter, r *http.Request, id string) {
-	if r.Method != http.MethodPost {
-		w.Header().Set("Allow", http.MethodPost)
-		http.Error(w, http.StatusText(http.StatusMethodNotAllowed), http.StatusMethodNotAllowed)
-		return
-	}
+func (s *Server) handleProgressIssue(w http.ResponseWriter, r *http.Request) {
+	id := chi.URLParam(r, "id")
 
 	request, err := decodeProgressIssueRequest(r)
 	if err != nil {
@@ -603,12 +478,8 @@ func (s *Server) handleProgressIssue(w http.ResponseWriter, r *http.Request, id 
 	writeJSON(w, http.StatusOK, progressed)
 }
 
-func (s *Server) handleReopenIssue(w http.ResponseWriter, r *http.Request, id string) {
-	if r.Method != http.MethodPost {
-		w.Header().Set("Allow", http.MethodPost)
-		http.Error(w, http.StatusText(http.StatusMethodNotAllowed), http.StatusMethodNotAllowed)
-		return
-	}
+func (s *Server) handleReopenIssue(w http.ResponseWriter, r *http.Request) {
+	id := chi.URLParam(r, "id")
 
 	reopened, err := s.reopenIssue.Handle(r.Context(), commands.ReopenIssue{ID: id})
 	if err != nil {
@@ -623,12 +494,8 @@ func (s *Server) handleReopenIssue(w http.ResponseWriter, r *http.Request, id st
 	writeJSON(w, http.StatusOK, reopened)
 }
 
-func (s *Server) handleAssignIssue(w http.ResponseWriter, r *http.Request, id string) {
-	if r.Method != http.MethodPost {
-		w.Header().Set("Allow", http.MethodPost)
-		http.Error(w, http.StatusText(http.StatusMethodNotAllowed), http.StatusMethodNotAllowed)
-		return
-	}
+func (s *Server) handleAssignIssue(w http.ResponseWriter, r *http.Request) {
+	id := chi.URLParam(r, "id")
 
 	request, err := decodeAssignIssueRequest(r)
 	if err != nil {
@@ -653,12 +520,8 @@ func (s *Server) handleAssignIssue(w http.ResponseWriter, r *http.Request, id st
 	writeJSON(w, http.StatusOK, assigned)
 }
 
-func (s *Server) handleSplitIssue(w http.ResponseWriter, r *http.Request, id string) {
-	if r.Method != http.MethodPost {
-		w.Header().Set("Allow", http.MethodPost)
-		http.Error(w, http.StatusText(http.StatusMethodNotAllowed), http.StatusMethodNotAllowed)
-		return
-	}
+func (s *Server) handleSplitIssue(w http.ResponseWriter, r *http.Request) {
+	id := chi.URLParam(r, "id")
 
 	request, err := decodeSplitIssueRequest(r)
 	if err != nil {
@@ -989,10 +852,6 @@ func decodeLinkIssuesRequest(r *http.Request) (linkIssuesRequest, error) {
 		return linkIssuesRequest{}, errors.New("invalid link type")
 	}
 	return request, nil
-}
-
-func issueItemRoute(prefix string) string {
-	return path.Join(prefix, "issues") + "/"
 }
 
 func actorForRequest(r *http.Request, fallback string) string {

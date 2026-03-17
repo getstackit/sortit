@@ -103,6 +103,9 @@ func Generate(ctx context.Context, baseURL string) (string, error) {
 		return "", err
 	}
 
+	// Only keep extensions explicitly created by our migrations.
+	s.Extensions = filterMigrationExtensions(s.Extensions)
+
 	return renderSnapshot(s), nil
 }
 
@@ -111,7 +114,7 @@ func WriteCanonicalSchema(ctx context.Context, baseURL string) error {
 	if err != nil {
 		return err
 	}
-	if err := os.WriteFile(schemaSQLPath(), []byte(schemaSQL), 0o644); err != nil {
+	if err := os.WriteFile(schemaSQLPath(), []byte(schemaSQL), 0o600); err != nil {
 		return fmt.Errorf("write schema.sql: %w", err)
 	}
 	return nil
@@ -198,6 +201,11 @@ func loadSequences(ctx context.Context, db *sql.DB) ([]sequence, error) {
 		  AND att.attnum = dep.refobjsubid
 		 WHERE seq_ns.nspname = 'public'
 		   AND seq.relkind = 'S'
+		   AND NOT EXISTS (
+		     SELECT 1 FROM pg_depend d
+		     WHERE d.objid = seq.oid
+		       AND d.deptype = 'e'
+		   )
 		 ORDER BY seq.relname`,
 	)
 	if err != nil {
@@ -237,6 +245,11 @@ func loadTables(ctx context.Context, db *sql.DB) ([]table, error) {
 		 WHERE ns.nspname = 'public'
 		   AND cls.relkind = 'r'
 		   AND cls.relname <> 'schema_migrations'
+		   AND NOT EXISTS (
+		     SELECT 1 FROM pg_depend d
+		     WHERE d.objid = cls.oid
+		       AND d.deptype = 'e'
+		   )
 		   AND att.attnum > 0
 		   AND NOT att.attisdropped
 		 ORDER BY cls.relname, att.attnum`,
@@ -284,6 +297,12 @@ func loadConstraints(ctx context.Context, db *sql.DB) ([]constraint, error) {
 		 JOIN pg_namespace ns ON ns.oid = cls.relnamespace
 		 WHERE ns.nspname = 'public'
 		   AND cls.relname <> 'schema_migrations'
+		   AND con.contype <> 'n'
+		   AND NOT EXISTS (
+		     SELECT 1 FROM pg_depend d
+		     WHERE d.objid = cls.oid
+		       AND d.deptype = 'e'
+		   )
 		 ORDER BY cls.relname, con.conname`,
 	)
 	if err != nil {
@@ -317,6 +336,11 @@ func loadIndexes(ctx context.Context, db *sql.DB) ([]index, error) {
 		 LEFT JOIN pg_constraint con ON con.conindid = idx.oid
 		 WHERE ns.nspname = 'public'
 		   AND tbl.relname <> 'schema_migrations'
+		   AND NOT EXISTS (
+		     SELECT 1 FROM pg_depend d
+		     WHERE d.objid = tbl.oid
+		       AND d.deptype = 'e'
+		   )
 		   AND con.oid IS NULL
 		 ORDER BY tbl.relname, idx.relname`,
 	)
@@ -523,6 +547,24 @@ func qualifyPublic(name string) string {
 
 func quoteIdent(value string) string {
 	return `"` + strings.ReplaceAll(value, `"`, `""`) + `"`
+}
+
+// migrationExtensions lists extensions explicitly created by our migrations.
+// Pre-installed extensions (e.g. postgis, fuzzystrmatch) vary by platform and
+// must be excluded so the schema is reproducible across architectures.
+var migrationExtensions = map[string]bool{
+	"pg_search": true,
+	"vector":    true,
+}
+
+func filterMigrationExtensions(exts []extension) []extension {
+	var filtered []extension
+	for _, ext := range exts {
+		if migrationExtensions[ext.Name] {
+			filtered = append(filtered, ext)
+		}
+	}
+	return filtered
 }
 
 func randomDatabaseName(prefix string) string {

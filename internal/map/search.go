@@ -123,8 +123,10 @@ func SearchFromQueryWithTags(
 		candidateSummary := exploreIssueSummary(candidate)
 		semantic := vectors.CosineSimilarity(queryVector, issueEmbeddings[candidate.ID])
 		factor := vectors.CosineSimilarity(queryFactor, factorVectors[candidate.ID])
-		textMatch := textMatchScore(queryLower, candidate.Raw)
-		combined := blendScores(semantic, factor, textMatch, tagCorrelationBoost)
+		combined := blendSearchSignals(semantic, factor, tagCorrelationBoost)
+		// Note: the DB query also applies recency decay (90-day half-life) to rank
+		// the retrieval window. This app-side freshness weight fine-tunes within
+		// the semantic/factor blend on the already-retrieved candidates.
 		combined *= issues.IssueFreshnessWeight(candidate, now)
 		combined *= 1 + searchVelocityBoost*issueVelocityScore(candidate)
 		combined -= issueSpecificityPenalty(candidateSummary.Tags, tagSpecificity)
@@ -233,15 +235,14 @@ func queryMatchesTagNames(queryLower string, tagNames []string) bool {
 	return false
 }
 
-// blendScores combines the three similarity signals. When the query matches
-// known tag names, the factor weight is boosted so tag-correlated issues
-// rank higher.
-func blendScores(semantic, factor, textMatch float64, tagCorrelation bool) float64 {
+// blendSearchSignals combines the domain-specific similarity signals. Plain
+// text retrieval is handled in ParadeDB; app-side ranking should only reshape
+// results using semantic and factor-space information.
+func blendSearchSignals(semantic, factor float64, tagCorrelation bool) float64 {
 	if tagCorrelation {
-		// Boost factor weight: 0.4 semantic, 0.4 factor, 0.2 text
-		return 0.4*semantic + 0.4*factor + 0.2*textMatch
+		return 0.5*semantic + 0.5*factor
 	}
-	return 0.5*semantic + 0.3*factor + 0.2*textMatch
+	return 0.6*semantic + 0.4*factor
 }
 
 // issueSpecificityPenalty penalizes issues whose top tags are all generic
@@ -314,37 +315,6 @@ func buildTagSpecificityMap(tags []issues.Tag) map[string]*float64 {
 		m[tags[i].Name] = tags[i].Specificity
 	}
 	return m
-}
-
-// textMatchScore computes a lightweight text-match signal between the query
-// and issue text, returning a value in [0, 1]. It uses substring matching
-// on the full query and individual words for broad coverage.
-func textMatchScore(queryLower string, issueRaw string) float64 {
-	if queryLower == "" || issueRaw == "" {
-		return 0
-	}
-	issueLower := strings.ToLower(issueRaw)
-
-	// Full substring match is the strongest signal.
-	if strings.Contains(issueLower, queryLower) {
-		return 1.0
-	}
-
-	// Word-level overlap: fraction of query words found in the issue text.
-	words := strings.Fields(queryLower)
-	if len(words) == 0 {
-		return 0
-	}
-	matches := 0
-	for _, word := range words {
-		if len(word) < 2 {
-			continue
-		}
-		if strings.Contains(issueLower, word) {
-			matches++
-		}
-	}
-	return float64(matches) / float64(len(words))
 }
 
 type RelatedTag struct {

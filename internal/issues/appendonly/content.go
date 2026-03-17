@@ -314,7 +314,7 @@ func insertBackfillIssueContentEvent(ctx context.Context, tx *sql.Tx, row issueC
 		"observed_state",
 		"",
 		row.UpdatedAt.UTC().UnixNano(),
-		[]byte(payload),
+		payload,
 		"legacy_issue_content",
 		row.IssueID,
 		true,

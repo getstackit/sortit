@@ -252,6 +252,7 @@ type ListOptions struct {
 }
 
 type SemanticSearchOptions struct {
+	QueryText      string
 	QueryEmbedding []float64
 	Status         IssueStatus
 	AssignedTo     string

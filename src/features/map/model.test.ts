@@ -14,6 +14,7 @@ const batchIssues: MapIssue[] = [
     status: "open",
     x: 0.1,
     y: 0.2,
+    hubness: 0,
     tags: [
       { tag: "bug", relevance: 0.9 },
       { tag: "export", relevance: 0.8 },
@@ -25,6 +26,7 @@ const batchIssues: MapIssue[] = [
     status: "open",
     x: 0.2,
     y: 0.3,
+    hubness: 0,
     tags: [
       { tag: "bug", relevance: 0.85 },
       { tag: "export", relevance: 0.75 },
@@ -37,6 +39,7 @@ const batchIssues: MapIssue[] = [
     status: "open",
     x: 0.4,
     y: 0.6,
+    hubness: 0,
     tags: [
       { tag: "ui", relevance: 0.8 },
       { tag: "bug", relevance: 0.3 },

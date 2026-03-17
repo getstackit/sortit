@@ -23,6 +23,7 @@ type MapIssue struct {
 	Tags       []TagRelevance     `json:"tags"`
 	X          float64            `json:"x"`
 	Y          float64            `json:"y"`
+	Hubness    float64            `json:"hubness"`
 }
 
 type MapResponse struct {

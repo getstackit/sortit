@@ -110,37 +110,6 @@ func issueFieldUpdateForIssue(issue Issue) IssueFieldUpdate {
 	}
 }
 
-func buildRefinementRecord(id string, fields IssueFieldUpdate) (issuesdb.UpdateIssueRefinementParams, error) {
-	tags := fields.Tags
-	if tags == nil {
-		tags = []string{}
-	}
-	tagsJSON, err := marshalJSONB(tags, []string{})
-	if err != nil {
-		return issuesdb.UpdateIssueRefinementParams{}, fmt.Errorf("marshal tags: %w", err)
-	}
-	tagScores := fields.TagScores
-	if tagScores == nil {
-		tagScores = []TagRelevance{}
-	}
-	tagScoresJSON, err := marshalJSONB(tagScores, []TagRelevance{})
-	if err != nil {
-		return issuesdb.UpdateIssueRefinementParams{}, fmt.Errorf("marshal tag scores: %w", err)
-	}
-	embeddingVector, err := formatVectorLiteral(fields.Embedding)
-	if err != nil {
-		return issuesdb.UpdateIssueRefinementParams{}, fmt.Errorf("format embedding vector: %w", err)
-	}
-
-	return issuesdb.UpdateIssueRefinementParams{
-		Raw:           *fields.Raw,
-		TagsJson:      tagsJSON,
-		TagScoresJson: tagScoresJSON,
-		Column4:       embeddingVector,
-		ID:            id,
-	}, nil
-}
-
 func formatVectorLiteral(values []float64) (any, error) {
 	if len(values) == 0 {
 		return nil, nil

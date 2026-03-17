@@ -16,6 +16,11 @@ import (
 	"splat/internal/issues/appendonly"
 )
 
+const (
+	statusPass = "pass"
+	statusFail = "fail"
+)
+
 func main() {
 	if err := run(context.Background(), os.Args[1:]); err != nil {
 		fmt.Fprintf(os.Stderr, "append-only migration command failed: %v\n", err)
@@ -239,9 +244,9 @@ func runIssueLifecycleParity(
 		return err
 	}
 
-	status := "pass"
+	status := statusPass
 	if result.MissingProjections > 0 || result.MismatchedIssues > 0 {
-		status = "fail"
+		status = statusFail
 	}
 	if strings.TrimSpace(recordID) == "" {
 		recordID = "parity-" + randomSuffix()
@@ -317,9 +322,9 @@ func runIssueEnrichmentParity(
 		return err
 	}
 
-	status := "pass"
+	status := statusPass
 	if result.MissingProjections > 0 || result.MismatchedIssues > 0 {
-		status = "fail"
+		status = statusFail
 	}
 	if strings.TrimSpace(recordID) == "" {
 		recordID = "parity-" + randomSuffix()
@@ -429,9 +434,9 @@ func runIssueContentParity(
 		return err
 	}
 
-	status := "pass"
+	status := statusPass
 	if result.MissingProjections > 0 || result.MismatchedIssues > 0 {
-		status = "fail"
+		status = statusFail
 	}
 	if strings.TrimSpace(recordID) == "" {
 		recordID = "parity-" + randomSuffix()
@@ -482,9 +487,9 @@ func runTagParity(
 		return err
 	}
 
-	status := "pass"
+	status := statusPass
 	if result.MissingTags > 0 || result.MismatchedTags > 0 || result.MissingMergedAliases > 0 {
-		status = "fail"
+		status = statusFail
 	}
 	if strings.TrimSpace(recordID) == "" {
 		recordID = "parity-" + randomSuffix()

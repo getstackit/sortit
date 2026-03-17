@@ -39,12 +39,6 @@ type dismissedTagMergeResponse struct {
 }
 
 func (s *Server) handleTags(w http.ResponseWriter, r *http.Request) {
-	if r.Method != http.MethodGet {
-		w.Header().Set("Allow", http.MethodGet)
-		http.Error(w, http.StatusText(http.StatusMethodNotAllowed), http.StatusMethodNotAllowed)
-		return
-	}
-
 	tags, err := s.listTags.Handle(r.Context())
 	if err != nil {
 		writeInternalError(w, r, "failed to list tags", err)
@@ -55,12 +49,6 @@ func (s *Server) handleTags(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleTagMerge(w http.ResponseWriter, r *http.Request) {
-	if r.Method != http.MethodPost {
-		w.Header().Set("Allow", http.MethodPost)
-		http.Error(w, http.StatusText(http.StatusMethodNotAllowed), http.StatusMethodNotAllowed)
-		return
-	}
-
 	request, err := decodeMergeTagsRequest(r)
 	if err != nil {
 		writeError(w, http.StatusBadRequest, err.Error())
@@ -94,12 +82,6 @@ func (s *Server) handleTagMerge(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleTagDismiss(w http.ResponseWriter, r *http.Request) {
-	if r.Method != http.MethodPost {
-		w.Header().Set("Allow", http.MethodPost)
-		http.Error(w, http.StatusText(http.StatusMethodNotAllowed), http.StatusMethodNotAllowed)
-		return
-	}
-
 	request, err := decodeDismissTagMergeRequest(r)
 	if err != nil {
 		writeError(w, http.StatusBadRequest, err.Error())
@@ -121,12 +103,6 @@ func (s *Server) handleTagDismiss(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleTagDismissedList(w http.ResponseWriter, r *http.Request) {
-	if r.Method != http.MethodGet {
-		w.Header().Set("Allow", http.MethodGet)
-		http.Error(w, http.StatusText(http.StatusMethodNotAllowed), http.StatusMethodNotAllowed)
-		return
-	}
-
 	merger := tagMergerFromIssueStore(s.config.IssueStore)
 	if merger == nil {
 		writeJSON(w, http.StatusOK, map[string]any{"dismissed": []any{}})

@@ -15,6 +15,12 @@ import (
 const (
 	defaultLifecycleCheckpoint = "issue-lifecycle-backfill"
 	lifecycleDomain            = "issue-lifecycle"
+
+	kindCreated    = "created"
+	kindAssigned   = "assigned"
+	kindClosed     = "closed"
+	kindReopened   = "reopened"
+	kindRefinement = "refinement"
 )
 
 type LifecycleFact struct {
@@ -479,7 +485,7 @@ func deriveLifecycleFacts(issue issues.Issue) ([]LifecycleFact, LifecycleProject
 			return nil, LifecycleProjection{}, err
 		}
 		if ok {
-			if fact.Kind == "created" {
+			if fact.Kind == kindCreated {
 				fact.CreatedBy = strings.TrimSpace(issue.CreatedBy)
 				fact.CreatedAt = issue.CreatedAt.UTC()
 			}
@@ -529,25 +535,25 @@ func lifecycleFactFromPost(issueID string, post issues.IssuePost) (LifecycleFact
 		if post.Sequence != 1 {
 			return LifecycleFact{}, false, nil
 		}
-		base.Kind = "created"
+		base.Kind = kindCreated
 		base.Payload = mustMarshalJSON(map[string]any{
 			"raw": strings.TrimSpace(post.Raw),
 		})
 		return base, true, nil
-	case "assigned":
+	case kindAssigned:
 		assignedTo, err := parseAssignedTo(post.Raw)
 		if err != nil {
 			return LifecycleFact{}, false, err
 		}
-		base.Kind = "assigned"
+		base.Kind = kindAssigned
 		base.Payload = mustMarshalJSON(lifecycleAssignedPayload{
 			AssignedTo: assignedTo,
 			Body:       strings.TrimSpace(post.Raw),
 		})
 		return base, true, nil
-	case "closed":
+	case kindClosed:
 		closedBy, reason, reasonNote := parseClosedPost(post.CreatedBy, post.Raw)
-		base.Kind = "closed"
+		base.Kind = kindClosed
 		base.Payload = mustMarshalJSON(lifecycleClosedPayload{
 			ClosedAtUnixNano: post.CreatedAt.UTC().UnixNano(),
 			ClosedBy:         closedBy,
@@ -556,13 +562,13 @@ func lifecycleFactFromPost(issueID string, post issues.IssuePost) (LifecycleFact
 			Body:             strings.TrimSpace(post.Raw),
 		})
 		return base, true, nil
-	case "reopened":
-		base.Kind = "reopened"
+	case kindReopened:
+		base.Kind = kindReopened
 		base.Payload = mustMarshalJSON(lifecycleFallbackPayload{
 			ObservedState: "open",
 		})
 		return base, true, nil
-	case "refinement":
+	case kindRefinement:
 		base.Kind = "refined"
 		base.Payload = mustMarshalJSON(lifecycleRefinedPayload{
 			Body: strings.TrimSpace(post.Raw),
@@ -593,16 +599,16 @@ func buildLifecycleProjection(issueID string, facts []LifecycleFact) LifecyclePr
 	for _, fact := range ordered {
 		projection.LastFactID = fact.ID
 		switch fact.Kind {
-		case "created":
+		case kindCreated:
 			projection.CreatedBy = strings.TrimSpace(fact.CreatedBy)
 			projection.CreatedAt = fact.CreatedAt.UTC()
 			projection.Status = issues.StatusOpen
-		case "assigned":
+		case kindAssigned:
 			var payload lifecycleAssignedPayload
 			if err := json.Unmarshal(fact.Payload, &payload); err == nil {
 				projection.AssignedTo = strings.TrimSpace(payload.AssignedTo)
 			}
-		case "closed":
+		case kindClosed:
 			var payload lifecycleClosedPayload
 			if err := json.Unmarshal(fact.Payload, &payload); err == nil {
 				projection.Status = issues.StatusClosed
@@ -618,7 +624,7 @@ func buildLifecycleProjection(issueID string, facts []LifecycleFact) LifecyclePr
 				projection.ClosedReason = strings.TrimSpace(payload.Reason)
 				projection.ClosedReasonNote = strings.TrimSpace(payload.ReasonNote)
 			}
-		case "reopened":
+		case kindReopened:
 			projection.Status = issues.StatusOpen
 			projection.ClosedAt = nil
 			projection.ClosedBy = ""
@@ -643,7 +649,7 @@ func appendLifecycleFallbackFacts(
 			ID:        fmt.Sprintf("issue-lifecycle-fact:%s:inferred-assigned", issue.ID),
 			IssueID:   issue.ID,
 			Sequence:  int64(maxSequence),
-			Kind:      "assigned",
+			Kind:      kindAssigned,
 			CreatedBy: "",
 			CreatedAt: issue.CreatedAt.UTC(),
 			Payload: mustMarshalJSON(lifecycleAssignedPayload{
@@ -669,7 +675,7 @@ func appendLifecycleFallbackFacts(
 				ID:        fmt.Sprintf("issue-lifecycle-fact:%s:inferred-closed", issue.ID),
 				IssueID:   issue.ID,
 				Sequence:  int64(maxSequence),
-				Kind:      "closed",
+				Kind:      kindClosed,
 				CreatedBy: closedBy,
 				CreatedAt: closedAt,
 				Payload: mustMarshalJSON(lifecycleClosedPayload{
@@ -699,7 +705,7 @@ func appendLifecycleFallbackFacts(
 				ID:        fmt.Sprintf("issue-lifecycle-fact:%s:inferred-reopened", issue.ID),
 				IssueID:   issue.ID,
 				Sequence:  int64(maxSequence),
-				Kind:      "reopened",
+				Kind:      kindReopened,
 				CreatedBy: "",
 				CreatedAt: issue.CreatedAt.UTC(),
 				Payload: mustMarshalJSON(lifecycleFallbackPayload{
@@ -782,8 +788,7 @@ func compareLifecycleProjection(issue issues.Issue, projection LifecycleProjecti
 
 func parseAssignedTo(raw string) (string, error) {
 	trimmed := strings.TrimSpace(raw)
-	switch trimmed {
-	case "Unassigned issue.":
+	if trimmed == "Unassigned issue." {
 		return "", nil
 	}
 	const prefix = "Assigned to "

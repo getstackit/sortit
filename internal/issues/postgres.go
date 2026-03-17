@@ -384,6 +384,39 @@ func (s *PostgresStore) SearchIssues(ctx context.Context, opts SemanticSearchOpt
 	})
 
 	if strings.EqualFold(strings.TrimSpace(opts.SortBy), "created_at") || len(opts.QueryEmbedding) == 0 {
+		if strings.TrimSpace(opts.QueryText) == "" || strings.EqualFold(strings.TrimSpace(opts.SortBy), "created_at") {
+			rows, err := s.queries.ListIssuesFiltered(ctx, params.sqlc())
+			if err != nil {
+				return nil, fmt.Errorf("search issues by created_at: %w", err)
+			}
+			return semanticSearchResultsFromFilteredRows(rows)
+		}
+	}
+
+	queryText := strings.TrimSpace(opts.QueryText)
+	if queryText != "" && !strings.EqualFold(strings.TrimSpace(opts.SortBy), "created_at") {
+		rows, err := s.queries.SearchIssuesByText(ctx, issuesdb.SearchIssuesByTextParams{
+			QueryText:        queryText,
+			FilterStatus:     params.filterStatus,
+			Status:           params.statusValue,
+			FilterAssignedTo: params.filterAssignedTo,
+			AssignedTo:       params.assignedToValue,
+			FilterExcludeID:  params.filterExcludeID,
+			ExcludeID:        params.excludeIDValue,
+			FilterTags:       params.filterTags,
+			Tags:             append([]string(nil), params.tagsValue...),
+			LimitCount:       int32(params.limit),  //nolint:gosec
+			OffsetCount:      int32(params.offset), //nolint:gosec
+		})
+		if err != nil {
+			return nil, fmt.Errorf("search issues by text: %w", err)
+		}
+		if len(rows) > 0 {
+			return textSearchResultsFromRows(ctx, s.db, s.logger, rows)
+		}
+	}
+
+	if strings.EqualFold(strings.TrimSpace(opts.SortBy), "created_at") || len(opts.QueryEmbedding) == 0 {
 		rows, err := s.queries.ListIssuesFiltered(ctx, params.sqlc())
 		if err != nil {
 			return nil, fmt.Errorf("search issues by created_at: %w", err)
@@ -1314,6 +1347,24 @@ func issueModelFromSearchIssuesByEmbeddingRow(row issuesdb.SearchIssuesByEmbeddi
 	}
 }
 
+func issueModelFromSearchIssuesByTextRow(row issuesdb.SearchIssuesByTextRow) issueQueryRow {
+	return issueQueryRow{
+		ID:                row.ID,
+		Raw:               row.Raw,
+		TagsJson:          row.TagsJson,
+		CreatedBy:         row.CreatedBy,
+		CreatedAtUnixNano: row.CreatedAtUnixNano,
+		Status:            row.Status,
+		ClosedAtUnixNano:  row.ClosedAtUnixNano,
+		ClosedBy:          row.ClosedBy,
+		ClosedReason:      row.ClosedReason,
+		ClosedReasonNote:  row.ClosedReasonNote,
+		TagScoresJson:     row.TagScoresJson,
+		EmbeddingText:     row.EmbeddingText,
+		AssignedTo:        row.AssignedTo,
+	}
+}
+
 func semanticSearchResultsFromFilteredRows(rows []issuesdb.ListIssuesFilteredRow) ([]SemanticSearchResult, error) {
 	results := make([]SemanticSearchResult, 0, len(rows))
 	for _, row := range rows {
@@ -1323,6 +1374,37 @@ func semanticSearchResultsFromFilteredRows(rows []issuesdb.ListIssuesFilteredRow
 		}
 		results = append(results, SemanticSearchResult{Issue: issue})
 	}
+	return results, nil
+}
+
+func textSearchResultsFromRows(
+	ctx context.Context,
+	db *sql.DB,
+	logger *slog.Logger,
+	rows []issuesdb.SearchIssuesByTextRow,
+) ([]SemanticSearchResult, error) {
+	results := make([]SemanticSearchResult, 0, len(rows))
+	for _, row := range rows {
+		issue, err := issueFromQuery(issueModelFromSearchIssuesByTextRow(row))
+		if err != nil {
+			return nil, err
+		}
+		results = append(results, SemanticSearchResult{Issue: issue})
+	}
+
+	items := make([]Issue, 0, len(results))
+	for _, result := range results {
+		items = append(items, result.Issue)
+	}
+	states, err := loadIssueEnrichmentStates(ctx, db, logger, issueIDs(items))
+	if err != nil {
+		return nil, err
+	}
+	items = applyIssueEnrichmentStates(items, states)
+	for i := range results {
+		results[i].Issue = items[i]
+	}
+
 	return results, nil
 }
 

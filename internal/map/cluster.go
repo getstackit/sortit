@@ -247,11 +247,14 @@ func silhouetteScore(xs, ys []float64, assign []int, k int) float64 {
 }
 
 // clusterTopTag returns the single top tag name for a group of issues.
+// Hub issues (those with more links) contribute more heavily to the tag score,
+// since they better represent cluster themes.
 func clusterTopTag(group []issues.Issue) string {
 	scores := map[string]float64{}
 	for _, issue := range group {
+		weight := 1 + issues.IssueHubness(issue)
 		for _, t := range issue.TagScores {
-			scores[t.Tag] += t.Relevance
+			scores[t.Tag] += t.Relevance * weight
 		}
 	}
 
@@ -269,8 +272,9 @@ func clusterTopTag(group []issues.Issue) string {
 func clusterLabel(group []issues.Issue) string {
 	scores := map[string]float64{}
 	for _, issue := range group {
+		weight := 1 + issues.IssueHubness(issue)
 		for _, t := range issue.TagScores {
-			scores[t.Tag] += t.Relevance
+			scores[t.Tag] += t.Relevance * weight
 		}
 	}
 
@@ -304,8 +308,9 @@ func clusterLabel(group []issues.Issue) string {
 func clusterColor(group []issues.Issue) string {
 	scores := map[string]float64{}
 	for _, issue := range group {
+		weight := 1 + issues.IssueHubness(issue)
 		for _, t := range issue.TagScores {
-			scores[t.Tag] += t.Relevance
+			scores[t.Tag] += t.Relevance * weight
 		}
 	}
 
