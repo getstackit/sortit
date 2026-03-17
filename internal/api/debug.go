@@ -1,7 +1,6 @@
 package api
 
 import (
-	"context"
 	"errors"
 	"net/http"
 	"strings"
@@ -10,10 +9,6 @@ import (
 	"splat/internal/ai"
 	"splat/internal/queries"
 )
-
-const debugAnalyzeTimeout = 45 * time.Second
-const debugInvalidateMapProjectionTimeout = 15 * time.Second
-const debugRescoreTagsTimeout = 120 * time.Second
 
 type debugIssueAnalyzeRequest struct {
 	Text string   `json:"text"`
@@ -52,10 +47,7 @@ func (s *Server) handleDebugIssueAnalyze(w http.ResponseWriter, r *http.Request)
 		return
 	}
 
-	ctx, cancel := context.WithTimeout(r.Context(), debugAnalyzeTimeout)
-	defer cancel()
-
-	analyzed, err := s.debugAnalyzeIssue.Handle(ctx, queries.DebugAnalyzeIssue{
+	analyzed, err := s.debugAnalyzeIssue.Handle(r.Context(), queries.DebugAnalyzeIssue{
 		Text: request.Text,
 		Tags: request.Tags,
 	})
@@ -86,10 +78,7 @@ func (s *Server) handleDebugInvalidateMapProjection(w http.ResponseWriter, r *ht
 		return
 	}
 
-	ctx, cancel := context.WithTimeout(r.Context(), debugInvalidateMapProjectionTimeout)
-	defer cancel()
-
-	if err := invalidator.InvalidateMapProjections(ctx); err != nil {
+	if err := invalidator.InvalidateMapProjections(r.Context()); err != nil {
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return
 	}
@@ -105,11 +94,8 @@ func (s *Server) handleDebugRescoreTags(w http.ResponseWriter, r *http.Request) 
 
 	s.logger.InfoContext(r.Context(), "debug rescore tags requested")
 
-	ctx, cancel := context.WithTimeout(r.Context(), debugRescoreTagsTimeout)
-	defer cancel()
-
 	start := time.Now()
-	if err := s.catalog.ScoreAllTagsSpecificity(ctx); err != nil {
+	if err := s.catalog.ScoreAllTagsSpecificity(r.Context()); err != nil {
 		writeInternalError(w, r, "failed to rescore tag specificity", err)
 		return
 	}

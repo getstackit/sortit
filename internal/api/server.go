@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/go-chi/chi/v5"
+	"github.com/go-chi/chi/v5/middleware"
 
 	"splat/internal/ai"
 	"splat/internal/auth"
@@ -145,8 +146,17 @@ func (s *Server) Initialize(ctx context.Context) error {
 func (s *Server) Handler() http.Handler {
 	r := chi.NewRouter()
 
+	// Global middleware stack (outermost → innermost).
+	r.Use(middleware.Recoverer)
+	r.Use(middleware.RealIP)
+	r.Use(middleware.RequestID)
 	r.Use(tracing.Middleware)
-	r.Use(loggingMiddleware)
+	r.Use(middleware.RequestLogger(&slogLogFormatter{}))
+	r.Use(middleware.Compress(5))
+
+	r.MethodNotAllowed(func(w http.ResponseWriter, r *http.Request) {
+		writeError(w, http.StatusMethodNotAllowed, http.StatusText(http.StatusMethodNotAllowed))
+	})
 
 	mcpHandler := mcpserver.NewHandler(mcpserver.ServerConfig{
 		CreateIssue:      s.createIssue,
@@ -176,13 +186,13 @@ func (s *Server) Handler() http.Handler {
 
 	for _, prefix := range normalizeAPIPrefixes(s.config.APIPrefixes) {
 		r.Route(prefix, func(r chi.Router) {
-			r.Use(corsMiddleware(s.config.CORSOrigins))
+			r.Use(newCORSMiddleware(s.config.CORSOrigins))
 			s.registerDedicatedAPIRoutes(r)
 		})
 	}
 
 	r.Route("/api/ui", func(r chi.Router) {
-		r.Use(corsMiddleware(s.config.CORSOrigins))
+		r.Use(newCORSMiddleware(s.config.CORSOrigins))
 		s.registerUIRoutes(r)
 	})
 
@@ -193,6 +203,8 @@ func (s *Server) Handler() http.Handler {
 		}
 		http.NotFound(w, r)
 	})
+
+	s.logRoutes(r)
 
 	return r
 }
@@ -252,9 +264,12 @@ func (s *Server) registerUIRoutes(r chi.Router) {
 		r.Get("/people/correlations", s.handleWorkCorrelations)
 		r.Get("/people/{person}", s.handlePersonDetail)
 		r.Get("/people/{person}/profile", s.handlePersonProfileRoute)
-		r.Post("/debug/issues/analyze", s.handleDebugIssueAnalyze)
-		r.Post("/debug/map-projection/invalidate", s.handleDebugInvalidateMapProjection)
-		r.Post("/debug/tags/rescore", s.handleDebugRescoreTags)
+		r.Route("/debug", func(r chi.Router) {
+			r.Use(middleware.Timeout(debugRequestTimeout))
+			r.Post("/issues/analyze", s.handleDebugIssueAnalyze)
+			r.Post("/map-projection/invalidate", s.handleDebugInvalidateMapProjection)
+			r.Post("/tags/rescore", s.handleDebugRescoreTags)
+		})
 	})
 }
 
@@ -283,6 +298,18 @@ func (s *Server) registerTagRoutes(r chi.Router) {
 	r.Post("/tags/merge", s.handleTagMerge)
 	r.Post("/tags/dismiss", s.handleTagDismiss)
 	r.Get("/tags/dismissed", s.handleTagDismissedList)
+}
+
+const debugRequestTimeout = 120 * time.Second
+
+func (s *Server) logRoutes(r *chi.Mux) {
+	walkFn := func(method, route string, _ http.Handler, _ ...func(http.Handler) http.Handler) error {
+		s.logger.Info("route registered", "method", method, "path", route)
+		return nil
+	}
+	if err := chi.Walk(r, walkFn); err != nil {
+		s.logger.Error("failed to walk routes", "error", err)
+	}
 }
 
 func (s *Server) Start() error {

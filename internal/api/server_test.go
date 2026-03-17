@@ -136,8 +136,8 @@ func TestCORSPreflightBehavior(t *testing.T) {
 
 		handler.ServeHTTP(rec, req)
 
-		if rec.Code != http.StatusNoContent {
-			t.Fatalf("expected 204 for valid preflight, got %d", rec.Code)
+		if rec.Code != http.StatusOK {
+			t.Fatalf("expected 200 for valid preflight, got %d", rec.Code)
 		}
 		if got := rec.Header().Get("Access-Control-Allow-Origin"); got != "http://localhost:3000" {
 			t.Fatalf("expected CORS allow origin header, got %q", got)
@@ -152,12 +152,12 @@ func TestCORSPreflightBehavior(t *testing.T) {
 
 		handler.ServeHTTP(rec, req)
 
-		if rec.Code != http.StatusNoContent {
-			t.Fatalf("expected 204 for nested issue preflight, got %d", rec.Code)
+		if rec.Code != http.StatusOK {
+			t.Fatalf("expected 200 for nested issue preflight, got %d", rec.Code)
 		}
 	})
 
-	t.Run("disallowed origin falls through to route handling", func(t *testing.T) {
+	t.Run("disallowed origin receives no CORS headers", func(t *testing.T) {
 		req := httptest.NewRequest(http.MethodOptions, "/api/health", nil)
 		req.Header.Set("Origin", "http://evil.example")
 		req.Header.Set("Access-Control-Request-Method", http.MethodGet)
@@ -165,8 +165,8 @@ func TestCORSPreflightBehavior(t *testing.T) {
 
 		handler.ServeHTTP(rec, req)
 
-		if rec.Code != http.StatusMethodNotAllowed {
-			t.Fatalf("expected 405 for disallowed preflight, got %d", rec.Code)
+		if got := rec.Header().Get("Access-Control-Allow-Origin"); got != "" {
+			t.Fatalf("expected no CORS allow origin header for disallowed origin, got %q", got)
 		}
 	})
 
