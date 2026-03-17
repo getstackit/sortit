@@ -89,7 +89,8 @@ func ExploreFromIssuesWithTags(storeIssues []issues.Issue, storeTags []issues.Ta
 		semantic := vectors.UnitCosineSimilarity(targetEmbedding, issueEmbeddings[candidate.ID])
 		factor := vectors.UnitCosineSimilarity(targetFactor, factorVectors[candidate.ID])
 		boost := relationshipBoost(boosts, target.ID, candidate.ID)
-		combined := minFloat(1, (0.6*semantic+0.4*factor+boost)*math.Sqrt(issues.IssueFreshnessWeight(candidate, now)))
+		authority := issues.IssueAuthority(candidate) * 0.1
+		combined := minFloat(1, (0.6*semantic+0.4*factor+boost+authority)*math.Sqrt(issues.IssueFreshnessWeight(candidate, now)))
 		sharedTags := sharedRelevantTags(targetSummary.Tags, candidateSummary.Tags, 3)
 
 		related = append(related, RelatedIssue{
