@@ -9,10 +9,9 @@ import (
 	"time"
 
 	"splat/internal/issues"
+	"splat/internal/scoring"
 	"splat/internal/vectors"
 )
-
-const defaultExploreLimit = 8
 
 type ExploreIssue struct {
 	ID     string             `json:"id"`
@@ -67,7 +66,7 @@ func ExploreFromIssuesWithTags(storeIssues []issues.Issue, storeTags []issues.Ta
 	}
 
 	if limit <= 0 {
-		limit = defaultExploreLimit
+		limit = scoring.DefaultResultLimit
 	}
 
 	canonical, visible, boosts := deriveRelationshipSemantics(candidateSet)
@@ -89,9 +88,9 @@ func ExploreFromIssuesWithTags(storeIssues []issues.Issue, storeTags []issues.Ta
 		semantic := vectors.UnitCosineSimilarity(targetEmbedding, issueEmbeddings[candidate.ID])
 		factor := vectors.UnitCosineSimilarity(targetFactor, factorVectors[candidate.ID])
 		boost := relationshipBoost(boosts, target.ID, candidate.ID)
-		authority := issues.IssueAuthority(candidate) * 0.1
-		combined := minFloat(1, (0.6*semantic+0.4*factor+boost+authority)*math.Sqrt(issues.IssueFreshnessWeight(candidate, now)))
-		sharedTags := sharedRelevantTags(targetSummary.Tags, candidateSummary.Tags, 3)
+		authority := issues.IssueAuthority(candidate) * scoring.AuthorityConsumerWt
+		combined := minFloat(1, (scoring.SemanticWeight*semantic+scoring.FactorWeight*factor+boost+authority)*math.Sqrt(issues.IssueFreshnessWeight(candidate, now)))
+		sharedTags := sharedRelevantTags(targetSummary.Tags, candidateSummary.Tags, scoring.SharedTagsLimit)
 
 		related = append(related, RelatedIssue{
 			ID:                 candidateSummary.ID,
@@ -244,13 +243,13 @@ func sharedRelevantTags(a, b []TagRelevance, limit int) []string {
 }
 
 func relatedIssueReason(sharedTags []string, semantic, factor float64) string {
-	if len(sharedTags) > 0 && factor >= semantic-0.05 {
+	if len(sharedTags) > 0 && factor >= semantic-scoring.ReasonFactorSemanticGap {
 		return "Shared factor relevance in " + strings.Join(sharedTags, ", ")
 	}
-	if semantic >= 0.75 {
+	if semantic >= scoring.ReasonHighSemantic {
 		return "Semantically similar language suggests a shared root cause"
 	}
-	if factor >= 0.55 {
+	if factor >= scoring.ReasonHighFactor {
 		return "Similar factor profile across related tags"
 	}
 	return "Related by blended semantic and factor similarity"
@@ -273,11 +272,11 @@ func buildExploreOpportunities(target ExploreIssue, related []RelatedIssue, matu
 	groups := make(map[string]*opportunityGroup, len(related))
 
 	for _, item := range related {
-		if item.CombinedSimilarity < 0.45 {
+		if item.CombinedSimilarity < scoring.ExploreOpportunityMinSim {
 			continue
 		}
 
-		sharedTags := sharedRelevantTags(target.Tags, item.Tags, 2)
+		sharedTags := sharedRelevantTags(target.Tags, item.Tags, scoring.OpportunityTagsMax)
 		themeKey := "semantic"
 		theme := "shared root cause"
 		reason := "These issues use closely related language and may share the same fix."
@@ -327,7 +326,7 @@ func buildExploreOpportunities(target ExploreIssue, related []RelatedIssue, matu
 			})
 			pairMaturity := (maturity[target.ID] + maturity[item.ID]) / 2
 			pairVelocity := (velocity[target.ID] + velocity[item.ID]) / 2
-			total += item.CombinedSimilarity * (0.8 + 0.2*pairMaturity) * (0.9 + 0.1*pairVelocity)
+			total += item.CombinedSimilarity * (scoring.ExploreMaturityBase + scoring.ExploreMaturityWeight*pairMaturity) * (scoring.ExploreVelocityBase + scoring.ExploreVelocityWeight*pairVelocity)
 		}
 		confidence := round(total / float64(len(group.issues)))
 
@@ -375,7 +374,7 @@ func issueMaturityScore(item issues.Issue) float64 {
 	if item.LifecycleMetrics != nil && item.LifecycleMetrics.Maturity != nil {
 		return minFloat(1, maxFloat(0, *item.LifecycleMetrics.Maturity))
 	}
-	return 0.5
+	return scoring.DefaultMaturity
 }
 
 func velocityByIssueID(items []issues.Issue) map[string]float64 {

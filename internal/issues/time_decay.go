@@ -3,21 +3,18 @@ package issues
 import (
 	"math"
 	"time"
-)
 
-const (
-	issueFreshnessFloor        = 0.3
-	issueFreshnessHalfLifeDays = 90.0
+	"splat/internal/scoring"
 )
 
 func IssueFreshnessWeight(issue Issue, now time.Time) float64 {
-	return TimeDecayWeight(issueFreshnessTimestamp(issue), now, issueFreshnessFloor, issueFreshnessHalfLifeDays)
+	return TimeDecayWeight(issueFreshnessTimestamp(issue), now, scoring.FreshnessFloor, scoring.FreshnessHalfLifeDays)
 }
 
 func TimeDecayWeight(timestamp, now time.Time, floor, halfLifeDays float64) float64 {
 	floor = clamp01(floor)
 	if halfLifeDays <= 0 {
-		halfLifeDays = issueFreshnessHalfLifeDays
+		halfLifeDays = scoring.FreshnessHalfLifeDays
 	}
 	if now.IsZero() {
 		now = time.Now().UTC()

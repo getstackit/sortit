@@ -1,5 +1,7 @@
 package issues
 
+import "splat/internal/scoring"
+
 // IssueHubness computes a graph-connectedness score for an issue based on its
 // link count. The score is bounded between 0 and 1, with 7+ links yielding 1.0.
 // This measures how much an issue acts as an anchor in the issue graph, not
@@ -14,9 +16,8 @@ func MapProjectionIssueHubness(issue MapProjectionIssue) float64 {
 }
 
 // LinkCountHubness computes hubness from a raw link count.
-// Formula: min(1.0, linkCount * 0.15)
 func LinkCountHubness(linkCount int) float64 {
-	h := float64(linkCount) * 0.15
+	h := float64(linkCount) * scoring.HubnessPerLink
 	if h > 1 {
 		return 1
 	}

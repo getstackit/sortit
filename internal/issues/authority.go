@@ -1,5 +1,7 @@
 package issues
 
+import "splat/internal/scoring"
+
 // IssueAuthority computes how canonical an issue is based on inbound
 // duplicate_of and merged_into links. The score is bounded between 0 and 1,
 // with 4+ inbound canonical links yielding 1.0. This measures whether an issue
@@ -20,9 +22,8 @@ func IssueAuthority(issue Issue) float64 {
 
 // CanonicalLinkAuthority computes authority from a count of inbound
 // duplicate_of and merged_into links.
-// Formula: min(1.0, count * 0.25)
 func CanonicalLinkAuthority(count int) float64 {
-	a := float64(count) * 0.25
+	a := float64(count) * scoring.AuthorityPerLink
 	if a > 1 {
 		return 1
 	}

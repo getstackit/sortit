@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"splat/internal/issues"
+	"splat/internal/scoring"
 	"splat/internal/services"
 	"splat/internal/vectors"
 )
@@ -136,11 +137,12 @@ func (h GetPersonDetailHandler) recommendOpenIssues(
 		issueTags := issueTagProfile(issue)
 		factorScore := tagProfileSimilarity(profile, issueTags)
 		semanticScore := vectors.CosineSimilarity(personEmbedding, issue.Embedding)
-		combinedScore := 0.65*factorScore + 0.35*semanticScore
+		combinedScore := scoring.PersonRecommendFactor*factorScore + scoring.PersonRecommendSemantic*semanticScore
 		combinedScore *= issues.IssueFreshnessWeight(issue, now)
-		combinedScore *= 0.8 + 0.2*issuesMaturity(issue)
-		combinedScore *= 1 - 0.15*issueVelocity(issue)
-		sharedTags := topSharedTags(profile, issueTags, 3)
+		combinedScore *= scoring.PersonMaturityBase + scoring.PersonMaturityWeight*issuesMaturity(issue)
+		combinedScore *= 1 - scoring.PersonVelocityPenalty*issueVelocity(issue)
+		combinedScore += issues.IssueAuthority(issue) * scoring.AuthorityConsumerWt
+		sharedTags := topSharedTags(profile, issueTags, scoring.SharedTagsLimit)
 		reason := recommendationReason(sharedTags, factorScore, semanticScore)
 		recommendations = append(recommendations, PersonIssueRecommendation{
 			Issue:         issue,
@@ -155,8 +157,8 @@ func (h GetPersonDetailHandler) recommendOpenIssues(
 
 	recommendations = filterLowSignalRecommendations(recommendations)
 	sortRecommendations(recommendations)
-	if len(recommendations) > 5 {
-		recommendations = recommendations[:5]
+	if len(recommendations) > scoring.PersonMaxRecommend {
+		recommendations = recommendations[:scoring.PersonMaxRecommend]
 	}
 	return recommendations, nil
 }
@@ -173,7 +175,7 @@ func issuesLifecycleMaturity(metrics *issues.IssueLifecycleMetrics) float64 {
 	if metrics != nil && metrics.Maturity != nil {
 		return roundTo2(*metrics.Maturity)
 	}
-	return 0.5
+	return scoring.DefaultMaturity
 }
 
 func issuesLifecycleVelocity(metrics *issues.IssueLifecycleMetrics) float64 {
@@ -239,7 +241,7 @@ func filterLowSignalRecommendations(items []PersonIssueRecommendation) []PersonI
 
 	filtered := make([]PersonIssueRecommendation, 0, len(items))
 	for _, item := range items {
-		if item.FactorScore < 0.15 && item.SemanticScore < 0.15 {
+		if item.FactorScore < scoring.PersonLowSignal && item.SemanticScore < scoring.PersonLowSignal {
 			continue
 		}
 		filtered = append(filtered, item)
@@ -279,9 +281,9 @@ func recommendationReason(sharedTags []string, factorScore, semanticScore float6
 	switch {
 	case len(sharedTags) > 0:
 		return "Matches this person's historical focus in " + strings.Join(sharedTags, ", ")
-	case factorScore >= 0.45:
+	case factorScore >= scoring.PersonReasonFactor:
 		return "Strong factor-profile match to prior assigned work"
-	case semanticScore >= 0.45:
+	case semanticScore >= scoring.PersonReasonSemantic:
 		return "Semantically close to the language used in this person's prior work"
 	default:
 		return "Best available open issue based on blended profile similarity"

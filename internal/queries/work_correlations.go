@@ -8,6 +8,7 @@ import (
 	"strings"
 
 	"splat/internal/issues"
+	"splat/internal/scoring"
 	"splat/internal/services"
 	"splat/internal/vectors"
 )
@@ -114,7 +115,7 @@ func buildWorkCorrelations(allIssues []issues.PeopleAnalyticsIssue, filter Issue
 
 			semanticScore := vectors.CosineSimilarity(a.embedding, b.embedding)
 			factorScore := tagProfileSimilarity(a.tagProfile, b.tagProfile)
-			combined := 0.6*semanticScore + 0.4*factorScore
+			combined := scoring.CorrelationSemanticWeight*semanticScore + scoring.CorrelationFactorWeight*factorScore
 
 			correlations = append(correlations, PersonCorrelation{
 				PersonA:           a.name,
@@ -319,10 +320,10 @@ func roundTo2(v float64) float64 {
 }
 
 // specificityWeight returns the specificity value for weighting, defaulting
-// to 0.5 when the score is nil (unscored).
+// to GenericTagThreshold when the score is nil (unscored).
 func specificityWeight(s *float64) float64 {
 	if s == nil {
-		return 0.5
+		return scoring.GenericTagThreshold
 	}
 	return *s
 }

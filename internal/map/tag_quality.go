@@ -1,12 +1,14 @@
 package issuemap
 
+import "splat/internal/scoring"
+
 // specificityPenalty returns a penalty based on how generic a tag is.
 // Lower specificity → higher penalty. When specificity is nil (unscored),
-// a default of 0.5 is assumed.
+// a default of GenericTagThreshold is assumed.
 func specificityPenalty(specificity *float64) float64 {
-	s := 0.5
+	s := scoring.GenericTagThreshold
 	if specificity != nil {
 		s = *specificity
 	}
-	return (1 - s) * 0.04
+	return (1 - s) * scoring.SpecificityPenaltyPerTag
 }

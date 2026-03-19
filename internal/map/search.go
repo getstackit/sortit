@@ -9,12 +9,9 @@ import (
 
 	"splat/internal/domain"
 	"splat/internal/issues"
+	"splat/internal/scoring"
 	"splat/internal/vectors"
 )
-
-const defaultSearchLimit = 8
-const contentConfidenceTieWindow = 0.05
-const searchVelocityBoost = 0.08
 
 // SearchOptions holds optional search parameters.
 type SearchOptions struct {
@@ -78,7 +75,7 @@ func SearchFromQueryWithTags(
 	cfg := applySearchOptions(opts)
 	queryRaw = strings.TrimSpace(queryRaw)
 	if limit <= 0 {
-		limit = defaultSearchLimit
+		limit = scoring.DefaultResultLimit
 	}
 
 	_, visible, _ := deriveRelationshipSemantics(storeIssues)
@@ -128,12 +125,13 @@ func SearchFromQueryWithTags(
 		// the retrieval window. This app-side freshness weight fine-tunes within
 		// the semantic/factor blend on the already-retrieved candidates.
 		combined *= issues.IssueFreshnessWeight(candidate, now)
-		combined *= 1 + searchVelocityBoost*issueVelocityScore(candidate)
+		combined *= 1 + scoring.SearchVelocityBoost*issueVelocityScore(candidate)
+		combined += issues.IssueAuthority(candidate) * scoring.AuthorityConsumerWt
 		combined -= issueSpecificityPenalty(candidateSummary.Tags, tagSpecificity)
 		if genericQuery {
 			combined += specificCooccurrenceBoost(candidateSummary.Tags, tagSpecificity)
 		}
-		sharedTags := sharedRelevantTags(querySummary.Tags, candidateSummary.Tags, 3)
+		sharedTags := sharedRelevantTags(querySummary.Tags, candidateSummary.Tags, scoring.SharedTagsLimit)
 		rawCombined[candidate.ID] = combined
 		rawSemantic[candidate.ID] = semantic
 		rawFactor[candidate.ID] = factor
@@ -197,7 +195,7 @@ func sortSearchResults(
 		slices.SortFunc(related, func(a, b RelatedIssue) int {
 			combinedA := rawCombined[a.ID]
 			combinedB := rawCombined[b.ID]
-			if math.Abs(combinedB-combinedA) > contentConfidenceTieWindow {
+			if math.Abs(combinedB-combinedA) > scoring.ContentConfidenceTieWindow {
 				return cmp.Compare(combinedB, combinedA)
 			}
 			if diff := cmp.Compare(contentConfidence[b.ID], contentConfidence[a.ID]); diff != 0 {
@@ -240,9 +238,9 @@ func queryMatchesTagNames(queryLower string, tagNames []string) bool {
 // results using semantic and factor-space information.
 func blendSearchSignals(semantic, factor float64, tagCorrelation bool) float64 {
 	if tagCorrelation {
-		return 0.5*semantic + 0.5*factor
+		return scoring.TagCorrelationSemantic*semantic + scoring.TagCorrelationFactor*factor
 	}
-	return 0.6*semantic + 0.4*factor
+	return scoring.SemanticWeight*semantic + scoring.FactorWeight*factor
 }
 
 // issueSpecificityPenalty penalizes issues whose top tags are all generic
@@ -251,8 +249,7 @@ func issueSpecificityPenalty(tags []TagRelevance, tagSpecificity map[string]*flo
 	if len(tags) == 0 {
 		return 0
 	}
-	// Check up to the top 3 tags by relevance (they come pre-sorted).
-	limit := min(3, len(tags))
+	limit := min(scoring.SpecificityPenaltyTopN, len(tags))
 	var totalPenalty float64
 	for _, tag := range tags[:limit] {
 		totalPenalty += specificityPenalty(tagSpecificity[tag.Tag])
@@ -270,11 +267,11 @@ func queryMatchesGenericTag(queryLower string, tagSpecificity map[string]*float6
 	for w := range strings.FieldsSeq(queryLower) {
 		normalized := domain.NormalizeTagName(w)
 		if p, ok := tagSpecificity[normalized]; ok {
-			s := 0.5
+			s := scoring.GenericTagThreshold
 			if p != nil {
 				s = *p
 			}
-			if s < 0.5 {
+			if s < scoring.GenericTagThreshold {
 				return true
 			}
 		}
@@ -287,21 +284,19 @@ func queryMatchesGenericTag(queryLower string, tagSpecificity map[string]*float6
 // searches by a generic tag, issues with co-occurring specific tags should
 // rank above issues with only generic tags.
 func specificCooccurrenceBoost(tags []TagRelevance, tagSpecificity map[string]*float64) float64 {
-	const boostPerTag = 0.03
-	const maxBoost = 0.06
 	boost := 0.0
 	for _, tag := range tags {
-		if tag.Relevance <= 0.2 {
+		if tag.Relevance <= scoring.CooccurrenceRelevanceMin {
 			continue
 		}
-		s := 0.5
+		s := scoring.GenericTagThreshold
 		if p, ok := tagSpecificity[tag.Tag]; ok && p != nil {
 			s = *p
 		}
-		if s >= 0.5 {
-			boost += boostPerTag
-			if boost >= maxBoost {
-				return maxBoost
+		if s >= scoring.GenericTagThreshold {
+			boost += scoring.CooccurrenceBoostPerTag
+			if boost >= scoring.CooccurrenceBoostMax {
+				return scoring.CooccurrenceBoostMax
 			}
 		}
 	}
@@ -325,7 +320,7 @@ type RelatedTag struct {
 
 func SearchTags(storeTags []issues.Tag, queryEmbedding []float64, limit int) []RelatedTag {
 	if limit <= 0 {
-		limit = defaultSearchLimit
+		limit = scoring.DefaultResultLimit
 	}
 
 	related := make([]RelatedTag, 0, len(storeTags))

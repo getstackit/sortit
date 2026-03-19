@@ -8,6 +8,7 @@ import (
 	"gonum.org/v1/gonum/mat"
 
 	"splat/internal/issues"
+	"splat/internal/scoring"
 	"splat/internal/vectors"
 )
 
@@ -265,17 +266,16 @@ func fallbackPositions(issues []issues.Issue) map[string]Position {
 // Weight = contentConfidence * maturity. Both are 0..1, so the product is 0..1.
 // A floor of 0.1 ensures no issue is completely ignored.
 func issueProjectionWeights(items []issues.Issue) []float64 {
-	const floor = 0.1
 	weights := make([]float64, len(items))
 	for i, item := range items {
 		cc := issues.ComputeContentConfidence(item.Raw)
-		maturity := 0.5
+		maturity := scoring.DefaultMaturity
 		if item.LifecycleMetrics != nil && item.LifecycleMetrics.Maturity != nil {
 			maturity = *item.LifecycleMetrics.Maturity
 		}
 		w := cc * maturity
-		if w < floor {
-			w = floor
+		if w < scoring.ProjectionWeightFloor {
+			w = scoring.ProjectionWeightFloor
 		}
 		weights[i] = w
 	}
