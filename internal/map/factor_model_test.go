@@ -43,6 +43,14 @@ func TestComputeFactorDecomposition_PureFactorIssues(t *testing.T) {
 	if decomp.FactorWeight > scoring.MaxFactorWeight {
 		t.Errorf("FactorWeight %f exceeds MaxFactorWeight %f", decomp.FactorWeight, scoring.MaxFactorWeight)
 	}
+	if decomp.AggregateR2 < 0.8 {
+		t.Errorf("expected high AggregateR2 for pure factor issues, got %f", decomp.AggregateR2)
+	}
+	for id, r2 := range decomp.IssueR2 {
+		if r2 < 0.7 {
+			t.Errorf("issue %s: expected high R2 for pure factor issue, got %f", id, r2)
+		}
+	}
 }
 
 func TestComputeFactorDecomposition_PureResidualIssues(t *testing.T) {
@@ -72,6 +80,14 @@ func TestComputeFactorDecomposition_PureResidualIssues(t *testing.T) {
 	}
 	if decomp.FactorWeight < scoring.MinFactorWeight {
 		t.Errorf("FactorWeight %f below MinFactorWeight %f", decomp.FactorWeight, scoring.MinFactorWeight)
+	}
+	if decomp.AggregateR2 > 0.01 {
+		t.Errorf("expected near-zero AggregateR2 for no-tag issues, got %f", decomp.AggregateR2)
+	}
+	for id, r2 := range decomp.IssueR2 {
+		if r2 != 0 {
+			t.Errorf("issue %s: expected R2=0 for no-tag issue, got %f", id, r2)
+		}
 	}
 }
 

@@ -110,6 +110,7 @@ Date:    ` + date,
 	rootCmd.AddCommand(newIssueCmd(&opts))
 	rootCmd.AddCommand(newTagsCmd(&opts))
 	rootCmd.AddCommand(newPeopleCmd(&opts))
+	rootCmd.AddCommand(newDebugCmd(&opts))
 
 	return rootCmd
 }

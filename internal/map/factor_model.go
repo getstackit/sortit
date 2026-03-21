@@ -18,6 +18,8 @@ type FactorDecomposition struct {
 	ResidualEmbeddings map[string][]float64 // residual embedding per issue
 	FactorWeight       float64              // data-driven weight for factor similarity
 	ResidualWeight     float64              // data-driven weight for residual similarity
+	IssueR2            map[string]float64   // per-issue R² (variance explained by factors)
+	AggregateR2        float64              // mean R² across all decomposed issues
 }
 
 // ComputeFactorDecomposition projects each issue embedding onto the direction
@@ -33,6 +35,7 @@ func ComputeFactorDecomposition(
 	decomp := FactorDecomposition{
 		FactorEmbeddings:   make(map[string][]float64, len(items)),
 		ResidualEmbeddings: make(map[string][]float64, len(items)),
+		IssueR2:            make(map[string]float64, len(items)),
 		FactorWeight:       scoring.FactorWeight,
 		ResidualWeight:     scoring.SemanticWeight,
 	}
@@ -70,12 +73,15 @@ func ComputeFactorDecomposition(
 			continue
 		}
 
-		factorEmb := synthesizeFactorEmbedding(item.TagScores, tagIndex, tagCov, tagEmbeddings, len(tagNames), embDim)
+		totalVar := dotProduct(issueEmb, issueEmb)
+
+		factorEmb := synthesizeFactorEmbedding(item.TagScores, tagIndex, tagCov, tagEmbeddings, tagNames, len(tagNames), embDim)
 		if isZeroVector(factorEmb) {
 			// No tags — full weight to residual for this issue.
 			decomp.ResidualEmbeddings[item.ID] = append([]float64(nil), issueEmb...)
 			decomp.FactorEmbeddings[item.ID] = make([]float64, embDim)
-			varResidual += dotProduct(issueEmb, issueEmb)
+			decomp.IssueR2[item.ID] = 0
+			varResidual += totalVar
 			validCount++
 			continue
 		}
@@ -90,8 +96,15 @@ func ComputeFactorDecomposition(
 			residual[d] = issueEmb[d] - proj[d]
 		}
 
-		varFactor += dotProduct(proj, proj)
-		varResidual += dotProduct(residual, residual)
+		projVar := dotProduct(proj, proj)
+		resVar := dotProduct(residual, residual)
+		varFactor += projVar
+		varResidual += resVar
+
+		// R²_issue = 1 - var(residual) / var(total)
+		if totalVar > 0 {
+			decomp.IssueR2[item.ID] = 1 - resVar/totalVar
+		}
 
 		// Normalize for similarity computation.
 		if !isZeroVector(proj) {
@@ -113,11 +126,12 @@ func ComputeFactorDecomposition(
 	// Compute data-driven weights from variance statistics.
 	varFactor /= float64(validCount)
 	varResidual /= float64(validCount)
-	totalVar := varFactor + varResidual
-	if totalVar > 0 {
-		fw := varFactor / totalVar
+	aggTotalVar := varFactor + varResidual
+	if aggTotalVar > 0 {
+		fw := varFactor / aggTotalVar
 		decomp.FactorWeight = clamp(fw, scoring.MinFactorWeight, scoring.MaxFactorWeight)
 		decomp.ResidualWeight = 1 - decomp.FactorWeight
+		decomp.AggregateR2 = varFactor / aggTotalVar
 	}
 
 	return decomp
@@ -142,7 +156,7 @@ func DecomposeEmbedding(
 		tagIndex[tag] = i
 	}
 
-	factorEmb := synthesizeFactorEmbedding(tagScores, tagIndex, tagCov, tagEmbeddings, len(tagNames), embDim)
+	factorEmb := synthesizeFactorEmbedding(tagScores, tagIndex, tagCov, tagEmbeddings, tagNames, len(tagNames), embDim)
 	if isZeroVector(factorEmb) {
 		return make([]float64, embDim), append([]float64(nil), embedding...)
 	}
@@ -182,14 +196,15 @@ func synthesizeFactorEmbedding(
 	tagIndex map[string]int,
 	tagCov *mat.Dense,
 	tagEmbeddings map[string][]float64,
+	tagsByIndex []string,
 	numTags, embDim int,
 ) []float64 {
 	// Build tag loading vector r_i.
-	base := make([]float64, numTags)
+	baseData := make([]float64, numTags)
 	hasTags := false
 	for _, ts := range tagScores {
 		if idx, ok := tagIndex[ts.Tag]; ok {
-			base[idx] = ts.Relevance
+			baseData[idx] = ts.Relevance
 			hasTags = true
 		}
 	}
@@ -198,41 +213,27 @@ func synthesizeFactorEmbedding(
 	}
 
 	// Transform through covariance: w = r_i × Σ_tags.
-	w := make([]float64, numTags)
-	for col := range numTags {
-		var sum float64
-		for row, val := range base {
-			sum += val * tagCov.At(row, col)
-		}
-		w[col] = sum
-	}
+	r := mat.NewVecDense(numTags, baseData)
+	var w mat.VecDense
+	w.MulVec(tagCov.T(), r)
 
-	// Synthesize embedding: ê_i = Σ_k w_k × tagEmbed_k.
-	factorEmb := make([]float64, embDim)
+	// Build tag embedding matrix T (numTags × embDim) and compute ê = T^T × w.
+	tagMat := mat.NewDense(numTags, embDim, nil)
 	for k := range numTags {
-		if w[k] == 0 {
-			continue
-		}
-		tagEmb := tagEmbeddings[tagNameByIndex(tagIndex, k)]
-		if len(tagEmb) != embDim {
-			continue
-		}
-		for d := range embDim {
-			factorEmb[d] += w[k] * tagEmb[d]
+		tagEmb := tagEmbeddings[tagsByIndex[k]]
+		if len(tagEmb) == embDim {
+			tagMat.SetRow(k, tagEmb)
 		}
 	}
 
+	var result mat.VecDense
+	result.MulVec(tagMat.T(), &w)
+
+	factorEmb := make([]float64, embDim)
+	for d := range embDim {
+		factorEmb[d] = result.AtVec(d)
+	}
 	return factorEmb
-}
-
-// tagNameByIndex returns the tag name for a given index in the tag index map.
-func tagNameByIndex(tagIndex map[string]int, idx int) string {
-	for name, i := range tagIndex {
-		if i == idx {
-			return name
-		}
-	}
-	return ""
 }
 
 func dotProduct(a, b []float64) float64 {

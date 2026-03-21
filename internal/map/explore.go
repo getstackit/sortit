@@ -8,6 +8,8 @@ import (
 	"strings"
 	"time"
 
+	"gonum.org/v1/gonum/mat"
+
 	"splat/internal/issues"
 	"splat/internal/scoring"
 	"splat/internal/vectors"
@@ -193,13 +195,12 @@ func runtimeFactorVectors(items []issues.Issue, tags []string, tagEmbeddings map
 			}
 		}
 
+		r := mat.NewVecDense(len(tags), base)
+		var w mat.VecDense
+		w.MulVec(tagCov.T(), r)
 		vector := make([]float64, len(tags))
-		for col := range vector {
-			var sum float64
-			for row, value := range base {
-				sum += value * tagCov.At(row, col)
-			}
-			vector[col] = sum
+		for i := range vector {
+			vector[i] = w.AtVec(i)
 		}
 		if !isZeroVector(vector) {
 			normalizeVector(vector)

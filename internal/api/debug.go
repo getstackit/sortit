@@ -6,7 +6,10 @@ import (
 	"strings"
 	"time"
 
+	"github.com/go-chi/chi/v5"
+
 	"splat/internal/ai"
+	"splat/internal/issues"
 	"splat/internal/queries"
 )
 
@@ -107,6 +110,26 @@ func (s *Server) handleDebugRescoreTags(w http.ResponseWriter, r *http.Request) 
 	)
 
 	writeJSON(w, http.StatusOK, debugRescoreTagsResponse{Rescored: true})
+}
+
+func (s *Server) handleDebugIssueR2(w http.ResponseWriter, r *http.Request) {
+	issueID := strings.TrimSpace(chi.URLParam(r, "id"))
+	if issueID == "" {
+		writeError(w, http.StatusBadRequest, "issue id is required")
+		return
+	}
+
+	result, err := s.debugIssueR2.Handle(r.Context(), issueID)
+	if err != nil {
+		if errors.Is(err, issues.ErrNotFound) {
+			writeError(w, http.StatusNotFound, "issue not found")
+			return
+		}
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+
+	writeJSON(w, http.StatusOK, result)
 }
 
 func (s *Server) handleDebugFactorWeights(w http.ResponseWriter, r *http.Request) {

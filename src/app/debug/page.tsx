@@ -46,11 +46,21 @@ type InvalidateMapProjectionResponse = {
   invalidated: boolean;
 };
 
+type LowR2Issue = {
+  id: string;
+  raw: string;
+  r2: number;
+  tags: string[];
+};
+
 type FactorWeights = {
   factorWeight: number;
   residualWeight: number;
+  aggregateR2: number;
   issueCount: number;
+  decomposedCount: number;
   decomposed: boolean;
+  lowR2Issues: LowR2Issue[];
 };
 
 const SECTION_LINKS = [
@@ -422,39 +432,91 @@ export default function DebugPage() {
             )}
 
             {factorWeights && (
-              <div className="mt-4 grid gap-3 lg:grid-cols-4">
-                <div className="app-subtle-surface px-4 py-3">
-                  <p className="text-[11px] uppercase tracking-[0.16em] text-muted-foreground">
-                    Factor weight
-                  </p>
-                  <p className="mt-1 text-lg font-medium">
-                    {factorWeights.factorWeight.toFixed(3)}
-                  </p>
+              <div className="mt-4 space-y-4">
+                <div className="grid gap-3 lg:grid-cols-5">
+                  <div className="app-subtle-surface px-4 py-3">
+                    <p className="text-[11px] uppercase tracking-[0.16em] text-muted-foreground">
+                      Aggregate R²
+                    </p>
+                    <p className="mt-1 text-lg font-medium">
+                      {(factorWeights.aggregateR2 * 100).toFixed(1)}%
+                    </p>
+                  </div>
+                  <div className="app-subtle-surface px-4 py-3">
+                    <p className="text-[11px] uppercase tracking-[0.16em] text-muted-foreground">
+                      Factor weight
+                    </p>
+                    <p className="mt-1 text-lg font-medium">
+                      {factorWeights.factorWeight.toFixed(3)}
+                    </p>
+                  </div>
+                  <div className="app-subtle-surface px-4 py-3">
+                    <p className="text-[11px] uppercase tracking-[0.16em] text-muted-foreground">
+                      Residual weight
+                    </p>
+                    <p className="mt-1 text-lg font-medium">
+                      {factorWeights.residualWeight.toFixed(3)}
+                    </p>
+                  </div>
+                  <div className="app-subtle-surface px-4 py-3">
+                    <p className="text-[11px] uppercase tracking-[0.16em] text-muted-foreground">
+                      Decomposed
+                    </p>
+                    <p className="mt-1 text-lg font-medium">
+                      {factorWeights.decomposed
+                        ? `${factorWeights.decomposedCount} / ${factorWeights.issueCount}`
+                        : "No (fallback)"}
+                    </p>
+                  </div>
+                  <div className="app-subtle-surface px-4 py-3">
+                    <p className="text-[11px] uppercase tracking-[0.16em] text-muted-foreground">
+                      Total issues
+                    </p>
+                    <p className="mt-1 text-lg font-medium">
+                      {factorWeights.issueCount}
+                    </p>
+                  </div>
                 </div>
-                <div className="app-subtle-surface px-4 py-3">
-                  <p className="text-[11px] uppercase tracking-[0.16em] text-muted-foreground">
-                    Residual weight
-                  </p>
-                  <p className="mt-1 text-lg font-medium">
-                    {factorWeights.residualWeight.toFixed(3)}
-                  </p>
-                </div>
-                <div className="app-subtle-surface px-4 py-3">
-                  <p className="text-[11px] uppercase tracking-[0.16em] text-muted-foreground">
-                    Issues
-                  </p>
-                  <p className="mt-1 text-lg font-medium">
-                    {factorWeights.issueCount}
-                  </p>
-                </div>
-                <div className="app-subtle-surface px-4 py-3">
-                  <p className="text-[11px] uppercase tracking-[0.16em] text-muted-foreground">
-                    Decomposed
-                  </p>
-                  <p className="mt-1 text-lg font-medium">
-                    {factorWeights.decomposed ? "Yes" : "No (fallback)"}
-                  </p>
-                </div>
+
+                {factorWeights.lowR2Issues?.length > 0 && (
+                  <div>
+                    <p className="text-[11px] font-medium uppercase tracking-[0.16em] text-muted-foreground">
+                      Low R² issues
+                    </p>
+                    <p className="mt-1 text-sm text-muted-foreground">
+                      Issues poorly explained by the tag factor model. Candidates
+                      for new tags or re-classification.
+                    </p>
+                    <div className="mt-3 space-y-2">
+                      {factorWeights.lowR2Issues.map((issue) => (
+                        <div
+                          key={issue.id}
+                          className="app-subtle-surface px-4 py-3"
+                        >
+                          <div className="flex items-start justify-between gap-4">
+                            <div className="min-w-0">
+                              <p className="text-sm font-medium">{issue.id}</p>
+                              <p className="mt-1 truncate text-sm text-muted-foreground">
+                                {issue.raw}
+                              </p>
+                              {issue.tags.length > 0 && (
+                                <p className="mt-1 text-xs text-muted-foreground">
+                                  Tags: {issue.tags.join(", ")}
+                                </p>
+                              )}
+                            </div>
+                            <Badge
+                              variant="outline"
+                              className="shrink-0 text-xs text-foreground"
+                            >
+                              R² {(issue.r2 * 100).toFixed(1)}%
+                            </Badge>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
               </div>
             )}
 
