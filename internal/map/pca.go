@@ -250,7 +250,54 @@ func buildTagCovariance(tags []string, tagEmbeddings map[string][]float64) *mat.
 		}
 	}
 
+	// Ledoit-Wolf shrinkage: Σ_shrunk = α·Σ + (1-α)·I.
+	// Pulls the similarity matrix toward the identity, regularizing PCA
+	// and factor decomposition as the tag catalog grows.
+	// Diagonal is already 1.0 (self-similarity), so only off-diagonal scales.
+	if hasEmbeddings && t > 1 {
+		alpha := ledoitWolfShrinkage(data, t)
+		for i := range t {
+			for j := range t {
+				if i != j {
+					data[i*t+j] *= alpha
+				}
+			}
+		}
+	}
+
 	return mat.NewDense(t, t, data)
+}
+
+// ledoitWolfShrinkage computes the optimal shrinkage intensity for a T×T
+// correlation-like matrix (diagonal = 1) stored in row-major order.
+// Returns α ∈ [0.1, 1.0], the weight on the original matrix in:
+//
+//	Σ_shrunk = α·Σ + (1-α)·I
+//
+// Adapted from Ledoit & Wolf (2004) for a semantic similarity matrix:
+// the mean squared off-diagonal entry measures how far the matrix is from
+// identity. Higher off-diagonal energy → more shrinkage toward independence.
+func ledoitWolfShrinkage(data []float64, t int) float64 {
+	if t <= 1 {
+		return 1.0
+	}
+
+	var offDiagSumSq float64
+	for i := range t {
+		for j := range t {
+			if i != j {
+				v := data[i*t+j]
+				offDiagSumSq += v * v
+			}
+		}
+	}
+
+	// Mean squared off-diagonal entry ∈ [0, 1].
+	meanSqOffDiag := offDiagSumSq / float64(t*(t-1))
+
+	// α = 1 when matrix is identity (no off-diagonal energy).
+	// α → 0.1 as mean squared off-diagonal → 1.
+	return clamp(1.0-meanSqOffDiag, 0.1, 1.0)
 }
 
 func fallbackPositions(issues []issues.Issue) map[string]Position {
