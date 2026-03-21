@@ -27,16 +27,24 @@ type BuildMapProjectionProfile struct {
 }
 
 type MapProjection struct {
-	MapIssues       []MapIssue
-	AllEdges        []Edge
-	Clusters        []Cluster
-	VisibleIssueIDs map[string]struct{}
+	Available         bool
+	UnavailableReason string
+	IssueCount        int
+	MinimumIssueCount int
+	MapIssues         []MapIssue
+	AllEdges          []Edge
+	Clusters          []Cluster
+	VisibleIssueIDs   map[string]struct{}
 }
 
 func SubsetMapProjection(projection MapProjection, issueIDs map[string]struct{}) MapProjection {
 	if len(issueIDs) == 0 {
 		return MapProjection{
-			VisibleIssueIDs: map[string]struct{}{},
+			Available:         false,
+			UnavailableReason: mapUnavailableReasonInsufficientIssueCount,
+			IssueCount:        0,
+			MinimumIssueCount: projection.MinimumIssueCount,
+			VisibleIssueIDs:   map[string]struct{}{},
 		}
 	}
 
@@ -52,10 +60,14 @@ func SubsetMapProjection(projection MapProjection, issueIDs map[string]struct{})
 	}
 
 	return MapProjection{
-		MapIssues:       filterMapIssuesByID(projection.MapIssues, issueIDs),
-		AllEdges:        filterEdgesByID(projection.AllEdges, issueIDs),
-		Clusters:        filterVisibleClusters(projection.Clusters, issueIDs),
-		VisibleIssueIDs: filteredVisible,
+		Available:         projection.Available,
+		UnavailableReason: projection.UnavailableReason,
+		IssueCount:        len(issueIDs),
+		MinimumIssueCount: projection.MinimumIssueCount,
+		MapIssues:         filterMapIssuesByID(projection.MapIssues, issueIDs),
+		AllEdges:          filterEdgesByID(projection.AllEdges, issueIDs),
+		Clusters:          filterVisibleClusters(projection.Clusters, issueIDs),
+		VisibleIssueIDs:   filteredVisible,
 	}
 }
 
@@ -97,6 +109,21 @@ func BuildMapProjectionProfiled(
 		Name:     "runtime_factor_vectors",
 		Duration: time.Since(stepStartedAt),
 	})
+
+	unavailableReason := mapProjectionUnavailableReason(len(runtimeIssues), len(tagNames))
+	if unavailableReason != "" {
+		profile.TotalDuration = time.Since(startedAt)
+		return MapProjection{
+			Available:         false,
+			UnavailableReason: unavailableReason,
+			IssueCount:        len(runtimeIssues),
+			MinimumIssueCount: minMapIssueCount,
+			MapIssues:         []MapIssue{},
+			AllEdges:          []Edge{},
+			Clusters:          []Cluster{},
+			VisibleIssueIDs:   map[string]struct{}{},
+		}, profile, nil
+	}
 
 	var positions map[string]Position
 	roundedPositions := make(map[string]Position, len(runtimeIssues))
@@ -164,14 +191,24 @@ func BuildMapProjectionProfiled(
 	profile.TotalDuration = time.Since(startedAt)
 
 	return MapProjection{
-		MapIssues:       append([]MapIssue(nil), mapIssues...),
-		AllEdges:        append([]Edge(nil), allEdges...),
-		Clusters:        cloneClusters(clusters),
-		VisibleIssueIDs: cloneVisibleIDs(visible),
+		Available:         true,
+		IssueCount:        len(runtimeIssues),
+		MinimumIssueCount: minMapIssueCount,
+		MapIssues:         append([]MapIssue(nil), mapIssues...),
+		AllEdges:          append([]Edge(nil), allEdges...),
+		Clusters:          cloneClusters(clusters),
+		VisibleIssueIDs:   cloneVisibleIDs(visible),
 	}, profile, nil
 }
 
 func BuildMapFromProjection(projection MapProjection, viewport *Viewport, edgeThreshold float64) (MapResponse, error) {
+	if projection.UnavailableReason != "" {
+		return unavailableMapResponse(projection.UnavailableReason, projection.IssueCount), nil
+	}
+	if len(projection.MapIssues) < minMapIssueCount {
+		return unavailableMapResponse(mapUnavailableReasonInsufficientIssueCount, len(projection.MapIssues)), nil
+	}
+
 	visibleMapIssues := filterVisibleMapIssues(projection.MapIssues, projection.VisibleIssueIDs)
 	base := mapBaseData{
 		mapIssues:      visibleMapIssues,
@@ -189,13 +226,30 @@ func BuildMapFromProjection(projection MapProjection, viewport *Viewport, edgeTh
 	}
 
 	return MapResponse{
-		Issues:   base.mapIssues,
-		Edges:    edges,
-		Clusters: base.clusters,
+		Available:         true,
+		IssueCount:        len(projection.MapIssues),
+		MinimumIssueCount: minMapIssueCount,
+		Issues:            base.mapIssues,
+		Edges:             edges,
+		Clusters:          base.clusters,
 	}, nil
 }
 
+func mapProjectionUnavailableReason(issueCount, tagCount int) string {
+	if issueCount < minMapIssueCount {
+		return mapUnavailableReasonInsufficientIssueCount
+	}
+	if tagCount < 2 {
+		return mapUnavailableReasonInsufficientDimensions
+	}
+	return ""
+}
+
 func BuildEdgeResponseFromProjection(projection MapProjection, viewport *Viewport, edgeThreshold float64) (EdgeResponse, error) {
+	if projection.UnavailableReason != "" || len(projection.MapIssues) < minMapIssueCount {
+		return EdgeResponse{Edges: []Edge{}}, nil
+	}
+
 	visibleMapIssues := filterVisibleMapIssues(projection.MapIssues, projection.VisibleIssueIDs)
 	base := mapBaseData{
 		mapIssues:      visibleMapIssues,

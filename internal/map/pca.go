@@ -23,8 +23,11 @@ func ComputePositions(issues []issues.Issue, tags []string, tagEmbeddings map[st
 	if n == 0 {
 		return map[string]Position{}, nil
 	}
-	if n < 2 || t < 2 {
-		return fallbackPositions(issues), nil
+	if n < minMapIssueCount {
+		return nil, fmt.Errorf("insufficient issues for projection: got %d, need at least %d", n, minMapIssueCount)
+	}
+	if t < 2 {
+		return nil, fmt.Errorf("insufficient tag dimensions for projection: got %d, need at least 2", t)
 	}
 
 	tagIndex := make(map[string]int, t)
@@ -306,25 +309,6 @@ func correlationShrinkageAlpha(data []float64, t int) float64 {
 	// α = 1 when matrix is identity (no off-diagonal energy).
 	// α → 0.1 as mean squared off-diagonal → 1.
 	return clamp(1.0-meanSqOffDiag, 0.1, 1.0)
-}
-
-func fallbackPositions(issues []issues.Issue) map[string]Position {
-	positions := make(map[string]Position, len(issues))
-	if len(issues) == 1 {
-		positions[issues[0].ID] = Position{X: 0.5, Y: 0.5}
-		return positions
-	}
-
-	const radius = 0.35
-	for i, issue := range issues {
-		angle := (2 * math.Pi * float64(i)) / float64(len(issues))
-		positions[issue.ID] = Position{
-			X: 0.5 + radius*math.Cos(angle),
-			Y: 0.5 + radius*math.Sin(angle),
-		}
-	}
-
-	return positions
 }
 
 // issueProjectionWeights computes a per-issue weight for the PCA covariance.

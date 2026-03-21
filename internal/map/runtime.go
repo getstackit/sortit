@@ -20,9 +20,12 @@ func BuildMapFromIssuesWithTags(storeIssues []issues.Issue, storeTags []issues.T
 }
 
 func BuildMapFromIssuesWithTagsAndThreshold(storeIssues []issues.Issue, storeTags []issues.Tag, viewport *Viewport, edgeThreshold float64) (MapResponse, error) {
-	base, err := buildBaseMapDataFromIssues(storeIssues, storeTags, edgeThreshold)
+	base, unavailableReason, issueCount, err := buildBaseMapDataFromIssues(storeIssues, storeTags, edgeThreshold)
 	if err != nil {
 		return MapResponse{}, err
+	}
+	if unavailableReason != "" {
+		return unavailableMapResponse(unavailableReason, issueCount), nil
 	}
 
 	edges := filterEdgesForViewport(base, normalizeViewport(viewport))
@@ -36,9 +39,12 @@ func BuildMapFromIssuesWithTagsAndThreshold(storeIssues []issues.Issue, storeTag
 	}
 
 	return MapResponse{
-		Issues:   base.mapIssues,
-		Edges:    edges,
-		Clusters: clusters,
+		Available:         true,
+		IssueCount:        len(base.mapIssues),
+		MinimumIssueCount: minMapIssueCount,
+		Issues:            base.mapIssues,
+		Edges:             edges,
+		Clusters:          clusters,
 	}, nil
 }
 
@@ -51,9 +57,12 @@ func BuildEdgeResponseFromIssuesWithTags(storeIssues []issues.Issue, storeTags [
 }
 
 func BuildEdgeResponseFromIssuesWithTagsAndThreshold(storeIssues []issues.Issue, storeTags []issues.Tag, viewport *Viewport, edgeThreshold float64) (EdgeResponse, error) {
-	base, err := buildBaseMapDataFromIssues(storeIssues, storeTags, edgeThreshold)
+	base, unavailableReason, _, err := buildBaseMapDataFromIssues(storeIssues, storeTags, edgeThreshold)
 	if err != nil {
 		return EdgeResponse{}, err
+	}
+	if unavailableReason != "" {
+		return EdgeResponse{Edges: []Edge{}}, nil
 	}
 
 	edges := filterEdgesForViewport(base, normalizeViewport(viewport))
@@ -64,12 +73,15 @@ func BuildEdgeResponseFromIssuesWithTagsAndThreshold(storeIssues []issues.Issue,
 	return EdgeResponse{Edges: edges}, nil
 }
 
-func buildBaseMapDataFromIssues(storeIssues []issues.Issue, storeTags []issues.Tag, edgeThreshold float64) (mapBaseData, error) {
+func buildBaseMapDataFromIssues(storeIssues []issues.Issue, storeTags []issues.Tag, edgeThreshold float64) (mapBaseData, string, int, error) {
 	mapIssuesInput, tags, issueEmbeddings, tagEmbeddings := runtimeMapInputs(storeIssues, storeTags)
+	if unavailableReason := mapProjectionUnavailableReason(len(mapIssuesInput), len(tags)); unavailableReason != "" {
+		return mapBaseData{}, unavailableReason, len(mapIssuesInput), nil
+	}
 
 	positions, err := ComputePositions(mapIssuesInput, tags, tagEmbeddings)
 	if err != nil {
-		return mapBaseData{}, err
+		return mapBaseData{}, "", 0, err
 	}
 
 	mapIssues := make([]MapIssue, len(mapIssuesInput))
@@ -77,7 +89,7 @@ func buildBaseMapDataFromIssues(storeIssues []issues.Issue, storeTags []issues.T
 	for i, issue := range mapIssuesInput {
 		p, ok := positions[issue.ID]
 		if !ok {
-			return mapBaseData{}, fmt.Errorf("missing position for issue %s", issue.ID)
+			return mapBaseData{}, "", 0, fmt.Errorf("missing position for issue %s", issue.ID)
 		}
 
 		rounded := roundPosition(p)
@@ -103,7 +115,7 @@ func buildBaseMapDataFromIssues(storeIssues []issues.Issue, storeTags []issues.T
 		positions:      roundedPositions,
 		candidateEdges: edges,
 		clusters:       clusters,
-	}, nil
+	}, "", len(mapIssuesInput), nil
 }
 
 func runtimeMapInputs(storeIssues []issues.Issue, storeTags []issues.Tag) ([]issues.Issue, []string, map[string][]float64, map[string][]float64) {

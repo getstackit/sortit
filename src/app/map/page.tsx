@@ -101,6 +101,20 @@ function issueLabel(raw: string, maxLength: number) {
   return raw.length > maxLength ? `${raw.slice(0, maxLength)}...` : raw;
 }
 
+function mapUnavailableMessage(mapData: MapData | null) {
+  if (!mapData || mapData.available) {
+    return null;
+  }
+
+  switch (mapData.unavailableReason) {
+    case "insufficient_projection_dimensions":
+      return "Not enough distinct tag signal to compute a stable 2D projection yet.";
+    case "insufficient_issue_count":
+    default:
+      return `Need at least ${mapData.minimumIssueCount} issues before rendering the map.`;
+  }
+}
+
 function isMapSidebarScrollTarget(target: EventTarget | null) {
   if (target instanceof Element) {
     return target.closest("[data-map-sidebar-scroll]") != null;
@@ -366,6 +380,8 @@ function MapPageContent() {
     () => edgeDataKeyForViewport(issues, viewport, edgeThreshold, showClosed),
     [edgeThreshold, issues, showClosed, viewport]
   );
+  const mapIssueCount = mapData?.issueCount ?? issues.length;
+  const unavailableMessage = mapUnavailableMessage(mapData);
 
   useEffect(() => {
     if (!mapData || edgeDataKey === loadedEdgeDataKey) {
@@ -1457,7 +1473,7 @@ function MapPageContent() {
         meta={
           <>
             <Badge variant="outline" className="tabular-nums">
-              {issues.length} issues
+              {mapIssueCount} issues
             </Badge>
             {closedIssueCount > 0 && (
               <Badge variant="outline" className="tabular-nums">
@@ -1557,6 +1573,22 @@ function MapPageContent() {
         }
       />
       <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
+        {!mapData?.available && (
+          <div className="flex flex-1 items-center justify-center p-6">
+            <div className="app-subtle-surface w-full max-w-xl px-6 py-10 text-center">
+              <p className="text-[11px] font-semibold uppercase tracking-[0.24em] text-muted-foreground">
+                Map unavailable
+              </p>
+              <p className="mt-3 text-base text-foreground">
+                {unavailableMessage}
+              </p>
+              <p className="mt-2 text-sm text-muted-foreground">
+                Current filtered issue count: {mapIssueCount}.
+              </p>
+            </div>
+          </div>
+        )}
+        {mapData?.available && (
         <div
           ref={containerRef}
           className="app-surface relative min-h-0 flex-1 overflow-hidden overscroll-none"
@@ -2204,6 +2236,7 @@ function MapPageContent() {
             )}
           </div>
         </div>
+        )}
       </div>
     </AppShell>
   );
