@@ -258,12 +258,12 @@ func buildTagCovariance(tags []string, tagEmbeddings map[string][]float64) *mat.
 		}
 	}
 
-	// Ledoit-Wolf shrinkage: Σ_shrunk = α·Σ + (1-α)·I.
+	// Correlation shrinkage heuristic: Σ_shrunk = α·Σ + (1-α)·I.
 	// Pulls the similarity matrix toward the identity, regularizing PCA
 	// and factor decomposition as the tag catalog grows.
 	// Diagonal is already 1.0 (self-similarity), so only off-diagonal scales.
 	if hasEmbeddings && t > 1 {
-		alpha := ledoitWolfShrinkage(data, t)
+		alpha := correlationShrinkageAlpha(data, t)
 		for i := range t {
 			for j := range t {
 				if i != j {
@@ -276,16 +276,16 @@ func buildTagCovariance(tags []string, tagEmbeddings map[string][]float64) *mat.
 	return mat.NewDense(t, t, data)
 }
 
-// ledoitWolfShrinkage computes the optimal shrinkage intensity for a T×T
+// correlationShrinkageAlpha computes a shrinkage intensity for a T×T
 // correlation-like matrix (diagonal = 1) stored in row-major order.
 // Returns α ∈ [0.1, 1.0], the weight on the original matrix in:
 //
 //	Σ_shrunk = α·Σ + (1-α)·I
 //
-// Adapted from Ledoit & Wolf (2004) for a semantic similarity matrix:
+// This is a simple regularization heuristic for the semantic similarity matrix:
 // the mean squared off-diagonal entry measures how far the matrix is from
-// identity. Higher off-diagonal energy → more shrinkage toward independence.
-func ledoitWolfShrinkage(data []float64, t int) float64 {
+// identity. Higher off-diagonal energy leads to stronger shrinkage.
+func correlationShrinkageAlpha(data []float64, t int) float64 {
 	if t <= 1 {
 		return 1.0
 	}

@@ -261,6 +261,7 @@ type DebugIssueR2Result struct {
 	TagCount            int                     `json:"tagCount"`
 	Tags                []DebugIssueR2Tag       `json:"tags"`
 	EmbeddingDim        int                     `json:"embeddingDim"`
+	ExplainedNorm       float64                 `json:"explainedNorm"`
 	FactorAlignment     float64                 `json:"factorAlignment"`
 	ResidualNorm        float64                 `json:"residualNorm"`
 	NearestResidualTags []DebugResidualTagMatch `json:"nearestResidualTags"`
@@ -386,6 +387,11 @@ func (h DebugIssueR2Handler) Handle(ctx context.Context, issueID string) (DebugI
 
 	// Compute this issue's decomposition.
 	decomp := issuemap.ComputeFactorDecomposition(allIssues, tagNames, issueEmbeddings, tagEmbeddings)
+	if !decomp.Decomposed() {
+		result.Skipped = true
+		result.SkipReason = "factor decomposition fell back to static weights"
+		return result, nil
+	}
 
 	r2, ok := decomp.IssueR2(target.ID)
 	if !ok {
@@ -399,11 +405,14 @@ func (h DebugIssueR2Handler) Handle(ctx context.Context, issueID string) (DebugI
 	// factor-predicted embedding (before normalization). We recompute from
 	// the decomp outputs: factorEmb is unit-length, so dot(issueEmb, factorEmb)
 	// gives cosine similarity if issueEmb is also unit-length.
+	if factorNorm, ok := decomp.FactorNorm(target.ID); ok {
+		result.ExplainedNorm = math.Round(factorNorm*1000) / 1000
+	}
 	if factorEmb := decomp.FactorEmbedding(target.ID); len(factorEmb) > 0 {
 		result.FactorAlignment = math.Round(vectors.CosineSimilarity(targetEmb, factorEmb)*1000) / 1000
 	}
-	if residualEmb := decomp.ResidualEmbedding(target.ID); len(residualEmb) > 0 {
-		result.ResidualNorm = math.Round(math.Sqrt(dotProduct64(residualEmb, residualEmb))*1000) / 1000
+	if residualNorm, ok := decomp.ResidualNorm(target.ID); ok {
+		result.ResidualNorm = math.Round(residualNorm*1000) / 1000
 	}
 
 	// Find catalog tags closest to the residual embedding — these are
@@ -556,15 +565,4 @@ func diagnoseR2(r DebugIssueR2Result) []string {
 	}
 
 	return diagnosis
-}
-
-func dotProduct64(a, b []float64) float64 {
-	if len(a) != len(b) {
-		return 0
-	}
-	var sum float64
-	for i := range a {
-		sum += a[i] * b[i]
-	}
-	return sum
 }

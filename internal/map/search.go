@@ -140,15 +140,16 @@ func SearchFromQueryWithTags(
 			continue
 		}
 		candidateSummary := exploreIssueSummary(candidate)
+		semanticSim := vectors.CosineSimilarity(queryVector, issueEmbeddings[candidate.ID])
 
 		var factorSim, residualSim, blended float64
 		if useDecomp && len(decomp.FactorEmbedding(candidate.ID)) > 0 {
-			factorSim, residualSim, blended = BlendFromDecomposition(
+			factorSim, _, blended = BlendFromDecomposition(
 				searchDecomp, queryFactorEmb, queryResidualEmb,
 				decomp.FactorEmbedding(candidate.ID), decomp.ResidualEmbedding(candidate.ID),
 			)
 		} else {
-			residualSim = vectors.CosineSimilarity(queryVector, issueEmbeddings[candidate.ID])
+			residualSim = semanticSim
 			factorSim = vectors.CosineSimilarity(queryFactor, factorVectors[candidate.ID])
 			if tagCorrelationBoost {
 				blended = scoring.TagCorrelationSemantic*residualSim + scoring.TagCorrelationFactor*factorSim
@@ -172,7 +173,7 @@ func SearchFromQueryWithTags(
 
 		scores = append(scores, scoredResult{
 			combined:   combined,
-			semantic:   residualSim,
+			semantic:   semanticSim,
 			factor:     factorSim,
 			confidence: issues.ComputeContentConfidence(candidate.Raw),
 		})
@@ -182,10 +183,10 @@ func SearchFromQueryWithTags(
 			Raw:                candidateSummary.Raw,
 			Status:             candidateSummary.Status,
 			Tags:               candidateSummary.Tags,
-			SemanticSimilarity: round(residualSim),
+			SemanticSimilarity: round(semanticSim),
 			FactorSimilarity:   round(factorSim),
 			CombinedSimilarity: round(combined),
-			Reason:             relatedIssueReason(sharedTags, residualSim, factorSim),
+			Reason:             relatedIssueReason(sharedTags, semanticSim, factorSim),
 		})
 	}
 

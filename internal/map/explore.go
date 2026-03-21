@@ -15,6 +15,10 @@ import (
 	"splat/internal/vectors"
 )
 
+// ReasonSemanticSimilar is the explanation text used when two issues are
+// related primarily by embedding similarity.
+const ReasonSemanticSimilar = "Semantically similar language suggests a shared root cause"
+
 type ExploreIssue struct {
 	ID     string             `json:"id"`
 	Raw    string             `json:"raw"`
@@ -92,16 +96,17 @@ func ExploreFromIssuesWithTags(storeIssues []issues.Issue, storeTags []issues.Ta
 			continue
 		}
 		candidateSummary := exploreIssueSummary(candidate)
+		semanticSim := vectors.UnitCosineSimilarity(issueEmbeddings[target.ID], issueEmbeddings[candidate.ID])
 
 		var factorSim, residualSim, blended float64
 		if useDecomp && len(decomp.FactorEmbedding(candidate.ID)) > 0 {
-			factorSim, residualSim, blended = BlendFromDecomposition(
+			factorSim, _, blended = BlendFromDecomposition(
 				decomp,
 				decomp.FactorEmbedding(target.ID), decomp.ResidualEmbedding(target.ID),
 				decomp.FactorEmbedding(candidate.ID), decomp.ResidualEmbedding(candidate.ID),
 			)
 		} else {
-			residualSim = vectors.UnitCosineSimilarity(issueEmbeddings[target.ID], issueEmbeddings[candidate.ID])
+			residualSim = semanticSim
 			factorSim = vectors.UnitCosineSimilarity(factorVectors[target.ID], factorVectors[candidate.ID])
 			blended = scoring.SemanticWeight*residualSim + scoring.FactorWeight*factorSim
 		}
@@ -116,10 +121,10 @@ func ExploreFromIssuesWithTags(storeIssues []issues.Issue, storeTags []issues.Ta
 			Raw:                candidateSummary.Raw,
 			Status:             candidateSummary.Status,
 			Tags:               candidateSummary.Tags,
-			SemanticSimilarity: round(residualSim),
+			SemanticSimilarity: round(semanticSim),
 			FactorSimilarity:   round(factorSim),
 			CombinedSimilarity: round(combined),
-			Reason:             relatedIssueReasonWithBoost(sharedTags, residualSim, factorSim, boost, canonical[candidate.ID]),
+			Reason:             relatedIssueReasonWithBoost(sharedTags, semanticSim, factorSim, boost, canonical[candidate.ID]),
 		})
 	}
 
@@ -266,7 +271,7 @@ func relatedIssueReason(sharedTags []string, semantic, factor float64) string {
 		return "Shared factor relevance in " + strings.Join(sharedTags, ", ")
 	}
 	if semantic >= scoring.ReasonHighSemantic {
-		return "Semantically similar language suggests a shared root cause"
+		return ReasonSemanticSimilar
 	}
 	if factor >= scoring.ReasonHighFactor {
 		return "Similar factor profile across related tags"

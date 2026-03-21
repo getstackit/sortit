@@ -213,3 +213,43 @@ func TestSearchPrefersFreshIssueWhenBaseSimilarityIsEqual(t *testing.T) {
 		t.Fatalf("expected fresh issue to rank first, got %+v", resp.RelatedIssues)
 	}
 }
+
+func TestSearchReportsRawSemanticSimilarityWhenDecompositionIsActive(t *testing.T) {
+	storeIssues := []issues.Issue{
+		{ID: "semantic-only", Raw: "same words", Status: issues.StatusOpen, TagScores: []domain.TagRelevance{{Tag: "beta", Relevance: 1}}, Embedding: unitVec([]float64{1, 0, 0, 0})},
+		{ID: "alpha-a", Raw: "alpha issue a", Status: issues.StatusOpen, TagScores: []domain.TagRelevance{{Tag: "alpha", Relevance: 1}}, Embedding: unitVec([]float64{1, 0, 0, 0})},
+		{ID: "alpha-b", Raw: "alpha issue b", Status: issues.StatusOpen, TagScores: []domain.TagRelevance{{Tag: "alpha", Relevance: 1}}, Embedding: unitVec([]float64{1, 0, 0, 0})},
+		{ID: "alpha-c", Raw: "alpha issue c", Status: issues.StatusOpen, TagScores: []domain.TagRelevance{{Tag: "alpha", Relevance: 1}}, Embedding: unitVec([]float64{1, 0, 0, 0})},
+		{ID: "alpha-d", Raw: "alpha issue d", Status: issues.StatusOpen, TagScores: []domain.TagRelevance{{Tag: "alpha", Relevance: 1}}, Embedding: unitVec([]float64{1, 0, 0, 0})},
+	}
+	storeTags := []issues.Tag{
+		{Name: "alpha", Embedding: unitVec([]float64{1, 0, 0, 0})},
+		{Name: "beta", Embedding: unitVec([]float64{0, 1, 0, 0})},
+	}
+
+	resp := SearchFromQueryWithTags(
+		storeIssues,
+		storeTags,
+		"same words",
+		[]issues.TagRelevance{{Tag: "alpha", Relevance: 1}},
+		unitVec([]float64{1, 0, 0, 0}),
+		10,
+	)
+
+	var found *RelatedIssue
+	for i := range resp.RelatedIssues {
+		if resp.RelatedIssues[i].ID == "semantic-only" {
+			found = &resp.RelatedIssues[i]
+			break
+		}
+	}
+	if found == nil {
+		t.Fatalf("expected semantic-only issue in results, got %+v", resp.RelatedIssues)
+	}
+	if found.SemanticSimilarity != 1 {
+		t.Fatalf("expected raw semantic similarity of 1.00, got %v", found.SemanticSimilarity)
+	}
+	if found.Reason != ReasonSemanticSimilar {
+		t.Fatalf("expected semantic reason text, got %q", found.Reason)
+	}
+}

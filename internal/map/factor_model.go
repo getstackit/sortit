@@ -17,18 +17,37 @@ import (
 // Embeddings and R² values are stored in parallel slices indexed by a single
 // map, avoiding per-field hash table overhead.
 type FactorDecomposition struct {
-	index     map[string]int // issue ID → position in parallel slices
-	factors   [][]float64    // factor-predicted embedding per issue
-	residuals [][]float64    // residual embedding per issue
-	r2s       []float64      // per-issue R² (variance explained by factors)
+	used          bool
+	index         map[string]int // issue ID → position in parallel slices
+	factors       [][]float64    // factor-predicted embedding per issue
+	residuals     [][]float64    // residual embedding per issue
+	factorNorms   []float64      // pre-normalization explained magnitude
+	residualNorms []float64      // pre-normalization unexplained magnitude
+	r2s           []float64      // per-issue R² (variance explained by factors)
 
 	FactorWeight   float64 // data-driven weight for factor similarity
 	ResidualWeight float64 // data-driven weight for residual similarity
 	AggregateR2    float64 // mean R² across all decomposed issues
 }
 
+func newFactorDecomposition(capacity int) FactorDecomposition {
+	return FactorDecomposition{
+		index:          make(map[string]int, capacity),
+		factors:        make([][]float64, 0, capacity),
+		residuals:      make([][]float64, 0, capacity),
+		factorNorms:    make([]float64, 0, capacity),
+		residualNorms:  make([]float64, 0, capacity),
+		r2s:            make([]float64, 0, capacity),
+		FactorWeight:   scoring.FactorWeight,
+		ResidualWeight: scoring.SemanticWeight,
+	}
+}
+
 // FactorEmbedding returns the factor-predicted embedding for the given issue, or nil.
 func (d FactorDecomposition) FactorEmbedding(id string) []float64 {
+	if !d.used {
+		return nil
+	}
 	if i, ok := d.index[id]; ok {
 		return d.factors[i]
 	}
@@ -37,14 +56,42 @@ func (d FactorDecomposition) FactorEmbedding(id string) []float64 {
 
 // ResidualEmbedding returns the residual embedding for the given issue, or nil.
 func (d FactorDecomposition) ResidualEmbedding(id string) []float64 {
+	if !d.used {
+		return nil
+	}
 	if i, ok := d.index[id]; ok {
 		return d.residuals[i]
 	}
 	return nil
 }
 
+// FactorNorm returns the pre-normalization explained magnitude for the issue.
+func (d FactorDecomposition) FactorNorm(id string) (float64, bool) {
+	if !d.used {
+		return 0, false
+	}
+	if i, ok := d.index[id]; ok {
+		return d.factorNorms[i], true
+	}
+	return 0, false
+}
+
+// ResidualNorm returns the pre-normalization unexplained magnitude for the issue.
+func (d FactorDecomposition) ResidualNorm(id string) (float64, bool) {
+	if !d.used {
+		return 0, false
+	}
+	if i, ok := d.index[id]; ok {
+		return d.residualNorms[i], true
+	}
+	return 0, false
+}
+
 // IssueR2 returns the R² value for the given issue and whether it was decomposed.
 func (d FactorDecomposition) IssueR2(id string) (float64, bool) {
+	if !d.used {
+		return 0, false
+	}
 	if i, ok := d.index[id]; ok {
 		return d.r2s[i], true
 	}
@@ -53,27 +100,35 @@ func (d FactorDecomposition) IssueR2(id string) (float64, bool) {
 
 // DecomposedCount returns the number of issues that were decomposed.
 func (d FactorDecomposition) DecomposedCount() int {
+	if !d.used {
+		return 0
+	}
 	return len(d.index)
 }
 
 // Decomposed returns true if any issues were decomposed.
 func (d FactorDecomposition) Decomposed() bool {
-	return len(d.index) > 0
+	return d.used
 }
 
 // AllR2 iterates over all decomposed issues and their R² values.
 func (d FactorDecomposition) AllR2(fn func(id string, r2 float64)) {
+	if !d.used {
+		return
+	}
 	for id, i := range d.index {
 		fn(id, d.r2s[i])
 	}
 }
 
 // put appends a decomposed issue to the parallel slices.
-func (d *FactorDecomposition) put(id string, factor, residual []float64, r2 float64) {
+func (d *FactorDecomposition) put(id string, factor, residual []float64, factorNorm, residualNorm, r2 float64) {
 	idx := len(d.factors)
 	d.index[id] = idx
 	d.factors = append(d.factors, factor)
 	d.residuals = append(d.residuals, residual)
+	d.factorNorms = append(d.factorNorms, factorNorm)
+	d.residualNorms = append(d.residualNorms, residualNorm)
 	d.r2s = append(d.r2s, r2)
 }
 
@@ -87,17 +142,10 @@ func ComputeFactorDecomposition(
 	issueEmbeddings map[string][]float64,
 	tagEmbeddings map[string][]float64,
 ) FactorDecomposition {
-	decomp := FactorDecomposition{
-		index:          make(map[string]int, len(items)),
-		factors:        make([][]float64, 0, len(items)),
-		residuals:      make([][]float64, 0, len(items)),
-		r2s:            make([]float64, 0, len(items)),
-		FactorWeight:   scoring.FactorWeight,
-		ResidualWeight: scoring.SemanticWeight,
-	}
+	fallback := newFactorDecomposition(len(items))
 
 	if len(items) < scoring.MinDecompositionIssues || len(tagNames) == 0 {
-		return decomp
+		return fallback
 	}
 
 	tagIndex := make(map[string]int, len(tagNames))
@@ -116,9 +164,10 @@ func ComputeFactorDecomposition(
 		}
 	}
 	if embDim == 0 {
-		return decomp
+		return fallback
 	}
 
+	decomp := newFactorDecomposition(len(items))
 	var varFactor, varResidual float64
 	validCount := 0
 
@@ -134,7 +183,12 @@ func ComputeFactorDecomposition(
 		factorEmb := synthesizeFactorEmbedding(item.TagScores, tagIndex, tagCov, tagEmbeddings, tagNames, len(tagNames), embDim)
 		if isZeroVector(factorEmb) {
 			// No tags — full weight to residual for this issue.
-			decomp.put(item.ID, make([]float64, embDim), append([]float64(nil), issueEmb...), 0)
+			residual := append([]float64(nil), issueEmb...)
+			residualNorm := math.Sqrt(totalVar)
+			if !isZeroVector(residual) {
+				normalizeVector(residual)
+			}
+			decomp.put(item.ID, make([]float64, embDim), residual, 0, residualNorm, 0)
 			varResidual += totalVar
 			validCount++
 			continue
@@ -152,6 +206,8 @@ func ComputeFactorDecomposition(
 
 		projVar := dotProduct(proj, proj)
 		resVar := dotProduct(residual, residual)
+		projNorm := math.Sqrt(projVar)
+		residualNorm := math.Sqrt(resVar)
 		varFactor += projVar
 		varResidual += resVar
 
@@ -169,12 +225,12 @@ func ComputeFactorDecomposition(
 			normalizeVector(residual)
 		}
 
-		decomp.put(item.ID, proj, residual, r2)
+		decomp.put(item.ID, proj, residual, projNorm, residualNorm, r2)
 		validCount++
 	}
 
 	if validCount < scoring.MinDecompositionIssues {
-		return decomp
+		return fallback
 	}
 
 	// Compute data-driven weights from variance statistics.
@@ -187,6 +243,7 @@ func ComputeFactorDecomposition(
 		decomp.ResidualWeight = 1 - decomp.FactorWeight
 		decomp.AggregateR2 = varFactor / aggTotalVar
 	}
+	decomp.used = true
 
 	return decomp
 }
@@ -202,7 +259,11 @@ func DecomposeEmbedding(
 ) (factor, residual []float64) {
 	embDim := len(embedding)
 	if embDim == 0 || len(tagNames) == 0 {
-		return make([]float64, embDim), append([]float64(nil), embedding...)
+		residual = append([]float64(nil), embedding...)
+		if !isZeroVector(residual) {
+			normalizeVector(residual)
+		}
+		return make([]float64, embDim), residual
 	}
 
 	tagIndex := make(map[string]int, len(tagNames))
@@ -212,7 +273,11 @@ func DecomposeEmbedding(
 
 	factorEmb := synthesizeFactorEmbedding(tagScores, tagIndex, tagCov, tagEmbeddings, tagNames, len(tagNames), embDim)
 	if isZeroVector(factorEmb) {
-		return make([]float64, embDim), append([]float64(nil), embedding...)
+		residual = append([]float64(nil), embedding...)
+		if !isZeroVector(residual) {
+			normalizeVector(residual)
+		}
+		return make([]float64, embDim), residual
 	}
 	normalizeVector(factorEmb)
 

@@ -144,6 +144,12 @@ func TestComputeFactorDecomposition_TooFewIssues(t *testing.T) {
 	if decomp.FactorWeight != scoring.FactorWeight {
 		t.Errorf("expected fallback FactorWeight %f, got %f", scoring.FactorWeight, decomp.FactorWeight)
 	}
+	if decomp.Decomposed() {
+		t.Fatal("expected fallback decomposition to be inactive")
+	}
+	if decomp.DecomposedCount() != 0 {
+		t.Fatalf("expected no decomposed issues, got %d", decomp.DecomposedCount())
+	}
 }
 
 func TestComputeFactorDecomposition_NoTags(t *testing.T) {
@@ -186,6 +192,45 @@ func TestComputeFactorDecomposition_EmptyEmbeddings(t *testing.T) {
 	if decomp.FactorWeight != scoring.FactorWeight {
 		t.Errorf("expected fallback FactorWeight, got %f", decomp.FactorWeight)
 	}
+	if decomp.Decomposed() {
+		t.Fatal("expected fallback decomposition to be inactive")
+	}
+}
+
+func TestComputeFactorDecomposition_PartialValidBelowThresholdFallsBack(t *testing.T) {
+	tagEmb := map[string][]float64{
+		"alpha": unitVec([]float64{1, 0, 0, 0}),
+	}
+	tagNames := []string{"alpha"}
+
+	items := make([]issues.Issue, 6)
+	embeds := make(map[string][]float64, 4)
+	for i := range items {
+		id := "issue-" + string(rune('A'+i))
+		items[i] = issues.Issue{
+			ID:        id,
+			Raw:       "test",
+			TagScores: []issues.TagRelevance{{Tag: "alpha", Relevance: 1}},
+		}
+		if i < 4 {
+			embeds[id] = unitVec([]float64{1, 0, 0, 0})
+		}
+	}
+
+	decomp := ComputeFactorDecomposition(items, tagNames, embeds, tagEmb)
+
+	if decomp.Decomposed() {
+		t.Fatal("expected decomposition to fall back when valid issue count is below threshold")
+	}
+	if decomp.DecomposedCount() != 0 {
+		t.Fatalf("expected 0 decomposed issues, got %d", decomp.DecomposedCount())
+	}
+	if factor := decomp.FactorEmbedding("issue-A"); factor != nil {
+		t.Fatalf("expected no stored factor embedding on fallback, got %#v", factor)
+	}
+	if _, ok := decomp.IssueR2("issue-A"); ok {
+		t.Fatal("expected no stored R2 on fallback")
+	}
 }
 
 func TestDecomposeEmbedding_Consistency(t *testing.T) {
@@ -227,17 +272,20 @@ func TestDecomposeEmbedding_NoTags(t *testing.T) {
 	tagNames := []string{"alpha"}
 	tagCov := buildTagCovariance(tagNames, tagEmb)
 
-	emb := unitVec([]float64{0, 0, 1, 0})
+	emb := []float64{0, 0, 3, 4}
 
 	factor, residual := DecomposeEmbedding(emb, nil, tagNames, tagEmb, tagCov)
 
 	if !isZeroVector(factor) {
 		t.Error("factor should be zero for issue with no tags")
 	}
-	// Residual should be the original embedding (normalized).
-	sim := dotProduct(residual, emb)
+	// Residual should preserve direction while being normalized for similarity use.
+	sim := dotProduct(residual, unitVec(emb))
 	if sim < 0.99 {
 		t.Errorf("residual should approximate original embedding, similarity=%f", sim)
+	}
+	if math.Abs(dotProduct(residual, residual)-1) > 1e-9 {
+		t.Errorf("residual should be unit normalized, got squared norm=%f", dotProduct(residual, residual))
 	}
 }
 
@@ -290,6 +338,55 @@ func TestComputeFactorDecomposition_DimensionMismatch(t *testing.T) {
 	// Should fall back to hardcoded weights (no valid decompositions).
 	if decomp.FactorWeight != scoring.FactorWeight {
 		t.Errorf("expected fallback FactorWeight for dim mismatch, got %f", decomp.FactorWeight)
+	}
+	if decomp.Decomposed() {
+		t.Fatal("expected decomposition to be inactive on dimension mismatch")
+	}
+}
+
+func TestComputeFactorDecomposition_PreservesRawNorms(t *testing.T) {
+	tagEmb := map[string][]float64{
+		"alpha": unitVec([]float64{1, 0, 0, 0}),
+	}
+	tagNames := []string{"alpha"}
+
+	items := []issues.Issue{
+		{ID: "pure-a", Raw: "test", TagScores: []issues.TagRelevance{{Tag: "alpha", Relevance: 1}}},
+		{ID: "mixed-a", Raw: "test", TagScores: []issues.TagRelevance{{Tag: "alpha", Relevance: 1}}},
+		{ID: "mixed-b", Raw: "test", TagScores: []issues.TagRelevance{{Tag: "alpha", Relevance: 1}}},
+		{ID: "mixed-c", Raw: "test", TagScores: []issues.TagRelevance{{Tag: "alpha", Relevance: 1}}},
+		{ID: "mixed-d", Raw: "test", TagScores: []issues.TagRelevance{{Tag: "alpha", Relevance: 1}}},
+	}
+	embeds := map[string][]float64{
+		"pure-a":  unitVec([]float64{1, 0, 0, 0}),
+		"mixed-a": unitVec([]float64{1, 0, 1, 0}),
+		"mixed-b": unitVec([]float64{1, 0, 1, 0}),
+		"mixed-c": unitVec([]float64{1, 0, 1, 0}),
+		"mixed-d": unitVec([]float64{1, 0, 1, 0}),
+	}
+
+	decomp := ComputeFactorDecomposition(items, tagNames, embeds, tagEmb)
+	if !decomp.Decomposed() {
+		t.Fatal("expected decomposition to be active")
+	}
+	wantHalf := math.Sqrt(0.5)
+
+	factorNorm, ok := decomp.FactorNorm("pure-a")
+	if !ok || math.Abs(factorNorm-1) > 1e-9 {
+		t.Fatalf("expected pure issue explained norm of 1, got %f (ok=%v)", factorNorm, ok)
+	}
+	residualNorm, ok := decomp.ResidualNorm("pure-a")
+	if !ok || math.Abs(residualNorm) > 1e-9 {
+		t.Fatalf("expected pure issue residual norm of 0, got %f (ok=%v)", residualNorm, ok)
+	}
+
+	factorNorm, ok = decomp.FactorNorm("mixed-a")
+	if !ok || math.Abs(factorNorm-wantHalf) > 1e-9 {
+		t.Fatalf("expected mixed issue explained norm of sqrt(0.5), got %f (ok=%v)", factorNorm, ok)
+	}
+	residualNorm, ok = decomp.ResidualNorm("mixed-a")
+	if !ok || math.Abs(residualNorm-wantHalf) > 1e-9 {
+		t.Fatalf("expected mixed issue residual norm of sqrt(0.5), got %f (ok=%v)", residualNorm, ok)
 	}
 }
 

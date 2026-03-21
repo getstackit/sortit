@@ -182,14 +182,14 @@ func TestBuildTagCovarianceNoEmbeddingsUnchanged(t *testing.T) {
 	}
 }
 
-func TestLedoitWolfShrinkageIntensity(t *testing.T) {
+func TestCorrelationShrinkageAlpha(t *testing.T) {
 	// Identity matrix → α should be 1.0 (no shrinkage needed).
 	identity := []float64{
 		1, 0, 0,
 		0, 1, 0,
 		0, 0, 1,
 	}
-	alpha := ledoitWolfShrinkage(identity, 3)
+	alpha := correlationShrinkageAlpha(identity, 3)
 	if math.Abs(alpha-1.0) > 1e-9 {
 		t.Errorf("identity matrix: expected α=1.0, got %f", alpha)
 	}
@@ -200,7 +200,7 @@ func TestLedoitWolfShrinkageIntensity(t *testing.T) {
 		0.9, 1, 0.9,
 		0.9, 0.9, 1,
 	}
-	alpha = ledoitWolfShrinkage(correlated, 3)
+	alpha = correlationShrinkageAlpha(correlated, 3)
 	if alpha > 0.25 {
 		t.Errorf("highly correlated matrix: expected low α, got %f", alpha)
 	}
@@ -214,7 +214,7 @@ func TestLedoitWolfShrinkageIntensity(t *testing.T) {
 		0.3, 1, 0.2,
 		0.1, 0.2, 1,
 	}
-	alpha = ledoitWolfShrinkage(moderate, 3)
+	alpha = correlationShrinkageAlpha(moderate, 3)
 	if alpha < 0.9 || alpha > 1.0 {
 		t.Errorf("moderately correlated matrix: expected α near 0.95, got %f", alpha)
 	}
