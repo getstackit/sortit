@@ -3,6 +3,7 @@ import {
   fetchRevision,
   fetchIssues,
   fetchIssue,
+  fetchIssueR2,
   searchIssues,
   type IssueListStatus,
 } from "@/lib/issues";
@@ -50,6 +51,17 @@ export function useIssue(id?: string | null) {
   return useSWR(
     normalizedID && normalizedID !== "undefined" ? ["issue", normalizedID, revision] : null,
     ([, issueID]: [string, string, number]) => fetchIssue(issueID)
+  );
+}
+
+export function useIssueR2(id?: string | null) {
+  const { data: revision = 0 } = useBackendRevision();
+  const normalizedID = typeof id === "string" ? id.trim() : "";
+  return useSWR(
+    normalizedID && normalizedID !== "undefined"
+      ? ["issue-r2", normalizedID, revision]
+      : null,
+    ([, issueID]: [string, string, number]) => fetchIssueR2(issueID)
   );
 }
 

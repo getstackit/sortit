@@ -48,6 +48,7 @@ type Server struct {
 	closeIssue          commands.CloseIssueHandler
 	reopenIssue         commands.ReopenIssueHandler
 	assignIssue         commands.AssignIssueHandler
+	reEnrichIssue       commands.ReEnrichIssueHandler
 	splitIssue          commands.SplitIssueHandler
 	combineIssues       commands.CombineIssuesHandler
 	linkIssues          commands.LinkIssuesHandler
@@ -289,6 +290,7 @@ func (s *Server) registerIssueRoutes(r chi.Router) {
 	r.Post("/issues/combine", s.handleIssueCombine)
 	r.Post("/issues/link", s.handleIssueLink)
 	r.Post("/issues/refine", s.handleIssueRefineBatch)
+	r.Post("/issues/re-enrich", s.handleReEnrichIssueBatch)
 	r.Post("/issues/progress", s.handleIssueProgressBatch)
 	r.Post("/issues/close", s.handleIssueCloseBatch)
 	r.Post("/issues/assign", s.handleIssueAssignBatch)
@@ -299,7 +301,9 @@ func (s *Server) registerIssueRoutes(r chi.Router) {
 	r.Post("/issues/{id}/progress", s.handleProgressIssue)
 	r.Post("/issues/{id}/reopen", s.handleReopenIssue)
 	r.Post("/issues/{id}/assign", s.handleAssignIssue)
+	r.Post("/issues/{id}/re-enrich", s.handleReEnrichIssue)
 	r.Post("/issues/{id}/split", s.handleSplitIssue)
+	r.Get("/issues/{id}/r2", s.handleDebugIssueR2)
 }
 
 func (s *Server) registerTagRoutes(r chi.Router) {
@@ -511,6 +515,11 @@ func NewServer(cfg ServerConfig) *Server {
 		},
 		assignIssue: commands.AssignIssueHandler{
 			Runner: runner,
+			Events: eventBus,
+		},
+		reEnrichIssue: commands.ReEnrichIssueHandler{
+			Runner: runner,
+			Store:  store,
 			Events: eventBus,
 		},
 		splitIssue: commands.SplitIssueHandler{

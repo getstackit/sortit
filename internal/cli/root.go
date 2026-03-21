@@ -131,6 +131,7 @@ func newIssueCmd(opts *rootOptions) *cobra.Command {
 	issueCmd.AddCommand(newIssueCombineCmd(opts))
 	issueCmd.AddCommand(newIssueLinkCmd(opts))
 	issueCmd.AddCommand(newIssueExploreCmd(opts))
+	issueCmd.AddCommand(newIssueReEnrichCmd(opts))
 	return issueCmd
 }
 
@@ -479,6 +480,26 @@ func newIssueLinkCmd(opts *rootOptions) *cobra.Command {
 	_ = cmd.MarkFlagRequired("source")
 	_ = cmd.MarkFlagRequired("target")
 	_ = cmd.MarkFlagRequired("type")
+	return cmd
+}
+
+func newIssueReEnrichCmd(opts *rootOptions) *cobra.Command {
+	cmd := &cobra.Command{
+		Use:   "re-enrich <id> [id...]",
+		Short: "Re-run AI classification on one or more issues",
+		Args:  cobra.MinimumNArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			client := opts.client()
+			var result commands.IssueMutationResult
+			if err := client.Post(cmd.Context(), "/issues/re-enrich", batchMutationRequest{
+				IDs: args,
+			}, &result); err != nil {
+				return err
+			}
+			return printJSON(cmd, result)
+		},
+	}
+
 	return cmd
 }
 

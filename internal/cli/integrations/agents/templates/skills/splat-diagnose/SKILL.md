@@ -53,7 +53,8 @@ Shows:
 
 ### After identifying improvements
 
-- To re-enrich an issue, refine it: `command splat issues refine <id> --raw "re-tagging"`
+- To re-classify: `command splat issues re-enrich <id>`
+- To re-classify multiple: `command splat issues re-enrich <id1> <id2> <id3>`
 - To see existing tags: `command splat tags list`
 - To explore what an issue is about: `command splat issues get <id>`
 
