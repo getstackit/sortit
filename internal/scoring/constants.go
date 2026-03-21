@@ -75,6 +75,14 @@ const (
 	OpportunityTagsMax = 2 // max shared tags in opportunity grouping
 )
 
+// Factor decomposition.
+const (
+	MinFactorWeight           = 0.05 // floor: never fully ignore factors
+	MaxFactorWeight           = 0.95 // ceiling: never fully ignore residuals
+	TagCorrelationFactorNudge = 0.1  // additional factor weight when query matches a tag
+	MinDecompositionIssues    = 5    // below this, fall back to hardcoded weights
+)
+
 // Projection weighting.
 const (
 	ProjectionWeightFloor = 0.1 // minimum per-issue weight in PCA covariance

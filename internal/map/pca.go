@@ -219,9 +219,13 @@ func percentile(sorted []float64, p float64) float64 {
 	return sorted[lower] + (sorted[upper]-sorted[lower])*weight
 }
 
-// buildTagCovariance computes a T×T matrix where entry (i,j) is the cosine
+// BuildTagCovariance computes a T×T matrix where entry (i,j) is the cosine
 // similarity between the embeddings of tag i and tag j. If embeddings are
 // missing, falls back to the identity matrix (tags treated as independent).
+func BuildTagCovariance(tags []string, tagEmbeddings map[string][]float64) *mat.Dense {
+	return buildTagCovariance(tags, tagEmbeddings)
+}
+
 func buildTagCovariance(tags []string, tagEmbeddings map[string][]float64) *mat.Dense {
 	t := len(tags)
 	data := make([]float64, t*t)
@@ -231,7 +235,13 @@ func buildTagCovariance(tags []string, tagEmbeddings map[string][]float64) *mat.
 		for j := i; j < t; j++ {
 			value := 0.0
 			if hasEmbeddings {
-				value = vectors.UnitCosineSimilarity(tagEmbeddings[tags[i]], tagEmbeddings[tags[j]])
+				embI, okI := tagEmbeddings[tags[i]] //nolint:gosec // i is bounded by len(tags)
+				embJ, okJ := tagEmbeddings[tags[j]] //nolint:gosec // j is bounded by len(tags)
+				if okI && okJ {
+					value = vectors.UnitCosineSimilarity(embI, embJ)
+				} else if i == j {
+					value = 1
+				}
 			} else if i == j {
 				value = 1
 			}

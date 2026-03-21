@@ -70,12 +70,17 @@ func ExploreFromIssuesWithTags(storeIssues []issues.Issue, storeTags []issues.Ta
 	}
 
 	canonical, visible, boosts := deriveRelationshipSemantics(candidateSet)
-	mapIssues, _, issueEmbeddings, tagEmbeddings := runtimeMapInputs(candidateSet, storeTags)
-	factorVectors := runtimeFactorVectors(mapIssues, runtimeTagNames(candidateSet, storeTags), tagEmbeddings)
+	mapIssues, tagNames, issueEmbeddings, tagEmbeddings := runtimeMapInputs(candidateSet, storeTags)
+	decomp := ComputeFactorDecomposition(mapIssues, tagNames, issueEmbeddings, tagEmbeddings)
+
+	// Fall back to legacy factor vectors when decomposition didn't produce per-issue vectors.
+	useDecomp := len(decomp.FactorEmbeddings) > 0
+	var factorVectors map[string][]float64
+	if !useDecomp {
+		factorVectors = runtimeFactorVectors(mapIssues, tagNames, tagEmbeddings)
+	}
 
 	targetSummary := exploreIssueSummary(target)
-	targetEmbedding := issueEmbeddings[target.ID]
-	targetFactor := factorVectors[target.ID]
 	now := time.Now().UTC()
 
 	related := make([]RelatedIssue, 0, len(candidateSet)-1)
@@ -85,11 +90,23 @@ func ExploreFromIssuesWithTags(storeIssues []issues.Issue, storeTags []issues.Ta
 			continue
 		}
 		candidateSummary := exploreIssueSummary(candidate)
-		semantic := vectors.UnitCosineSimilarity(targetEmbedding, issueEmbeddings[candidate.ID])
-		factor := vectors.UnitCosineSimilarity(targetFactor, factorVectors[candidate.ID])
+
+		var factorSim, residualSim, blended float64
+		if useDecomp && len(decomp.FactorEmbeddings[candidate.ID]) > 0 {
+			factorSim, residualSim, blended = BlendFromDecomposition(
+				decomp,
+				decomp.FactorEmbeddings[target.ID], decomp.ResidualEmbeddings[target.ID],
+				decomp.FactorEmbeddings[candidate.ID], decomp.ResidualEmbeddings[candidate.ID],
+			)
+		} else {
+			residualSim = vectors.UnitCosineSimilarity(issueEmbeddings[target.ID], issueEmbeddings[candidate.ID])
+			factorSim = vectors.UnitCosineSimilarity(factorVectors[target.ID], factorVectors[candidate.ID])
+			blended = scoring.SemanticWeight*residualSim + scoring.FactorWeight*factorSim
+		}
+
 		boost := relationshipBoost(boosts, target.ID, candidate.ID)
 		authority := issues.IssueAuthority(candidate) * scoring.AuthorityConsumerWt
-		combined := minFloat(1, (scoring.SemanticWeight*semantic+scoring.FactorWeight*factor+boost+authority)*math.Sqrt(issues.IssueFreshnessWeight(candidate, now)))
+		combined := minFloat(1, (blended+boost+authority)*math.Sqrt(issues.IssueFreshnessWeight(candidate, now)))
 		sharedTags := sharedRelevantTags(targetSummary.Tags, candidateSummary.Tags, scoring.SharedTagsLimit)
 
 		related = append(related, RelatedIssue{
@@ -97,10 +114,10 @@ func ExploreFromIssuesWithTags(storeIssues []issues.Issue, storeTags []issues.Ta
 			Raw:                candidateSummary.Raw,
 			Status:             candidateSummary.Status,
 			Tags:               candidateSummary.Tags,
-			SemanticSimilarity: round(semantic),
-			FactorSimilarity:   round(factor),
+			SemanticSimilarity: round(residualSim),
+			FactorSimilarity:   round(factorSim),
 			CombinedSimilarity: round(combined),
-			Reason:             relatedIssueReasonWithBoost(sharedTags, semantic, factor, boost, canonical[candidate.ID]),
+			Reason:             relatedIssueReasonWithBoost(sharedTags, residualSim, factorSim, boost, canonical[candidate.ID]),
 		})
 	}
 

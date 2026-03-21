@@ -80,7 +80,7 @@ func SearchFromQueryWithTags(
 
 	_, visible, _ := deriveRelationshipSemantics(storeIssues)
 	mapIssues, tagNames, issueEmbeddings, tagEmbeddings := runtimeMapInputs(storeIssues, storeTags)
-	factorVectors := runtimeFactorVectors(mapIssues, tagNames, tagEmbeddings)
+	decomp := ComputeFactorDecomposition(mapIssues, tagNames, issueEmbeddings, tagEmbeddings)
 
 	querySummary := SearchQuery{
 		Raw:  queryRaw,
@@ -96,17 +96,38 @@ func SearchFromQueryWithTags(
 		}, tagEmbeddings)
 	}
 
-	queryFactor := runtimeFactorVectors([]issues.Issue{{
-		ID:        "query",
-		Raw:       queryRaw,
-		TagScores: querySummary.Tags,
-	}}, tagNames, tagEmbeddings)["query"]
+	// Fall back to legacy factor vectors when decomposition didn't produce per-issue vectors.
+	useDecomp := len(decomp.FactorEmbeddings) > 0
+	var queryFactorEmb, queryResidualEmb []float64
+	var factorVectors map[string][]float64
+	if useDecomp {
+		tagCov := buildTagCovariance(tagNames, tagEmbeddings)
+		queryFactorEmb, queryResidualEmb = DecomposeEmbedding(queryVector, querySummary.Tags, tagNames, tagEmbeddings, tagCov)
+	} else {
+		factorVectors = runtimeFactorVectors(mapIssues, tagNames, tagEmbeddings)
+	}
+
+	queryFactor := factorVectors["query"]
+	if !useDecomp && queryFactor == nil {
+		queryFactor = runtimeFactorVectors([]issues.Issue{{
+			ID:        "query",
+			Raw:       queryRaw,
+			TagScores: querySummary.Tags,
+		}}, tagNames, tagEmbeddings)["query"]
+	}
 
 	queryLower := strings.ToLower(queryRaw)
 	tagCorrelationBoost := queryMatchesTagNames(queryLower, tagNames)
 	tagSpecificity := buildTagSpecificityMap(storeTags)
 	genericQuery := queryMatchesGenericTag(queryLower, tagSpecificity)
 	now := time.Now().UTC()
+
+	// When query matches a tag name, nudge factor weight up.
+	searchDecomp := decomp
+	if tagCorrelationBoost && useDecomp {
+		searchDecomp.FactorWeight = clamp(decomp.FactorWeight+scoring.TagCorrelationFactorNudge, scoring.MinFactorWeight, scoring.MaxFactorWeight)
+		searchDecomp.ResidualWeight = 1 - searchDecomp.FactorWeight
+	}
 
 	related := make([]RelatedIssue, 0, len(storeIssues))
 	rawCombined := make(map[string]float64, len(storeIssues))
@@ -118,9 +139,24 @@ func SearchFromQueryWithTags(
 			continue
 		}
 		candidateSummary := exploreIssueSummary(candidate)
-		semantic := vectors.CosineSimilarity(queryVector, issueEmbeddings[candidate.ID])
-		factor := vectors.CosineSimilarity(queryFactor, factorVectors[candidate.ID])
-		combined := blendSearchSignals(semantic, factor, tagCorrelationBoost)
+
+		var factorSim, residualSim, blended float64
+		if useDecomp && len(decomp.FactorEmbeddings[candidate.ID]) > 0 {
+			factorSim, residualSim, blended = BlendFromDecomposition(
+				searchDecomp, queryFactorEmb, queryResidualEmb,
+				decomp.FactorEmbeddings[candidate.ID], decomp.ResidualEmbeddings[candidate.ID],
+			)
+		} else {
+			residualSim = vectors.CosineSimilarity(queryVector, issueEmbeddings[candidate.ID])
+			factorSim = vectors.CosineSimilarity(queryFactor, factorVectors[candidate.ID])
+			if tagCorrelationBoost {
+				blended = scoring.TagCorrelationSemantic*residualSim + scoring.TagCorrelationFactor*factorSim
+			} else {
+				blended = scoring.SemanticWeight*residualSim + scoring.FactorWeight*factorSim
+			}
+		}
+
+		combined := blended
 		// Note: the DB query also applies recency decay (90-day half-life) to rank
 		// the retrieval window. This app-side freshness weight fine-tunes within
 		// the semantic/factor blend on the already-retrieved candidates.
@@ -133,8 +169,8 @@ func SearchFromQueryWithTags(
 		}
 		sharedTags := sharedRelevantTags(querySummary.Tags, candidateSummary.Tags, scoring.SharedTagsLimit)
 		rawCombined[candidate.ID] = combined
-		rawSemantic[candidate.ID] = semantic
-		rawFactor[candidate.ID] = factor
+		rawSemantic[candidate.ID] = residualSim
+		rawFactor[candidate.ID] = factorSim
 		contentConfidence[candidate.ID] = issues.ComputeContentConfidence(candidate.Raw)
 
 		related = append(related, RelatedIssue{
@@ -142,10 +178,10 @@ func SearchFromQueryWithTags(
 			Raw:                candidateSummary.Raw,
 			Status:             candidateSummary.Status,
 			Tags:               candidateSummary.Tags,
-			SemanticSimilarity: round(semantic),
-			FactorSimilarity:   round(factor),
+			SemanticSimilarity: round(residualSim),
+			FactorSimilarity:   round(factorSim),
 			CombinedSimilarity: round(combined),
-			Reason:             relatedIssueReason(sharedTags, semantic, factor),
+			Reason:             relatedIssueReason(sharedTags, residualSim, factorSim),
 		})
 	}
 
@@ -231,16 +267,6 @@ func queryMatchesTagNames(queryLower string, tagNames []string) bool {
 		}
 	}
 	return false
-}
-
-// blendSearchSignals combines the domain-specific similarity signals. Plain
-// text retrieval is handled in ParadeDB; app-side ranking should only reshape
-// results using semantic and factor-space information.
-func blendSearchSignals(semantic, factor float64, tagCorrelation bool) float64 {
-	if tagCorrelation {
-		return scoring.TagCorrelationSemantic*semantic + scoring.TagCorrelationFactor*factor
-	}
-	return scoring.SemanticWeight*semantic + scoring.FactorWeight*factor
 }
 
 // issueSpecificityPenalty penalizes issues whose top tags are all generic

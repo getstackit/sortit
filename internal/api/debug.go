@@ -109,6 +109,16 @@ func (s *Server) handleDebugRescoreTags(w http.ResponseWriter, r *http.Request) 
 	writeJSON(w, http.StatusOK, debugRescoreTagsResponse{Rescored: true})
 }
 
+func (s *Server) handleDebugFactorWeights(w http.ResponseWriter, r *http.Request) {
+	result, err := s.debugFactorWeights.Handle(r.Context())
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+
+	writeJSON(w, http.StatusOK, result)
+}
+
 func decodeDebugIssueAnalyzeRequest(r *http.Request) (debugIssueAnalyzeRequest, error) {
 	request, err := decodeJSON[debugIssueAnalyzeRequest](r)
 	if err != nil {

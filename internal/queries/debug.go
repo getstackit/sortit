@@ -9,6 +9,7 @@ import (
 
 	"splat/internal/ai"
 	"splat/internal/issues"
+	issuemap "splat/internal/map"
 	"splat/internal/services"
 	"splat/internal/vectors"
 )
@@ -144,4 +145,54 @@ func (h DebugAnalyzeIssueHandler) issueEmbeddingSimilarities(ctx context.Context
 
 func AIUnavailable(err error) bool {
 	return errors.Is(err, ai.ErrNotConfigured)
+}
+
+// DebugFactorWeightsResult holds the current factor decomposition weights
+// computed from the issue corpus.
+type DebugFactorWeightsResult struct {
+	FactorWeight   float64 `json:"factorWeight"`
+	ResidualWeight float64 `json:"residualWeight"`
+	IssueCount     int     `json:"issueCount"`
+	Decomposed     bool    `json:"decomposed"`
+}
+
+type DebugFactorWeightsHandler struct {
+	Store   issues.Store
+	Catalog *services.CatalogService
+}
+
+func (h DebugFactorWeightsHandler) Handle(ctx context.Context) (DebugFactorWeightsResult, error) {
+	var storeIssues []issues.Issue
+	if h.Store != nil {
+		items, err := h.Store.List(ctx)
+		if err != nil {
+			return DebugFactorWeightsResult{}, err
+		}
+		storeIssues = items
+	}
+
+	var storeTags []issues.Tag
+	if h.Catalog != nil {
+		tags, err := h.Catalog.StoredTags(ctx)
+		if err == nil {
+			storeTags = tags
+		}
+	}
+
+	tagNames, tagEmbeddings := personDetailTagData(storeIssues, storeTags)
+	issueEmbeddings := make(map[string][]float64, len(storeIssues))
+	for _, issue := range storeIssues {
+		if len(issue.Embedding) > 0 {
+			issueEmbeddings[issue.ID] = issue.Embedding
+		}
+	}
+
+	decomp := issuemap.ComputeFactorDecomposition(storeIssues, tagNames, issueEmbeddings, tagEmbeddings)
+
+	return DebugFactorWeightsResult{
+		FactorWeight:   math.Round(decomp.FactorWeight*1000) / 1000,
+		ResidualWeight: math.Round(decomp.ResidualWeight*1000) / 1000,
+		IssueCount:     len(storeIssues),
+		Decomposed:     len(decomp.FactorEmbeddings) > 0,
+	}, nil
 }

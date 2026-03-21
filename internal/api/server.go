@@ -61,6 +61,7 @@ type Server struct {
 	getMap              queries.MapHandler
 	getMapEdges         queries.EdgeHandler
 	debugAnalyzeIssue   queries.DebugAnalyzeIssueHandler
+	debugFactorWeights  queries.DebugFactorWeightsHandler
 	exploreIssue        queries.ExploreIssueHandler
 	getPersonProfile    queries.GetPersonProfileHandler
 	getPersonDetail     queries.GetPersonDetailHandler
@@ -269,6 +270,7 @@ func (s *Server) registerUIRoutes(r chi.Router) {
 			r.Post("/issues/analyze", s.handleDebugIssueAnalyze)
 			r.Post("/map-projection/invalidate", s.handleDebugInvalidateMapProjection)
 			r.Post("/tags/rescore", s.handleDebugRescoreTags)
+			r.Get("/factor-weights", s.handleDebugFactorWeights)
 		})
 	})
 }
@@ -539,15 +541,16 @@ func NewServer(cfg ServerConfig) *Server {
 			SearchStore:  semanticSearchStoreFromStore(baseStore),
 			Catalog:      catalog,
 		},
-		listTags:          queries.ListTagsHandler{Catalog: catalog},
-		getMap:            queries.MapHandler{IssueStore: store, Catalog: catalog, Projection: mapProjectionLoader},
-		getMapEdges:       queries.EdgeHandler{IssueStore: store, Catalog: catalog, Projection: mapProjectionLoader},
-		debugAnalyzeIssue: queries.DebugAnalyzeIssueHandler{Analyzer: cfg.Analyzer, Catalog: catalog, Store: store},
-		getPersonProfile:  queries.GetPersonProfileHandler{Store: store, Catalog: catalog},
-		getPersonDetail:   queries.GetPersonDetailHandler{Store: store, Catalog: catalog},
-		workCorrelations:  queries.WorkCorrelationsHandler{Store: store, Catalog: catalog},
-		authService:       cfg.Auth,
-		catalog:           catalog,
+		listTags:           queries.ListTagsHandler{Catalog: catalog},
+		getMap:             queries.MapHandler{IssueStore: store, Catalog: catalog, Projection: mapProjectionLoader},
+		getMapEdges:        queries.EdgeHandler{IssueStore: store, Catalog: catalog, Projection: mapProjectionLoader},
+		debugAnalyzeIssue:  queries.DebugAnalyzeIssueHandler{Analyzer: cfg.Analyzer, Catalog: catalog, Store: store},
+		debugFactorWeights: queries.DebugFactorWeightsHandler{Store: store, Catalog: catalog},
+		getPersonProfile:   queries.GetPersonProfileHandler{Store: store, Catalog: catalog},
+		getPersonDetail:    queries.GetPersonDetailHandler{Store: store, Catalog: catalog},
+		workCorrelations:   queries.WorkCorrelationsHandler{Store: store, Catalog: catalog},
+		authService:        cfg.Auth,
+		catalog:            catalog,
 	}
 }
 
