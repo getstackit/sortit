@@ -211,7 +211,7 @@ func (h DebugFactorWeightsHandler) Handle(ctx context.Context) (DebugFactorWeigh
 	// Collect low-R² issues (below 0.15) sorted ascending — these are
 	// candidates for new tags or re-classification.
 	var lowR2 []DebugLowR2Issue
-	for id, r2 := range decomp.IssueR2 {
+	decomp.AllR2(func(id string, r2 float64) {
 		if r2 < 0.15 {
 			issue := issueByID[id]
 			tags := make([]string, 0, len(issue.TagScores))
@@ -225,7 +225,7 @@ func (h DebugFactorWeightsHandler) Handle(ctx context.Context) (DebugFactorWeigh
 				Tags: tags,
 			})
 		}
-	}
+	})
 	slices.SortFunc(lowR2, func(a, b DebugLowR2Issue) int {
 		return cmp.Compare(a.R2, b.R2)
 	})
@@ -238,8 +238,8 @@ func (h DebugFactorWeightsHandler) Handle(ctx context.Context) (DebugFactorWeigh
 		ResidualWeight:  math.Round(decomp.ResidualWeight*1000) / 1000,
 		AggregateR2:     math.Round(decomp.AggregateR2*1000) / 1000,
 		IssueCount:      len(storeIssues),
-		DecomposedCount: len(decomp.IssueR2),
-		Decomposed:      len(decomp.FactorEmbeddings) > 0,
+		DecomposedCount: decomp.DecomposedCount(),
+		Decomposed:      decomp.Decomposed(),
 		LowR2Issues:     lowR2,
 	}, nil
 }
@@ -387,7 +387,7 @@ func (h DebugIssueR2Handler) Handle(ctx context.Context, issueID string) (DebugI
 	// Compute this issue's decomposition.
 	decomp := issuemap.ComputeFactorDecomposition(allIssues, tagNames, issueEmbeddings, tagEmbeddings)
 
-	r2, ok := decomp.IssueR2[target.ID]
+	r2, ok := decomp.IssueR2(target.ID)
 	if !ok {
 		result.Skipped = true
 		result.SkipReason = "issue was not included in decomposition"
@@ -399,16 +399,16 @@ func (h DebugIssueR2Handler) Handle(ctx context.Context, issueID string) (DebugI
 	// factor-predicted embedding (before normalization). We recompute from
 	// the decomp outputs: factorEmb is unit-length, so dot(issueEmb, factorEmb)
 	// gives cosine similarity if issueEmb is also unit-length.
-	if factorEmb := decomp.FactorEmbeddings[target.ID]; len(factorEmb) > 0 {
+	if factorEmb := decomp.FactorEmbedding(target.ID); len(factorEmb) > 0 {
 		result.FactorAlignment = math.Round(vectors.CosineSimilarity(targetEmb, factorEmb)*1000) / 1000
 	}
-	if residualEmb := decomp.ResidualEmbeddings[target.ID]; len(residualEmb) > 0 {
+	if residualEmb := decomp.ResidualEmbedding(target.ID); len(residualEmb) > 0 {
 		result.ResidualNorm = math.Round(math.Sqrt(dotProduct64(residualEmb, residualEmb))*1000) / 1000
 	}
 
 	// Find catalog tags closest to the residual embedding — these are
 	// concepts the current tags don't capture.
-	residualEmb := decomp.ResidualEmbeddings[target.ID]
+	residualEmb := decomp.ResidualEmbedding(target.ID)
 	if len(residualEmb) > 0 {
 		type tagSim struct {
 			tag      string
@@ -454,7 +454,7 @@ func (h DebugIssueR2Handler) Handle(ctx context.Context, issueID string) (DebugI
 			if issue.ID == target.ID {
 				continue
 			}
-			otherResidual := decomp.ResidualEmbeddings[issue.ID]
+			otherResidual := decomp.ResidualEmbedding(issue.ID)
 			if len(otherResidual) == 0 {
 				continue
 			}
@@ -473,7 +473,7 @@ func (h DebugIssueR2Handler) Handle(ctx context.Context, issueID string) (DebugI
 			for _, ts := range issue.TagScores {
 				tags = append(tags, ts.Tag)
 			}
-			neighborR2 := decomp.IssueR2[n.id]
+			neighborR2, _ := decomp.IssueR2(n.id)
 			result.ResidualNeighbors = append(result.ResidualNeighbors, DebugResidualNeighbor{
 				ID:         n.id,
 				Raw:        truncateRaw(issue.Raw, 120),

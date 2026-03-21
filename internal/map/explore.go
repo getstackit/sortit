@@ -76,7 +76,7 @@ func ExploreFromIssuesWithTags(storeIssues []issues.Issue, storeTags []issues.Ta
 	decomp := ComputeFactorDecomposition(mapIssues, tagNames, issueEmbeddings, tagEmbeddings)
 
 	// Fall back to legacy factor vectors when decomposition didn't produce per-issue vectors.
-	useDecomp := len(decomp.FactorEmbeddings) > 0
+	useDecomp := decomp.Decomposed()
 	var factorVectors map[string][]float64
 	if !useDecomp {
 		factorVectors = runtimeFactorVectors(mapIssues, tagNames, tagEmbeddings)
@@ -94,11 +94,11 @@ func ExploreFromIssuesWithTags(storeIssues []issues.Issue, storeTags []issues.Ta
 		candidateSummary := exploreIssueSummary(candidate)
 
 		var factorSim, residualSim, blended float64
-		if useDecomp && len(decomp.FactorEmbeddings[candidate.ID]) > 0 {
+		if useDecomp && len(decomp.FactorEmbedding(candidate.ID)) > 0 {
 			factorSim, residualSim, blended = BlendFromDecomposition(
 				decomp,
-				decomp.FactorEmbeddings[target.ID], decomp.ResidualEmbeddings[target.ID],
-				decomp.FactorEmbeddings[candidate.ID], decomp.ResidualEmbeddings[candidate.ID],
+				decomp.FactorEmbedding(target.ID), decomp.ResidualEmbedding(target.ID),
+				decomp.FactorEmbedding(candidate.ID), decomp.ResidualEmbedding(candidate.ID),
 			)
 		} else {
 			residualSim = vectors.UnitCosineSimilarity(issueEmbeddings[target.ID], issueEmbeddings[candidate.ID])
@@ -187,8 +187,9 @@ func runtimeFactorVectors(items []issues.Issue, tags []string, tagEmbeddings map
 	}
 
 	tagCov := buildTagCovariance(tags, tagEmbeddings)
+	base := make([]float64, len(tags))
 	for _, item := range items {
-		base := make([]float64, len(tags))
+		clear(base)
 		for _, tag := range item.TagScores {
 			if index, ok := tagIndex[tag.Tag]; ok {
 				base[index] = tag.Relevance

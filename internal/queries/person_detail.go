@@ -159,10 +159,10 @@ func (h GetPersonDetailHandler) recommendOpenIssues(
 		issueTags := issueTagProfile(issue)
 
 		var factorScore, semanticScore, combinedScore float64
-		if len(decomp.FactorEmbeddings[issue.ID]) > 0 {
+		if len(decomp.FactorEmbedding(issue.ID)) > 0 {
 			factorScore, semanticScore, combinedScore = issuemap.BlendFromDecomposition(
 				decomp, personFactor, personResidual,
-				decomp.FactorEmbeddings[issue.ID], decomp.ResidualEmbeddings[issue.ID],
+				decomp.FactorEmbedding(issue.ID), decomp.ResidualEmbedding(issue.ID),
 			)
 		} else {
 			factorScore = tagProfileSimilarity(profile, issueTags)

@@ -231,14 +231,22 @@ func buildTagCovariance(tags []string, tagEmbeddings map[string][]float64) *mat.
 	data := make([]float64, t*t)
 
 	hasEmbeddings := len(tagEmbeddings) > 0
+
+	// Pre-extract tag embeddings into indexed slice to avoid O(t²) hash lookups.
+	var indexed [][]float64
+	if hasEmbeddings {
+		indexed = make([][]float64, t)
+		for i, tag := range tags {
+			indexed[i] = tagEmbeddings[tag]
+		}
+	}
+
 	for i := range t {
 		for j := i; j < t; j++ {
 			value := 0.0
 			if hasEmbeddings {
-				embI, okI := tagEmbeddings[tags[i]] //nolint:gosec // i is bounded by len(tags)
-				embJ, okJ := tagEmbeddings[tags[j]] //nolint:gosec // j is bounded by len(tags)
-				if okI && okJ {
-					value = vectors.UnitCosineSimilarity(embI, embJ)
+				if indexed[i] != nil && indexed[j] != nil {
+					value = vectors.UnitCosineSimilarity(indexed[i], indexed[j])
 				} else if i == j {
 					value = 1
 				}
