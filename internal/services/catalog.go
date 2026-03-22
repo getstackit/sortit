@@ -72,11 +72,7 @@ func (s *CatalogService) AvailableTags(ctx context.Context) ([]issues.Tag, error
 	if err != nil {
 		return nil, err
 	}
-	tags = activeCatalogTags(tags)
-	if len(tags) > 0 {
-		return tags, nil
-	}
-	return issues.DefaultTags(), nil
+	return activeCatalogTags(tags), nil
 }
 
 func (s *CatalogService) IssueTaxonomy(ctx context.Context, preferred []string) ([]ai.Tag, error) {
@@ -105,22 +101,7 @@ func (s *CatalogService) IssueTaxonomy(ctx context.Context, preferred []string) 
 		return nil, fmt.Errorf("list stored tags: %w", err)
 	}
 	stored = activeCatalogTags(stored)
-	if len(stored) > 0 {
-		return aiTagsFromCatalog(stored), nil
-	}
-
-	definitions := issues.DefaultTags()
-	tags := make([]ai.Tag, 0, len(definitions))
-	for _, definition := range definitions {
-		if definition.Name == "" {
-			continue
-		}
-		tags = append(tags, ai.Tag{
-			Name:        definition.Name,
-			Description: definition.Description,
-		})
-	}
-	return tags, nil
+	return aiTagsFromCatalog(stored), nil
 }
 
 func (s *CatalogService) EnsureStoredTags(ctx context.Context, tags []issues.Tag) error {
@@ -205,9 +186,6 @@ func (s *CatalogService) IssueTaxonomyShortlist(ctx context.Context, issueEmbedd
 		return nil, fmt.Errorf("list stored tags: %w", err)
 	}
 	stored = activeCatalogTags(stored)
-	if len(stored) == 0 {
-		stored = issues.DefaultTags()
-	}
 
 	catalogByName := make(map[string]issues.Tag, len(stored))
 	for _, tag := range stored {

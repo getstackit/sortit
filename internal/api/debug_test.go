@@ -123,11 +123,8 @@ func TestDebugIssueAnalyzeEndpoint(t *testing.T) {
 	if payload.ComparedIssueCount != 0 {
 		t.Fatalf("expected no compared issues by default, got %d", payload.ComparedIssueCount)
 	}
-	if len(tagger.capturedTags) != len(issues.DefaultTags()) {
-		t.Fatalf("expected %d default tags, got %d", len(issues.DefaultTags()), len(tagger.capturedTags))
-	}
-	if tagger.capturedTags[0].Description == "" {
-		t.Fatalf("expected default tags to include descriptions")
+	if len(tagger.capturedTags) != 0 {
+		t.Fatalf("expected no implicit runtime taxonomy without stored tags, got %d tags", len(tagger.capturedTags))
 	}
 }
 

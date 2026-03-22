@@ -468,6 +468,42 @@ func TestIssueTaxonomyExcludesSuggestedTagsFromStoredCatalog(t *testing.T) {
 	}
 }
 
+func TestIssueTaxonomyDoesNotFallBackToDefaultTags(t *testing.T) {
+	service := NewCatalogService(&catalogTestStore{}, nil, slog.Default())
+
+	taxonomy, err := service.IssueTaxonomy(context.Background(), nil)
+	if err != nil {
+		t.Fatalf("IssueTaxonomy: %v", err)
+	}
+	if len(taxonomy) != 0 {
+		t.Fatalf("expected empty taxonomy without stored tags, got %#v", taxonomy)
+	}
+}
+
+func TestIssueTaxonomyShortlistDoesNotFallBackToDefaultTags(t *testing.T) {
+	service := NewCatalogService(&catalogTestStore{}, nil, slog.Default())
+
+	taxonomy, err := service.IssueTaxonomyShortlist(context.Background(), []float64{1, 0, 0}, nil, 5)
+	if err != nil {
+		t.Fatalf("IssueTaxonomyShortlist: %v", err)
+	}
+	if len(taxonomy) != 0 {
+		t.Fatalf("expected empty shortlist without stored tags, got %#v", taxonomy)
+	}
+}
+
+func TestAvailableTagsDoesNotFallBackToDefaultTags(t *testing.T) {
+	service := NewCatalogService(&catalogTestStore{}, nil, slog.Default())
+
+	tags, err := service.AvailableTags(context.Background())
+	if err != nil {
+		t.Fatalf("AvailableTags: %v", err)
+	}
+	if len(tags) != 0 {
+		t.Fatalf("expected no available tags without stored tags, got %#v", tags)
+	}
+}
+
 func findSpecificityUpdate(t *testing.T, updates []catalogSpecificityUpdate, name string) catalogSpecificityUpdate {
 	t.Helper()
 
