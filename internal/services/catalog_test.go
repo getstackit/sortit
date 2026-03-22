@@ -3,6 +3,7 @@ package services
 import (
 	"context"
 	"log/slog"
+	"slices"
 	"testing"
 	"time"
 
@@ -52,11 +53,11 @@ func (catalogTestTagger) Score(context.Context, string, []ai.Tag) ([]ai.TagScore
 }
 
 func (catalogTestTagger) Provider() string {
-	return "test" //nolint:goconst
+	return testProviderName //nolint:goconst
 }
 
 func (catalogTestTagger) Model() string {
-	return "test" //nolint:goconst
+	return testProviderName //nolint:goconst
 }
 
 type catalogTestEmbedder struct {
@@ -71,11 +72,11 @@ func (e *catalogTestEmbedder) EmbedText(_ context.Context, text string) (ai.Embe
 }
 
 func (e *catalogTestEmbedder) Provider() string {
-	return "test"
+	return testProviderName
 }
 
 func (e *catalogTestEmbedder) Model() string {
-	return "test"
+	return testProviderName
 }
 
 func TestEnsureStoredTagsReembedsWhenDescriptionChanges(t *testing.T) {
@@ -157,6 +158,75 @@ func TestEnsureStoredTagsKeepsExistingEmbeddingWhenDescriptionUnchanged(t *testi
 	}
 	if got := store.upserted[0].Embedding; len(got) != 2 || got[0] != 0.4 || got[1] != 0.6 {
 		t.Fatalf("expected existing embedding to be preserved, got %#v", got)
+	}
+}
+
+func TestEnsureStoredTagsUpgradesWeakCanonicalDescriptions(t *testing.T) {
+	legacyDescriptions := map[string]string{
+		"backend":           "server-side functionality and API support",
+		"cleanup":           "",
+		"code-organization": "structuring and splitting code files for better maintainability and clarity",
+		"data-persistence":  "storing and managing data reliably across sessions and system restarts",
+		"database":          "",
+	}
+	store := &catalogTestStore{
+		tags: []issues.Tag{
+			{Name: "backend", Description: legacyDescriptions["backend"], Embedding: []float64{0.1, 0.9}},
+			{Name: "cleanup", Embedding: []float64{0.2, 0.8}},
+			{Name: "code-organization", Description: legacyDescriptions["code-organization"], Embedding: []float64{0.3, 0.7}},
+			{Name: "data-persistence", Description: legacyDescriptions["data-persistence"], Embedding: []float64{0.4, 0.6}},
+			{Name: "database", Embedding: []float64{0.5, 0.5}},
+		},
+	}
+	embedder := &catalogTestEmbedder{}
+	service := NewCatalogService(
+		store,
+		ai.NewAnalyzer(catalogTestTagger{}, embedder),
+		slog.Default(),
+	)
+
+	err := service.EnsureStoredTags(context.Background(), selectDefaultTags(
+		issues.DefaultTags(),
+		"backend",
+		"cleanup",
+		"code-organization",
+		"data-persistence",
+		"database",
+	))
+	if err != nil {
+		t.Fatalf("ensure stored tags: %v", err)
+	}
+
+	if len(embedder.calls) != 5 {
+		t.Fatalf("expected five re-embed calls, got %d", len(embedder.calls))
+	}
+
+	upsertedByName := make(map[string]issues.Tag, len(store.upserted))
+	for _, tag := range store.upserted {
+		upsertedByName[tag.Name] = tag
+	}
+
+	for _, name := range []string{"backend", "cleanup", "code-organization", "data-persistence", "database"} {
+		tag, ok := upsertedByName[name]
+		if !ok {
+			t.Fatalf("expected %q to be upserted", name)
+		}
+		if tag.Description == "" {
+			t.Fatalf("expected %q to have a canonical description", name)
+		}
+		if len(tag.Embedding) == 0 {
+			t.Fatalf("expected %q to be re-embedded", name)
+		}
+	}
+
+	if upsertedByName["cleanup"].Description == legacyDescriptions["cleanup"] {
+		t.Fatal("expected cleanup description to be upgraded from empty")
+	}
+	if upsertedByName["database"].Description == legacyDescriptions["database"] {
+		t.Fatal("expected database description to be upgraded from empty")
+	}
+	if upsertedByName["backend"].Description == legacyDescriptions["backend"] {
+		t.Fatal("expected backend description to be upgraded from weak legacy wording")
 	}
 }
 
@@ -253,6 +323,151 @@ func TestScoreTagSpecificityClearsScoreForSmallCatalog(t *testing.T) {
 	}
 }
 
+func TestAnnotateHintsMarksTopSimilarTags(t *testing.T) {
+	store := &catalogTestStore{
+		tags: []issues.Tag{
+			{Name: "database", Embedding: []float64{0.9, 0.1, 0.0}},
+			{Name: "cleanup", Embedding: []float64{0.1, 0.1, 0.8}},
+			{Name: "suggested-database-migration", Embedding: []float64{0.85, 0.15, 0.0}},
+			{Name: "performance", Embedding: []float64{0.0, 0.9, 0.1}},
+			{Name: "backend", Embedding: []float64{0.5, 0.5, 0.0}},
+		},
+	}
+	service := NewCatalogService(store, nil, slog.Default())
+
+	taxonomy := []ai.Tag{
+		{Name: "database"},
+		{Name: "cleanup"},
+		{Name: "suggested-database-migration"},
+		{Name: "performance"},
+		{Name: "backend"},
+	}
+
+	// Issue embedding is close to database/migration, far from cleanup/performance.
+	issueEmbedding := []float64{0.9, 0.1, 0.0}
+	result := service.AnnotateHints(context.Background(), taxonomy, issueEmbedding, 2)
+
+	if len(result) != len(taxonomy) {
+		t.Fatalf("expected %d tags, got %d", len(taxonomy), len(result))
+	}
+
+	hintCount := 0
+	hintNames := make(map[string]bool)
+	for _, tag := range result {
+		if tag.Hint {
+			hintCount++
+			hintNames[tag.Name] = true
+		}
+	}
+
+	if hintCount != 2 {
+		t.Fatalf("expected 2 hint tags, got %d", hintCount)
+	}
+	if !hintNames["database"] {
+		t.Fatal("expected 'database' to be a hint (high similarity)")
+	}
+	if !hintNames["suggested-database-migration"] {
+		t.Fatal("expected 'suggested-database-migration' to be a hint (high similarity)")
+	}
+}
+
+func TestAnnotateHintsNoOpWithEmptyEmbedding(t *testing.T) {
+	store := &catalogTestStore{
+		tags: []issues.Tag{
+			{Name: "database", Embedding: []float64{0.9, 0.1, 0.0}},
+		},
+	}
+	service := NewCatalogService(store, nil, slog.Default())
+
+	taxonomy := []ai.Tag{{Name: "database"}}
+	result := service.AnnotateHints(context.Background(), taxonomy, nil, 5)
+
+	for _, tag := range result {
+		if tag.Hint {
+			t.Fatalf("expected no hints with empty embedding, got hint on %q", tag.Name)
+		}
+	}
+}
+
+func TestAnnotateHintsDoesNotMutateOriginal(t *testing.T) {
+	store := &catalogTestStore{
+		tags: []issues.Tag{
+			{Name: "database", Embedding: []float64{0.9, 0.1, 0.0}},
+		},
+	}
+	service := NewCatalogService(store, nil, slog.Default())
+
+	taxonomy := []ai.Tag{{Name: "database"}}
+	_ = service.AnnotateHints(context.Background(), taxonomy, []float64{0.9, 0.1, 0.0}, 5)
+
+	if taxonomy[0].Hint {
+		t.Fatal("AnnotateHints mutated the original taxonomy slice")
+	}
+}
+
+func TestIssueTaxonomyShortlistPrefersNearestTagsAndKeepsAnchors(t *testing.T) {
+	store := &catalogTestStore{
+		tags: []issues.Tag{
+			{Name: "bug", Description: "software defect", Embedding: []float64{0.2, 0.2, 0}},
+			{Name: "feature", Description: "new capability", Embedding: []float64{0.1, 0.1, 0}},
+			{Name: "search", Description: "query and filtering", Embedding: []float64{1, 0, 0}},
+			{Name: "autocomplete", Description: "typeahead search suggestions", Embedding: []float64{0.95, 0.05, 0}},
+			{Name: "suggested-search-operators", Description: "search syntax extensions", Embedding: []float64{0.99, 0.01, 0}},
+			{Name: "billing", Description: "payments", Embedding: []float64{0, 1, 0}},
+		},
+	}
+	service := NewCatalogService(store, nil, slog.Default())
+
+	result, err := service.IssueTaxonomyShortlist(context.Background(), []float64{1, 0, 0}, nil, 2)
+	if err != nil {
+		t.Fatalf("IssueTaxonomyShortlist: %v", err)
+	}
+
+	names := make([]string, 0, len(result))
+	for _, tag := range result {
+		names = append(names, tag.Name)
+	}
+
+	for _, want := range []string{"search", "autocomplete", "bug", "feature"} {
+		if !slices.Contains(names, want) {
+			t.Fatalf("expected shortlist to contain %q, got %#v", want, names)
+		}
+	}
+	if slices.Contains(names, "billing") {
+		t.Fatalf("expected shortlist to exclude distant tag billing, got %#v", names)
+	}
+	if slices.Contains(names, "suggested-search-operators") {
+		t.Fatalf("expected shortlist to exclude proposed tag suggested-search-operators, got %#v", names)
+	}
+}
+
+func TestIssueTaxonomyExcludesSuggestedTagsFromStoredCatalog(t *testing.T) {
+	store := &catalogTestStore{
+		tags: []issues.Tag{
+			{Name: "bug", Description: "software defect"},
+			{Name: "suggested-database-migration", Description: "schema migration work"},
+			{Name: "database", Description: "database and schema work"},
+		},
+	}
+	service := NewCatalogService(store, nil, slog.Default())
+
+	taxonomy, err := service.IssueTaxonomy(context.Background(), nil)
+	if err != nil {
+		t.Fatalf("IssueTaxonomy: %v", err)
+	}
+
+	names := make([]string, 0, len(taxonomy))
+	for _, tag := range taxonomy {
+		names = append(names, tag.Name)
+	}
+	if !slices.Contains(names, "bug") || !slices.Contains(names, "database") {
+		t.Fatalf("expected active tags in taxonomy, got %#v", names)
+	}
+	if slices.Contains(names, "suggested-database-migration") {
+		t.Fatalf("expected IssueTaxonomy to exclude suggested tag, got %#v", names)
+	}
+}
+
 func findSpecificityUpdate(t *testing.T, updates []catalogSpecificityUpdate, name string) catalogSpecificityUpdate {
 	t.Helper()
 
@@ -285,4 +500,18 @@ func cloneTimePointer(value *time.Time) *time.Time {
 	}
 	cloned := value.UTC()
 	return &cloned
+}
+
+func selectDefaultTags(tags []issues.Tag, names ...string) []issues.Tag {
+	selected := make([]issues.Tag, 0, len(names))
+	wanted := make(map[string]struct{}, len(names))
+	for _, name := range names {
+		wanted[name] = struct{}{}
+	}
+	for _, tag := range tags {
+		if _, ok := wanted[tag.Name]; ok {
+			selected = append(selected, tag)
+		}
+	}
+	return selected
 }

@@ -23,8 +23,11 @@ func ComputePositions(issues []issues.Issue, tags []string, tagEmbeddings map[st
 	if n == 0 {
 		return map[string]Position{}, nil
 	}
-	if n < 2 || t < 2 {
-		return fallbackPositions(issues), nil
+	if n < minMapIssueCount {
+		return nil, fmt.Errorf("insufficient issues for projection: got %d, need at least %d", n, minMapIssueCount)
+	}
+	if t < 2 {
+		return nil, fmt.Errorf("insufficient tag dimensions for projection: got %d, need at least 2", t)
 	}
 
 	tagIndex := make(map[string]int, t)
@@ -219,19 +222,37 @@ func percentile(sorted []float64, p float64) float64 {
 	return sorted[lower] + (sorted[upper]-sorted[lower])*weight
 }
 
-// buildTagCovariance computes a T×T matrix where entry (i,j) is the cosine
+// BuildTagCovariance computes a T×T matrix where entry (i,j) is the cosine
 // similarity between the embeddings of tag i and tag j. If embeddings are
 // missing, falls back to the identity matrix (tags treated as independent).
+func BuildTagCovariance(tags []string, tagEmbeddings map[string][]float64) *mat.Dense {
+	return buildTagCovariance(tags, tagEmbeddings)
+}
+
 func buildTagCovariance(tags []string, tagEmbeddings map[string][]float64) *mat.Dense {
 	t := len(tags)
 	data := make([]float64, t*t)
 
 	hasEmbeddings := len(tagEmbeddings) > 0
+
+	// Pre-extract tag embeddings into indexed slice to avoid O(t²) hash lookups.
+	var indexed [][]float64
+	if hasEmbeddings {
+		indexed = make([][]float64, t)
+		for i, tag := range tags {
+			indexed[i] = tagEmbeddings[tag]
+		}
+	}
+
 	for i := range t {
 		for j := i; j < t; j++ {
 			value := 0.0
 			if hasEmbeddings {
-				value = vectors.UnitCosineSimilarity(tagEmbeddings[tags[i]], tagEmbeddings[tags[j]])
+				if indexed[i] != nil && indexed[j] != nil {
+					value = vectors.UnitCosineSimilarity(indexed[i], indexed[j])
+				} else if i == j {
+					value = 1
+				}
 			} else if i == j {
 				value = 1
 			}
@@ -240,26 +261,54 @@ func buildTagCovariance(tags []string, tagEmbeddings map[string][]float64) *mat.
 		}
 	}
 
-	return mat.NewDense(t, t, data)
-}
-
-func fallbackPositions(issues []issues.Issue) map[string]Position {
-	positions := make(map[string]Position, len(issues))
-	if len(issues) == 1 {
-		positions[issues[0].ID] = Position{X: 0.5, Y: 0.5}
-		return positions
-	}
-
-	const radius = 0.35
-	for i, issue := range issues {
-		angle := (2 * math.Pi * float64(i)) / float64(len(issues))
-		positions[issue.ID] = Position{
-			X: 0.5 + radius*math.Cos(angle),
-			Y: 0.5 + radius*math.Sin(angle),
+	// Correlation shrinkage heuristic: Σ_shrunk = α·Σ + (1-α)·I.
+	// Pulls the similarity matrix toward the identity, regularizing PCA
+	// and factor decomposition as the tag catalog grows.
+	// Diagonal is already 1.0 (self-similarity), so only off-diagonal scales.
+	if hasEmbeddings && t > 1 {
+		alpha := correlationShrinkageAlpha(data, t)
+		for i := range t {
+			for j := range t {
+				if i != j {
+					data[i*t+j] *= alpha
+				}
+			}
 		}
 	}
 
-	return positions
+	return mat.NewDense(t, t, data)
+}
+
+// correlationShrinkageAlpha computes a shrinkage intensity for a T×T
+// correlation-like matrix (diagonal = 1) stored in row-major order.
+// Returns α ∈ [0.1, 1.0], the weight on the original matrix in:
+//
+//	Σ_shrunk = α·Σ + (1-α)·I
+//
+// This is a simple regularization heuristic for the semantic similarity matrix:
+// the mean squared off-diagonal entry measures how far the matrix is from
+// identity. Higher off-diagonal energy leads to stronger shrinkage.
+func correlationShrinkageAlpha(data []float64, t int) float64 {
+	if t <= 1 {
+		return 1.0
+	}
+
+	var offDiagSumSq float64
+	for i := range t {
+		for j := range t {
+			if i != j {
+				v := data[i*t+j]
+				offDiagSumSq += v * v
+			}
+		}
+	}
+
+	// Mean squared off-diagonal entry ∈ [0, 1].
+	meanSqOffDiag := offDiagSumSq / float64(t*(t-1))
+
+	// α = 1 when matrix is identity (no off-diagonal energy).
+	// α → 0.1 as mean squared off-diagonal → 1.
+	return clamp(1.0-meanSqOffDiag, 0.1, 1.0)
 }
 
 // issueProjectionWeights computes a per-issue weight for the PCA covariance.

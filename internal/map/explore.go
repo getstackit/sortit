@@ -8,10 +8,16 @@ import (
 	"strings"
 	"time"
 
+	"gonum.org/v1/gonum/mat"
+
 	"splat/internal/issues"
 	"splat/internal/scoring"
 	"splat/internal/vectors"
 )
+
+// ReasonSemanticSimilar is the explanation text used when two issues are
+// related primarily by embedding similarity.
+const ReasonSemanticSimilar = "Semantically similar language suggests a shared root cause"
 
 type ExploreIssue struct {
 	ID     string             `json:"id"`
@@ -70,12 +76,17 @@ func ExploreFromIssuesWithTags(storeIssues []issues.Issue, storeTags []issues.Ta
 	}
 
 	canonical, visible, boosts := deriveRelationshipSemantics(candidateSet)
-	mapIssues, _, issueEmbeddings, tagEmbeddings := runtimeMapInputs(candidateSet, storeTags)
-	factorVectors := runtimeFactorVectors(mapIssues, runtimeTagNames(candidateSet, storeTags), tagEmbeddings)
+	mapIssues, tagNames, issueEmbeddings, tagEmbeddings := runtimeMapInputs(candidateSet, storeTags)
+	decomp := ComputeFactorDecomposition(mapIssues, tagNames, issueEmbeddings, tagEmbeddings)
+
+	// Fall back to legacy factor vectors when decomposition didn't produce per-issue vectors.
+	useDecomp := decomp.Decomposed()
+	var factorVectors map[string][]float64
+	if !useDecomp {
+		factorVectors = runtimeFactorVectors(mapIssues, tagNames, tagEmbeddings)
+	}
 
 	targetSummary := exploreIssueSummary(target)
-	targetEmbedding := issueEmbeddings[target.ID]
-	targetFactor := factorVectors[target.ID]
 	now := time.Now().UTC()
 
 	related := make([]RelatedIssue, 0, len(candidateSet)-1)
@@ -85,11 +96,24 @@ func ExploreFromIssuesWithTags(storeIssues []issues.Issue, storeTags []issues.Ta
 			continue
 		}
 		candidateSummary := exploreIssueSummary(candidate)
-		semantic := vectors.UnitCosineSimilarity(targetEmbedding, issueEmbeddings[candidate.ID])
-		factor := vectors.UnitCosineSimilarity(targetFactor, factorVectors[candidate.ID])
+		semanticSim := vectors.UnitCosineSimilarity(issueEmbeddings[target.ID], issueEmbeddings[candidate.ID])
+
+		var factorSim, residualSim, blended float64
+		if useDecomp && len(decomp.FactorEmbedding(candidate.ID)) > 0 {
+			factorSim, _, blended = BlendFromDecomposition(
+				decomp,
+				decomp.FactorEmbedding(target.ID), decomp.ResidualEmbedding(target.ID),
+				decomp.FactorEmbedding(candidate.ID), decomp.ResidualEmbedding(candidate.ID),
+			)
+		} else {
+			residualSim = semanticSim
+			factorSim = vectors.UnitCosineSimilarity(factorVectors[target.ID], factorVectors[candidate.ID])
+			blended = scoring.SemanticWeight*residualSim + scoring.FactorWeight*factorSim
+		}
+
 		boost := relationshipBoost(boosts, target.ID, candidate.ID)
 		authority := issues.IssueAuthority(candidate) * scoring.AuthorityConsumerWt
-		combined := minFloat(1, (scoring.SemanticWeight*semantic+scoring.FactorWeight*factor+boost+authority)*math.Sqrt(issues.IssueFreshnessWeight(candidate, now)))
+		combined := minFloat(1, (blended+boost+authority)*math.Sqrt(issues.IssueFreshnessWeight(candidate, now)))
 		sharedTags := sharedRelevantTags(targetSummary.Tags, candidateSummary.Tags, scoring.SharedTagsLimit)
 
 		related = append(related, RelatedIssue{
@@ -97,10 +121,10 @@ func ExploreFromIssuesWithTags(storeIssues []issues.Issue, storeTags []issues.Ta
 			Raw:                candidateSummary.Raw,
 			Status:             candidateSummary.Status,
 			Tags:               candidateSummary.Tags,
-			SemanticSimilarity: round(semantic),
-			FactorSimilarity:   round(factor),
+			SemanticSimilarity: round(semanticSim),
+			FactorSimilarity:   round(factorSim),
 			CombinedSimilarity: round(combined),
-			Reason:             relatedIssueReasonWithBoost(sharedTags, semantic, factor, boost, canonical[candidate.ID]),
+			Reason:             relatedIssueReasonWithBoost(sharedTags, semanticSim, factorSim, boost, canonical[candidate.ID]),
 		})
 	}
 
@@ -168,21 +192,21 @@ func runtimeFactorVectors(items []issues.Issue, tags []string, tagEmbeddings map
 	}
 
 	tagCov := buildTagCovariance(tags, tagEmbeddings)
+	base := make([]float64, len(tags))
 	for _, item := range items {
-		base := make([]float64, len(tags))
+		clear(base)
 		for _, tag := range item.TagScores {
 			if index, ok := tagIndex[tag.Tag]; ok {
 				base[index] = tag.Relevance
 			}
 		}
 
+		r := mat.NewVecDense(len(tags), base)
+		var w mat.VecDense
+		w.MulVec(tagCov.T(), r)
 		vector := make([]float64, len(tags))
-		for col := range vector {
-			var sum float64
-			for row, value := range base {
-				sum += value * tagCov.At(row, col)
-			}
-			vector[col] = sum
+		for i := range vector {
+			vector[i] = w.AtVec(i)
 		}
 		if !isZeroVector(vector) {
 			normalizeVector(vector)
@@ -247,7 +271,7 @@ func relatedIssueReason(sharedTags []string, semantic, factor float64) string {
 		return "Shared factor relevance in " + strings.Join(sharedTags, ", ")
 	}
 	if semantic >= scoring.ReasonHighSemantic {
-		return "Semantically similar language suggests a shared root cause"
+		return ReasonSemanticSimilar
 	}
 	if factor >= scoring.ReasonHighFactor {
 		return "Similar factor profile across related tags"

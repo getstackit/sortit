@@ -316,3 +316,58 @@ export async function progressIssue(
   );
   return normalizeIssueRecord(payload);
 }
+
+export type IssueR2Tag = {
+  tag: string;
+  relevance: number;
+  alignment: number;
+};
+
+export type IssueR2ResidualTagMatch = {
+  tag: string;
+  similarity: number;
+  assigned: boolean;
+};
+
+export type IssueR2ResidualNeighbor = {
+  id: string;
+  raw: string;
+  similarity: number;
+  r2: number;
+  tags: string[];
+};
+
+export type IssueR2Result = {
+  id: string;
+  raw: string;
+  r2: number;
+  tagCount: number;
+  tags: IssueR2Tag[];
+  embeddingDim: number;
+  explainedNorm: number;
+  factorAlignment: number;
+  residualNorm: number;
+  nearestResidualTags: IssueR2ResidualTagMatch[];
+  residualNeighbors: IssueR2ResidualNeighbor[];
+  diagnosis: string[];
+  skipped: boolean;
+  skipReason?: string;
+};
+
+export async function fetchIssueR2(
+  id: string,
+  signal?: AbortSignal
+): Promise<IssueR2Result> {
+  return getJSON<IssueR2Result>(
+    uiAPIURL(`/issues/${encodeURIComponent(id)}/r2`),
+    { cache: "no-store", signal }
+  );
+}
+
+export async function reEnrichIssue(id: string): Promise<IssueRecord> {
+  const payload = await postJSON<IssueRecord, Record<string, never>>(
+    uiAPIURL(`/issues/${encodeURIComponent(id)}/re-enrich`),
+    {}
+  );
+  return normalizeIssueRecord(payload);
+}

@@ -1,0 +1,42 @@
+[
+  {
+    "id": "safari-export-crash",
+    "text": "Safari crashes on iPad whenever a customer tries to export a PDF report.",
+    "expectedTags": ["crash", "export", "safari"]
+  },
+  {
+    "id": "slow-search-filters",
+    "text": "Search becomes very slow when filtering large workspaces and sorting recent results.",
+    "expectedTags": ["performance", "search"]
+  },
+  {
+    "id": "onboarding-copy-confusing",
+    "text": "New users get stuck during workspace setup because the invite step is confusing and the instructions are unclear.",
+    "expectedTags": ["onboarding", "ux"]
+  },
+  {
+    "id": "csv-export-request",
+    "text": "Customers want a new feature to export audit logs as CSV.",
+    "expectedTags": ["export", "feature"]
+  },
+  {
+    "id": "settings-modal-overlap",
+    "text": "Button labels overlap in the settings modal on small screens and the layout breaks.",
+    "expectedTags": ["bug", "frontend", "ui"]
+  },
+  {
+    "id": "safari-search-dropdown",
+    "text": "In Safari the search autocomplete dropdown closes after the first keystroke.",
+    "expectedTags": ["bug", "safari", "search"]
+  },
+  {
+    "id": "template-onboarding-feature",
+    "text": "The first-run setup wizard should offer sample workspace templates.",
+    "expectedTags": ["feature", "onboarding"]
+  },
+  {
+    "id": "dashboard-scroll-jank",
+    "text": "Scrolling the dashboard feels janky after loading hundreds of rows in the browser.",
+    "expectedTags": ["frontend", "improvement", "performance"]
+  }
+]

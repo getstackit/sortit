@@ -81,6 +81,9 @@ vi.mock("@/features/map/api", () => ({
 
 function makeMapData(overrides?: Partial<MapData>): MapData {
   return {
+    available: true,
+    issueCount: 11,
+    minimumIssueCount: 5,
     issues: [
       { id: "issue-001", raw: "First issue", status: "open", assignedTo: "Avery", x: 0.1, y: 0.1, hubness: 0, tags: [{ tag: "bug", relevance: 0.9 }] },
       { id: "issue-002", raw: "Second issue", status: "open", x: 0.2, y: 0.2, hubness: 0, tags: [{ tag: "feature", relevance: 0.8 }] },
@@ -205,6 +208,29 @@ describe("MapPage", () => {
     await waitFor(() => {
       expect(container.querySelector("svg")).toBeInTheDocument();
     });
+  });
+
+  it("shows an empty state instead of rendering the map when unavailable", async () => {
+    mockFetchMapData.mockResolvedValue(
+      makeMapData({
+        available: false,
+        unavailableReason: "insufficient_issue_count",
+        issueCount: 3,
+        issues: [],
+        edges: [],
+        clusters: [],
+      })
+    );
+
+    const { container } = render(<MapPage />);
+
+    await waitFor(() => {
+      expect(screen.getByText("Map unavailable")).toBeInTheDocument();
+    });
+    expect(
+      screen.getByText("Need at least 5 issues before rendering the map.")
+    ).toBeInTheDocument();
+    expect(container.querySelector("svg")).not.toBeInTheDocument();
   });
 
   it("renders the SVG canvas with blob paths", async () => {

@@ -14,15 +14,20 @@ type Edge struct {
 }
 
 func ComputeEdgesWithEmbeddings(items []issues.Issue, embeddings map[string][]float64, threshold float64) []Edge {
-	var edges []Edge
-
+	// Pre-extract embeddings into indexed slice to avoid O(n²) hash lookups.
+	indexed := make([][]float64, len(items))
 	for i := range items {
-		a := embeddings[items[i].ID]
+		indexed[i] = embeddings[items[i].ID]
+	}
+
+	var edges []Edge
+	for i := range items {
+		a := indexed[i]
 		if a == nil {
 			continue
 		}
 		for j := i + 1; j < len(items); j++ {
-			b := embeddings[items[j].ID]
+			b := indexed[j]
 			if b == nil {
 				continue
 			}

@@ -5,6 +5,9 @@ import "context"
 type Tag struct {
 	Name        string `json:"name"`
 	Description string `json:"description,omitempty"`
+	// Hint is set when embedding similarity suggests this tag is relevant.
+	// The prompt uses this to draw the AI's attention to high-affinity tags.
+	Hint bool `json:"-"`
 }
 
 type TagScore struct {

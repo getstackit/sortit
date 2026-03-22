@@ -110,6 +110,7 @@ Date:    ` + date,
 	rootCmd.AddCommand(newIssueCmd(&opts))
 	rootCmd.AddCommand(newTagsCmd(&opts))
 	rootCmd.AddCommand(newPeopleCmd(&opts))
+	rootCmd.AddCommand(newDebugCmd(&opts))
 
 	return rootCmd
 }
@@ -130,6 +131,7 @@ func newIssueCmd(opts *rootOptions) *cobra.Command {
 	issueCmd.AddCommand(newIssueCombineCmd(opts))
 	issueCmd.AddCommand(newIssueLinkCmd(opts))
 	issueCmd.AddCommand(newIssueExploreCmd(opts))
+	issueCmd.AddCommand(newIssueReEnrichCmd(opts))
 	return issueCmd
 }
 
@@ -481,6 +483,26 @@ func newIssueLinkCmd(opts *rootOptions) *cobra.Command {
 	return cmd
 }
 
+func newIssueReEnrichCmd(opts *rootOptions) *cobra.Command {
+	cmd := &cobra.Command{
+		Use:   "re-enrich <id> [id...]",
+		Short: "Re-run AI classification on one or more issues",
+		Args:  cobra.MinimumNArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			client := opts.client()
+			var result commands.IssueMutationResult
+			if err := client.Post(cmd.Context(), "/issues/re-enrich", batchMutationRequest{
+				IDs: args,
+			}, &result); err != nil {
+				return err
+			}
+			return printJSON(cmd, result)
+		},
+	}
+
+	return cmd
+}
+
 func newIssueExploreCmd(opts *rootOptions) *cobra.Command {
 	var limit int
 
@@ -578,6 +600,14 @@ func newPeopleCorrelationsCmd(opts *rootOptions) *cobra.Command {
 
 func (o *rootOptions) client() *apiClient {
 	return newAPIClient(o.resolvedAPIURL(), o.resolvedToken())
+}
+
+func (o *rootOptions) clientWithTimeout(timeout time.Duration) *apiClient {
+	client := o.client()
+	if timeout > 0 {
+		client.httpClient.Timeout = timeout
+	}
+	return client
 }
 
 func (o *rootOptions) resolvedAPIURL() string {

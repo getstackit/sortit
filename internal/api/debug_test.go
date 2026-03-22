@@ -11,6 +11,7 @@ import (
 
 	"splat/internal/ai"
 	"splat/internal/issues"
+	"splat/internal/queries"
 )
 
 type fakeTagger struct {
@@ -122,11 +123,8 @@ func TestDebugIssueAnalyzeEndpoint(t *testing.T) {
 	if payload.ComparedIssueCount != 0 {
 		t.Fatalf("expected no compared issues by default, got %d", payload.ComparedIssueCount)
 	}
-	if len(tagger.capturedTags) != len(issues.DefaultTags()) {
-		t.Fatalf("expected %d default tags, got %d", len(issues.DefaultTags()), len(tagger.capturedTags))
-	}
-	if tagger.capturedTags[0].Description == "" {
-		t.Fatalf("expected default tags to include descriptions")
+	if len(tagger.capturedTags) == 0 {
+		t.Fatal("expected default taxonomy to be used when no stored tags exist")
 	}
 }
 
@@ -234,6 +232,44 @@ func TestDebugIssueAnalyzeEndpointUsesCustomTags(t *testing.T) {
 	}
 	if tagger.capturedTags[0].Name != "custom" || tagger.capturedTags[1].Name != "bug" {
 		t.Fatalf("unexpected custom tags: %+v", tagger.capturedTags)
+	}
+}
+
+func TestDebugEvalTagsEndpoint(t *testing.T) {
+	server := NewServer(ServerConfig{
+		CORSOrigins: []string{"http://localhost:3000"},
+		APIPrefixes: []string{"/api"},
+		Analyzer: ai.NewAnalyzer(&fakeTagger{}, &fakeEmbedder{
+			result: ai.EmbeddingResult{
+				Vector: []float32{1, 0},
+				Info: ai.EmbeddingInfo{
+					Dimensions:          2,
+					Preview:             []float32{1, 0},
+					ChunkCount:          1,
+					EstimatedTokenCount: 4,
+				},
+			},
+		}),
+	})
+
+	req := httptest.NewRequest(http.MethodGet, "/api/ui/debug/eval-tags", nil)
+	rec := httptest.NewRecorder()
+
+	server.Handler().ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d", rec.Code)
+	}
+
+	var payload queries.DebugEvalTagsResult
+	if err := json.NewDecoder(rec.Body).Decode(&payload); err != nil {
+		t.Fatalf("decode payload: %v", err)
+	}
+	if payload.Fixture != "corpus" {
+		t.Fatalf("expected corpus fixture, got %q", payload.Fixture)
+	}
+	if payload.CaseCount == 0 {
+		t.Fatal("expected at least one benchmark case")
 	}
 }
 

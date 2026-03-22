@@ -13,6 +13,7 @@ import (
 const (
 	tagProjectionStatusActive = "active"
 	tagProjectionStatusMerged = "merged"
+	tagEventLockNamespace     = 1
 )
 
 type tagEventRecord struct {
@@ -69,6 +70,9 @@ func appendTagUpsert(ctx context.Context, tx *sql.Tx, tag Tag) error {
 	if record.Name == "" {
 		return nil
 	}
+	if err := lockTagEventStream(ctx, tx, record.Name); err != nil {
+		return err
+	}
 
 	state, err := loadTagProjectionState(ctx, tx, record.Name)
 	if err != nil {
@@ -121,6 +125,9 @@ func appendTagSpecificityUpdate(
 	if name == "" {
 		return fmt.Errorf("tag name is required")
 	}
+	if err := lockTagEventStream(ctx, tx, name); err != nil {
+		return err
+	}
 
 	state, err := loadTagProjectionState(ctx, tx, name)
 	if err != nil {
@@ -165,6 +172,9 @@ func ensureActiveTagProjection(ctx context.Context, tx *sql.Tx, name string, cre
 	name = sanitizeTagName(name)
 	if name == "" {
 		return tagProjectionState{}, fmt.Errorf("tag name is required")
+	}
+	if err := lockTagEventStream(ctx, tx, name); err != nil {
+		return tagProjectionState{}, err
 	}
 
 	state, err := loadTagProjectionState(ctx, tx, name)
@@ -235,6 +245,9 @@ func appendTagMerge(
 	if _, err := ensureActiveTagProjection(ctx, tx, canonical, mergedBy, mergedAt, source, sourceID+":canonical"); err != nil {
 		return err
 	}
+	if err := lockTagEventStream(ctx, tx, alias); err != nil {
+		return err
+	}
 
 	state, err := loadTagProjectionState(ctx, tx, alias)
 	if err != nil {
@@ -263,6 +276,22 @@ func appendTagMerge(
 
 	next := mergeTagProjectionMerged(state, alias, canonical, mergedAt.UTC(), event.ID)
 	return upsertTagProjection(ctx, tx, next)
+}
+
+func lockTagEventStream(ctx context.Context, tx *sql.Tx, name string) error {
+	name = sanitizeTagName(name)
+	if name == "" {
+		return nil
+	}
+	if _, err := tx.ExecContext(
+		ctx,
+		`SELECT pg_advisory_xact_lock($1, hashtext($2))`,
+		tagEventLockNamespace,
+		name,
+	); err != nil {
+		return fmt.Errorf("lock tag event stream %q: %w", name, err)
+	}
+	return nil
 }
 
 func loadTagProjectionState(ctx context.Context, tx *sql.Tx, name string) (*tagProjectionState, error) {
@@ -458,9 +487,10 @@ func nextTagEventSequence(state *tagProjectionState) int64 {
 }
 
 func mergeTagProjectionUpsert(state *tagProjectionState, tag Tag, createdAt time.Time, lastEventID string) tagProjectionState {
+	description := strings.TrimSpace(tag.Description)
 	next := tagProjectionState{
 		Name:          sanitizeTagName(tag.Name),
-		Description:   strings.TrimSpace(tag.Description),
+		Description:   description,
 		CreatedAt:     createdAt,
 		Embedding:     copyEmbedding(tag.Embedding),
 		Status:        tagProjectionStatusActive,
@@ -481,10 +511,10 @@ func mergeTagProjectionUpsert(state *tagProjectionState, tag Tag, createdAt time
 			next.Status = tagProjectionStatusActive
 		}
 	}
-	if next.Description == "" && strings.TrimSpace(tag.Description) != "" {
-		next.Description = strings.TrimSpace(tag.Description)
+	if description != "" {
+		next.Description = description
 	}
-	if len(next.Embedding) == 0 && len(tag.Embedding) > 0 {
+	if len(tag.Embedding) > 0 {
 		next.Embedding = copyEmbedding(tag.Embedding)
 	}
 	return next

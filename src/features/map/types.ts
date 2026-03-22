@@ -31,6 +31,10 @@ export type MapCluster = {
 };
 
 export type MapData = {
+  available: boolean;
+  unavailableReason?: string;
+  issueCount: number;
+  minimumIssueCount: number;
   issues: MapIssue[];
   edges: MapEdge[];
   clusters: MapCluster[];

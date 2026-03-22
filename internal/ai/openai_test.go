@@ -32,12 +32,38 @@ func TestBuildOpenAITaggingPromptIncludesGuidanceAndDescriptions(t *testing.T) {
 	}
 }
 
+func TestBuildOpenAITaggingPromptIncludesHintTags(t *testing.T) {
+	prompt := buildOpenAITaggingPrompt("Convert JSONB to pgvector", []Tag{
+		{Name: "database", Description: "database-related work"},
+		{Name: "cleanup", Description: "cleanup and tech debt"},
+		{Name: "suggested-database-migration", Description: "schema migration work", Hint: true},
+	})
+
+	if !strings.Contains(prompt, "High-affinity tags") {
+		t.Fatalf("expected prompt to include high-affinity tags section")
+	}
+	if !strings.Contains(prompt, "suggested-database-migration") {
+		t.Fatalf("expected prompt to include hint tag name")
+	}
+}
+
+func TestBuildOpenAITaggingPromptOmitsHintSectionWhenNoHints(t *testing.T) {
+	prompt := buildOpenAITaggingPrompt("Safari export hangs on iPad", []Tag{
+		{Name: "export"},
+		{Name: "safari"},
+	})
+
+	if strings.Contains(prompt, "High-affinity tags") {
+		t.Fatalf("expected no high-affinity tags section when no hints are present")
+	}
+}
+
 func TestBuildOpenAITaggingSystemPromptAllowsConstrainedSuggestions(t *testing.T) {
 	prompt := buildOpenAITaggingSystemPrompt()
 
 	for _, expected := range []string{
 		"Use supplied taxonomy tags by default.",
-		"Default to zero suggested tags.",
+		"aiming for the most specific and descriptive set.",
 		"The taxonomy may include multiple axes such as issue kind, failure mode, affected surface, platform, experience, and implementation layer.",
 		"Use the best supported tags across those axes instead of inventing cross-product tags.",
 		"residual concept is not already expressed by any combination of 1 to 3 existing tags.",

@@ -46,8 +46,26 @@ type InvalidateMapProjectionResponse = {
   invalidated: boolean;
 };
 
+type LowR2Issue = {
+  id: string;
+  raw: string;
+  r2: number;
+  tags: string[];
+};
+
+type FactorWeights = {
+  factorWeight: number;
+  residualWeight: number;
+  aggregateR2: number;
+  issueCount: number;
+  decomposedCount: number;
+  decomposed: boolean;
+  lowR2Issues: LowR2Issue[];
+};
+
 const SECTION_LINKS = [
   { id: "prompt", title: "Prompt" },
+  { id: "factor-weights", title: "Factor weights" },
   { id: "tags", title: "Tags" },
   { id: "embedding", title: "Embedding" },
   { id: "similarity", title: "Similarity" },
@@ -88,6 +106,9 @@ export default function DebugPage() {
   const [rescoreLoading, setRescoreLoading] = useState(false);
   const [rescoreError, setRescoreError] = useState<string | null>(null);
   const [rescoreMessage, setRescoreMessage] = useState<string | null>(null);
+  const [factorWeights, setFactorWeights] = useState<FactorWeights | null>(null);
+  const [factorWeightsLoading, setFactorWeightsLoading] = useState(false);
+  const [factorWeightsError, setFactorWeightsError] = useState<string | null>(null);
 
   const topTags = result?.tags.slice(0, 8) ?? [];
   const embeddingPreview = result?.embedding.preview ?? [];
@@ -224,6 +245,32 @@ export default function DebugPage() {
     }
   }
 
+  async function loadFactorWeights() {
+    setFactorWeightsLoading(true);
+    setFactorWeightsError(null);
+
+    try {
+      const response = await fetch(uiAPIURL("/debug/factor-weights"), {
+        credentials: "include",
+      });
+
+      if (!response.ok) {
+        throw new Error(`Request failed with ${response.status}`);
+      }
+
+      const payload = (await response.json()) as FactorWeights;
+      setFactorWeights(payload);
+    } catch (caughtError) {
+      setFactorWeightsError(
+        caughtError instanceof Error
+          ? caughtError.message
+          : "Failed to load factor weights"
+      );
+    } finally {
+      setFactorWeightsLoading(false);
+    }
+  }
+
   return (
     <AppShell sidebar={<AppSidebar things={SECTION_LINKS} />}>
       <SiteHeader
@@ -355,6 +402,130 @@ export default function DebugPage() {
                 </div>
               )}
             </div>
+          </section>
+
+          <section
+            id="factor-weights"
+            className="app-surface p-5"
+          >
+            <div className="flex items-center justify-between gap-3">
+              <div>
+                <p className="text-xs font-medium uppercase tracking-[0.18em] text-muted-foreground">
+                  Factor decomposition weights
+                </p>
+                <p className="mt-1 text-sm text-muted-foreground">
+                  Data-driven blend weights computed from the variance explained
+                  by the tag-factor model vs. residual embedding similarity.
+                </p>
+              </div>
+              <Button
+                variant="outline"
+                onClick={loadFactorWeights}
+                disabled={factorWeightsLoading}
+              >
+                {factorWeightsLoading ? "Loading..." : "Load weights"}
+              </Button>
+            </div>
+
+            {factorWeightsError && (
+              <div className="mt-4 app-status-warning">{factorWeightsError}</div>
+            )}
+
+            {factorWeights && (
+              <div className="mt-4 space-y-4">
+                <div className="grid gap-3 lg:grid-cols-5">
+                  <div className="app-subtle-surface px-4 py-3">
+                    <p className="text-[11px] uppercase tracking-[0.16em] text-muted-foreground">
+                      Aggregate R²
+                    </p>
+                    <p className="mt-1 text-lg font-medium">
+                      {(factorWeights.aggregateR2 * 100).toFixed(1)}%
+                    </p>
+                  </div>
+                  <div className="app-subtle-surface px-4 py-3">
+                    <p className="text-[11px] uppercase tracking-[0.16em] text-muted-foreground">
+                      Factor weight
+                    </p>
+                    <p className="mt-1 text-lg font-medium">
+                      {factorWeights.factorWeight.toFixed(3)}
+                    </p>
+                  </div>
+                  <div className="app-subtle-surface px-4 py-3">
+                    <p className="text-[11px] uppercase tracking-[0.16em] text-muted-foreground">
+                      Residual weight
+                    </p>
+                    <p className="mt-1 text-lg font-medium">
+                      {factorWeights.residualWeight.toFixed(3)}
+                    </p>
+                  </div>
+                  <div className="app-subtle-surface px-4 py-3">
+                    <p className="text-[11px] uppercase tracking-[0.16em] text-muted-foreground">
+                      Decomposed
+                    </p>
+                    <p className="mt-1 text-lg font-medium">
+                      {factorWeights.decomposed
+                        ? `${factorWeights.decomposedCount} / ${factorWeights.issueCount}`
+                        : "No (fallback)"}
+                    </p>
+                  </div>
+                  <div className="app-subtle-surface px-4 py-3">
+                    <p className="text-[11px] uppercase tracking-[0.16em] text-muted-foreground">
+                      Total issues
+                    </p>
+                    <p className="mt-1 text-lg font-medium">
+                      {factorWeights.issueCount}
+                    </p>
+                  </div>
+                </div>
+
+                {factorWeights.lowR2Issues?.length > 0 && (
+                  <div>
+                    <p className="text-[11px] font-medium uppercase tracking-[0.16em] text-muted-foreground">
+                      Low R² issues
+                    </p>
+                    <p className="mt-1 text-sm text-muted-foreground">
+                      Issues poorly explained by the tag factor model. Candidates
+                      for new tags or re-classification.
+                    </p>
+                    <div className="mt-3 space-y-2">
+                      {factorWeights.lowR2Issues.map((issue) => (
+                        <div
+                          key={issue.id}
+                          className="app-subtle-surface px-4 py-3"
+                        >
+                          <div className="flex items-start justify-between gap-4">
+                            <div className="min-w-0">
+                              <p className="text-sm font-medium">{issue.id}</p>
+                              <p className="mt-1 truncate text-sm text-muted-foreground">
+                                {issue.raw}
+                              </p>
+                              {issue.tags.length > 0 && (
+                                <p className="mt-1 text-xs text-muted-foreground">
+                                  Tags: {issue.tags.join(", ")}
+                                </p>
+                              )}
+                            </div>
+                            <Badge
+                              variant="outline"
+                              className="shrink-0 text-xs text-foreground"
+                            >
+                              R² {(issue.r2 * 100).toFixed(1)}%
+                            </Badge>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+              </div>
+            )}
+
+            {!factorWeights && !factorWeightsError && (
+              <p className="mt-4 text-sm text-muted-foreground">
+                Click &ldquo;Load weights&rdquo; to compute the current factor
+                decomposition weights from the issue corpus.
+              </p>
+            )}
           </section>
 
           <section
