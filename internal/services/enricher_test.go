@@ -84,14 +84,19 @@ func TestAnalyzePersistedIssueUsesFreshEmbeddingForShortlist(t *testing.T) {
 	}
 
 	names := make(map[string]bool)
+	hints := make(map[string]bool)
 	for _, tag := range tagger.capturedTags {
 		names[tag.Name] = true
+		hints[tag.Name] = tag.Hint
 	}
 	if !names["database"] {
 		t.Fatal("expected database to be shortlisted from fresh canonical embedding")
 	}
 	if names["cleanup"] {
 		t.Fatal("expected cleanup not to be shortlisted from stale persisted embedding")
+	}
+	if !hints["database"] {
+		t.Fatal("expected nearest shortlisted tag to be marked as a high-affinity hint")
 	}
 }
 

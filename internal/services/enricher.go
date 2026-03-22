@@ -18,6 +18,7 @@ type IssueEnricher struct {
 }
 
 const issueEnrichmentTimeout = 20 * time.Second
+const persistedIssueHintLimit = 5
 
 func NewIssueEnricher(analyzer *ai.Analyzer, catalog *CatalogService, logger *slog.Logger) *IssueEnricher {
 	return &IssueEnricher{
@@ -162,10 +163,12 @@ func (s *IssueEnricher) AnalyzePersistedIssue(
 	if err != nil {
 		return issues.IssueFieldUpdate{}, fmt.Errorf("embed canonical raw for hints: %w", err)
 	}
-	taxonomy, err := s.catalog.IssueTaxonomyShortlist(ctx, Float32VectorToFloat64(freshEmbedding.Vector), nil, 15)
+	freshEmbeddingVector := Float32VectorToFloat64(freshEmbedding.Vector)
+	taxonomy, err := s.catalog.IssueTaxonomyShortlist(ctx, freshEmbeddingVector, nil, 15)
 	if err != nil {
 		return issues.IssueFieldUpdate{}, err
 	}
+	taxonomy = s.catalog.AnnotateHints(ctx, taxonomy, freshEmbeddingVector, persistedIssueHintLimit)
 
 	analyzed, err := s.analyzer.AnalyzeIssueData(ctx, canonicalRaw, taxonomy)
 	if err != nil {

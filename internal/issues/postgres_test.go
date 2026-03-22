@@ -1818,6 +1818,61 @@ func TestPostgresStoreUpsertAndListTags(t *testing.T) {
 	}
 }
 
+func TestPostgresStoreUpsertTagsSerializesConcurrentTagEvents(t *testing.T) {
+	store := newPostgresTestStore(t)
+	ctx := context.Background()
+
+	const workers = 8
+
+	start := make(chan struct{})
+	errCh := make(chan error, workers)
+	var wg sync.WaitGroup
+	for range workers {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			<-start
+			errCh <- store.UpsertTags(ctx, []Tag{
+				{Name: "bug", Description: "software defect", Embedding: []float64{0.2, 0.8}},
+			})
+		}()
+	}
+
+	close(start)
+	wg.Wait()
+	close(errCh)
+
+	for err := range errCh {
+		if err != nil {
+			t.Fatalf("concurrent upsert tags: %v", err)
+		}
+	}
+
+	var eventCount int
+	if err := store.DB().QueryRowContext(
+		ctx,
+		`SELECT COUNT(*) FROM tag_events WHERE tag_name = $1`,
+		"bug",
+	).Scan(&eventCount); err != nil {
+		t.Fatalf("count tag events: %v", err)
+	}
+	if eventCount != workers {
+		t.Fatalf("expected %d tag events, got %d", workers, eventCount)
+	}
+
+	var projectionEventCount int
+	if err := store.DB().QueryRowContext(
+		ctx,
+		`SELECT event_count FROM tag_projections WHERE name = $1`,
+		"bug",
+	).Scan(&projectionEventCount); err != nil {
+		t.Fatalf("read tag projection event_count: %v", err)
+	}
+	if projectionEventCount != workers {
+		t.Fatalf("expected projection event_count %d, got %d", workers, projectionEventCount)
+	}
+}
+
 func newPostgresTestStore(t *testing.T) *PostgresStore {
 	t.Helper()
 
