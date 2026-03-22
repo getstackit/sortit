@@ -487,9 +487,10 @@ func nextTagEventSequence(state *tagProjectionState) int64 {
 }
 
 func mergeTagProjectionUpsert(state *tagProjectionState, tag Tag, createdAt time.Time, lastEventID string) tagProjectionState {
+	description := strings.TrimSpace(tag.Description)
 	next := tagProjectionState{
 		Name:          sanitizeTagName(tag.Name),
-		Description:   strings.TrimSpace(tag.Description),
+		Description:   description,
 		CreatedAt:     createdAt,
 		Embedding:     copyEmbedding(tag.Embedding),
 		Status:        tagProjectionStatusActive,
@@ -510,10 +511,10 @@ func mergeTagProjectionUpsert(state *tagProjectionState, tag Tag, createdAt time
 			next.Status = tagProjectionStatusActive
 		}
 	}
-	if next.Description == "" && strings.TrimSpace(tag.Description) != "" {
-		next.Description = strings.TrimSpace(tag.Description)
+	if description != "" {
+		next.Description = description
 	}
-	if len(next.Embedding) == 0 && len(tag.Embedding) > 0 {
+	if len(tag.Embedding) > 0 {
 		next.Embedding = copyEmbedding(tag.Embedding)
 	}
 	return next

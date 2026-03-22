@@ -3,6 +3,7 @@ package api
 import (
 	"errors"
 	"net/http"
+	"strconv"
 	"strings"
 	"time"
 
@@ -113,7 +114,17 @@ func (s *Server) handleDebugRescoreTags(w http.ResponseWriter, r *http.Request) 
 }
 
 func (s *Server) handleDebugEvalTags(w http.ResponseWriter, r *http.Request) {
-	result, err := s.debugEvalTags.Handle(r.Context())
+	fixture := strings.TrimSpace(r.URL.Query().Get("fixture"))
+	runs := 1
+	if raw := strings.TrimSpace(r.URL.Query().Get("runs")); raw != "" {
+		parsed, err := strconv.Atoi(raw)
+		if err != nil || parsed <= 0 {
+			writeError(w, http.StatusBadRequest, "runs must be a positive integer")
+			return
+		}
+		runs = parsed
+	}
+	result, err := s.debugEvalTags.HandleFixture(r.Context(), fixture, runs)
 	if err != nil {
 		status := http.StatusInternalServerError
 		if queries.AIUnavailable(err) {

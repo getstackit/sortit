@@ -72,6 +72,7 @@ func (s *CatalogService) AvailableTags(ctx context.Context) ([]issues.Tag, error
 	if err != nil {
 		return nil, err
 	}
+	tags = activeCatalogTags(tags)
 	if len(tags) > 0 {
 		return tags, nil
 	}
@@ -103,6 +104,7 @@ func (s *CatalogService) IssueTaxonomy(ctx context.Context, preferred []string) 
 	if err != nil {
 		return nil, fmt.Errorf("list stored tags: %w", err)
 	}
+	stored = activeCatalogTags(stored)
 	if len(stored) > 0 {
 		return aiTagsFromCatalog(stored), nil
 	}
@@ -202,6 +204,7 @@ func (s *CatalogService) IssueTaxonomyShortlist(ctx context.Context, issueEmbedd
 	if err != nil {
 		return nil, fmt.Errorf("list stored tags: %w", err)
 	}
+	stored = activeCatalogTags(stored)
 	if len(stored) == 0 {
 		stored = issues.DefaultTags()
 	}
@@ -341,6 +344,28 @@ func aiTagsFromCatalog(tags []issues.Tag) []ai.Tag {
 		return 0
 	})
 	return out
+}
+
+func activeCatalogTags(tags []issues.Tag) []issues.Tag {
+	if len(tags) == 0 {
+		return nil
+	}
+	filtered := make([]issues.Tag, 0, len(tags))
+	for _, tag := range tags {
+		if !isActiveCatalogTag(tag.Name) {
+			continue
+		}
+		filtered = append(filtered, tag)
+	}
+	return filtered
+}
+
+func isActiveCatalogTag(name string) bool {
+	name = normalizeCatalogTagName(name)
+	if name == "" {
+		return false
+	}
+	return !strings.HasPrefix(name, "suggested-")
 }
 
 func CatalogTagsFromAnalysis(taxonomy []ai.Tag, explicit []string, scores []ai.TagScore) []issues.Tag {

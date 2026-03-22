@@ -12,6 +12,9 @@ import (
 	"splat/internal/services"
 )
 
+const testFakeProvider = "fake"
+const testBugTag = "bug"
+
 type debugTagStore struct {
 	tags []issues.Tag
 }
@@ -106,11 +109,40 @@ func (t *debugEvalTagger) Score(_ context.Context, text string, _ []ai.Tag) ([]a
 }
 
 func (t *debugEvalTagger) Provider() string {
-	return "fake"
+	return testFakeProvider
 }
 
 func (t *debugEvalTagger) Model() string {
 	return "eval-tagger"
+}
+
+type debugEvalSequenceTagger struct {
+	sequences map[string][][]ai.TagScore
+	calls     map[string]int
+}
+
+func (t *debugEvalSequenceTagger) Score(_ context.Context, text string, _ []ai.Tag) ([]ai.TagScore, error) {
+	if t.calls == nil {
+		t.calls = make(map[string]int)
+	}
+	sequence := t.sequences[text]
+	if len(sequence) == 0 {
+		return nil, nil
+	}
+	index := t.calls[text]
+	if index >= len(sequence) {
+		index = len(sequence) - 1
+	}
+	t.calls[text]++
+	return append([]ai.TagScore(nil), sequence[index]...), nil
+}
+
+func (t *debugEvalSequenceTagger) Provider() string {
+	return testFakeProvider
+}
+
+func (t *debugEvalSequenceTagger) Model() string {
+	return "eval-sequence-tagger"
 }
 
 type debugEvalEmbedder struct{}
@@ -120,7 +152,7 @@ func (e *debugEvalEmbedder) EmbedText(context.Context, string) (ai.EmbeddingResu
 }
 
 func (e *debugEvalEmbedder) Provider() string {
-	return "fake"
+	return testFakeProvider
 }
 
 func (e *debugEvalEmbedder) Model() string {
@@ -133,7 +165,7 @@ func TestDebugEvalTagsReportsAggregateMetrics(t *testing.T) {
 		scoresByText: map[string][]ai.TagScore{
 			"issue a": {
 				{Tag: "export", Relevance: 0.91},
-				{Tag: "bug", Relevance: 0.44},
+				{Tag: testBugTag, Relevance: 0.44},
 				{Tag: "noise", Relevance: 0.07},
 			},
 			"issue b": {
@@ -170,11 +202,87 @@ func TestDebugEvalTagsReportsAggregateMetrics(t *testing.T) {
 	if got := result.Cases[0].MissingTags; len(got) != 1 || got[0] != "safari" {
 		t.Fatalf("expected missing safari, got %+v", got)
 	}
-	if got := result.Cases[0].UnexpectedTags; len(got) != 1 || got[0] != "bug" {
+	if got := result.Cases[0].UnexpectedTags; len(got) != 1 || got[0] != testBugTag {
 		t.Fatalf("expected unexpected bug, got %+v", got)
 	}
-	if got := result.Cases[0].ActualTags; len(got) != 2 || got[0] != "export" || got[1] != "bug" {
+	if got := result.Cases[0].ActualTags; len(got) != 2 || got[0] != "export" || got[1] != testBugTag {
 		t.Fatalf("unexpected actual tags %+v", got)
+	}
+}
+
+func TestDebugEvalTagsLoadsNamedEmbeddedFixtures(t *testing.T) {
+	handler := DebugEvalTagsHandler{}
+
+	corpus, corpusName, err := handler.fixtureCases("corpus")
+	if err != nil {
+		t.Fatalf("fixtureCases(corpus): %v", err)
+	}
+	if corpusName != "corpus" {
+		t.Fatalf("expected corpus fixture name, got %q", corpusName)
+	}
+	if len(corpus) == 0 {
+		t.Fatal("expected corpus fixture to contain cases")
+	}
+	if corpus[0].SourceIssueID == "" {
+		t.Fatal("expected corpus fixture cases to retain source issue ids")
+	}
+
+	synthetic, syntheticName, err := handler.fixtureCases("synthetic")
+	if err != nil {
+		t.Fatalf("fixtureCases(synthetic): %v", err)
+	}
+	if syntheticName != "synthetic" {
+		t.Fatalf("expected synthetic fixture name, got %q", syntheticName)
+	}
+	if len(synthetic) == 0 {
+		t.Fatal("expected synthetic fixture to contain cases")
+	}
+}
+
+func TestDebugEvalTagsReportsStabilityAcrossRuns(t *testing.T) {
+	ctx := context.Background()
+	analyzer := ai.NewAnalyzer(&debugEvalSequenceTagger{
+		sequences: map[string][][]ai.TagScore{
+			"issue a": {
+				{{Tag: "export", Relevance: 0.91}},
+				{{Tag: "export", Relevance: 0.91}, {Tag: testBugTag, Relevance: 0.44}},
+				{{Tag: "export", Relevance: 0.91}},
+			},
+		},
+	}, &debugEvalEmbedder{})
+	catalog := services.NewCatalogService(&debugTagStore{}, analyzer, nil)
+	handler := DebugEvalTagsHandler{
+		Catalog:  catalog,
+		Enricher: services.NewIssueEnricher(analyzer, catalog, slog.Default()),
+		Fixture: []DebugTagEvalCase{
+			{ID: "a", Text: "issue a", ExpectedTags: []string{"export"}},
+		},
+	}
+
+	result, err := handler.HandleFixture(ctx, "", 3)
+	if err != nil {
+		t.Fatalf("HandleFixture runs=3: %v", err)
+	}
+	if result.Runs != 3 {
+		t.Fatalf("expected 3 runs, got %d", result.Runs)
+	}
+	if result.ExactStableCount != 0 {
+		t.Fatalf("expected 0 exactly stable cases, got %d", result.ExactStableCount)
+	}
+	if result.ExactStability != 0 {
+		t.Fatalf("expected exact stability 0, got %v", result.ExactStability)
+	}
+	if result.AverageStability != 0.75 {
+		t.Fatalf("expected average stability 0.75, got %v", result.AverageStability)
+	}
+	if result.Cases[0].StabilityExact {
+		t.Fatal("expected case stabilityExact to be false")
+	}
+	if result.Cases[0].StabilityJaccard != 0.75 {
+		t.Fatalf("expected case stability jaccard 0.75, got %v", result.Cases[0].StabilityJaccard)
+	}
+	if got := result.Cases[0].AlternateActualTags; len(got) != 1 || len(got[0]) != 2 || got[0][0] != "export" || got[0][1] != testBugTag {
+		t.Fatalf("unexpected alternate actual tags %+v", got)
 	}
 }
 

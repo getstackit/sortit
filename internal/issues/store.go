@@ -406,7 +406,12 @@ func ValidateCloseReason(reason string) error {
 func DefaultTags() []Tag {
 	return []Tag{
 		{Name: "bug", Description: "software defect or incorrect behavior. Excludes net-new capabilities or broad product improvements."},
+		{Name: "backend", Description: "server-side application logic, APIs, background jobs, auth, or integration behavior implemented off the client. Excludes browser-only runtime issues and persistence-layer work when the database itself is the primary problem."},
 		{Name: "crash", Description: "hard failure, freeze, panic, or abrupt termination. Excludes slow or degraded behavior without a hard stop."},
+		{Name: "cleanup", Description: "refactoring, dead-code removal, naming cleanup, dependency cleanup, or internal maintenance that improves code health without materially changing user-visible behavior. Excludes bug fixes, new capabilities, and larger architectural redesigns."},
+		{Name: "code-organization", Description: "module boundaries, file structure, dependency direction, or splitting and consolidating code for maintainability. Excludes purely mechanical cleanup unless organization or architecture is the primary concern."},
+		{Name: "data-persistence", Description: "saving, loading, syncing, retention, or durability of product data across requests, sessions, or restarts. Excludes schema-only work unless it directly affects persisted data behavior."},
+		{Name: "database", Description: "database schema, queries, migrations, indexes, constraints, or storage-layer behavior. Excludes general server logic unless the persistence layer itself is the source of the issue."},
 		{Name: "feature", Description: "request for a new capability or supported workflow. Excludes fixes and refinements to existing behavior."},
 		{Name: "idea", Description: "early concept, exploration, or speculative direction. Excludes concrete scoped feature requests ready for delivery."},
 		{Name: "improvement", Description: "refinement to an existing workflow, feature, or system behavior. Excludes net-new capabilities and clear defects."},

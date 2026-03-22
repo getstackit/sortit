@@ -1818,6 +1818,39 @@ func TestPostgresStoreUpsertAndListTags(t *testing.T) {
 	}
 }
 
+func TestPostgresStoreUpsertTagsUpdatesDescriptionAndEmbedding(t *testing.T) {
+	store := newPostgresTestStore(t)
+	ctx := context.Background()
+
+	if err := store.UpsertTags(ctx, []Tag{
+		{Name: "backend", Description: "server-side functionality and API support", Embedding: []float64{0.2, 0.8}},
+	}); err != nil {
+		t.Fatalf("seed tag: %v", err)
+	}
+
+	updatedDescription := "server-side application logic, APIs, background jobs, auth, or integration behavior implemented off the client. Excludes browser-only runtime issues and persistence-layer work when the database itself is the primary problem."
+	updatedEmbedding := []float64{0.8, 0.2}
+	if err := store.UpsertTags(ctx, []Tag{
+		{Name: "backend", Description: updatedDescription, Embedding: updatedEmbedding},
+	}); err != nil {
+		t.Fatalf("update tag: %v", err)
+	}
+
+	tags, err := store.ListTags(ctx)
+	if err != nil {
+		t.Fatalf("list tags: %v", err)
+	}
+	if len(tags) != 1 {
+		t.Fatalf("expected 1 tag, got %d", len(tags))
+	}
+	if tags[0].Description != updatedDescription {
+		t.Fatalf("description = %q, want %q", tags[0].Description, updatedDescription)
+	}
+	if len(tags[0].Embedding) != 2 || tags[0].Embedding[0] != updatedEmbedding[0] || tags[0].Embedding[1] != updatedEmbedding[1] {
+		t.Fatalf("embedding = %#v, want %#v", tags[0].Embedding, updatedEmbedding)
+	}
+}
+
 func TestPostgresStoreUpsertTagsSerializesConcurrentTagEvents(t *testing.T) {
 	store := newPostgresTestStore(t)
 	ctx := context.Background()

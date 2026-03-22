@@ -563,6 +563,15 @@ produces.
     text patterns.
   - Surface the proposal in the review queue (Phase 6) with the cluster members
     as evidence.
+- Periodically refine existing active tag descriptions using evidence from the
+  corpus, not just manual intuition:
+  - gather issues with high loading, high alignment, or repeated confident use
+    of the tag
+  - extract common positive patterns and recurring false-positive neighbors
+  - update the tag description so it states what the tag captures and what it
+    excludes, with examples grounded in real issue language
+  - re-embed the tag after materially changing its description and re-evaluate
+    retrieval and benchmark impact
 - Grow the tag set along explicit reusable axes such as:
   - issue kind (bug, improvement, cleanup, investigation)
   - failure mode (crash, data loss, performance regression)

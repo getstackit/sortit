@@ -1,10 +1,14 @@
 package cli
 
 import (
+	"time"
+
 	"github.com/spf13/cobra"
 
 	"splat/internal/queries"
 )
+
+const debugEvalTagsClientTimeout = 2 * time.Minute
 
 func newDebugCmd(opts *rootOptions) *cobra.Command {
 	cmd := &cobra.Command{
@@ -18,18 +22,26 @@ func newDebugCmd(opts *rootOptions) *cobra.Command {
 }
 
 func newDebugEvalTagsCmd(opts *rootOptions) *cobra.Command {
-	return &cobra.Command{
+	var fixture string
+	var runs int
+
+	cmd := &cobra.Command{
 		Use:   "eval-tags",
 		Short: "Run the built-in tag benchmark and report tagging diffs",
 		RunE: func(cmd *cobra.Command, _ []string) error {
-			client := opts.client()
+			client := opts.clientWithTimeout(debugEvalTagsClientTimeout)
 			var response queries.DebugEvalTagsResult
-			if err := client.Get(cmd.Context(), "/debug/eval-tags", &response); err != nil {
+			params := newQueryParams().add("fixture", fixture).addInt("runs", runs)
+			if err := client.Get(cmd.Context(), "/debug/eval-tags"+params.encode(), &response); err != nil {
 				return err
 			}
 			return printJSON(cmd, response)
 		},
 	}
+
+	cmd.Flags().StringVar(&fixture, "fixture", "", "Benchmark fixture to run: corpus (default) or synthetic")
+	cmd.Flags().IntVar(&runs, "runs", 1, "How many times to re-run each case for stability measurement")
+	return cmd
 }
 
 func newDebugFactorWeightsCmd(opts *rootOptions) *cobra.Command {

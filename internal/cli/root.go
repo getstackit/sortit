@@ -602,6 +602,14 @@ func (o *rootOptions) client() *apiClient {
 	return newAPIClient(o.resolvedAPIURL(), o.resolvedToken())
 }
 
+func (o *rootOptions) clientWithTimeout(timeout time.Duration) *apiClient {
+	client := o.client()
+	if timeout > 0 {
+		client.httpClient.Timeout = timeout
+	}
+	return client
+}
+
 func (o *rootOptions) resolvedAPIURL() string {
 	if value := strings.TrimSpace(o.apiURL); value != "" {
 		return value

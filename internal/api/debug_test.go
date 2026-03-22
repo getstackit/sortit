@@ -268,8 +268,8 @@ func TestDebugEvalTagsEndpoint(t *testing.T) {
 	if err := json.NewDecoder(rec.Body).Decode(&payload); err != nil {
 		t.Fatalf("decode payload: %v", err)
 	}
-	if payload.Fixture != "default" {
-		t.Fatalf("expected default fixture, got %q", payload.Fixture)
+	if payload.Fixture != "corpus" {
+		t.Fatalf("expected corpus fixture, got %q", payload.Fixture)
 	}
 	if payload.CaseCount == 0 {
 		t.Fatal("expected at least one benchmark case")

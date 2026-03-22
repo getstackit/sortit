@@ -16,35 +16,54 @@ import (
 )
 
 //go:embed testdata/tag_eval_fixture.json
-var defaultDebugTagEvalFixture []byte
+var syntheticDebugTagEvalFixture []byte
+
+//go:embed testdata/tag_eval_fixture_corpus.json
+var corpusDebugTagEvalFixture []byte
 
 const debugTagEvalRelevanceFloor = 0.08
 
+const (
+	debugTagEvalDefaultFixture   = "corpus"
+	debugTagEvalSyntheticFixture = "synthetic"
+)
+
 type DebugTagEvalCase struct {
-	ID           string   `json:"id"`
-	Text         string   `json:"text"`
-	ExpectedTags []string `json:"expectedTags"`
+	SourceIssueID string   `json:"sourceIssueId,omitempty"`
+	Category      string   `json:"category,omitempty"`
+	ID            string   `json:"id"`
+	Text          string   `json:"text"`
+	ExpectedTags  []string `json:"expectedTags"`
 }
 
 type DebugEvalTagsCaseResult struct {
-	ID             string   `json:"id"`
-	Text           string   `json:"text"`
-	ExpectedTags   []string `json:"expectedTags"`
-	ActualTags     []string `json:"actualTags"`
-	MissingTags    []string `json:"missingTags"`
-	UnexpectedTags []string `json:"unexpectedTags"`
-	Precision      float64  `json:"precision"`
-	Recall         float64  `json:"recall"`
-	ExactMatch     bool     `json:"exactMatch"`
+	SourceIssueID       string     `json:"sourceIssueId,omitempty"`
+	Category            string     `json:"category,omitempty"`
+	ID                  string     `json:"id"`
+	Text                string     `json:"text"`
+	ExpectedTags        []string   `json:"expectedTags"`
+	ActualTags          []string   `json:"actualTags"`
+	AlternateActualTags [][]string `json:"alternateActualTags,omitempty"`
+	MissingTags         []string   `json:"missingTags"`
+	UnexpectedTags      []string   `json:"unexpectedTags"`
+	Precision           float64    `json:"precision"`
+	Recall              float64    `json:"recall"`
+	ExactMatch          bool       `json:"exactMatch"`
+	StabilityExact      bool       `json:"stabilityExact,omitempty"`
+	StabilityJaccard    float64    `json:"stabilityJaccard,omitempty"`
 }
 
 type DebugEvalTagsResult struct {
-	Fixture         string                    `json:"fixture"`
-	CaseCount       int                       `json:"caseCount"`
-	Precision       float64                   `json:"precision"`
-	Recall          float64                   `json:"recall"`
-	ExactMatchCount int                       `json:"exactMatchCount"`
-	Cases           []DebugEvalTagsCaseResult `json:"cases"`
+	Fixture          string                    `json:"fixture"`
+	Runs             int                       `json:"runs"`
+	CaseCount        int                       `json:"caseCount"`
+	Precision        float64                   `json:"precision"`
+	Recall           float64                   `json:"recall"`
+	ExactMatchCount  int                       `json:"exactMatchCount"`
+	ExactStableCount int                       `json:"exactStableCount,omitempty"`
+	ExactStability   float64                   `json:"exactStability,omitempty"`
+	AverageStability float64                   `json:"averageStability,omitempty"`
+	Cases            []DebugEvalTagsCaseResult `json:"cases"`
 }
 
 type DebugEvalTagsHandler struct {
@@ -55,11 +74,16 @@ type DebugEvalTagsHandler struct {
 }
 
 func (h DebugEvalTagsHandler) Handle(ctx context.Context) (DebugEvalTagsResult, error) {
+	return h.HandleFixture(ctx, "", 1)
+}
+
+func (h DebugEvalTagsHandler) HandleFixture(ctx context.Context, requestedFixture string, runs int) (DebugEvalTagsResult, error) {
 	if h.Catalog == nil {
 		return DebugEvalTagsResult{}, fmt.Errorf("tag catalog is unavailable")
 	}
+	runs = max(1, runs)
 
-	fixture, fixtureName, err := h.fixtureCases()
+	fixture, fixtureName, err := h.fixtureCases(requestedFixture)
 	if err != nil {
 		return DebugEvalTagsResult{}, err
 	}
@@ -74,6 +98,8 @@ func (h DebugEvalTagsHandler) Handle(ctx context.Context) (DebugEvalTagsResult, 
 	totalActual := 0
 	totalTruePositive := 0
 	exactMatches := 0
+	exactStableCount := 0
+	totalStability := 0.0
 	for _, item := range fixture {
 		actualTags, err := h.evaluateCase(ctx, item, taxonomy)
 		if err != nil {
@@ -81,6 +107,8 @@ func (h DebugEvalTagsHandler) Handle(ctx context.Context) (DebugEvalTagsResult, 
 		}
 		missing, unexpected, truePositive := diffEvalTags(item.ExpectedTags, actualTags)
 		caseResult := DebugEvalTagsCaseResult{
+			SourceIssueID:  item.SourceIssueID,
+			Category:       item.Category,
 			ID:             item.ID,
 			Text:           item.Text,
 			ExpectedTags:   append([]string(nil), item.ExpectedTags...),
@@ -91,23 +119,42 @@ func (h DebugEvalTagsHandler) Handle(ctx context.Context) (DebugEvalTagsResult, 
 			Recall:         roundMetric(ratio(truePositive, len(item.ExpectedTags))),
 			ExactMatch:     len(missing) == 0 && len(unexpected) == 0,
 		}
+		caseResult.StabilityExact = true
+		caseResult.StabilityJaccard = 1
+		if runs > 1 {
+			alternateTags, exactStable, stabilityJaccard, err := h.evaluateCaseStability(ctx, item, taxonomy, actualTags, runs)
+			if err != nil {
+				return DebugEvalTagsResult{}, err
+			}
+			caseResult.AlternateActualTags = alternateTags
+			caseResult.StabilityExact = exactStable
+			caseResult.StabilityJaccard = roundMetric(stabilityJaccard)
+		}
 		if caseResult.ExactMatch {
 			exactMatches++
+		}
+		if caseResult.StabilityExact {
+			exactStableCount++
 		}
 
 		results = append(results, caseResult)
 		totalExpected += len(item.ExpectedTags)
 		totalActual += len(actualTags)
 		totalTruePositive += truePositive
+		totalStability += caseResult.StabilityJaccard
 	}
 
 	return DebugEvalTagsResult{
-		Fixture:         fixtureName,
-		CaseCount:       len(results),
-		Precision:       roundMetric(ratio(totalTruePositive, totalActual)),
-		Recall:          roundMetric(ratio(totalTruePositive, totalExpected)),
-		ExactMatchCount: exactMatches,
-		Cases:           results,
+		Fixture:          fixtureName,
+		Runs:             runs,
+		CaseCount:        len(results),
+		Precision:        roundMetric(ratio(totalTruePositive, totalActual)),
+		Recall:           roundMetric(ratio(totalTruePositive, totalExpected)),
+		ExactMatchCount:  exactMatches,
+		ExactStableCount: exactStableCount,
+		ExactStability:   roundMetric(ratio(exactStableCount, len(results))),
+		AverageStability: roundMetric(totalStability / float64(max(1, len(results)))),
+		Cases:            results,
 	}, nil
 }
 
@@ -133,28 +180,81 @@ func (h DebugEvalTagsHandler) evaluateCase(ctx context.Context, item DebugTagEva
 	return predictedEvalTags(analyzed.Tags), nil
 }
 
-func (h DebugEvalTagsHandler) fixtureCases() ([]DebugTagEvalCase, string, error) {
+func (h DebugEvalTagsHandler) evaluateCaseStability(ctx context.Context, item DebugTagEvalCase, taxonomy []ai.Tag, baseline []string, runs int) ([][]string, bool, float64, error) {
+	if runs <= 1 {
+		return nil, true, 1, nil
+	}
+
+	alternateSets := make([][]string, 0)
+	seenAlternates := make(map[string]struct{})
+	exactStable := true
+	totalJaccard := 0.0
+	for range runs - 1 {
+		repeatedTags, err := h.evaluateCase(ctx, item, taxonomy)
+		if err != nil {
+			return nil, false, 0, err
+		}
+		if !equalTagSets(baseline, repeatedTags) {
+			exactStable = false
+			key := canonicalTagSetKey(repeatedTags)
+			if _, ok := seenAlternates[key]; !ok {
+				seenAlternates[key] = struct{}{}
+				alternateSets = append(alternateSets, append([]string(nil), repeatedTags...))
+			}
+		}
+		totalJaccard += jaccardTagSets(baseline, repeatedTags)
+	}
+	return alternateSets, exactStable, totalJaccard / float64(runs-1), nil
+}
+
+func (h DebugEvalTagsHandler) fixtureCases(requestedFixture string) ([]DebugTagEvalCase, string, error) {
+	requestedFixture = strings.TrimSpace(strings.ToLower(requestedFixture))
 	if len(h.Fixture) > 0 {
+		if requestedFixture != "" && requestedFixture != "inline" {
+			return nil, "", fmt.Errorf("fixture %q is unavailable when inline fixture cases are configured", requestedFixture)
+		}
 		fixture, err := normalizeDebugTagEvalCases(h.Fixture)
 		return fixture, "inline", err
 	}
 
+	if requestedFixture == "" || requestedFixture == "default" {
+		requestedFixture = debugTagEvalDefaultFixture
+	}
+
+	fixtureBytes, err := debugTagEvalFixtureBytes(requestedFixture)
+	if err != nil {
+		return nil, "", err
+	}
+
 	var fixture []DebugTagEvalCase
-	if err := json.Unmarshal(defaultDebugTagEvalFixture, &fixture); err != nil {
-		return nil, "", fmt.Errorf("decode default tag eval fixture: %w", err)
+	if err := json.Unmarshal(fixtureBytes, &fixture); err != nil {
+		return nil, "", fmt.Errorf("decode %s tag eval fixture: %w", requestedFixture, err)
 	}
 
 	normalized, err := normalizeDebugTagEvalCases(fixture)
 	if err != nil {
 		return nil, "", err
 	}
-	return normalized, "default", nil
+	return normalized, requestedFixture, nil
+}
+
+func debugTagEvalFixtureBytes(name string) ([]byte, error) {
+	switch name {
+	case debugTagEvalDefaultFixture, "real", "real-corpus":
+		return corpusDebugTagEvalFixture, nil
+	case debugTagEvalSyntheticFixture:
+		return syntheticDebugTagEvalFixture, nil
+	default:
+		return nil, fmt.Errorf("unknown tag eval fixture %q", name)
+	}
 }
 
 func normalizeDebugTagEvalCases(items []DebugTagEvalCase) ([]DebugTagEvalCase, error) {
 	out := make([]DebugTagEvalCase, 0, len(items))
 	seen := make(map[string]struct{}, len(items))
 	for _, item := range items {
+		sourceIssueID := strings.TrimSpace(item.SourceIssueID)
+		category := strings.TrimSpace(item.Category)
 		id := strings.TrimSpace(item.ID)
 		text := strings.TrimSpace(item.Text)
 		if id == "" {
@@ -169,9 +269,11 @@ func normalizeDebugTagEvalCases(items []DebugTagEvalCase) ([]DebugTagEvalCase, e
 		seen[id] = struct{}{}
 
 		out = append(out, DebugTagEvalCase{
-			ID:           id,
-			Text:         text,
-			ExpectedTags: normalizeTagNames(item.ExpectedTags),
+			SourceIssueID: sourceIssueID,
+			Category:      category,
+			ID:            id,
+			Text:          text,
+			ExpectedTags:  normalizeTagNames(item.ExpectedTags),
 		})
 	}
 	return out, nil
@@ -238,6 +340,58 @@ func diffEvalTags(expected []string, actual []string) ([]string, []string, int) 
 	slices.Sort(missing)
 	slices.Sort(unexpected)
 	return missing, unexpected, truePositive
+}
+
+func equalTagSets(left []string, right []string) bool {
+	if len(left) != len(right) {
+		return false
+	}
+	leftSet := make(map[string]struct{}, len(left))
+	for _, name := range left {
+		leftSet[name] = struct{}{}
+	}
+	for _, name := range right {
+		if _, ok := leftSet[name]; !ok {
+			return false
+		}
+	}
+	return true
+}
+
+func jaccardTagSets(left []string, right []string) float64 {
+	if len(left) == 0 && len(right) == 0 {
+		return 1
+	}
+	leftSet := make(map[string]struct{}, len(left))
+	for _, name := range left {
+		leftSet[name] = struct{}{}
+	}
+	rightSet := make(map[string]struct{}, len(right))
+	for _, name := range right {
+		rightSet[name] = struct{}{}
+	}
+	intersection := 0
+	for name := range leftSet {
+		if _, ok := rightSet[name]; ok {
+			intersection++
+		}
+	}
+	union := len(leftSet)
+	for name := range rightSet {
+		if _, ok := leftSet[name]; !ok {
+			union++
+		}
+	}
+	return float64(intersection) / float64(union)
+}
+
+func canonicalTagSetKey(tags []string) string {
+	if len(tags) == 0 {
+		return ""
+	}
+	sorted := append([]string(nil), tags...)
+	slices.Sort(sorted)
+	return strings.Join(sorted, "\x00")
 }
 
 func normalizeTagNames(names []string) []string {

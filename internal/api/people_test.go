@@ -13,6 +13,7 @@ import (
 )
 
 const testUser = "Casey"
+const testPerson = "Avery"
 
 func TestPersonDetailReturnsAssignedQueueHeadAndRecommendations(t *testing.T) {
 	makeIssue := func(
@@ -45,7 +46,7 @@ func TestPersonDetailReturnsAssignedQueueHeadAndRecommendations(t *testing.T) {
 		makeIssue(
 			"issue-assigned-old",
 			"Fix auth redirect loop for invited users",
-			"Avery",
+			testPerson,
 			issues.StatusOpen,
 			time.Date(2026, 3, 1, 10, 0, 0, 0, time.UTC),
 			[]issues.TagRelevance{{Tag: "auth", Relevance: 0.9}, {Tag: "onboarding", Relevance: 0.6}},
@@ -54,7 +55,7 @@ func TestPersonDetailReturnsAssignedQueueHeadAndRecommendations(t *testing.T) {
 		makeIssue(
 			"issue-assigned-new",
 			"Tighten search filters on the team page",
-			"Avery",
+			testPerson,
 			issues.StatusOpen,
 			time.Date(2026, 3, 4, 10, 0, 0, 0, time.UTC),
 			[]issues.TagRelevance{{Tag: "search", Relevance: 0.8}, {Tag: "ui", Relevance: 0.4}},
@@ -63,7 +64,7 @@ func TestPersonDetailReturnsAssignedQueueHeadAndRecommendations(t *testing.T) {
 		makeIssue(
 			"issue-assigned-closed",
 			"Polish invite acceptance copy",
-			"Avery",
+			testPerson,
 			issues.StatusClosed,
 			time.Date(2026, 2, 25, 10, 0, 0, 0, time.UTC),
 			[]issues.TagRelevance{{Tag: "onboarding", Relevance: 0.7}, {Tag: "ui", Relevance: 0.3}},
@@ -118,7 +119,7 @@ func TestPersonDetailReturnsAssignedQueueHeadAndRecommendations(t *testing.T) {
 		t.Fatalf("decode person detail response: %v", err)
 	}
 
-	if payload.Person != "Avery" {
+	if payload.Person != testPerson {
 		t.Fatalf("expected person Avery, got %q", payload.Person)
 	}
 	if payload.IssueCount != 3 || payload.OpenIssueCount != 2 || payload.ClosedIssueCount != 1 {
@@ -173,7 +174,7 @@ func TestPersonDetailRecommendationsPreferMatureIssueWhenBaseMatchIsNearEqual(t 
 		makeIssue(
 			"issue-assigned",
 			"Fix auth redirect loop for invited users",
-			"Avery",
+			testPerson,
 			issues.StatusOpen,
 			time.Date(2026, 3, 1, 10, 0, 0, 0, time.UTC),
 			[]issues.TagRelevance{{Tag: "auth", Relevance: 0.9}, {Tag: "onboarding", Relevance: 0.6}},
@@ -305,7 +306,7 @@ func TestPersonDetailRecommendationsDeprioritizeHighVelocityIssue(t *testing.T) 
 		makeIssue(
 			"issue-assigned",
 			"Fix auth redirect loop for invited users",
-			"Avery",
+			testPerson,
 			issues.StatusOpen,
 			time.Date(2026, 3, 1, 10, 0, 0, 0, time.UTC),
 			[]issues.TagRelevance{{Tag: "auth", Relevance: 0.9}, {Tag: "onboarding", Relevance: 0.6}},
@@ -396,7 +397,7 @@ func TestPersonDetailRecommendationsPreferFreshIssueWhenBaseMatchIsEqual(t *test
 		makeIssue(
 			"issue-assigned",
 			"Fix auth redirect loop for invited users",
-			"Avery",
+			testPerson,
 			issues.StatusOpen,
 			now.Add(-10*24*time.Hour),
 			[]issues.TagRelevance{{Tag: "auth", Relevance: 0.9}, {Tag: "onboarding", Relevance: 0.6}},
