@@ -68,6 +68,7 @@ func (h ReEnrichIssueHandler) Handle(ctx context.Context, input ReEnrichIssue) (
 
 	now := time.Now().UTC()
 	reEnrichEvent = issues.Event{
+		ID:        issues.NewEnrichmentEventID(),
 		Kind:      "re-enrich",
 		IssueID:   current.ID,
 		CreatedBy: "system",

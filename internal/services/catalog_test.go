@@ -253,6 +253,88 @@ func TestScoreTagSpecificityClearsScoreForSmallCatalog(t *testing.T) {
 	}
 }
 
+func TestAnnotateHintsMarksTopSimilarTags(t *testing.T) {
+	store := &catalogTestStore{
+		tags: []issues.Tag{
+			{Name: "database", Embedding: []float64{0.9, 0.1, 0.0}},
+			{Name: "cleanup", Embedding: []float64{0.1, 0.1, 0.8}},
+			{Name: "suggested-database-migration", Embedding: []float64{0.85, 0.15, 0.0}},
+			{Name: "performance", Embedding: []float64{0.0, 0.9, 0.1}},
+			{Name: "backend", Embedding: []float64{0.5, 0.5, 0.0}},
+		},
+	}
+	service := NewCatalogService(store, nil, slog.Default())
+
+	taxonomy := []ai.Tag{
+		{Name: "database"},
+		{Name: "cleanup"},
+		{Name: "suggested-database-migration"},
+		{Name: "performance"},
+		{Name: "backend"},
+	}
+
+	// Issue embedding is close to database/migration, far from cleanup/performance.
+	issueEmbedding := []float64{0.9, 0.1, 0.0}
+	result := service.AnnotateHints(context.Background(), taxonomy, issueEmbedding, 2)
+
+	if len(result) != len(taxonomy) {
+		t.Fatalf("expected %d tags, got %d", len(taxonomy), len(result))
+	}
+
+	hintCount := 0
+	hintNames := make(map[string]bool)
+	for _, tag := range result {
+		if tag.Hint {
+			hintCount++
+			hintNames[tag.Name] = true
+		}
+	}
+
+	if hintCount != 2 {
+		t.Fatalf("expected 2 hint tags, got %d", hintCount)
+	}
+	if !hintNames["database"] {
+		t.Fatal("expected 'database' to be a hint (high similarity)")
+	}
+	if !hintNames["suggested-database-migration"] {
+		t.Fatal("expected 'suggested-database-migration' to be a hint (high similarity)")
+	}
+}
+
+func TestAnnotateHintsNoOpWithEmptyEmbedding(t *testing.T) {
+	store := &catalogTestStore{
+		tags: []issues.Tag{
+			{Name: "database", Embedding: []float64{0.9, 0.1, 0.0}},
+		},
+	}
+	service := NewCatalogService(store, nil, slog.Default())
+
+	taxonomy := []ai.Tag{{Name: "database"}}
+	result := service.AnnotateHints(context.Background(), taxonomy, nil, 5)
+
+	for _, tag := range result {
+		if tag.Hint {
+			t.Fatalf("expected no hints with empty embedding, got hint on %q", tag.Name)
+		}
+	}
+}
+
+func TestAnnotateHintsDoesNotMutateOriginal(t *testing.T) {
+	store := &catalogTestStore{
+		tags: []issues.Tag{
+			{Name: "database", Embedding: []float64{0.9, 0.1, 0.0}},
+		},
+	}
+	service := NewCatalogService(store, nil, slog.Default())
+
+	taxonomy := []ai.Tag{{Name: "database"}}
+	_ = service.AnnotateHints(context.Background(), taxonomy, []float64{0.9, 0.1, 0.0}, 5)
+
+	if taxonomy[0].Hint {
+		t.Fatal("AnnotateHints mutated the original taxonomy slice")
+	}
+}
+
 func findSpecificityUpdate(t *testing.T, updates []catalogSpecificityUpdate, name string) catalogSpecificityUpdate {
 	t.Helper()
 

@@ -441,6 +441,60 @@ func float64LogValue(value *float64) any {
 	return *value
 }
 
+// AnnotateHints marks up to limit tags in the taxonomy as hints based on
+// embedding similarity to the given issue embedding. This draws the AI's
+// attention to tags that are semantically close to the issue but might
+// otherwise be overlooked in a large taxonomy.
+func (s *CatalogService) AnnotateHints(ctx context.Context, taxonomy []ai.Tag, issueEmbedding []float64, limit int) []ai.Tag {
+	if s == nil || s.store == nil || len(issueEmbedding) == 0 || len(taxonomy) == 0 {
+		return taxonomy
+	}
+
+	stored, err := s.store.ListTags(ctx)
+	if err != nil {
+		return taxonomy
+	}
+
+	embeddingByName := make(map[string][]float64, len(stored))
+	for _, tag := range stored {
+		if len(tag.Embedding) > 0 {
+			embeddingByName[normalizeCatalogTagName(tag.Name)] = tag.Embedding
+		}
+	}
+
+	type scored struct {
+		index      int
+		similarity float64
+	}
+	candidates := make([]scored, 0, len(taxonomy))
+	for i, tag := range taxonomy {
+		emb, ok := embeddingByName[normalizeCatalogTagName(tag.Name)]
+		if !ok {
+			continue
+		}
+		sim := vectors.CosineSimilarity(issueEmbedding, emb)
+		if sim > 0.1 {
+			candidates = append(candidates, scored{index: i, similarity: sim})
+		}
+	}
+
+	slices.SortFunc(candidates, func(a, b scored) int {
+		return cmp.Compare(b.similarity, a.similarity)
+	})
+
+	if limit > 0 && len(candidates) > limit {
+		candidates = candidates[:limit]
+	}
+
+	// Clone the taxonomy so we don't mutate the caller's slice.
+	result := make([]ai.Tag, len(taxonomy))
+	copy(result, taxonomy)
+	for _, c := range candidates {
+		result[c.index].Hint = true
+	}
+	return result
+}
+
 func normalizeCatalogTagName(name string) string {
 	return domain.NormalizeTagName(name)
 }

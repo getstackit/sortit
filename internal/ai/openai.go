@@ -301,14 +301,25 @@ func buildOpenAITaggingPrompt(text string, tags []Tag) string {
 	builder.WriteString("Classify the issue against the supplied taxonomy.\n")
 	builder.WriteString("Consider issue type, failure mode, affected surface, platform, and user workflow.\n")
 	builder.WriteString("The taxonomy spans multiple axes such as kind, failure mode, surface, platform, experience, and implementation layer. Use the best matching tags across those axes when the issue supports them.\n")
-	builder.WriteString("Reuse supplied tags when they fit.\n")
+	builder.WriteString("Reuse supplied tags when they fit. Prefer specific tags over generic ones.\n")
 	builder.WriteString("Only suggest a new tag if an important residual concept remains after choosing the best existing tags.\n")
 	builder.WriteString("Prefer a concrete reusable surface, subsystem, workflow, or artifact tag over broad buckets like backend, frontend, or ui.\n")
 	builder.WriteString("Do not suggest a tag that is already implied by a combination of existing tags.\n\n")
 	builder.WriteString("Issue text:\n")
 	builder.WriteString(text)
-	builder.WriteString("\n\nSupplied taxonomy (reuse these exact labels when applicable):\n")
+
+	// Separate hint tags from regular taxonomy tags.
+	var hintTags, regularTags []Tag
 	for _, tag := range tags {
+		if tag.Hint {
+			hintTags = append(hintTags, tag)
+		} else {
+			regularTags = append(regularTags, tag)
+		}
+	}
+
+	builder.WriteString("\n\nSupplied taxonomy (reuse these exact labels when applicable):\n")
+	for _, tag := range regularTags {
 		builder.WriteString("- ")
 		builder.WriteString(tag.Name)
 		if tag.Description != "" {
@@ -317,6 +328,20 @@ func buildOpenAITaggingPrompt(text string, tags []Tag) string {
 		}
 		builder.WriteString("\n")
 	}
+
+	if len(hintTags) > 0 {
+		builder.WriteString("\nHigh-affinity tags (embedding similarity suggests these may be relevant — assign them if they fit):\n")
+		for _, tag := range hintTags {
+			builder.WriteString("- ")
+			builder.WriteString(tag.Name)
+			if tag.Description != "" {
+				builder.WriteString(": ")
+				builder.WriteString(tag.Description)
+			}
+			builder.WriteString("\n")
+		}
+	}
+
 	return builder.String()
 }
 
@@ -330,10 +355,12 @@ func buildOpenAITaggingSystemPrompt() string {
 		"Use supplied taxonomy tags by default. " +
 		"The taxonomy may include multiple axes such as issue kind, failure mode, affected surface, platform, experience, and implementation layer. " +
 		"Use the best supported tags across those axes instead of inventing cross-product tags. " +
+		"Prefer specific tags over generic ones — a tag that names a concrete subsystem or artifact is better than a broad category. " +
+		"When high-affinity tags are listed, evaluate each one carefully and assign it if it genuinely fits the issue; these tags were selected because their embeddings are close to the issue text. " +
 		"Treat suggested tags as rare taxonomy expansions, not labels for one issue. " +
-		"Default to zero suggested tags. " +
-		"First assign the best existing tags. " +
+		"First assign the best existing tags, aiming for the most specific and descriptive set. " +
 		"Then identify whether one materially important residual concept is not already expressed by any combination of 1 to 3 existing tags. " +
+		"If an important concept remains unexplained by any existing tag, suggest a new tag. " +
 		"Only suggest a new tag when that residual concept is central to the issue, likely to recur across future issues, specific enough to name a concrete surface, subsystem, workflow, or artifact, and orthogonal to the existing taxonomy rather than a predictable co-occurrence. " +
 		"Do not suggest synonyms, spelling variants, parent or child categories, narrower or broader restatements, platform-specific variants, or tags that merely restate issue type, browser, platform, frontend, backend, ui, ux, performance, or crash when those dimensions are already covered by existing tags. " +
 		"Prefer combinations of existing tags over inventing a new one. " +

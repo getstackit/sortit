@@ -145,11 +145,11 @@ func (s *IssueEnricher) AnalyzePersistedIssue(
 		discussionTexts = append(discussionTexts, text)
 	}
 
-	explicitTags := []string(nil)
-	if targetSequence <= 1 {
-		explicitTags = append([]string(nil), issue.Tags...)
-	}
-	taxonomy, err := s.catalog.IssueTaxonomy(ctx, explicitTags)
+	// Always use the full catalog taxonomy so the AI can discover better tags.
+	// For initial creation (targetSequence <= 1), we used to pass only the
+	// issue's explicit tags as preferred, but that prevented the AI from
+	// seeing the rest of the catalog during re-enrichment.
+	taxonomy, err := s.catalog.IssueTaxonomy(ctx, nil)
 	if err != nil {
 		return issues.IssueFieldUpdate{}, err
 	}
@@ -166,12 +166,17 @@ func (s *IssueEnricher) AnalyzePersistedIssue(
 		}
 	}
 
+	// Mark taxonomy tags that are semantically similar to the issue as hints,
+	// so the AI pays closer attention to tags that embedding similarity
+	// suggests are relevant but might otherwise be overlooked.
+	taxonomy = s.catalog.AnnotateHints(ctx, taxonomy, issue.Embedding, 5)
+
 	analyzed, err := s.analyzer.AnalyzeIssueData(ctx, canonicalRaw, taxonomy)
 	if err != nil {
 		return issues.IssueFieldUpdate{}, err
 	}
 
-	if err := s.catalog.EnsureStoredTags(ctx, CatalogTagsFromAnalysis(taxonomy, explicitTags, analyzed.Tags)); err != nil {
+	if err := s.catalog.EnsureStoredTags(ctx, CatalogTagsFromAnalysis(taxonomy, nil, analyzed.Tags)); err != nil {
 		return issues.IssueFieldUpdate{}, err
 	}
 
@@ -186,7 +191,7 @@ func (s *IssueEnricher) AnalyzePersistedIssue(
 	emptyError := ""
 	return issues.IssueFieldUpdate{
 		Raw:                      &canonicalRaw,
-		Tags:                     issues.DisplayTagsWithSpecificity(explicitTags, attenuateGenericScores(IssueTagScoresFromAnalysis(analyzed.Tags), s.tagSpecificityMap(ctx)), s.tagSpecificityMap(ctx)),
+		Tags:                     issues.DisplayTagsWithSpecificity(nil, attenuateGenericScores(IssueTagScoresFromAnalysis(analyzed.Tags), s.tagSpecificityMap(ctx)), s.tagSpecificityMap(ctx)),
 		TagScores:                attenuateGenericScores(IssueTagScoresFromAnalysis(analyzed.Tags), s.tagSpecificityMap(ctx)),
 		Embedding:                Float32VectorToFloat64(analyzed.Embedding.Vector),
 		EnrichmentStatus:         &status,
