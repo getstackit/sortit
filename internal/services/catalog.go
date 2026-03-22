@@ -15,6 +15,24 @@ import (
 	"splat/internal/vectors"
 )
 
+var retrievalAnchorTagNames = []string{
+	"bug",
+	"crash",
+	"feature",
+	"idea",
+	"improvement",
+	"ui",
+	"ux",
+	"frontend",
+	"performance",
+	"safari",
+	"onboarding",
+	"search",
+	"export",
+}
+
+const retrievalSimilarityThreshold = 0.2
+
 type TagStore interface {
 	ListTags(context.Context) ([]issues.Tag, error)
 	UpsertTags(context.Context, []issues.Tag) error
@@ -171,6 +189,110 @@ func (s *CatalogService) EnsureStoredTags(ctx context.Context, tags []issues.Tag
 		return fmt.Errorf("upsert stored tags: %w", err)
 	}
 	return nil
+}
+
+// IssueTaxonomyShortlist builds a retrieval-first candidate set from the
+// nearest embedded tags plus a small stable anchor set for broad recall.
+func (s *CatalogService) IssueTaxonomyShortlist(ctx context.Context, issueEmbedding []float64, preferred []string, retrievedLimit int) ([]ai.Tag, error) {
+	if len(issueEmbedding) == 0 {
+		return s.IssueTaxonomy(ctx, preferred)
+	}
+
+	stored, err := s.StoredTags(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("list stored tags: %w", err)
+	}
+	if len(stored) == 0 {
+		stored = issues.DefaultTags()
+	}
+
+	catalogByName := make(map[string]issues.Tag, len(stored))
+	for _, tag := range stored {
+		name := normalizeCatalogTagName(tag.Name)
+		if name == "" {
+			continue
+		}
+		catalogByName[name] = issues.Tag{
+			Name:        name,
+			Description: strings.TrimSpace(tag.Description),
+			Embedding:   append([]float64(nil), tag.Embedding...),
+		}
+	}
+	if len(catalogByName) == 0 {
+		return s.IssueTaxonomy(ctx, preferred)
+	}
+
+	type scoredTag struct {
+		tag        issues.Tag
+		similarity float64
+	}
+	scored := make([]scoredTag, 0, len(catalogByName))
+	for _, tag := range catalogByName {
+		if len(tag.Embedding) == 0 {
+			continue
+		}
+		similarity := vectors.CosineSimilarity(issueEmbedding, tag.Embedding)
+		if similarity < retrievalSimilarityThreshold {
+			continue
+		}
+		scored = append(scored, scoredTag{
+			tag:        tag,
+			similarity: similarity,
+		})
+	}
+	slices.SortFunc(scored, func(a, b scoredTag) int {
+		if c := cmp.Compare(b.similarity, a.similarity); c != 0 {
+			return c
+		}
+		return cmp.Compare(a.tag.Name, b.tag.Name)
+	})
+
+	selected := make([]ai.Tag, 0, len(preferred)+len(retrievalAnchorTagNames)+retrievedLimit)
+	seen := make(map[string]struct{}, len(preferred)+len(retrievalAnchorTagNames)+retrievedLimit)
+	add := func(tag issues.Tag) {
+		name := normalizeCatalogTagName(tag.Name)
+		if name == "" {
+			return
+		}
+		if _, ok := seen[name]; ok {
+			return
+		}
+		seen[name] = struct{}{}
+		selected = append(selected, ai.Tag{
+			Name:        name,
+			Description: strings.TrimSpace(tag.Description),
+		})
+	}
+
+	for _, raw := range preferred {
+		name := normalizeCatalogTagName(raw)
+		if tag, ok := catalogByName[name]; ok {
+			add(tag)
+			continue
+		}
+		add(issues.Tag{Name: name})
+	}
+
+	if retrievedLimit <= 0 {
+		retrievedLimit = 15
+	}
+	for _, item := range scored {
+		add(item.tag)
+		if len(selected) >= len(preferred)+retrievedLimit {
+			break
+		}
+	}
+
+	for _, name := range retrievalAnchorTagNames {
+		if tag, ok := catalogByName[name]; ok {
+			add(tag)
+		}
+	}
+
+	if len(selected) == 0 {
+		return s.IssueTaxonomy(ctx, preferred)
+	}
+	return selected, nil
 }
 
 func (s *CatalogService) embedTag(ctx context.Context, tag issues.Tag) ([]float64, error) {

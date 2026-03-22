@@ -3,6 +3,7 @@ package services
 import (
 	"context"
 	"log/slog"
+	"slices"
 	"testing"
 	"time"
 
@@ -52,11 +53,11 @@ func (catalogTestTagger) Score(context.Context, string, []ai.Tag) ([]ai.TagScore
 }
 
 func (catalogTestTagger) Provider() string {
-	return "test" //nolint:goconst
+	return testProviderName //nolint:goconst
 }
 
 func (catalogTestTagger) Model() string {
-	return "test" //nolint:goconst
+	return testProviderName //nolint:goconst
 }
 
 type catalogTestEmbedder struct {
@@ -71,11 +72,11 @@ func (e *catalogTestEmbedder) EmbedText(_ context.Context, text string) (ai.Embe
 }
 
 func (e *catalogTestEmbedder) Provider() string {
-	return "test"
+	return testProviderName
 }
 
 func (e *catalogTestEmbedder) Model() string {
-	return "test"
+	return testProviderName
 }
 
 func TestEnsureStoredTagsReembedsWhenDescriptionChanges(t *testing.T) {
@@ -332,6 +333,38 @@ func TestAnnotateHintsDoesNotMutateOriginal(t *testing.T) {
 
 	if taxonomy[0].Hint {
 		t.Fatal("AnnotateHints mutated the original taxonomy slice")
+	}
+}
+
+func TestIssueTaxonomyShortlistPrefersNearestTagsAndKeepsAnchors(t *testing.T) {
+	store := &catalogTestStore{
+		tags: []issues.Tag{
+			{Name: "bug", Description: "software defect", Embedding: []float64{0.2, 0.2, 0}},
+			{Name: "feature", Description: "new capability", Embedding: []float64{0.1, 0.1, 0}},
+			{Name: "search", Description: "query and filtering", Embedding: []float64{1, 0, 0}},
+			{Name: "autocomplete", Description: "typeahead search suggestions", Embedding: []float64{0.95, 0.05, 0}},
+			{Name: "billing", Description: "payments", Embedding: []float64{0, 1, 0}},
+		},
+	}
+	service := NewCatalogService(store, nil, slog.Default())
+
+	result, err := service.IssueTaxonomyShortlist(context.Background(), []float64{1, 0, 0}, nil, 2)
+	if err != nil {
+		t.Fatalf("IssueTaxonomyShortlist: %v", err)
+	}
+
+	names := make([]string, 0, len(result))
+	for _, tag := range result {
+		names = append(names, tag.Name)
+	}
+
+	for _, want := range []string{"search", "autocomplete", "bug", "feature"} {
+		if !slices.Contains(names, want) {
+			t.Fatalf("expected shortlist to contain %q, got %#v", want, names)
+		}
+	}
+	if slices.Contains(names, "billing") {
+		t.Fatalf("expected shortlist to exclude distant tag billing, got %#v", names)
 	}
 }
 

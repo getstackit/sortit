@@ -112,6 +112,20 @@ func (s *Server) handleDebugRescoreTags(w http.ResponseWriter, r *http.Request) 
 	writeJSON(w, http.StatusOK, debugRescoreTagsResponse{Rescored: true})
 }
 
+func (s *Server) handleDebugEvalTags(w http.ResponseWriter, r *http.Request) {
+	result, err := s.debugEvalTags.Handle(r.Context())
+	if err != nil {
+		status := http.StatusInternalServerError
+		if queries.AIUnavailable(err) {
+			status = http.StatusServiceUnavailable
+		}
+		writeError(w, status, err.Error())
+		return
+	}
+
+	writeJSON(w, http.StatusOK, result)
+}
+
 func (s *Server) handleDebugIssueR2(w http.ResponseWriter, r *http.Request) {
 	issueID := strings.TrimSpace(chi.URLParam(r, "id"))
 	if issueID == "" {

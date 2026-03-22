@@ -145,16 +145,8 @@ func (s *IssueEnricher) AnalyzePersistedIssue(
 		discussionTexts = append(discussionTexts, text)
 	}
 
-	// Always use the full catalog taxonomy so the AI can discover better tags.
-	// For initial creation (targetSequence <= 1), we used to pass only the
-	// issue's explicit tags as preferred, but that prevented the AI from
-	// seeing the rest of the catalog during re-enrichment.
-	taxonomy, err := s.catalog.IssueTaxonomy(ctx, nil)
-	if err != nil {
-		return issues.IssueFieldUpdate{}, err
-	}
-
 	canonicalRaw := discussionTexts[0]
+	var err error
 	if targetSequence > 1 {
 		canonicalRaw, err = s.analyzer.CanonicalizeDiscussion(ctx, discussionTexts)
 		if err != nil {
@@ -166,10 +158,14 @@ func (s *IssueEnricher) AnalyzePersistedIssue(
 		}
 	}
 
-	// Mark taxonomy tags that are semantically similar to the issue as hints,
-	// so the AI pays closer attention to tags that embedding similarity
-	// suggests are relevant but might otherwise be overlooked.
-	taxonomy = s.catalog.AnnotateHints(ctx, taxonomy, issue.Embedding, 5)
+	freshEmbedding, err := s.analyzer.EmbedText(ctx, canonicalRaw)
+	if err != nil {
+		return issues.IssueFieldUpdate{}, fmt.Errorf("embed canonical raw for hints: %w", err)
+	}
+	taxonomy, err := s.catalog.IssueTaxonomyShortlist(ctx, Float32VectorToFloat64(freshEmbedding.Vector), nil, 15)
+	if err != nil {
+		return issues.IssueFieldUpdate{}, err
+	}
 
 	analyzed, err := s.analyzer.AnalyzeIssueData(ctx, canonicalRaw, taxonomy)
 	if err != nil {
@@ -263,6 +259,7 @@ const (
 	genericSpecificityThreshold = 0.3
 	genericMultiplier           = 0.6
 	defaultSpecificity          = 0.5
+	issueTagRelevanceFloor      = 0.08
 )
 
 // attenuateGenericScores reduces relevance of low-specificity tags when more
@@ -329,6 +326,9 @@ func IssueTagScoresFromAnalysis(scores []ai.TagScore) []issues.TagRelevance {
 	for _, score := range scores {
 		name := score.Tag
 		if name == "" {
+			continue
+		}
+		if score.Relevance < issueTagRelevanceFloor {
 			continue
 		}
 		tagScores = append(tagScores, issues.TagRelevance{

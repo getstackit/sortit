@@ -2,10 +2,12 @@ package queries
 
 import (
 	"context"
+	"log/slog"
 	"math"
 	"testing"
 	"time"
 
+	"splat/internal/ai"
 	"splat/internal/issues"
 	"splat/internal/services"
 )
@@ -92,6 +94,87 @@ func TestDebugIssueR2ReportsRawNorms(t *testing.T) {
 	}
 	if result.ResidualNorm != want {
 		t.Fatalf("expected residual norm %v, got %v", want, result.ResidualNorm)
+	}
+}
+
+type debugEvalTagger struct {
+	scoresByText map[string][]ai.TagScore
+}
+
+func (t *debugEvalTagger) Score(_ context.Context, text string, _ []ai.Tag) ([]ai.TagScore, error) {
+	return append([]ai.TagScore(nil), t.scoresByText[text]...), nil
+}
+
+func (t *debugEvalTagger) Provider() string {
+	return "fake"
+}
+
+func (t *debugEvalTagger) Model() string {
+	return "eval-tagger"
+}
+
+type debugEvalEmbedder struct{}
+
+func (e *debugEvalEmbedder) EmbedText(context.Context, string) (ai.EmbeddingResult, error) {
+	return ai.EmbeddingResult{}, nil
+}
+
+func (e *debugEvalEmbedder) Provider() string {
+	return "fake"
+}
+
+func (e *debugEvalEmbedder) Model() string {
+	return "eval-embedder"
+}
+
+func TestDebugEvalTagsReportsAggregateMetrics(t *testing.T) {
+	ctx := context.Background()
+	analyzer := ai.NewAnalyzer(&debugEvalTagger{
+		scoresByText: map[string][]ai.TagScore{
+			"issue a": {
+				{Tag: "export", Relevance: 0.91},
+				{Tag: "bug", Relevance: 0.44},
+				{Tag: "noise", Relevance: 0.07},
+			},
+			"issue b": {
+				{Tag: "search", Relevance: 0.95},
+			},
+		},
+	}, &debugEvalEmbedder{})
+	catalog := services.NewCatalogService(&debugTagStore{}, analyzer, nil)
+	handler := DebugEvalTagsHandler{
+		Catalog:  catalog,
+		Enricher: services.NewIssueEnricher(analyzer, catalog, slog.Default()),
+		Fixture: []DebugTagEvalCase{
+			{ID: "a", Text: "issue a", ExpectedTags: []string{"export", "safari"}},
+			{ID: "b", Text: "issue b", ExpectedTags: []string{"search"}},
+		},
+	}
+
+	result, err := handler.Handle(ctx)
+	if err != nil {
+		t.Fatalf("handle debug eval tags: %v", err)
+	}
+	if result.CaseCount != 2 {
+		t.Fatalf("expected 2 cases, got %d", result.CaseCount)
+	}
+	if result.Precision != 0.667 {
+		t.Fatalf("expected aggregate precision 0.667, got %v", result.Precision)
+	}
+	if result.Recall != 0.667 {
+		t.Fatalf("expected aggregate recall 0.667, got %v", result.Recall)
+	}
+	if result.ExactMatchCount != 1 {
+		t.Fatalf("expected 1 exact match, got %d", result.ExactMatchCount)
+	}
+	if got := result.Cases[0].MissingTags; len(got) != 1 || got[0] != "safari" {
+		t.Fatalf("expected missing safari, got %+v", got)
+	}
+	if got := result.Cases[0].UnexpectedTags; len(got) != 1 || got[0] != "bug" {
+		t.Fatalf("expected unexpected bug, got %+v", got)
+	}
+	if got := result.Cases[0].ActualTags; len(got) != 2 || got[0] != "export" || got[1] != "bug" {
+		t.Fatalf("unexpected actual tags %+v", got)
 	}
 }
 

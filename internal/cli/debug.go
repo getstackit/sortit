@@ -11,9 +11,25 @@ func newDebugCmd(opts *rootOptions) *cobra.Command {
 		Use:   "debug",
 		Short: "Diagnostic and debugging tools",
 	}
+	cmd.AddCommand(newDebugEvalTagsCmd(opts))
 	cmd.AddCommand(newDebugFactorWeightsCmd(opts))
 	cmd.AddCommand(newDebugIssueR2Cmd(opts))
 	return cmd
+}
+
+func newDebugEvalTagsCmd(opts *rootOptions) *cobra.Command {
+	return &cobra.Command{
+		Use:   "eval-tags",
+		Short: "Run the built-in tag benchmark and report tagging diffs",
+		RunE: func(cmd *cobra.Command, _ []string) error {
+			client := opts.client()
+			var response queries.DebugEvalTagsResult
+			if err := client.Get(cmd.Context(), "/debug/eval-tags", &response); err != nil {
+				return err
+			}
+			return printJSON(cmd, response)
+		},
+	}
 }
 
 func newDebugFactorWeightsCmd(opts *rootOptions) *cobra.Command {

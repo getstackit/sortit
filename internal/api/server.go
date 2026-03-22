@@ -62,6 +62,7 @@ type Server struct {
 	getMap              queries.MapHandler
 	getMapEdges         queries.EdgeHandler
 	debugAnalyzeIssue   queries.DebugAnalyzeIssueHandler
+	debugEvalTags       queries.DebugEvalTagsHandler
 	debugFactorWeights  queries.DebugFactorWeightsHandler
 	debugIssueR2        queries.DebugIssueR2Handler
 	exploreIssue        queries.ExploreIssueHandler
@@ -246,6 +247,7 @@ func (s *Server) registerDedicatedAPIRoutes(r chi.Router) {
 		r.Get("/people/{person}/profile", s.handlePersonProfileRoute)
 		r.Route("/debug", func(r chi.Router) {
 			r.Use(middleware.Timeout(debugRequestTimeout))
+			r.Get("/eval-tags", s.handleDebugEvalTags)
 			r.Get("/factor-weights", s.handleDebugFactorWeights)
 			r.Get("/issues/{id}/r2", s.handleDebugIssueR2)
 		})
@@ -277,6 +279,7 @@ func (s *Server) registerUIRoutes(r chi.Router) {
 			r.Post("/issues/analyze", s.handleDebugIssueAnalyze)
 			r.Post("/map-projection/invalidate", s.handleDebugInvalidateMapProjection)
 			r.Post("/tags/rescore", s.handleDebugRescoreTags)
+			r.Get("/eval-tags", s.handleDebugEvalTags)
 			r.Get("/factor-weights", s.handleDebugFactorWeights)
 			r.Get("/issues/{id}/r2", s.handleDebugIssueR2)
 		})
@@ -561,6 +564,7 @@ func NewServer(cfg ServerConfig) *Server {
 		getMap:             queries.MapHandler{IssueStore: store, Catalog: catalog, Projection: mapProjectionLoader},
 		getMapEdges:        queries.EdgeHandler{IssueStore: store, Catalog: catalog, Projection: mapProjectionLoader},
 		debugAnalyzeIssue:  queries.DebugAnalyzeIssueHandler{Analyzer: cfg.Analyzer, Catalog: catalog, Store: store},
+		debugEvalTags:      queries.DebugEvalTagsHandler{Analyzer: cfg.Analyzer, Catalog: catalog, Enricher: enricher},
 		debugFactorWeights: queries.DebugFactorWeightsHandler{Store: store, Catalog: catalog},
 		debugIssueR2:       queries.DebugIssueR2Handler{Store: store, Catalog: catalog},
 		getPersonProfile:   queries.GetPersonProfileHandler{Store: store, Catalog: catalog},
