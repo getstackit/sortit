@@ -53,6 +53,10 @@ func applySearchOptions(opts []SearchOption) searchConfig {
 	return cfg
 }
 
+type scoredResult struct {
+	combined, semantic, factor, confidence float64
+}
+
 type SearchQuery struct {
 	Raw  string         `json:"raw"`
 	Tags []TagRelevance `json:"tags"`
@@ -80,7 +84,7 @@ func SearchFromQueryWithTags(
 
 	_, visible, _ := deriveRelationshipSemantics(storeIssues)
 	mapIssues, tagNames, issueEmbeddings, tagEmbeddings := runtimeMapInputs(storeIssues, storeTags)
-	factorVectors := runtimeFactorVectors(mapIssues, tagNames, tagEmbeddings)
+	decomp := ComputeFactorDecomposition(mapIssues, tagNames, issueEmbeddings, tagEmbeddings)
 
 	querySummary := SearchQuery{
 		Raw:  queryRaw,
@@ -96,11 +100,25 @@ func SearchFromQueryWithTags(
 		}, tagEmbeddings)
 	}
 
-	queryFactor := runtimeFactorVectors([]issues.Issue{{
-		ID:        "query",
-		Raw:       queryRaw,
-		TagScores: querySummary.Tags,
-	}}, tagNames, tagEmbeddings)["query"]
+	// Fall back to legacy factor vectors when decomposition didn't produce per-issue vectors.
+	useDecomp := decomp.Decomposed()
+	var queryFactorEmb, queryResidualEmb []float64
+	var factorVectors map[string][]float64
+	if useDecomp {
+		tagCov := buildTagCovariance(tagNames, tagEmbeddings)
+		queryFactorEmb, queryResidualEmb = DecomposeEmbedding(queryVector, querySummary.Tags, tagNames, tagEmbeddings, tagCov)
+	} else {
+		factorVectors = runtimeFactorVectors(mapIssues, tagNames, tagEmbeddings)
+	}
+
+	queryFactor := factorVectors["query"]
+	if !useDecomp && queryFactor == nil {
+		queryFactor = runtimeFactorVectors([]issues.Issue{{
+			ID:        "query",
+			Raw:       queryRaw,
+			TagScores: querySummary.Tags,
+		}}, tagNames, tagEmbeddings)["query"]
+	}
 
 	queryLower := strings.ToLower(queryRaw)
 	tagCorrelationBoost := queryMatchesTagNames(queryLower, tagNames)
@@ -108,19 +126,39 @@ func SearchFromQueryWithTags(
 	genericQuery := queryMatchesGenericTag(queryLower, tagSpecificity)
 	now := time.Now().UTC()
 
+	// When query matches a tag name, nudge factor weight up.
+	searchDecomp := decomp
+	if tagCorrelationBoost && useDecomp {
+		searchDecomp.FactorWeight = clamp(decomp.FactorWeight+scoring.TagCorrelationFactorNudge, scoring.MinFactorWeight, scoring.MaxFactorWeight)
+		searchDecomp.ResidualWeight = 1 - searchDecomp.FactorWeight
+	}
+
 	related := make([]RelatedIssue, 0, len(storeIssues))
-	rawCombined := make(map[string]float64, len(storeIssues))
-	rawSemantic := make(map[string]float64, len(storeIssues))
-	rawFactor := make(map[string]float64, len(storeIssues))
-	contentConfidence := make(map[string]float64, len(storeIssues))
+	scores := make([]scoredResult, 0, len(storeIssues))
 	for _, candidate := range storeIssues {
 		if _, ok := visible[candidate.ID]; !ok {
 			continue
 		}
 		candidateSummary := exploreIssueSummary(candidate)
-		semantic := vectors.CosineSimilarity(queryVector, issueEmbeddings[candidate.ID])
-		factor := vectors.CosineSimilarity(queryFactor, factorVectors[candidate.ID])
-		combined := blendSearchSignals(semantic, factor, tagCorrelationBoost)
+		semanticSim := vectors.CosineSimilarity(queryVector, issueEmbeddings[candidate.ID])
+
+		var factorSim, residualSim, blended float64
+		if useDecomp && len(decomp.FactorEmbedding(candidate.ID)) > 0 {
+			factorSim, _, blended = BlendFromDecomposition(
+				searchDecomp, queryFactorEmb, queryResidualEmb,
+				decomp.FactorEmbedding(candidate.ID), decomp.ResidualEmbedding(candidate.ID),
+			)
+		} else {
+			residualSim = semanticSim
+			factorSim = vectors.CosineSimilarity(queryFactor, factorVectors[candidate.ID])
+			if tagCorrelationBoost {
+				blended = scoring.TagCorrelationSemantic*residualSim + scoring.TagCorrelationFactor*factorSim
+			} else {
+				blended = scoring.SemanticWeight*residualSim + scoring.FactorWeight*factorSim
+			}
+		}
+
+		combined := blended
 		// Note: the DB query also applies recency decay (90-day half-life) to rank
 		// the retrieval window. This app-side freshness weight fine-tunes within
 		// the semantic/factor blend on the already-retrieved candidates.
@@ -132,24 +170,27 @@ func SearchFromQueryWithTags(
 			combined += specificCooccurrenceBoost(candidateSummary.Tags, tagSpecificity)
 		}
 		sharedTags := sharedRelevantTags(querySummary.Tags, candidateSummary.Tags, scoring.SharedTagsLimit)
-		rawCombined[candidate.ID] = combined
-		rawSemantic[candidate.ID] = semantic
-		rawFactor[candidate.ID] = factor
-		contentConfidence[candidate.ID] = issues.ComputeContentConfidence(candidate.Raw)
+
+		scores = append(scores, scoredResult{
+			combined:   combined,
+			semantic:   semanticSim,
+			factor:     factorSim,
+			confidence: issues.ComputeContentConfidence(candidate.Raw),
+		})
 
 		related = append(related, RelatedIssue{
 			ID:                 candidateSummary.ID,
 			Raw:                candidateSummary.Raw,
 			Status:             candidateSummary.Status,
 			Tags:               candidateSummary.Tags,
-			SemanticSimilarity: round(semantic),
-			FactorSimilarity:   round(factor),
+			SemanticSimilarity: round(semanticSim),
+			FactorSimilarity:   round(factorSim),
 			CombinedSimilarity: round(combined),
-			Reason:             relatedIssueReason(sharedTags, semantic, factor),
+			Reason:             relatedIssueReason(sharedTags, semanticSim, factorSim),
 		})
 	}
 
-	sortSearchResults(related, storeIssues, cfg.sortBy, rawCombined, rawSemantic, rawFactor, contentConfidence)
+	sortSearchResults(related, storeIssues, cfg.sortBy, scores)
 
 	// Apply offset then limit.
 	if cfg.offset > 0 && cfg.offset < len(related) {
@@ -168,14 +209,12 @@ func SearchFromQueryWithTags(
 }
 
 // sortSearchResults sorts results by the given sort key.
+// scores is a parallel slice to related — scores[i] holds the raw scores for related[i].
 func sortSearchResults(
 	related []RelatedIssue,
 	storeIssues []issues.Issue,
 	sortBy string,
-	rawCombined map[string]float64,
-	rawSemantic map[string]float64,
-	rawFactor map[string]float64,
-	contentConfidence map[string]float64,
+	scores []scoredResult,
 ) {
 	switch sortBy {
 	case "created_at":
@@ -183,36 +222,53 @@ func sortSearchResults(
 		for _, issue := range storeIssues {
 			issueIndex[issue.ID] = issue
 		}
-		slices.SortFunc(related, func(a, b RelatedIssue) int {
-			aTime := issueIndex[a.ID].CreatedAt
-			bTime := issueIndex[b.ID].CreatedAt
+		sortBoth(related, scores, func(ai, bi int) int {
+			aTime := issueIndex[related[ai].ID].CreatedAt
+			bTime := issueIndex[related[bi].ID].CreatedAt
 			if diff := bTime.Compare(aTime); diff != 0 {
 				return diff
 			}
-			return cmp.Compare(a.ID, b.ID)
+			return cmp.Compare(related[ai].ID, related[bi].ID)
 		})
 	default: // "relevance"
-		slices.SortFunc(related, func(a, b RelatedIssue) int {
-			combinedA := rawCombined[a.ID]
-			combinedB := rawCombined[b.ID]
-			if math.Abs(combinedB-combinedA) > scoring.ContentConfidenceTieWindow {
-				return cmp.Compare(combinedB, combinedA)
+		sortBoth(related, scores, func(ai, bi int) int {
+			a, b := scores[ai], scores[bi]
+			if math.Abs(b.combined-a.combined) > scoring.ContentConfidenceTieWindow {
+				return cmp.Compare(b.combined, a.combined)
 			}
-			if diff := cmp.Compare(contentConfidence[b.ID], contentConfidence[a.ID]); diff != 0 {
+			if diff := cmp.Compare(b.confidence, a.confidence); diff != 0 {
 				return diff
 			}
-			if diff := cmp.Compare(combinedB, combinedA); diff != 0 {
+			if diff := cmp.Compare(b.combined, a.combined); diff != 0 {
 				return diff
 			}
-			if diff := cmp.Compare(rawSemantic[b.ID], rawSemantic[a.ID]); diff != 0 {
+			if diff := cmp.Compare(b.semantic, a.semantic); diff != 0 {
 				return diff
 			}
-			if diff := cmp.Compare(rawFactor[b.ID], rawFactor[a.ID]); diff != 0 {
+			if diff := cmp.Compare(b.factor, a.factor); diff != 0 {
 				return diff
 			}
-			return cmp.Compare(a.ID, b.ID)
+			return cmp.Compare(related[ai].ID, related[bi].ID)
 		})
 	}
+}
+
+// sortBoth sorts related and scores in tandem using an index-based comparator.
+func sortBoth(related []RelatedIssue, scores []scoredResult, cmpFn func(ai, bi int) int) {
+	indices := make([]int, len(related))
+	for i := range indices {
+		indices[i] = i
+	}
+	slices.SortFunc(indices, cmpFn)
+
+	sortedRelated := make([]RelatedIssue, len(related))
+	sortedScores := make([]scoredResult, len(scores))
+	for i, idx := range indices {
+		sortedRelated[i] = related[idx]
+		sortedScores[i] = scores[idx]
+	}
+	copy(related, sortedRelated)
+	copy(scores, sortedScores)
 }
 
 // queryMatchesTagNames returns true if any query word exactly matches a known
@@ -231,16 +287,6 @@ func queryMatchesTagNames(queryLower string, tagNames []string) bool {
 		}
 	}
 	return false
-}
-
-// blendSearchSignals combines the domain-specific similarity signals. Plain
-// text retrieval is handled in ParadeDB; app-side ranking should only reshape
-// results using semantic and factor-space information.
-func blendSearchSignals(semantic, factor float64, tagCorrelation bool) float64 {
-	if tagCorrelation {
-		return scoring.TagCorrelationSemantic*semantic + scoring.TagCorrelationFactor*factor
-	}
-	return scoring.SemanticWeight*semantic + scoring.FactorWeight*factor
 }
 
 // issueSpecificityPenalty penalizes issues whose top tags are all generic

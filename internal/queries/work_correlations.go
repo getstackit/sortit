@@ -69,6 +69,9 @@ func (h WorkCorrelationsHandler) Handle(ctx context.Context, filter IssueStatusF
 	return WorkCorrelationsResult{Correlations: []PersonCorrelation{}}, nil
 }
 
+// TODO: apply factor decomposition to person-level aggregation (mean embeddings,
+// tag profiles). This operates in a different statistical regime than issue-level
+// similarity, so the decomposition weights would need separate calibration.
 func buildWorkCorrelations(allIssues []issues.PeopleAnalyticsIssue, filter IssueStatusFilter, tagSpecificity map[string]*float64) WorkCorrelationsResult {
 	allIssues = filterPeopleAnalyticsByStatus(allIssues, filter)
 

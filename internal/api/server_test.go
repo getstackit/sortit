@@ -214,6 +214,15 @@ func TestMapEndpointsStartEmptyByDefault(t *testing.T) {
 	if err := json.NewDecoder(mapRec.Body).Decode(&mapPayload); err != nil {
 		t.Fatalf("failed to decode map response: %v", err)
 	}
+	if mapPayload.Available {
+		t.Fatal("expected default empty map response to be unavailable")
+	}
+	if mapPayload.IssueCount != 0 {
+		t.Fatalf("expected issue count 0, got %d", mapPayload.IssueCount)
+	}
+	if mapPayload.MinimumIssueCount != 5 {
+		t.Fatalf("expected minimum issue count 5, got %d", mapPayload.MinimumIssueCount)
+	}
 	if len(mapPayload.Issues) != 0 || len(mapPayload.Edges) != 0 || len(mapPayload.Clusters) != 0 {
 		t.Fatalf(
 			"expected empty map response, got %d issues, %d edges, %d clusters",

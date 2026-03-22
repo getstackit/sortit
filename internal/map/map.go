@@ -13,6 +13,7 @@ const (
 	minVisibleEdgeCount = 24
 	maxVisibleEdgeRatio = 0.2
 	maxVisibleEdges     = 180
+	minMapIssueCount    = 5
 )
 
 type MapIssue struct {
@@ -27,9 +28,13 @@ type MapIssue struct {
 }
 
 type MapResponse struct {
-	Issues   []MapIssue `json:"issues"`
-	Edges    []Edge     `json:"edges"`
-	Clusters []Cluster  `json:"clusters"`
+	Available         bool       `json:"available"`
+	UnavailableReason string     `json:"unavailableReason,omitempty"`
+	IssueCount        int        `json:"issueCount"`
+	MinimumIssueCount int        `json:"minimumIssueCount"`
+	Issues            []MapIssue `json:"issues"`
+	Edges             []Edge     `json:"edges"`
+	Clusters          []Cluster  `json:"clusters"`
 }
 
 type EdgeResponse struct {
@@ -48,6 +53,31 @@ type mapBaseData struct {
 	positions      map[string]Position
 	candidateEdges []Edge
 	clusters       []Cluster
+}
+
+const (
+	mapUnavailableReasonInsufficientIssueCount = "insufficient_issue_count"
+	mapUnavailableReasonInsufficientDimensions = "insufficient_projection_dimensions"
+)
+
+func unavailableMapResponse(reason string, issueCount int) MapResponse {
+	return MapResponse{
+		Available:         false,
+		UnavailableReason: reason,
+		IssueCount:        issueCount,
+		MinimumIssueCount: minMapIssueCount,
+		Issues:            []MapIssue{},
+		Edges:             []Edge{},
+		Clusters:          []Cluster{},
+	}
+}
+
+func UnavailableMapResponse(reason string, issueCount int) MapResponse {
+	return unavailableMapResponse(reason, issueCount)
+}
+
+func MinimumMapIssueCount() int {
+	return minMapIssueCount
 }
 
 func normalizeViewport(viewport *Viewport) Viewport {

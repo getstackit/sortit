@@ -37,11 +37,12 @@ import type {
   MapEdge,
   MapIssue,
 } from "@/features/map/types";
-import { useIssue, useIssueMapData } from "@/hooks/use-issues";
+import { useIssue, useIssueMapData, useIssueR2 } from "@/hooks/use-issues";
 import {
   assignIssue,
   closeIssue,
   reopenIssue,
+  reEnrichIssue,
   refineIssue,
   progressIssue,
   type IssueLinkRecord,
@@ -258,6 +259,7 @@ export function IssueDetailPage({ issueID }: { issueID: string }) {
   }, [issueID, params]);
   const { data: issue, error: issueError, isLoading: loading, mutate: mutateIssue } = useIssue(resolvedIssueID);
   const { data: mapData, error: mapError, mutate: mutateMap } = useIssueMapData();
+  const { data: r2Data } = useIssueR2(resolvedIssueID);
   const [actionError, setActionError] = useState<string | null>(null);
   const [copyState, setCopyState] = useState<
     "idle" | "text-copied" | "link-copied" | "error"
@@ -273,6 +275,7 @@ export function IssueDetailPage({ issueID }: { issueID: string }) {
   const [assignEditing, setAssignEditing] = useState(false);
   const [assignInput, setAssignInput] = useState("");
   const [assignPending, setAssignPending] = useState(false);
+  const [reEnrichPending, setReEnrichPending] = useState(false);
 
   useEffect(() => {
     if (copyState === "idle") {
@@ -352,6 +355,27 @@ export function IssueDetailPage({ issueID }: { issueID: string }) {
       setStatusPending(false);
     }
   }, [issue, statusPending, mutateIssue]);
+
+  const handleReEnrich = useCallback(async () => {
+    if (!issue || reEnrichPending) {
+      return;
+    }
+
+    setReEnrichPending(true);
+    try {
+      const updated = await reEnrichIssue(issue.id);
+      mutateIssue(updated, { revalidate: false });
+      setActionError(null);
+    } catch (caughtError) {
+      const message =
+        caughtError instanceof Error
+          ? caughtError.message
+          : "Unknown backend error";
+      setActionError(message);
+    } finally {
+      setReEnrichPending(false);
+    }
+  }, [issue, reEnrichPending, mutateIssue]);
 
   const handleCloseConfirm = useCallback(async (reason: string, reasonNote: string) => {
     if (!issue) return;
@@ -1407,6 +1431,93 @@ export function IssueDetailPage({ issueID }: { issueID: string }) {
                   </section>
                 )}
 
+                {r2Data && !r2Data.skipped && (
+                  <section className="app-surface rounded-[1.5rem] p-5">
+                    <h3 className="text-sm font-semibold">Tag quality (R²)</h3>
+                    <div className="mt-3 space-y-2">
+                      <div className="flex items-center gap-2">
+                        <div className="h-2 flex-1 overflow-hidden rounded-full bg-muted">
+                          <div
+                            className={cn(
+                              "h-full rounded-full transition-all",
+                              r2Data.r2 >= 0.3
+                                ? "bg-green-500"
+                                : r2Data.r2 >= 0.15
+                                  ? "bg-amber-500"
+                                  : "bg-red-500"
+                            )}
+                            style={{ width: `${Math.min(r2Data.r2 * 100, 100)}%` }}
+                          />
+                        </div>
+                        <span className="text-xs font-medium tabular-nums">
+                          {(r2Data.r2 * 100).toFixed(0)}%
+                        </span>
+                      </div>
+                      <p className="text-[11px] text-muted-foreground">
+                        {r2Data.r2 >= 0.3
+                          ? "Tags explain this issue well"
+                          : r2Data.r2 >= 0.15
+                            ? "Tags partially explain this issue"
+                            : "Tags explain very little — consider re-classifying"}
+                      </p>
+                      {r2Data.r2 < 0.3 && (
+                        <details className="mt-2">
+                          <summary className="cursor-pointer text-xs font-medium text-muted-foreground hover:text-foreground">
+                            Diagnosis details
+                          </summary>
+                          <div className="mt-2 space-y-3">
+                            {r2Data.diagnosis.length > 0 && (
+                              <ul className="list-disc space-y-1 pl-4 text-xs text-muted-foreground">
+                                {r2Data.diagnosis.map((d, i) => (
+                                  <li key={i}>{d}</li>
+                                ))}
+                              </ul>
+                            )}
+                            {r2Data.nearestResidualTags.length > 0 && (
+                              <div>
+                                <p className="text-[11px] font-medium text-muted-foreground">
+                                  Suggested tags
+                                </p>
+                                <div className="mt-1 flex flex-wrap gap-1">
+                                  {r2Data.nearestResidualTags
+                                    .filter((t) => !t.assigned)
+                                    .slice(0, 5)
+                                    .map((t) => (
+                                      <span
+                                        key={t.tag}
+                                        className="inline-flex items-center rounded-full bg-muted px-2 py-0.5 text-[10px] font-medium"
+                                      >
+                                        {t.tag}
+                                      </span>
+                                    ))}
+                                </div>
+                              </div>
+                            )}
+                            {r2Data.residualNeighbors.length > 0 && (
+                              <div>
+                                <p className="text-[11px] font-medium text-muted-foreground">
+                                  Issues sharing unexplained concept
+                                </p>
+                                <div className="mt-1 space-y-1">
+                                  {r2Data.residualNeighbors.slice(0, 5).map((n) => (
+                                    <Link
+                                      key={n.id}
+                                      href={`/issues/${n.id}`}
+                                      className="block truncate text-xs text-muted-foreground hover:text-foreground"
+                                    >
+                                      {n.id}
+                                    </Link>
+                                  ))}
+                                </div>
+                              </div>
+                            )}
+                          </div>
+                        </details>
+                      )}
+                    </div>
+                  </section>
+                )}
+
                 <section className="app-surface rounded-[1.5rem] p-5">
                   <div className="flex flex-wrap items-center justify-between gap-3">
                     <div>
@@ -1492,6 +1603,15 @@ export function IssueDetailPage({ issueID }: { issueID: string }) {
                         : issue.status === "closed"
                           ? "Reopen issue"
                           : "Close issue"}
+                    </Button>
+
+                    <Button
+                      type="button"
+                      variant="outline"
+                      onClick={() => void handleReEnrich()}
+                      disabled={reEnrichPending}
+                    >
+                      {reEnrichPending ? "Re-classifying..." : "Re-classify"}
                     </Button>
 
                     <Button

@@ -30,6 +30,13 @@ func (h MapHandler) Handle(ctx context.Context, input MapQuery) (issuemap.MapRes
 		if err != nil {
 			return issuemap.MapResponse{}, err
 		}
+		filteredIssues := FilterIssuesByStatus(storeIssues, input.StatusFilter)
+		if len(filteredIssues) < issuemap.MinimumMapIssueCount() {
+			return issuemap.UnavailableMapResponse("insufficient_issue_count", len(filteredIssues)), nil
+		}
+		if projection.UnavailableReason != "" {
+			return issuemap.UnavailableMapResponse(projection.UnavailableReason, len(filteredIssues)), nil
+		}
 		projection = overlayProjectionIssueMetadata(projection, storeIssues)
 		projection = subsetProjectionByStatus(projection, input.StatusFilter)
 		threshold := issuemapDefaultThreshold(input.EdgeThreshold)

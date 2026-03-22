@@ -18,6 +18,7 @@ type IssueEnricher struct {
 }
 
 const issueEnrichmentTimeout = 20 * time.Second
+const persistedIssueHintLimit = 5
 
 func NewIssueEnricher(analyzer *ai.Analyzer, catalog *CatalogService, logger *slog.Logger) *IssueEnricher {
 	return &IssueEnricher{
@@ -145,16 +146,8 @@ func (s *IssueEnricher) AnalyzePersistedIssue(
 		discussionTexts = append(discussionTexts, text)
 	}
 
-	explicitTags := []string(nil)
-	if targetSequence <= 1 {
-		explicitTags = append([]string(nil), issue.Tags...)
-	}
-	taxonomy, err := s.catalog.IssueTaxonomy(ctx, explicitTags)
-	if err != nil {
-		return issues.IssueFieldUpdate{}, err
-	}
-
 	canonicalRaw := discussionTexts[0]
+	var err error
 	if targetSequence > 1 {
 		canonicalRaw, err = s.analyzer.CanonicalizeDiscussion(ctx, discussionTexts)
 		if err != nil {
@@ -166,12 +159,23 @@ func (s *IssueEnricher) AnalyzePersistedIssue(
 		}
 	}
 
+	freshEmbedding, err := s.analyzer.EmbedText(ctx, canonicalRaw)
+	if err != nil {
+		return issues.IssueFieldUpdate{}, fmt.Errorf("embed canonical raw for hints: %w", err)
+	}
+	freshEmbeddingVector := Float32VectorToFloat64(freshEmbedding.Vector)
+	taxonomy, err := s.catalog.IssueTaxonomyShortlist(ctx, freshEmbeddingVector, nil, 15)
+	if err != nil {
+		return issues.IssueFieldUpdate{}, err
+	}
+	taxonomy = s.catalog.AnnotateHints(ctx, taxonomy, freshEmbeddingVector, persistedIssueHintLimit)
+
 	analyzed, err := s.analyzer.AnalyzeIssueData(ctx, canonicalRaw, taxonomy)
 	if err != nil {
 		return issues.IssueFieldUpdate{}, err
 	}
 
-	if err := s.catalog.EnsureStoredTags(ctx, CatalogTagsFromAnalysis(taxonomy, explicitTags, analyzed.Tags)); err != nil {
+	if err := s.catalog.EnsureStoredTags(ctx, CatalogTagsFromAnalysis(taxonomy, nil, analyzed.Tags)); err != nil {
 		return issues.IssueFieldUpdate{}, err
 	}
 
@@ -186,7 +190,7 @@ func (s *IssueEnricher) AnalyzePersistedIssue(
 	emptyError := ""
 	return issues.IssueFieldUpdate{
 		Raw:                      &canonicalRaw,
-		Tags:                     issues.DisplayTagsWithSpecificity(explicitTags, attenuateGenericScores(IssueTagScoresFromAnalysis(analyzed.Tags), s.tagSpecificityMap(ctx)), s.tagSpecificityMap(ctx)),
+		Tags:                     issues.DisplayTagsWithSpecificity(nil, attenuateGenericScores(IssueTagScoresFromAnalysis(analyzed.Tags), s.tagSpecificityMap(ctx)), s.tagSpecificityMap(ctx)),
 		TagScores:                attenuateGenericScores(IssueTagScoresFromAnalysis(analyzed.Tags), s.tagSpecificityMap(ctx)),
 		Embedding:                Float32VectorToFloat64(analyzed.Embedding.Vector),
 		EnrichmentStatus:         &status,
@@ -258,6 +262,7 @@ const (
 	genericSpecificityThreshold = 0.3
 	genericMultiplier           = 0.6
 	defaultSpecificity          = 0.5
+	issueTagRelevanceFloor      = 0.08
 )
 
 // attenuateGenericScores reduces relevance of low-specificity tags when more
@@ -324,6 +329,9 @@ func IssueTagScoresFromAnalysis(scores []ai.TagScore) []issues.TagRelevance {
 	for _, score := range scores {
 		name := score.Tag
 		if name == "" {
+			continue
+		}
+		if score.Relevance < issueTagRelevanceFloor {
 			continue
 		}
 		tagScores = append(tagScores, issues.TagRelevance{

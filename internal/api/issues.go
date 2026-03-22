@@ -52,6 +52,10 @@ type batchCloseIssuesRequest struct {
 	ReasonNote string   `json:"reasonNote,omitempty"`
 }
 
+type batchReEnrichIssuesRequest struct {
+	IDs []string `json:"ids"`
+}
+
 type batchRefineIssuesRequest struct {
 	IDs       []string `json:"ids"`
 	Raw       string   `json:"raw"`
@@ -418,6 +422,48 @@ func (s *Server) handleRefineIssue(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, refined)
 }
 
+func (s *Server) handleReEnrichIssue(w http.ResponseWriter, r *http.Request) {
+	id := chi.URLParam(r, "id")
+
+	reEnriched, err := s.reEnrichIssue.Handle(r.Context(), commands.ReEnrichIssue{
+		ID: id,
+	})
+	if err != nil {
+		if errors.Is(err, issues.ErrNotFound) {
+			writeError(w, http.StatusNotFound, "issue not found")
+			return
+		}
+		if errors.Is(err, issues.ErrIssueClosed) {
+			writeError(w, http.StatusConflict, "issue is closed")
+			return
+		}
+		writeInternalError(w, r, "failed to re-enrich issue", err)
+		return
+	}
+
+	writeJSON(w, http.StatusOK, reEnriched)
+}
+
+func (s *Server) handleReEnrichIssueBatch(w http.ResponseWriter, r *http.Request) {
+	request, err := decodeBatchReEnrichIssuesRequest(r)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+
+	result, err := commands.RunIssueMutationBatch(request.IDs, func(id string) (issues.Issue, error) {
+		return s.reEnrichIssue.Handle(r.Context(), commands.ReEnrichIssue{
+			ID: id,
+		})
+	})
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+
+	writeJSON(w, http.StatusOK, result)
+}
+
 func (s *Server) handleExploreIssue(w http.ResponseWriter, r *http.Request) {
 	id := chi.URLParam(r, "id")
 
@@ -645,6 +691,20 @@ func decodeBatchCloseIssuesRequest(r *http.Request) (batchCloseIssuesRequest, er
 	request.ReasonNote = strings.TrimSpace(request.ReasonNote)
 	if len(request.IDs) == 0 {
 		return batchCloseIssuesRequest{}, errors.New("at least one issue id is required")
+	}
+
+	return request, nil
+}
+
+func decodeBatchReEnrichIssuesRequest(r *http.Request) (batchReEnrichIssuesRequest, error) {
+	request, err := decodeJSON[batchReEnrichIssuesRequest](r)
+	if err != nil {
+		return batchReEnrichIssuesRequest{}, err
+	}
+
+	request.IDs = sanitizeIssueIDs(request.IDs)
+	if len(request.IDs) == 0 {
+		return batchReEnrichIssuesRequest{}, errors.New("at least one issue id is required")
 	}
 
 	return request, nil

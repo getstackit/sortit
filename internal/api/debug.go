@@ -3,10 +3,14 @@ package api
 import (
 	"errors"
 	"net/http"
+	"strconv"
 	"strings"
 	"time"
 
+	"github.com/go-chi/chi/v5"
+
 	"splat/internal/ai"
+	"splat/internal/issues"
 	"splat/internal/queries"
 )
 
@@ -107,6 +111,60 @@ func (s *Server) handleDebugRescoreTags(w http.ResponseWriter, r *http.Request) 
 	)
 
 	writeJSON(w, http.StatusOK, debugRescoreTagsResponse{Rescored: true})
+}
+
+func (s *Server) handleDebugEvalTags(w http.ResponseWriter, r *http.Request) {
+	fixture := strings.TrimSpace(r.URL.Query().Get("fixture"))
+	runs := 1
+	if raw := strings.TrimSpace(r.URL.Query().Get("runs")); raw != "" {
+		parsed, err := strconv.Atoi(raw)
+		if err != nil || parsed <= 0 {
+			writeError(w, http.StatusBadRequest, "runs must be a positive integer")
+			return
+		}
+		runs = parsed
+	}
+	result, err := s.debugEvalTags.HandleFixture(r.Context(), fixture, runs)
+	if err != nil {
+		status := http.StatusInternalServerError
+		if queries.AIUnavailable(err) {
+			status = http.StatusServiceUnavailable
+		}
+		writeError(w, status, err.Error())
+		return
+	}
+
+	writeJSON(w, http.StatusOK, result)
+}
+
+func (s *Server) handleDebugIssueR2(w http.ResponseWriter, r *http.Request) {
+	issueID := strings.TrimSpace(chi.URLParam(r, "id"))
+	if issueID == "" {
+		writeError(w, http.StatusBadRequest, "issue id is required")
+		return
+	}
+
+	result, err := s.debugIssueR2.Handle(r.Context(), issueID)
+	if err != nil {
+		if errors.Is(err, issues.ErrNotFound) {
+			writeError(w, http.StatusNotFound, "issue not found")
+			return
+		}
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+
+	writeJSON(w, http.StatusOK, result)
+}
+
+func (s *Server) handleDebugFactorWeights(w http.ResponseWriter, r *http.Request) {
+	result, err := s.debugFactorWeights.Handle(r.Context())
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+
+	writeJSON(w, http.StatusOK, result)
 }
 
 func decodeDebugIssueAnalyzeRequest(r *http.Request) (debugIssueAnalyzeRequest, error) {

@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"splat/internal/issues"
+	issuemap "splat/internal/map"
 	"splat/internal/scoring"
 	"splat/internal/services"
 	"splat/internal/vectors"
@@ -78,7 +79,11 @@ func (h GetPersonDetailHandler) Handle(ctx context.Context, person string) (Pers
 		}
 	}
 
-	recommendations, err := h.recommendOpenIssues(ctx, person, profile.TagProfile, meanEmbedding(peopleAnalyticsIssuesFromIssues(assignedIssues)))
+	var storeTags []issues.Tag
+	if h.Catalog != nil {
+		storeTags, _ = h.Catalog.StoredTags(ctx)
+	}
+	recommendations, err := h.recommendOpenIssues(ctx, person, profile.TagProfile, meanEmbedding(peopleAnalyticsIssuesFromIssues(assignedIssues)), storeTags)
 	if err != nil {
 		return PersonDetail{}, err
 	}
@@ -110,6 +115,7 @@ func (h GetPersonDetailHandler) recommendOpenIssues(
 	person string,
 	profile []TagRelevance,
 	personEmbedding []float64,
+	storeTags []issues.Tag,
 ) ([]PersonIssueRecommendation, error) {
 	var openIssues []issues.Issue
 	var err error
@@ -125,6 +131,22 @@ func (h GetPersonDetailHandler) recommendOpenIssues(
 		return nil, err
 	}
 
+	// Build tag data for decomposition.
+	tagNames, tagEmbeddings := personDetailTagData(openIssues, storeTags)
+
+	// Build issue embeddings map and compute factor decomposition.
+	issueEmbeddings := make(map[string][]float64, len(openIssues))
+	for _, issue := range openIssues {
+		if len(issue.Embedding) > 0 {
+			issueEmbeddings[issue.ID] = issue.Embedding
+		}
+	}
+	decomp := issuemap.ComputeFactorDecomposition(openIssues, tagNames, issueEmbeddings, tagEmbeddings)
+
+	// Decompose person embedding.
+	tagCov := issuemap.BuildTagCovariance(tagNames, tagEmbeddings)
+	personFactor, personResidual := issuemap.DecomposeEmbedding(personEmbedding, profile, tagNames, tagEmbeddings, tagCov)
+
 	recommendations := make([]PersonIssueRecommendation, 0, len(openIssues))
 	detailReader, _ := h.Store.(issues.IssueDetailReader)
 	now := time.Now().UTC()
@@ -135,9 +157,19 @@ func (h GetPersonDetailHandler) recommendOpenIssues(
 		issue = hydrateIssueWithVelocity(ctx, detailReader, issue, now)
 
 		issueTags := issueTagProfile(issue)
-		factorScore := tagProfileSimilarity(profile, issueTags)
-		semanticScore := vectors.CosineSimilarity(personEmbedding, issue.Embedding)
-		combinedScore := scoring.PersonRecommendFactor*factorScore + scoring.PersonRecommendSemantic*semanticScore
+
+		var factorScore, semanticScore, combinedScore float64
+		if len(decomp.FactorEmbedding(issue.ID)) > 0 {
+			factorScore, semanticScore, combinedScore = issuemap.BlendFromDecomposition(
+				decomp, personFactor, personResidual,
+				decomp.FactorEmbedding(issue.ID), decomp.ResidualEmbedding(issue.ID),
+			)
+		} else {
+			factorScore = tagProfileSimilarity(profile, issueTags)
+			semanticScore = vectors.CosineSimilarity(personEmbedding, issue.Embedding)
+			combinedScore = scoring.PersonRecommendFactor*factorScore + scoring.PersonRecommendSemantic*semanticScore
+		}
+
 		combinedScore *= issues.IssueFreshnessWeight(issue, now)
 		combinedScore *= scoring.PersonMaturityBase + scoring.PersonMaturityWeight*issuesMaturity(issue)
 		combinedScore *= 1 - scoring.PersonVelocityPenalty*issueVelocity(issue)
@@ -288,4 +320,45 @@ func recommendationReason(sharedTags []string, factorScore, semanticScore float6
 	default:
 		return "Best available open issue based on blended profile similarity"
 	}
+}
+
+// personDetailTagData extracts tag names and embeddings from store tags and
+// open issues for use in factor decomposition.
+func personDetailTagData(openIssues []issues.Issue, storeTags []issues.Tag) ([]string, map[string][]float64) {
+	seen := make(map[string]struct{})
+	var tagNames []string
+
+	for _, tag := range storeTags {
+		name := strings.TrimSpace(tag.Name)
+		if name == "" {
+			continue
+		}
+		if _, ok := seen[name]; !ok {
+			seen[name] = struct{}{}
+			tagNames = append(tagNames, name)
+		}
+	}
+	for _, issue := range openIssues {
+		for _, ts := range issue.TagScores {
+			name := strings.TrimSpace(ts.Tag)
+			if name == "" {
+				continue
+			}
+			if _, ok := seen[name]; !ok {
+				seen[name] = struct{}{}
+				tagNames = append(tagNames, name)
+			}
+		}
+	}
+	slices.Sort(tagNames)
+
+	tagEmbeddings := make(map[string][]float64, len(storeTags))
+	for _, tag := range storeTags {
+		name := strings.TrimSpace(tag.Name)
+		if name != "" && len(tag.Embedding) > 0 {
+			tagEmbeddings[name] = tag.Embedding
+		}
+	}
+
+	return tagNames, tagEmbeddings
 }
