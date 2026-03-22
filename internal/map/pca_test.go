@@ -72,6 +72,8 @@ func TestWeightedPCAProducesValidPositions(t *testing.T) {
 		{ID: "a", Raw: "A well-described feature request about improving search ranking quality.", TagScores: []TagRelevance{{Tag: "search", Relevance: 0.9}, {Tag: "backend", Relevance: 0.7}}, LifecycleMetrics: &issues.IssueLifecycleMetrics{Maturity: mat(0.9)}},
 		{ID: "b", Raw: "Fix the bug in the login page that causes a crash.", TagScores: []TagRelevance{{Tag: "bug", Relevance: 0.8}, {Tag: "frontend", Relevance: 0.6}}, LifecycleMetrics: &issues.IssueLifecycleMetrics{Maturity: mat(0.5)}},
 		{ID: "c", Raw: "short", TagScores: []TagRelevance{{Tag: "search", Relevance: 0.5}, {Tag: "bug", Relevance: 0.3}}, LifecycleMetrics: &issues.IssueLifecycleMetrics{Maturity: mat(0.1)}},
+		{ID: "d", Raw: "Add export to CSV for the dashboard metrics page.", TagScores: []TagRelevance{{Tag: "frontend", Relevance: 0.7}, {Tag: "backend", Relevance: 0.5}}, LifecycleMetrics: &issues.IssueLifecycleMetrics{Maturity: mat(0.6)}},
+		{ID: "e", Raw: "Search results should highlight matching keywords in the snippet.", TagScores: []TagRelevance{{Tag: "search", Relevance: 0.8}, {Tag: "frontend", Relevance: 0.4}}, LifecycleMetrics: &issues.IssueLifecycleMetrics{Maturity: mat(0.7)}},
 	}
 
 	positions, err := ComputePositions(items, []string{"search", "backend", "bug", "frontend"}, nil)

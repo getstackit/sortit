@@ -124,6 +124,7 @@ func TestAPIIntegrationCreateLookupMapAndTagsWithMockAIBackend(t *testing.T) {
 		Raw:       "CSV export is too slow for large workspaces",
 		CreatedBy: "Jordan",
 	})
+	seedMapFillerIssues(t, handler, server, 3)
 	processPendingEnrichment(t, server)
 	first = getIssueViaAPI(t, handler, first.ID)
 	second = getIssueViaAPI(t, handler, second.ID)
@@ -163,8 +164,8 @@ func TestAPIIntegrationCreateLookupMapAndTagsWithMockAIBackend(t *testing.T) {
 	if err := json.NewDecoder(mapRec.Body).Decode(&mapPayload); err != nil {
 		t.Fatalf("decode map response: %v", err)
 	}
-	if len(mapPayload.Issues) != 2 {
-		t.Fatalf("expected 2 issues in map response, got %d", len(mapPayload.Issues))
+	if len(mapPayload.Issues) != 5 {
+		t.Fatalf("expected 5 issues in map response, got %d", len(mapPayload.Issues))
 	}
 
 	firstMapIssue := findMapIssue(t, mapPayload.Issues, first.ID)
@@ -233,6 +234,7 @@ func TestAPIIntegrationCreateAndCloseIssue(t *testing.T) {
 	}
 
 	handler := server.Handler()
+	seedMapFillerIssues(t, handler, server, 5)
 	created := createIssueViaAPI(t, handler, createIssueRequest{
 		Raw:       "Export flow fails after download starts",
 		CreatedBy: "Casey",
@@ -299,8 +301,8 @@ func TestAPIIntegrationCreateAndCloseIssue(t *testing.T) {
 	if err := json.NewDecoder(openMapRec.Body).Decode(&openMapPayload); err != nil {
 		t.Fatalf("decode open map response: %v", err)
 	}
-	if len(openMapPayload.Issues) != 0 {
-		t.Fatalf("expected closed issue to be hidden from open map, got %d issues", len(openMapPayload.Issues))
+	if len(openMapPayload.Issues) != 5 {
+		t.Fatalf("expected 5 open issues in open map (closed issue hidden), got %d issues", len(openMapPayload.Issues))
 	}
 
 	allMapReq := httptest.NewRequest(http.MethodGet, "/api/ui/map?status=all", nil)
@@ -315,11 +317,12 @@ func TestAPIIntegrationCreateAndCloseIssue(t *testing.T) {
 	if err := json.NewDecoder(allMapRec.Body).Decode(&allMapPayload); err != nil {
 		t.Fatalf("decode all-status map response: %v", err)
 	}
-	if len(allMapPayload.Issues) != 1 {
-		t.Fatalf("expected closed issue to appear in all-status map, got %d issues", len(allMapPayload.Issues))
+	if len(allMapPayload.Issues) != 6 {
+		t.Fatalf("expected 6 issues in all-status map, got %d issues", len(allMapPayload.Issues))
 	}
-	if allMapPayload.Issues[0].Status != issues.StatusClosed {
-		t.Fatalf("expected map issue status closed, got %q", allMapPayload.Issues[0].Status)
+	closedMapIssue := findMapIssue(t, allMapPayload.Issues, created.ID)
+	if closedMapIssue.Status != issues.StatusClosed {
+		t.Fatalf("expected closed issue status in all-status map, got %q", closedMapIssue.Status)
 	}
 }
 
@@ -517,6 +520,26 @@ func assignIssueViaAPI(
 		t.Fatalf("decode assigned issue: %v", err)
 	}
 	return issue
+}
+
+// seedMapFillerIssues creates enough issues to meet the minimum map issue
+// count threshold (5). The caller's real issues count toward the total.
+func seedMapFillerIssues(t *testing.T, handler http.Handler, server *Server, count int) {
+	t.Helper()
+	fillers := []string{
+		"Dashboard loading time has regressed since last deploy",
+		"Users see a blank screen when navigating to settings on mobile",
+		"API rate limit errors are not surfaced clearly in the UI",
+		"Onboarding checklist doesn't dismiss after completion",
+		"Search indexing lags behind real-time updates by several minutes",
+	}
+	for i := range count {
+		createIssueViaAPI(t, handler, createIssueRequest{
+			Raw:       fillers[i%len(fillers)],
+			CreatedBy: "Filler",
+		})
+	}
+	processPendingEnrichment(t, server)
 }
 
 func findMapIssue(t *testing.T, mapIssues []issuemap.MapIssue, id string) issuemap.MapIssue {
