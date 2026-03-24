@@ -33,6 +33,8 @@ export type IssuePostRecord = {
 export type IssueTagScore = {
   tag: string;
   relevance: number;
+  suggested?: boolean;
+  description?: string;
 };
 
 export type IssueReferenceRecord = {

@@ -54,6 +54,7 @@ type DebugEvalTagsCaseResult struct {
 }
 
 type DebugEvalTagsResult struct {
+	CandidateMode    services.CandidateMode    `json:"candidateMode"`
 	Fixture          string                    `json:"fixture"`
 	Runs             int                       `json:"runs"`
 	CaseCount        int                       `json:"caseCount"`
@@ -74,21 +75,20 @@ type DebugEvalTagsHandler struct {
 }
 
 func (h DebugEvalTagsHandler) Handle(ctx context.Context) (DebugEvalTagsResult, error) {
-	return h.HandleFixture(ctx, "", 1)
+	return h.HandleFixture(ctx, "", 1, services.CandidateModeRetrievalShortlist)
 }
 
-func (h DebugEvalTagsHandler) HandleFixture(ctx context.Context, requestedFixture string, runs int) (DebugEvalTagsResult, error) {
+func (h DebugEvalTagsHandler) HandleFixture(ctx context.Context, requestedFixture string, runs int, requestedMode services.CandidateMode) (DebugEvalTagsResult, error) {
 	if h.Catalog == nil {
 		return DebugEvalTagsResult{}, fmt.Errorf("tag catalog is unavailable")
 	}
 	runs = max(1, runs)
-
-	fixture, fixtureName, err := h.fixtureCases(requestedFixture)
+	mode, err := services.ParseCandidateMode(string(requestedMode))
 	if err != nil {
 		return DebugEvalTagsResult{}, err
 	}
 
-	taxonomy, err := h.Catalog.IssueTaxonomy(ctx, nil)
+	fixture, fixtureName, err := h.fixtureCases(requestedFixture)
 	if err != nil {
 		return DebugEvalTagsResult{}, err
 	}
@@ -101,7 +101,7 @@ func (h DebugEvalTagsHandler) HandleFixture(ctx context.Context, requestedFixtur
 	exactStableCount := 0
 	totalStability := 0.0
 	for _, item := range fixture {
-		actualTags, err := h.evaluateCase(ctx, item, taxonomy)
+		actualTags, err := h.evaluateCase(ctx, item, mode)
 		if err != nil {
 			return DebugEvalTagsResult{}, err
 		}
@@ -122,7 +122,7 @@ func (h DebugEvalTagsHandler) HandleFixture(ctx context.Context, requestedFixtur
 		caseResult.StabilityExact = true
 		caseResult.StabilityJaccard = 1
 		if runs > 1 {
-			alternateTags, exactStable, stabilityJaccard, err := h.evaluateCaseStability(ctx, item, taxonomy, actualTags, runs)
+			alternateTags, exactStable, stabilityJaccard, err := h.evaluateCaseStability(ctx, item, mode, actualTags, runs)
 			if err != nil {
 				return DebugEvalTagsResult{}, err
 			}
@@ -145,6 +145,7 @@ func (h DebugEvalTagsHandler) HandleFixture(ctx context.Context, requestedFixtur
 	}
 
 	return DebugEvalTagsResult{
+		CandidateMode:    mode,
 		Fixture:          fixtureName,
 		Runs:             runs,
 		CaseCount:        len(results),
@@ -158,29 +159,29 @@ func (h DebugEvalTagsHandler) HandleFixture(ctx context.Context, requestedFixtur
 	}, nil
 }
 
-func (h DebugEvalTagsHandler) evaluateCase(ctx context.Context, item DebugTagEvalCase, taxonomy []ai.Tag) ([]string, error) {
-	if h.Enricher != nil {
-		fields, err := h.Enricher.AnalyzePersistedIssue(ctx, issues.Issue{
-			ID:  item.ID,
-			Raw: item.Text,
-		}, 1)
-		if err != nil {
-			return nil, err
-		}
-		return predictedEvalTagRelevance(fields.TagScores), nil
-	}
+func (h DebugEvalTagsHandler) evaluateCase(ctx context.Context, item DebugTagEvalCase, mode services.CandidateMode) ([]string, error) {
 	if h.Analyzer == nil {
 		return nil, ai.ErrNotConfigured
 	}
 
-	analyzed, err := h.Analyzer.AnalyzeIssueData(ctx, item.Text, taxonomy)
+	seedEmbedding, err := h.Analyzer.EmbedText(ctx, item.Text)
+	if err != nil {
+		return nil, err
+	}
+	candidates, err := h.Catalog.IssueTaxonomyCandidates(ctx, services.Float32VectorToFloat64(seedEmbedding.Vector), nil, mode, 15)
+	if err != nil {
+		return nil, err
+	}
+	candidates = h.Catalog.AnnotateCandidateHints(ctx, candidates, services.Float32VectorToFloat64(seedEmbedding.Vector), 5)
+
+	analyzed, err := h.Analyzer.AnalyzeIssueData(ctx, item.Text, candidates.AITags())
 	if err != nil {
 		return nil, err
 	}
 	return predictedEvalTags(analyzed.Tags), nil
 }
 
-func (h DebugEvalTagsHandler) evaluateCaseStability(ctx context.Context, item DebugTagEvalCase, taxonomy []ai.Tag, baseline []string, runs int) ([][]string, bool, float64, error) {
+func (h DebugEvalTagsHandler) evaluateCaseStability(ctx context.Context, item DebugTagEvalCase, mode services.CandidateMode, baseline []string, runs int) ([][]string, bool, float64, error) {
 	if runs <= 1 {
 		return nil, true, 1, nil
 	}
@@ -190,7 +191,7 @@ func (h DebugEvalTagsHandler) evaluateCaseStability(ctx context.Context, item De
 	exactStable := true
 	totalJaccard := 0.0
 	for range runs - 1 {
-		repeatedTags, err := h.evaluateCase(ctx, item, taxonomy)
+		repeatedTags, err := h.evaluateCase(ctx, item, mode)
 		if err != nil {
 			return nil, false, 0, err
 		}

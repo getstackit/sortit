@@ -35,23 +35,20 @@ func (s *IssueEnricher) AnalyzeCreateInput(ctx context.Context, input issues.Cre
 	start := time.Now()
 	s.logger.InfoContext(ctx, "analyzing create input", "tag_count", len(input.Tags))
 
-	taxonomy, err := s.catalog.IssueTaxonomy(ctx, input.Tags)
-	if err != nil {
-		return issues.CreateInput{}, err
-	}
-	analyzed, err := s.analyzer.AnalyzeIssueData(ctx, input.Raw, taxonomy)
+	analyzed, candidates, err := s.analyzeWithCandidateTaxonomy(ctx, input.Raw, input.Tags, CandidateModeRetrievalShortlist)
 	if err != nil {
 		return issues.CreateInput{}, err
 	}
 
-	if err := s.catalog.EnsureStoredTags(ctx, CatalogTagsFromAnalysis(taxonomy, input.Tags, analyzed.Tags)); err != nil {
+	if err := s.catalog.EnsureStoredTags(ctx, CatalogTagsFromAnalysis(candidates.AITags(), input.Tags, analyzed.Tags)); err != nil {
 		return issues.CreateInput{}, err
 	}
 
-	input.TagScores = attenuateGenericScores(IssueTagScoresFromAnalysis(analyzed.Tags), s.tagSpecificityMap(ctx))
+	tagSpecificity := s.tagSpecificityMap(ctx)
+	input.TagScores = attenuateGenericScores(IssueTagScoresFromAnalysis(analyzed.Tags), tagSpecificity)
 	input.Embedding = Float32VectorToFloat64(analyzed.Embedding.Vector)
 	if len(input.Tags) == 0 {
-		input.Tags = nil
+		input.Tags = issues.DisplayTagsWithSpecificity(nil, input.TagScores, tagSpecificity)
 	}
 
 	s.logger.InfoContext(ctx, "create input analyzed",
@@ -90,24 +87,24 @@ func (s *IssueEnricher) AnalyzeRefineInput(ctx context.Context, issue issues.Iss
 		return issues.RefineInput{}, fmt.Errorf("canonical raw is required")
 	}
 
-	taxonomy, err := s.catalog.IssueTaxonomy(ctx, nil)
-	if err != nil {
-		return issues.RefineInput{}, err
-	}
-	analyzed, err := s.analyzer.AnalyzeIssueData(ctx, canonicalRaw, taxonomy)
+	analyzed, candidates, err := s.analyzeWithCandidateTaxonomy(ctx, canonicalRaw, nil, CandidateModeRetrievalShortlist)
 	if err != nil {
 		return issues.RefineInput{}, err
 	}
 
-	if err := s.catalog.EnsureStoredTags(ctx, CatalogTagsFromAnalysis(taxonomy, nil, analyzed.Tags)); err != nil {
+	if err := s.catalog.EnsureStoredTags(ctx, CatalogTagsFromAnalysis(candidates.AITags(), nil, analyzed.Tags)); err != nil {
 		return issues.RefineInput{}, err
 	}
+
+	tagSpecificity := s.tagSpecificityMap(ctx)
+	tagScores := attenuateGenericScores(IssueTagScoresFromAnalysis(analyzed.Tags), tagSpecificity)
 
 	return issues.RefineInput{
 		PostRaw:      postRaw,
 		CanonicalRaw: canonicalRaw,
+		Tags:         issues.DisplayTagsWithSpecificity(nil, tagScores, tagSpecificity),
 		CreatedBy:    createdBy,
-		TagScores:    attenuateGenericScores(IssueTagScoresFromAnalysis(analyzed.Tags), s.tagSpecificityMap(ctx)),
+		TagScores:    tagScores,
 		Embedding:    Float32VectorToFloat64(analyzed.Embedding.Vector),
 	}, nil
 }
@@ -159,23 +156,12 @@ func (s *IssueEnricher) AnalyzePersistedIssue(
 		}
 	}
 
-	freshEmbedding, err := s.analyzer.EmbedText(ctx, canonicalRaw)
-	if err != nil {
-		return issues.IssueFieldUpdate{}, fmt.Errorf("embed canonical raw for hints: %w", err)
-	}
-	freshEmbeddingVector := Float32VectorToFloat64(freshEmbedding.Vector)
-	taxonomy, err := s.catalog.IssueTaxonomyShortlist(ctx, freshEmbeddingVector, nil, 15)
-	if err != nil {
-		return issues.IssueFieldUpdate{}, err
-	}
-	taxonomy = s.catalog.AnnotateHints(ctx, taxonomy, freshEmbeddingVector, persistedIssueHintLimit)
-
-	analyzed, err := s.analyzer.AnalyzeIssueData(ctx, canonicalRaw, taxonomy)
+	analyzed, candidates, err := s.analyzeWithCandidateTaxonomy(ctx, canonicalRaw, nil, CandidateModeRetrievalShortlist)
 	if err != nil {
 		return issues.IssueFieldUpdate{}, err
 	}
 
-	if err := s.catalog.EnsureStoredTags(ctx, CatalogTagsFromAnalysis(taxonomy, nil, analyzed.Tags)); err != nil {
+	if err := s.catalog.EnsureStoredTags(ctx, CatalogTagsFromAnalysis(candidates.AITags(), nil, analyzed.Tags)); err != nil {
 		return issues.IssueFieldUpdate{}, err
 	}
 
@@ -188,10 +174,13 @@ func (s *IssueEnricher) AnalyzePersistedIssue(
 
 	status := issues.EnrichmentStatusComplete
 	emptyError := ""
+	tagSpecificity := s.tagSpecificityMap(ctx)
+	tagScores := attenuateGenericScores(IssueTagScoresFromAnalysis(analyzed.Tags), tagSpecificity)
+
 	return issues.IssueFieldUpdate{
 		Raw:                      &canonicalRaw,
-		Tags:                     issues.DisplayTagsWithSpecificity(nil, attenuateGenericScores(IssueTagScoresFromAnalysis(analyzed.Tags), s.tagSpecificityMap(ctx)), s.tagSpecificityMap(ctx)),
-		TagScores:                attenuateGenericScores(IssueTagScoresFromAnalysis(analyzed.Tags), s.tagSpecificityMap(ctx)),
+		Tags:                     issues.DisplayTagsWithSpecificity(nil, tagScores, tagSpecificity),
+		TagScores:                tagScores,
 		Embedding:                Float32VectorToFloat64(analyzed.Embedding.Vector),
 		EnrichmentStatus:         &status,
 		EnrichmentError:          &emptyError,
@@ -235,27 +224,47 @@ func (s *IssueEnricher) AnalyzeCombineInput(
 		return issues.CombineInput{}, fmt.Errorf("canonical raw is required")
 	}
 
-	taxonomy, err := s.catalog.IssueTaxonomy(ctx, nil)
-	if err != nil {
-		return issues.CombineInput{}, err
-	}
-	analyzed, err := s.analyzer.AnalyzeIssueData(ctx, canonicalRaw, taxonomy)
+	analyzed, candidates, err := s.analyzeWithCandidateTaxonomy(ctx, canonicalRaw, nil, CandidateModeRetrievalShortlist)
 	if err != nil {
 		return issues.CombineInput{}, err
 	}
 
-	if err := s.catalog.EnsureStoredTags(ctx, CatalogTagsFromAnalysis(taxonomy, nil, analyzed.Tags)); err != nil {
+	if err := s.catalog.EnsureStoredTags(ctx, CatalogTagsFromAnalysis(candidates.AITags(), nil, analyzed.Tags)); err != nil {
 		return issues.CombineInput{}, err
 	}
+
+	tagSpecificity := s.tagSpecificityMap(ctx)
+	tagScores := attenuateGenericScores(IssueTagScoresFromAnalysis(analyzed.Tags), tagSpecificity)
 
 	return issues.CombineInput{
 		SourceIDs: sourceIDs,
 		Raw:       canonicalRaw,
+		Tags:      issues.DisplayTagsWithSpecificity(nil, tagScores, tagSpecificity),
 		CreatedBy: createdBy,
 		Note:      note,
-		TagScores: attenuateGenericScores(IssueTagScoresFromAnalysis(analyzed.Tags), s.tagSpecificityMap(ctx)),
+		TagScores: tagScores,
 		Embedding: Float32VectorToFloat64(analyzed.Embedding.Vector),
 	}, nil
+}
+
+func (s *IssueEnricher) analyzeWithCandidateTaxonomy(ctx context.Context, raw string, preferred []string, mode CandidateMode) (ai.AnalyzedIssue, CandidateTaxonomy, error) {
+	freshEmbedding, err := s.analyzer.EmbedText(ctx, raw)
+	if err != nil {
+		return ai.AnalyzedIssue{}, CandidateTaxonomy{}, fmt.Errorf("embed raw for shortlist: %w", err)
+	}
+	freshEmbeddingVector := Float32VectorToFloat64(freshEmbedding.Vector)
+
+	candidates, err := s.catalog.IssueTaxonomyCandidates(ctx, freshEmbeddingVector, preferred, mode, 15)
+	if err != nil {
+		return ai.AnalyzedIssue{}, CandidateTaxonomy{}, err
+	}
+	candidates = s.catalog.AnnotateCandidateHints(ctx, candidates, freshEmbeddingVector, persistedIssueHintLimit)
+
+	analyzed, err := s.analyzer.AnalyzeIssueData(ctx, raw, candidates.AITags())
+	if err != nil {
+		return ai.AnalyzedIssue{}, CandidateTaxonomy{}, err
+	}
+	return analyzed, candidates, nil
 }
 
 const (
@@ -335,8 +344,10 @@ func IssueTagScoresFromAnalysis(scores []ai.TagScore) []issues.TagRelevance {
 			continue
 		}
 		tagScores = append(tagScores, issues.TagRelevance{
-			Tag:       name,
-			Relevance: score.Relevance,
+			Tag:         name,
+			Relevance:   score.Relevance,
+			Suggested:   score.Suggested,
+			Description: strings.TrimSpace(score.Description),
 		})
 	}
 	return tagScores

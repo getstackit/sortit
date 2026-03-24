@@ -8,10 +8,12 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"testing"
+	"time"
 
 	"splat/internal/ai"
 	"splat/internal/issues"
 	"splat/internal/queries"
+	"splat/internal/services"
 )
 
 type fakeTagger struct {
@@ -34,6 +36,11 @@ func (t *fakeTagger) Model() string {
 
 type fakeEmbedder struct {
 	result ai.EmbeddingResult
+}
+
+type debugAnalyzeStore struct {
+	*issues.InMemoryStore
+	tags []issues.Tag
 }
 
 type debugInvalidationStore struct {
@@ -60,6 +67,23 @@ func (e *fakeEmbedder) Provider() string {
 
 func (e *fakeEmbedder) Model() string {
 	return "embedder-test"
+}
+
+func (s *debugAnalyzeStore) ListTags(context.Context) ([]issues.Tag, error) {
+	out := make([]issues.Tag, len(s.tags))
+	copy(out, s.tags)
+	return out, nil
+}
+
+func (s *debugAnalyzeStore) UpsertTags(_ context.Context, tags []issues.Tag) error {
+	out := make([]issues.Tag, len(tags))
+	copy(out, tags)
+	s.tags = out
+	return nil
+}
+
+func (s *debugAnalyzeStore) UpdateTagSpecificity(context.Context, string, *float64, *float64, *float64, *time.Time) error {
+	return nil
 }
 
 func TestDebugIssueAnalyzeEndpoint(t *testing.T) {
@@ -125,6 +149,12 @@ func TestDebugIssueAnalyzeEndpoint(t *testing.T) {
 	}
 	if len(tagger.capturedTags) == 0 {
 		t.Fatal("expected default taxonomy to be used when no stored tags exist")
+	}
+	if payload.CandidateSet.Mode != services.CandidateModeRetrievalShortlist {
+		t.Fatalf("expected retrieval-shortlist default mode, got %q", payload.CandidateSet.Mode)
+	}
+	if len(payload.CandidateSet.Tags) == 0 {
+		t.Fatal("expected candidate set metadata in analyze response")
 	}
 }
 
@@ -235,6 +265,117 @@ func TestDebugIssueAnalyzeEndpointUsesCustomTags(t *testing.T) {
 	}
 }
 
+func TestDebugIssueAnalyzeEndpointReturnsCandidateProvenance(t *testing.T) {
+	store := &debugAnalyzeStore{InMemoryStore: issues.NewInMemoryStore(nil)}
+	if err := store.UpsertTags(context.Background(), []issues.Tag{
+		{Name: "backend", Description: "server-side logic", Embedding: []float64{0, 0.2}},
+		{Name: "search", Description: "query and filtering", Embedding: []float64{1, 0}},
+		{Name: "autocomplete", Description: "typeahead", Embedding: []float64{0.95, 0.05}},
+		{Name: "billing", Description: "payments", Embedding: []float64{0, 1}},
+	}); err != nil {
+		t.Fatalf("upsert tags: %v", err)
+	}
+
+	server := NewServer(ServerConfig{
+		CORSOrigins: []string{"http://localhost:3000"},
+		APIPrefixes: []string{"/api"},
+		IssueStore:  store,
+		Analyzer: ai.NewAnalyzer(&fakeTagger{}, &fakeEmbedder{
+			result: ai.EmbeddingResult{
+				Vector: []float32{1, 0},
+				Info: ai.EmbeddingInfo{
+					Dimensions:          2,
+					Preview:             []float32{1, 0},
+					ChunkCount:          1,
+					EstimatedTokenCount: 4,
+				},
+			},
+		}),
+	})
+
+	req := httptest.NewRequest(http.MethodPost, "/api/ui/debug/issues/analyze", bytes.NewBufferString(`{"text":"search box issue"}`))
+	rec := httptest.NewRecorder()
+	server.Handler().ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d", rec.Code)
+	}
+
+	var payload debugIssueAnalyzeResponse
+	if err := json.NewDecoder(rec.Body).Decode(&payload); err != nil {
+		t.Fatalf("decode payload: %v", err)
+	}
+	if payload.CandidateSet.Mode != services.CandidateModeRetrievalShortlist {
+		t.Fatalf("expected retrieval-shortlist candidate mode, got %q", payload.CandidateSet.Mode)
+	}
+	candidateByName := make(map[string]services.CandidateTag, len(payload.CandidateSet.Tags))
+	for _, tag := range payload.CandidateSet.Tags {
+		candidateByName[tag.Name] = tag
+	}
+	search, ok := candidateByName["search"]
+	if !ok {
+		t.Fatalf("expected search in candidate set, got %#v", payload.CandidateSet.Tags)
+	}
+	if !containsCandidateSource(search.Sources, services.CandidateSourceRetrieval) || !containsCandidateSource(search.Sources, services.CandidateSourceAnchor) {
+		t.Fatalf("expected search retrieval+anchor provenance, got %#v", search.Sources)
+	}
+	if _, ok := candidateByName["backend"]; !ok {
+		t.Fatalf("expected backend anchor candidate, got %#v", payload.CandidateSet.Tags)
+	}
+	if _, ok := candidateByName["billing"]; ok {
+		t.Fatalf("expected billing to be excluded from shortlist, got %#v", payload.CandidateSet.Tags)
+	}
+}
+
+func TestDebugIssueAnalyzeEndpointSupportsFullCatalogMode(t *testing.T) {
+	store := &debugAnalyzeStore{InMemoryStore: issues.NewInMemoryStore(nil)}
+	if err := store.UpsertTags(context.Background(), []issues.Tag{
+		{Name: "bug", Description: "software defect"},
+		{Name: "search", Description: "query and filtering"},
+	}); err != nil {
+		t.Fatalf("upsert tags: %v", err)
+	}
+
+	server := NewServer(ServerConfig{
+		CORSOrigins: []string{"http://localhost:3000"},
+		APIPrefixes: []string{"/api"},
+		IssueStore:  store,
+		Analyzer: ai.NewAnalyzer(&fakeTagger{}, &fakeEmbedder{
+			result: ai.EmbeddingResult{
+				Vector: []float32{1, 0},
+				Info: ai.EmbeddingInfo{
+					Dimensions:          2,
+					Preview:             []float32{1, 0},
+					ChunkCount:          1,
+					EstimatedTokenCount: 4,
+				},
+			},
+		}),
+	})
+
+	req := httptest.NewRequest(http.MethodPost, "/api/ui/debug/issues/analyze", bytes.NewBufferString(`{"text":"search bug","candidateMode":"full-catalog"}`))
+	req.Header.Set("Content-Type", "application/json")
+	rec := httptest.NewRecorder()
+	server.Handler().ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d", rec.Code)
+	}
+
+	var payload debugIssueAnalyzeResponse
+	if err := json.NewDecoder(rec.Body).Decode(&payload); err != nil {
+		t.Fatalf("decode payload: %v", err)
+	}
+	if payload.CandidateSet.Mode != services.CandidateModeFullCatalog {
+		t.Fatalf("expected full-catalog mode, got %q", payload.CandidateSet.Mode)
+	}
+	for _, tag := range payload.CandidateSet.Tags {
+		if !containsCandidateSource(tag.Sources, services.CandidateSourceFullCatalog) {
+			t.Fatalf("expected full-catalog provenance, got %#v", tag)
+		}
+	}
+}
+
 func TestDebugEvalTagsEndpoint(t *testing.T) {
 	server := NewServer(ServerConfig{
 		CORSOrigins: []string{"http://localhost:3000"},
@@ -271,6 +412,108 @@ func TestDebugEvalTagsEndpoint(t *testing.T) {
 	if payload.CaseCount == 0 {
 		t.Fatal("expected at least one benchmark case")
 	}
+	if payload.CandidateMode != services.CandidateModeRetrievalShortlist {
+		t.Fatalf("expected retrieval-shortlist benchmark mode, got %q", payload.CandidateMode)
+	}
+}
+
+func TestDebugEvalTagsEndpointSupportsFullCatalogMode(t *testing.T) {
+	server := NewServer(ServerConfig{
+		CORSOrigins: []string{"http://localhost:3000"},
+		APIPrefixes: []string{"/api"},
+		Analyzer: ai.NewAnalyzer(&fakeTagger{}, &fakeEmbedder{
+			result: ai.EmbeddingResult{
+				Vector: []float32{1, 0},
+				Info: ai.EmbeddingInfo{
+					Dimensions:          2,
+					Preview:             []float32{1, 0},
+					ChunkCount:          1,
+					EstimatedTokenCount: 4,
+				},
+			},
+		}),
+	})
+
+	req := httptest.NewRequest(http.MethodGet, "/api/ui/debug/eval-tags?mode=full-catalog", nil)
+	rec := httptest.NewRecorder()
+	server.Handler().ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d", rec.Code)
+	}
+
+	var payload queries.DebugEvalTagsResult
+	if err := json.NewDecoder(rec.Body).Decode(&payload); err != nil {
+		t.Fatalf("decode payload: %v", err)
+	}
+	if payload.CandidateMode != services.CandidateModeFullCatalog {
+		t.Fatalf("expected full-catalog benchmark mode, got %q", payload.CandidateMode)
+	}
+}
+
+func TestDebugFactorWeightsEndpointReturnsReviewQueue(t *testing.T) {
+	store := newPostgresIssueStore(t, nil)
+	if err := store.Replace(context.Background(), []issues.Issue{
+		{ID: "issue-a", Raw: "a", Status: issues.StatusOpen, TagScores: []issues.TagRelevance{{Tag: "alpha", Relevance: 1}}, Embedding: []float64{1, 0}, CreatedBy: "Casey", CreatedAt: issues.FixtureIssues()[0].CreatedAt},
+		{ID: "issue-b", Raw: "b", Status: issues.StatusOpen, TagScores: []issues.TagRelevance{{Tag: "alpha", Relevance: 1}}, Embedding: []float64{1, 0}, CreatedBy: "Casey", CreatedAt: issues.FixtureIssues()[1].CreatedAt},
+		{ID: "issue-c", Raw: "c", Status: issues.StatusOpen, TagScores: []issues.TagRelevance{{Tag: "alpha", Relevance: 1}}, Embedding: []float64{1, 0}, CreatedBy: "Casey", CreatedAt: issues.FixtureIssues()[2].CreatedAt},
+		{ID: "issue-d", Raw: "d", Status: issues.StatusOpen, TagScores: []issues.TagRelevance{{Tag: "alpha", Relevance: 1}}, Embedding: []float64{1, 0}, CreatedBy: "Casey", CreatedAt: issues.FixtureIssues()[3].CreatedAt},
+		{
+			ID:        "issue-review",
+			Raw:       "beta concept hidden behind alpha tag",
+			Status:    issues.StatusOpen,
+			CreatedBy: "Casey",
+			CreatedAt: issues.FixtureIssues()[4].CreatedAt,
+			TagScores: []issues.TagRelevance{
+				{Tag: "alpha", Relevance: 0.91, Suggested: true, Description: "legacy broad alpha bucket"},
+			},
+			Embedding: []float64{0, 1},
+		},
+	}); err != nil {
+		t.Fatalf("replace issues: %v", err)
+	}
+	if err := store.UpsertTags(context.Background(), []issues.Tag{
+		{Name: "alpha", Embedding: []float64{1, 0}},
+		{Name: "beta", Embedding: []float64{0, 1}},
+	}); err != nil {
+		t.Fatalf("upsert tags: %v", err)
+	}
+
+	server := NewServer(ServerConfig{
+		CORSOrigins: []string{"http://localhost:3000"},
+		APIPrefixes: []string{"/api"},
+		IssueStore:  store,
+	})
+
+	req := httptest.NewRequest(http.MethodGet, "/api/ui/debug/factor-weights", nil)
+	rec := httptest.NewRecorder()
+
+	server.Handler().ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d", rec.Code)
+	}
+
+	var payload queries.DebugFactorWeightsResult
+	if err := json.NewDecoder(rec.Body).Decode(&payload); err != nil {
+		t.Fatalf("decode payload: %v", err)
+	}
+
+	if len(payload.ReviewQueue.LowR2Issues) == 0 {
+		t.Fatal("expected low-R2 review queue entries")
+	}
+	if payload.ReviewQueue.LowR2Issues[0].ID != "issue-review" {
+		t.Fatalf("expected issue-review low-R2 entry, got %#v", payload.ReviewQueue.LowR2Issues)
+	}
+	if len(payload.ReviewQueue.LowR2Issues[0].TagScores) != 1 || !payload.ReviewQueue.LowR2Issues[0].TagScores[0].Suggested {
+		t.Fatalf("expected suggested tag score provenance, got %#v", payload.ReviewQueue.LowR2Issues[0].TagScores)
+	}
+	if len(payload.ReviewQueue.LowAlignmentTags) == 0 || payload.ReviewQueue.LowAlignmentTags[0].IssueID != "issue-review" {
+		t.Fatalf("expected low-alignment entry for issue-review, got %#v", payload.ReviewQueue.LowAlignmentTags)
+	}
+	if len(payload.ReviewQueue.ResidualMisses) == 0 || payload.ReviewQueue.ResidualMisses[0].IssueID != "issue-review" {
+		t.Fatalf("expected residual miss entry for issue-review, got %#v", payload.ReviewQueue.ResidualMisses)
+	}
 }
 
 func TestDebugInvalidateMapProjectionEndpoint(t *testing.T) {
@@ -300,6 +543,15 @@ func TestDebugInvalidateMapProjectionEndpoint(t *testing.T) {
 	if !payload.Invalidated {
 		t.Fatal("expected invalidated=true")
 	}
+}
+
+func containsCandidateSource(sources []services.CandidateSource, want services.CandidateSource) bool {
+	for _, source := range sources {
+		if source == want {
+			return true
+		}
+	}
+	return false
 }
 
 func TestDebugInvalidateMapProjectionEndpointReturnsNotImplementedWithoutInvalidator(t *testing.T) {

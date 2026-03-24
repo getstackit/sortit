@@ -92,18 +92,21 @@ func TestAnalyzePersistedIssueUsesFreshEmbeddingForShortlist(t *testing.T) {
 	if !names["database"] {
 		t.Fatal("expected database to be shortlisted from fresh canonical embedding")
 	}
-	if names["cleanup"] {
-		t.Fatal("expected cleanup not to be shortlisted from stale persisted embedding")
+	if !names["cleanup"] {
+		t.Fatal("expected cleanup anchor to remain available in the shortlist")
 	}
 	if !hints["database"] {
 		t.Fatal("expected nearest shortlisted tag to be marked as a high-affinity hint")
+	}
+	if hints["cleanup"] {
+		t.Fatal("expected stale-embedding candidate cleanup not to be marked as a high-affinity hint")
 	}
 }
 
 func TestIssueTagScoresFromAnalysisAppliesServerSideFloor(t *testing.T) {
 	scores := IssueTagScoresFromAnalysis([]ai.TagScore{
 		{Tag: "below-floor", Relevance: 0.079},
-		{Tag: "at-floor", Relevance: 0.08},
+		{Tag: "at-floor", Relevance: 0.08, Suggested: true, Description: " kept suggested description "},
 		{Tag: "above-floor", Relevance: 0.81},
 	})
 
@@ -115,5 +118,66 @@ func TestIssueTagScoresFromAnalysisAppliesServerSideFloor(t *testing.T) {
 	}
 	if scores[1].Tag != "above-floor" {
 		t.Fatalf("expected above-floor to be preserved, got %q", scores[1].Tag)
+	}
+	if !scores[0].Suggested {
+		t.Fatal("expected suggested metadata to be preserved")
+	}
+	if scores[0].Description != "kept suggested description" {
+		t.Fatalf("expected trimmed description to be preserved, got %q", scores[0].Description)
+	}
+	if scores[1].Suggested {
+		t.Fatal("expected taxonomy tag to remain non-suggested")
+	}
+	if scores[1].Description != "" {
+		t.Fatalf("expected empty description for non-suggested tag, got %q", scores[1].Description)
+	}
+}
+
+func TestAnalyzeCreateInputUsesShortlistAndKeepsExplicitTagsAsAnchors(t *testing.T) {
+	store := &catalogTestStore{
+		tags: []issues.Tag{
+			{Name: "backend", Embedding: []float64{0.3, 0.3}},
+			{Name: "cleanup", Embedding: []float64{0.2, 0.2}},
+			{Name: "database", Embedding: []float64{1, 0}},
+			{Name: "billing", Embedding: []float64{0, 1}},
+		},
+	}
+	tagger := &enricherTestTagger{}
+	embedder := &enricherTestEmbedder{
+		vectors: map[string][]float32{
+			"database migration": {1, 0},
+		},
+	}
+	analyzer := ai.NewAnalyzer(tagger, embedder)
+	catalog := NewCatalogService(store, analyzer, slog.Default())
+	enricher := NewIssueEnricher(analyzer, catalog, slog.Default())
+
+	input, err := enricher.AnalyzeCreateInput(context.Background(), issues.CreateInput{
+		Raw:  "database migration",
+		Tags: []string{"cleanup"},
+	})
+	if err != nil {
+		t.Fatalf("AnalyzeCreateInput: %v", err)
+	}
+
+	if len(embedder.calls) != 2 {
+		t.Fatalf("expected 2 embed calls, got %d", len(embedder.calls))
+	}
+
+	names := make(map[string]bool)
+	for _, tag := range tagger.capturedTags {
+		names[tag.Name] = true
+	}
+	for _, want := range []string{"cleanup", "database", "backend"} {
+		if !names[want] {
+			t.Fatalf("expected create taxonomy to contain %q, got %#v", want, tagger.capturedTags)
+		}
+	}
+	if names["billing"] {
+		t.Fatalf("expected distant tag billing to be excluded, got %#v", tagger.capturedTags)
+	}
+
+	if len(input.Tags) != 1 || input.Tags[0] != "cleanup" {
+		t.Fatalf("expected explicit tags to be preserved, got %#v", input.Tags)
 	}
 }

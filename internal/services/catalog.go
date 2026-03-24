@@ -16,7 +16,9 @@ import (
 )
 
 var retrievalAnchorTagNames = []string{
+	"backend",
 	"bug",
+	"cleanup",
 	"crash",
 	"feature",
 	"idea",
@@ -32,6 +34,65 @@ var retrievalAnchorTagNames = []string{
 }
 
 const retrievalSimilarityThreshold = 0.2
+
+type CandidateMode string
+
+const (
+	CandidateModeRetrievalShortlist CandidateMode = "retrieval-shortlist"
+	CandidateModeFullCatalog        CandidateMode = "full-catalog"
+	CandidateModeExplicitOnly       CandidateMode = "explicit-only"
+)
+
+type CandidateSource string
+
+const (
+	CandidateSourceRetrieval   CandidateSource = "retrieval"
+	CandidateSourceAnchor      CandidateSource = "anchor"
+	CandidateSourceExplicit    CandidateSource = "explicit"
+	CandidateSourceFullCatalog CandidateSource = "full-catalog"
+)
+
+type CandidateTag struct {
+	Name        string            `json:"name"`
+	Description string            `json:"description,omitempty"`
+	Hint        bool              `json:"hint,omitempty"`
+	Sources     []CandidateSource `json:"sources"`
+	Similarity  *float64          `json:"similarity,omitempty"`
+}
+
+type CandidateTaxonomy struct {
+	Mode CandidateMode  `json:"mode"`
+	Tags []CandidateTag `json:"tags"`
+}
+
+func (c CandidateTaxonomy) AITags() []ai.Tag {
+	out := make([]ai.Tag, 0, len(c.Tags))
+	for _, tag := range c.Tags {
+		name := normalizeCatalogTagName(tag.Name)
+		if name == "" {
+			continue
+		}
+		out = append(out, ai.Tag{
+			Name:        name,
+			Description: strings.TrimSpace(tag.Description),
+			Hint:        tag.Hint,
+		})
+	}
+	return out
+}
+
+func ParseCandidateMode(raw string) (CandidateMode, error) {
+	switch strings.TrimSpace(strings.ToLower(raw)) {
+	case "", "default", "retrieval", "retrieval-shortlist", "shortlist":
+		return CandidateModeRetrievalShortlist, nil
+	case "full", "full-catalog":
+		return CandidateModeFullCatalog, nil
+	case "explicit", "explicit-only":
+		return CandidateModeExplicitOnly, nil
+	default:
+		return "", fmt.Errorf("unknown candidate mode %q", raw)
+	}
+}
 
 type TagStore interface {
 	ListTags(context.Context) ([]issues.Tag, error)
@@ -181,16 +242,15 @@ func (s *CatalogService) EnsureStoredTags(ctx context.Context, tags []issues.Tag
 	return nil
 }
 
-// IssueTaxonomyShortlist builds a retrieval-first candidate set from the
-// nearest embedded tags plus a small stable anchor set for broad recall.
-func (s *CatalogService) IssueTaxonomyShortlist(ctx context.Context, issueEmbedding []float64, preferred []string, retrievedLimit int) ([]ai.Tag, error) {
-	if len(issueEmbedding) == 0 {
-		return s.IssueTaxonomy(ctx, preferred)
+func (s *CatalogService) IssueTaxonomyCandidates(ctx context.Context, issueEmbedding []float64, preferred []string, mode CandidateMode, retrievedLimit int) (CandidateTaxonomy, error) {
+	resolvedMode, err := ParseCandidateMode(string(mode))
+	if err != nil {
+		return CandidateTaxonomy{}, err
 	}
 
 	stored, err := s.StoredTags(ctx)
 	if err != nil {
-		return nil, fmt.Errorf("list stored tags: %w", err)
+		return CandidateTaxonomy{}, fmt.Errorf("list stored tags: %w", err)
 	}
 	stored = activeCatalogTags(stored)
 	if len(stored) == 0 {
@@ -207,10 +267,32 @@ func (s *CatalogService) IssueTaxonomyShortlist(ctx context.Context, issueEmbedd
 			Name:        name,
 			Description: strings.TrimSpace(tag.Description),
 			Embedding:   append([]float64(nil), tag.Embedding...),
+			Specificity: cloneFloat64Pointer(tag.Specificity),
 		}
 	}
 	if len(catalogByName) == 0 {
-		return s.IssueTaxonomy(ctx, preferred)
+		return CandidateTaxonomy{}, fmt.Errorf("tag catalog is empty")
+	}
+
+	if resolvedMode == CandidateModeExplicitOnly && len(preferred) == 0 {
+		return CandidateTaxonomy{}, fmt.Errorf("explicit-only candidate mode requires explicit tags")
+	}
+	if resolvedMode == CandidateModeExplicitOnly {
+		return explicitCandidateTaxonomy(preferred, catalogByName), nil
+	}
+	if resolvedMode == CandidateModeFullCatalog {
+		result := fullCatalogCandidateTaxonomy(stored)
+		for _, tag := range explicitCandidateTaxonomy(preferred, catalogByName).Tags {
+			mergeCandidateTag(&result, tag)
+		}
+		return result, nil
+	}
+	if len(issueEmbedding) == 0 {
+		result := fullCatalogCandidateTaxonomy(stored)
+		for _, tag := range explicitCandidateTaxonomy(preferred, catalogByName).Tags {
+			mergeCandidateTag(&result, tag)
+		}
+		return result, nil
 	}
 
 	type scoredTag struct {
@@ -238,52 +320,54 @@ func (s *CatalogService) IssueTaxonomyShortlist(ctx context.Context, issueEmbedd
 		return cmp.Compare(a.tag.Name, b.tag.Name)
 	})
 
-	selected := make([]ai.Tag, 0, len(preferred)+len(retrievalAnchorTagNames)+retrievedLimit)
-	seen := make(map[string]struct{}, len(preferred)+len(retrievalAnchorTagNames)+retrievedLimit)
-	add := func(tag issues.Tag) {
-		name := normalizeCatalogTagName(tag.Name)
-		if name == "" {
-			return
-		}
-		if _, ok := seen[name]; ok {
-			return
-		}
-		seen[name] = struct{}{}
-		selected = append(selected, ai.Tag{
-			Name:        name,
-			Description: strings.TrimSpace(tag.Description),
-		})
+	selected := CandidateTaxonomy{
+		Mode: CandidateModeRetrievalShortlist,
+		Tags: make([]CandidateTag, 0, len(preferred)+len(retrievalAnchorTagNames)+retrievedLimit),
 	}
-
-	for _, raw := range preferred {
-		name := normalizeCatalogTagName(raw)
-		if tag, ok := catalogByName[name]; ok {
-			add(tag)
-			continue
-		}
-		add(issues.Tag{Name: name})
+	add := func(tag issues.Tag, source CandidateSource, similarity *float64) {
+		mergeCandidateTag(&selected, CandidateTag{
+			Name:        normalizeCatalogTagName(tag.Name),
+			Description: strings.TrimSpace(tag.Description),
+			Sources:     []CandidateSource{source},
+			Similarity:  cloneFloat64Pointer(similarity),
+		})
 	}
 
 	if retrievedLimit <= 0 {
 		retrievedLimit = 15
 	}
+	for _, tag := range explicitCandidateTaxonomy(preferred, catalogByName).Tags {
+		mergeCandidateTag(&selected, tag)
+	}
+	retrievedCount := 0
 	for _, item := range scored {
-		add(item.tag)
-		if len(selected) >= len(preferred)+retrievedLimit {
+		add(item.tag, CandidateSourceRetrieval, &item.similarity)
+		retrievedCount++
+		if retrievedCount >= retrievedLimit {
 			break
 		}
 	}
 
 	for _, name := range retrievalAnchorTagNames {
 		if tag, ok := catalogByName[name]; ok {
-			add(tag)
+			add(tag, CandidateSourceAnchor, nil)
 		}
 	}
 
-	if len(selected) == 0 {
-		return s.IssueTaxonomy(ctx, preferred)
+	if len(selected.Tags) == 0 {
+		return fullCatalogCandidateTaxonomy(stored), nil
 	}
 	return selected, nil
+}
+
+// IssueTaxonomyShortlist builds a retrieval-first candidate set from the
+// nearest embedded tags plus a small stable anchor set for broad recall.
+func (s *CatalogService) IssueTaxonomyShortlist(ctx context.Context, issueEmbedding []float64, preferred []string, retrievedLimit int) ([]ai.Tag, error) {
+	candidates, err := s.IssueTaxonomyCandidates(ctx, issueEmbedding, preferred, CandidateModeRetrievalShortlist, retrievedLimit)
+	if err != nil {
+		return nil, err
+	}
+	return candidates.AITags(), nil
 }
 
 func (s *CatalogService) embedTag(ctx context.Context, tag issues.Tag) ([]float64, error) {
@@ -584,10 +668,140 @@ func (s *CatalogService) AnnotateHints(ctx context.Context, taxonomy []ai.Tag, i
 	if s == nil || s.store == nil || len(issueEmbedding) == 0 || len(taxonomy) == 0 {
 		return taxonomy
 	}
+	hints := s.hintedTagNames(ctx, aiTagNames(taxonomy), issueEmbedding, limit)
+	if len(hints) == 0 {
+		return taxonomy
+	}
+
+	result := make([]ai.Tag, len(taxonomy))
+	copy(result, taxonomy)
+	for i := range result {
+		if _, ok := hints[normalizeCatalogTagName(result[i].Name)]; ok {
+			result[i].Hint = true
+		}
+	}
+	return result
+}
+
+func (s *CatalogService) AnnotateCandidateHints(ctx context.Context, taxonomy CandidateTaxonomy, issueEmbedding []float64, limit int) CandidateTaxonomy {
+	if s == nil || s.store == nil || len(issueEmbedding) == 0 || len(taxonomy.Tags) == 0 {
+		return taxonomy
+	}
+
+	hints := s.hintedTagNames(ctx, candidateTagNames(taxonomy.Tags), issueEmbedding, limit)
+	if len(hints) == 0 {
+		return taxonomy
+	}
+
+	result := CandidateTaxonomy{
+		Mode: taxonomy.Mode,
+		Tags: make([]CandidateTag, len(taxonomy.Tags)),
+	}
+	copy(result.Tags, taxonomy.Tags)
+	for i := range result.Tags {
+		if _, ok := hints[normalizeCatalogTagName(result.Tags[i].Name)]; ok {
+			result.Tags[i].Hint = true
+		}
+	}
+	return result
+}
+
+func normalizeCatalogTagName(name string) string {
+	return domain.NormalizeTagName(name)
+}
+
+func explicitCandidateTaxonomy(preferred []string, catalogByName map[string]issues.Tag) CandidateTaxonomy {
+	result := CandidateTaxonomy{
+		Mode: CandidateModeExplicitOnly,
+		Tags: make([]CandidateTag, 0, len(preferred)),
+	}
+	seen := make(map[string]struct{}, len(preferred))
+	for _, raw := range preferred {
+		name := normalizeCatalogTagName(raw)
+		if name == "" {
+			continue
+		}
+		if _, ok := seen[name]; ok {
+			continue
+		}
+		seen[name] = struct{}{}
+		tag := issues.Tag{Name: name}
+		if stored, ok := catalogByName[name]; ok {
+			tag = stored
+		}
+		result.Tags = append(result.Tags, CandidateTag{
+			Name:        name,
+			Description: strings.TrimSpace(tag.Description),
+			Sources:     []CandidateSource{CandidateSourceExplicit},
+		})
+	}
+	return result
+}
+
+func fullCatalogCandidateTaxonomy(tags []issues.Tag) CandidateTaxonomy {
+	aiTags := aiTagsFromCatalog(tags)
+	result := CandidateTaxonomy{
+		Mode: CandidateModeFullCatalog,
+		Tags: make([]CandidateTag, 0, len(aiTags)),
+	}
+	for _, tag := range aiTags {
+		result.Tags = append(result.Tags, CandidateTag{
+			Name:        normalizeCatalogTagName(tag.Name),
+			Description: strings.TrimSpace(tag.Description),
+			Sources:     []CandidateSource{CandidateSourceFullCatalog},
+		})
+	}
+	return result
+}
+
+func mergeCandidateTag(taxonomy *CandidateTaxonomy, incoming CandidateTag) {
+	if taxonomy == nil {
+		return
+	}
+	name := normalizeCatalogTagName(incoming.Name)
+	if name == "" {
+		return
+	}
+	incoming.Name = name
+	incoming.Description = strings.TrimSpace(incoming.Description)
+	for i := range taxonomy.Tags {
+		if normalizeCatalogTagName(taxonomy.Tags[i].Name) != name {
+			continue
+		}
+		existing := &taxonomy.Tags[i]
+		if existing.Description == "" {
+			existing.Description = incoming.Description
+		}
+		for _, source := range incoming.Sources {
+			if !slices.Contains(existing.Sources, source) {
+				existing.Sources = append(existing.Sources, source)
+			}
+		}
+		if incoming.Hint {
+			existing.Hint = true
+		}
+		if incoming.Similarity != nil && (existing.Similarity == nil || *incoming.Similarity > *existing.Similarity) {
+			existing.Similarity = cloneFloat64Pointer(incoming.Similarity)
+		}
+		return
+	}
+	taxonomy.Tags = append(taxonomy.Tags, CandidateTag{
+		Name:        incoming.Name,
+		Description: incoming.Description,
+		Hint:        incoming.Hint,
+		Sources:     append([]CandidateSource(nil), incoming.Sources...),
+		Similarity:  cloneFloat64Pointer(incoming.Similarity),
+	})
+}
+
+func (s *CatalogService) hintedTagNames(ctx context.Context, tagNames []string, issueEmbedding []float64, limit int) map[string]struct{} {
+	if s == nil || s.store == nil || len(issueEmbedding) == 0 || len(tagNames) == 0 {
+		return nil
+	}
 
 	stored, err := s.store.ListTags(ctx)
 	if err != nil {
-		return taxonomy
+		return nil
 	}
 
 	embeddingByName := make(map[string][]float64, len(stored))
@@ -598,38 +812,51 @@ func (s *CatalogService) AnnotateHints(ctx context.Context, taxonomy []ai.Tag, i
 	}
 
 	type scored struct {
-		index      int
+		name       string
 		similarity float64
 	}
-	candidates := make([]scored, 0, len(taxonomy))
-	for i, tag := range taxonomy {
-		emb, ok := embeddingByName[normalizeCatalogTagName(tag.Name)]
+	candidates := make([]scored, 0, len(tagNames))
+	for _, rawName := range tagNames {
+		name := normalizeCatalogTagName(rawName)
+		emb, ok := embeddingByName[name]
 		if !ok {
 			continue
 		}
 		sim := vectors.CosineSimilarity(issueEmbedding, emb)
 		if sim > 0.1 {
-			candidates = append(candidates, scored{index: i, similarity: sim})
+			candidates = append(candidates, scored{name: name, similarity: sim})
 		}
 	}
 
 	slices.SortFunc(candidates, func(a, b scored) int {
-		return cmp.Compare(b.similarity, a.similarity)
+		if c := cmp.Compare(b.similarity, a.similarity); c != 0 {
+			return c
+		}
+		return cmp.Compare(a.name, b.name)
 	})
-
 	if limit > 0 && len(candidates) > limit {
 		candidates = candidates[:limit]
 	}
 
-	// Clone the taxonomy so we don't mutate the caller's slice.
-	result := make([]ai.Tag, len(taxonomy))
-	copy(result, taxonomy)
-	for _, c := range candidates {
-		result[c.index].Hint = true
+	hints := make(map[string]struct{}, len(candidates))
+	for _, candidate := range candidates {
+		hints[candidate.name] = struct{}{}
 	}
-	return result
+	return hints
 }
 
-func normalizeCatalogTagName(name string) string {
-	return domain.NormalizeTagName(name)
+func aiTagNames(tags []ai.Tag) []string {
+	names := make([]string, 0, len(tags))
+	for _, tag := range tags {
+		names = append(names, tag.Name)
+	}
+	return names
+}
+
+func candidateTagNames(tags []CandidateTag) []string {
+	names := make([]string, 0, len(tags))
+	for _, tag := range tags {
+		names = append(names, tag.Name)
+	}
+	return names
 }

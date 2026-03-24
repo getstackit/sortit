@@ -138,6 +138,18 @@ func TestAPIIntegrationCreateLookupMapAndTagsWithMockAIBackend(t *testing.T) {
 	if !slices.Equal(second.Tags, []string{"export", "csv", "performance"}) {
 		t.Fatalf("unexpected tags for second issue: %#v", second.Tags)
 	}
+	if len(first.TagScores) < 2 || !first.TagScores[1].Suggested {
+		t.Fatalf("expected suggested wizard tag score on first issue, got %#v", first.TagScores)
+	}
+	if first.TagScores[1].Description != "multi-step setup flow" {
+		t.Fatalf("unexpected first suggested tag description: %q", first.TagScores[1].Description)
+	}
+	if len(second.TagScores) < 2 || !second.TagScores[1].Suggested {
+		t.Fatalf("expected suggested csv tag score on second issue, got %#v", second.TagScores)
+	}
+	if second.TagScores[1].Description != "csv export format" {
+		t.Fatalf("unexpected second suggested tag description: %q", second.TagScores[1].Description)
+	}
 	if assigned.AssignedTo != "Avery" { //nolint:goconst
 		t.Fatalf("expected assigned issue to be owned by Avery, got %q", assigned.AssignedTo)
 	}

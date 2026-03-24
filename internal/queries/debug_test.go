@@ -66,6 +66,127 @@ func TestDebugFactorWeightsReportsFallbackState(t *testing.T) {
 	}
 }
 
+func TestDebugFactorWeightsIncludesLowR2IssueStatus(t *testing.T) {
+	ctx := context.Background()
+	store := issues.NewInMemoryStore([]issues.Issue{
+		{ID: "issue-a", Raw: "a", Status: issues.StatusOpen, TagScores: []issues.TagRelevance{{Tag: "alpha", Relevance: 1}}, Embedding: unitVec64([]float64{1, 0, 0, 0})},
+		{ID: "issue-b", Raw: "b", Status: issues.StatusOpen, TagScores: []issues.TagRelevance{{Tag: "alpha", Relevance: 1}}, Embedding: unitVec64([]float64{1, 0, 0, 0})},
+		{ID: "issue-c", Raw: "c", Status: issues.StatusOpen, TagScores: []issues.TagRelevance{{Tag: "alpha", Relevance: 1}}, Embedding: unitVec64([]float64{1, 0, 0, 0})},
+		{ID: "issue-d", Raw: "d", Status: issues.StatusOpen, TagScores: []issues.TagRelevance{{Tag: "alpha", Relevance: 1}}, Embedding: unitVec64([]float64{1, 0, 0, 0})},
+		{ID: "issue-open-low", Raw: "open low", Status: issues.StatusOpen, TagScores: []issues.TagRelevance{{Tag: "alpha", Relevance: 1}}, Embedding: unitVec64([]float64{0, 1, 0, 0})},
+		{ID: "issue-closed-low", Raw: "closed low", Status: issues.StatusClosed, TagScores: []issues.TagRelevance{{Tag: "alpha", Relevance: 1}}, Embedding: unitVec64([]float64{0, 1, 0, 0})},
+	})
+	tagStore := &debugTagStore{}
+	catalog := services.NewCatalogService(tagStore, nil, nil)
+	if err := catalog.EnsureStoredTags(ctx, []issues.Tag{
+		{Name: "alpha", Embedding: unitVec64([]float64{1, 0, 0, 0})},
+	}); err != nil {
+		t.Fatalf("ensure stored tags: %v", err)
+	}
+
+	result, err := (DebugFactorWeightsHandler{Store: store, Catalog: catalog}).Handle(ctx)
+	if err != nil {
+		t.Fatalf("handle debug factor weights: %v", err)
+	}
+
+	statusByID := make(map[string]issues.IssueStatus, len(result.LowR2Issues))
+	for _, item := range result.LowR2Issues {
+		statusByID[item.ID] = item.Status
+	}
+	if statusByID["issue-open-low"] != issues.StatusOpen {
+		t.Fatalf("issue-open-low status = %q, want %q", statusByID["issue-open-low"], issues.StatusOpen)
+	}
+	if statusByID["issue-closed-low"] != issues.StatusClosed {
+		t.Fatalf("issue-closed-low status = %q, want %q", statusByID["issue-closed-low"], issues.StatusClosed)
+	}
+}
+
+func TestDebugFactorWeightsBuildsActionableReviewQueue(t *testing.T) {
+	ctx := context.Background()
+	store := issues.NewInMemoryStore([]issues.Issue{
+		{ID: "issue-a", Raw: "a", Status: issues.StatusOpen, TagScores: []issues.TagRelevance{{Tag: "alpha", Relevance: 1}}, Embedding: unitVec64([]float64{1, 0, 0, 0})},
+		{ID: "issue-b", Raw: "b", Status: issues.StatusOpen, TagScores: []issues.TagRelevance{{Tag: "alpha", Relevance: 1}}, Embedding: unitVec64([]float64{1, 0, 0, 0})},
+		{ID: "issue-c", Raw: "c", Status: issues.StatusOpen, TagScores: []issues.TagRelevance{{Tag: "alpha", Relevance: 1}}, Embedding: unitVec64([]float64{1, 0, 0, 0})},
+		{ID: "issue-d", Raw: "d", Status: issues.StatusOpen, TagScores: []issues.TagRelevance{{Tag: "alpha", Relevance: 1}}, Embedding: unitVec64([]float64{1, 0, 0, 0})},
+		{
+			ID:     "issue-open-review",
+			Raw:    "beta concept hidden behind alpha tag",
+			Status: issues.StatusOpen,
+			TagScores: []issues.TagRelevance{
+				{Tag: "alpha", Relevance: 0.91, Suggested: true, Description: "legacy broad alpha bucket"},
+			},
+			Embedding: unitVec64([]float64{0, 1, 0, 0}),
+		},
+		{
+			ID:        "issue-closed-review",
+			Raw:       "closed review case",
+			Status:    issues.StatusClosed,
+			TagScores: []issues.TagRelevance{{Tag: "alpha", Relevance: 0.9}},
+			Embedding: unitVec64([]float64{0, 1, 0, 0}),
+		},
+	})
+	tagStore := &debugTagStore{}
+	catalog := services.NewCatalogService(tagStore, nil, nil)
+	if err := catalog.EnsureStoredTags(ctx, []issues.Tag{
+		{Name: "alpha", Embedding: unitVec64([]float64{1, 0, 0, 0})},
+		{Name: "beta", Embedding: unitVec64([]float64{0, 1, 0, 0})},
+	}); err != nil {
+		t.Fatalf("ensure stored tags: %v", err)
+	}
+
+	result, err := (DebugFactorWeightsHandler{Store: store, Catalog: catalog}).Handle(ctx)
+	if err != nil {
+		t.Fatalf("handle debug factor weights: %v", err)
+	}
+
+	if len(result.ReviewQueue.LowR2Issues) == 0 {
+		t.Fatal("expected low-R2 review issues")
+	}
+	lowR2 := result.ReviewQueue.LowR2Issues[0]
+	if lowR2.ID != "issue-open-review" {
+		t.Fatalf("expected issue-open-review first in low-R2 queue, got %#v", result.ReviewQueue.LowR2Issues)
+	}
+	if len(lowR2.TagScores) != 1 || !lowR2.TagScores[0].Suggested {
+		t.Fatalf("expected suggested tag provenance in low-R2 queue, got %#v", lowR2.TagScores)
+	}
+	if lowR2.TagScores[0].Description != "legacy broad alpha bucket" {
+		t.Fatalf("unexpected low-R2 description %q", lowR2.TagScores[0].Description)
+	}
+	if len(lowR2.Diagnosis) == 0 {
+		t.Fatal("expected low-R2 diagnosis")
+	}
+
+	if len(result.ReviewQueue.LowAlignmentTags) == 0 {
+		t.Fatal("expected low-alignment review tags")
+	}
+	lowAlignment := result.ReviewQueue.LowAlignmentTags[0]
+	if lowAlignment.IssueID != "issue-open-review" {
+		t.Fatalf("expected issue-open-review low-alignment entry, got %#v", result.ReviewQueue.LowAlignmentTags)
+	}
+	if lowAlignment.TagScore.Tag != "alpha" || !lowAlignment.TagScore.Suggested {
+		t.Fatalf("unexpected low-alignment tag score %#v", lowAlignment.TagScore)
+	}
+	if lowAlignment.Alignment >= 0.1 {
+		t.Fatalf("expected suspicious alignment < 0.1, got %v", lowAlignment.Alignment)
+	}
+
+	if len(result.ReviewQueue.ResidualMisses) == 0 {
+		t.Fatal("expected residual-miss review entries")
+	}
+	residualMiss := result.ReviewQueue.ResidualMisses[0]
+	if residualMiss.IssueID != "issue-open-review" {
+		t.Fatalf("expected issue-open-review residual miss, got %#v", result.ReviewQueue.ResidualMisses)
+	}
+	if len(residualMiss.CandidateTags) == 0 || residualMiss.CandidateTags[0].Tag != "beta" {
+		t.Fatalf("expected beta residual candidate, got %#v", residualMiss.CandidateTags)
+	}
+	for _, item := range result.ReviewQueue.LowR2Issues {
+		if item.ID == "issue-closed-review" {
+			t.Fatal("expected closed issues to be excluded from actionable low-R2 review queue")
+		}
+	}
+}
+
 func TestDebugIssueR2ReportsRawNorms(t *testing.T) {
 	ctx := context.Background()
 	store := issues.NewInMemoryStore([]issues.Issue{
@@ -175,6 +296,7 @@ func TestDebugEvalTagsReportsAggregateMetrics(t *testing.T) {
 	}, &debugEvalEmbedder{})
 	catalog := services.NewCatalogService(&debugTagStore{}, analyzer, nil)
 	handler := DebugEvalTagsHandler{
+		Analyzer: analyzer,
 		Catalog:  catalog,
 		Enricher: services.NewIssueEnricher(analyzer, catalog, slog.Default()),
 		Fixture: []DebugTagEvalCase{
@@ -252,6 +374,7 @@ func TestDebugEvalTagsReportsStabilityAcrossRuns(t *testing.T) {
 	}, &debugEvalEmbedder{})
 	catalog := services.NewCatalogService(&debugTagStore{}, analyzer, nil)
 	handler := DebugEvalTagsHandler{
+		Analyzer: analyzer,
 		Catalog:  catalog,
 		Enricher: services.NewIssueEnricher(analyzer, catalog, slog.Default()),
 		Fixture: []DebugTagEvalCase{
@@ -259,7 +382,7 @@ func TestDebugEvalTagsReportsStabilityAcrossRuns(t *testing.T) {
 		},
 	}
 
-	result, err := handler.HandleFixture(ctx, "", 3)
+	result, err := handler.HandleFixture(ctx, "", 3, services.CandidateModeRetrievalShortlist)
 	if err != nil {
 		t.Fatalf("HandleFixture runs=3: %v", err)
 	}

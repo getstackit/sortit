@@ -98,46 +98,42 @@ Today the pipeline is roughly:
 This is workable, but it makes accuracy and specificity too dependent on a
 single model pass.
 
+Implementation status uses checkboxes below:
+
+- `[x]` verified complete in the current codebase / CLI
+- `[ ]` not yet complete or not yet verified end-to-end
+
 ### Recent changes (shipped)
 
-- Re-enrichment now uses the full catalog taxonomy instead of restricting to the
-  issue's current tags.
-- `POST /issues/{id}/re-enrich` and `splat issues re-enrich` allow triggering
-  re-classification without a fake refinement post.
-- Embedding-based hint tags are annotated on the taxonomy during enrichment.
-- R² diagnostics are exposed on the issue detail page and standard API routes.
-- The tagging prompt was updated to surface high-affinity hint tags and
+- [x] Re-enrichment now uses the full catalog taxonomy instead of restricting
+  to the issue's current tags.
+- [x] `POST /issues/{id}/re-enrich` and `splat issues re-enrich` allow
+  triggering re-classification without a fake refinement post.
+- [x] Embedding-based hint tags are annotated on the taxonomy during
+  enrichment.
+- [x] R² diagnostics are exposed on the issue detail page and standard API
+  routes.
+- [x] The tagging prompt was updated to surface high-affinity hint tags and
   encourage more specific assignments.
-- Ledoit-Wolf shrinkage applied to the tag covariance matrix to regularize
+- [x] Ledoit-Wolf shrinkage applied to the tag covariance matrix to regularize
   factor decomposition as the catalog grows.
-- Map availability status and minimum issue count thresholds added for map
+- [x] Map availability status and minimum issue count thresholds added for map
   rendering.
-- Memory layout and hash lookup overhead optimized in the factor model.
+- [x] Memory layout and hash lookup overhead optimized in the factor model.
 
 ### Known remaining issues
 
-- Hint tags are computed from the issue's *stored* embedding, which may be stale
-  after canonicalization or refinement. The embedding should be recomputed from
-  the canonical text before hint selection.
-- Create does not currently behave like refine/combine/re-enrich when explicit
-  tags are provided: `IssueTaxonomy` can return only the explicit tags, so the
-  model may not see the rest of the catalog during initial classification.
-- `IssueTagScoresFromAnalysis` drops the `Suggested` and `Description` fields
-  from AI tag scores. This metadata is never persisted on the issue and cannot
-  be inspected later.
-- Issue tag score persistence is still structurally `{tag, relevance}` across
-  store types, APIs, and SQL queries. Preserving provenance or verification
-  metadata requires explicit schema and query updates, not only service-layer
-  plumbing.
+- Issue tag score persistence now preserves `suggested` and `description`
+  provenance, but it does not yet persist verification metadata or candidate
+  source metadata needed by later phases.
+- Some SQL/debug/query surfaces still reason about issue tag scores primarily
+  as `{tag, relevance}` records. That is sufficient for current filtering and
+  ranking, but later verification and review features will require explicit
+  query-level support for the wider persisted shape.
 - Generic attenuation is unconditional: any tag with specificity < 0.3 gets a
   flat 0.6× penalty whenever a specific tag is present, regardless of context.
 - Display is capped at 3 tags with a hard 0.2 relevance floor. Tags between
   0.08 (AI floor) and 0.2 are persisted but invisible.
-- The 0.08 relevance floor exists only in the LLM system prompt — there is no
-  server-side floor in `IssueTagScoresFromAnalysis`. If the model returns a tag
-  below 0.08, it is persisted. Phase 1 should add a server-side floor to match.
-- Re-enrichment uses specificity-aware display ranking, but create and refine
-  still rely on legacy display selection.
 
 ## Cross-Cutting Requirements
 
@@ -230,23 +226,23 @@ Before changing the classifier, make quality visible.
 
 ### Deliverables
 
-- A small labeled benchmark set of real issues with expected tags, drawn from
-  the current corpus. Select issues spanning different failure modes:
-  - low-R² issues (tags explain little)
-  - high-relevance / low-alignment tags (AI confident but wrong direction)
-  - residual-near unassigned tags (good tag exists but was missed)
-  - well-tagged high-R² issues (positive examples)
-- A repeatable evaluation command (`splat debug eval-tags` or test fixture) that
-  runs the tagger against the benchmark and reports precision, recall, and
+- [x] A small labeled benchmark set of real issues with expected tags, drawn
+  from the current corpus. Select issues spanning different failure modes:
+  - [x] low-R² issues (tags explain little)
+  - [x] high-relevance / low-alignment tags (AI confident but wrong direction)
+  - [x] residual-near unassigned tags (good tag exists but was missed)
+  - [ ] well-tagged high-R² issues (positive examples)
+- [x] A repeatable evaluation command (`splat debug eval-tags` or test fixture)
+  that runs the tagger against the benchmark and reports precision, recall, and
   per-issue diffs
-- A review queue surfacing actionable issues from existing diagnostics, with
-  `splat issues re-enrich` as the action mechanism
-- Reuse the existing R²/debug infrastructure as the starting point rather than
-  rebuilding it from scratch:
-  - low-R² issue listing
-  - high-relevance / low-alignment diagnosis
-  - nearest residual-tag suggestions
-  - residual-neighbor clustering
+- [ ] A review queue surfacing actionable issues from existing diagnostics,
+  with `splat issues re-enrich` as the action mechanism
+- [x] Reuse the existing R²/debug infrastructure as the starting point rather
+  than rebuilding it from scratch:
+  - [x] low-R² issue listing
+  - [x] high-relevance / low-alignment diagnosis
+  - [x] nearest residual-tag suggestions
+  - [x] residual-neighbor clustering
 
 ### Why first
 
@@ -268,7 +264,7 @@ Make the current architecture less error-prone.
 
 ### Deliverables
 
-- Recompute hint tags from a fresh embedding of the canonical text during
+- [x] Recompute hint tags from a fresh embedding of the canonical text during
   enrichment, not from the previously stored `issue.Embedding`. Concretely:
   embed the canonical text first, then call `AnnotateHints` with that fresh
   embedding before passing the taxonomy to the LLM.
@@ -277,25 +273,27 @@ Make the current architecture less error-prone.
     call *before* the tagging call, since the fresh embedding must be available
     for hint selection before the tagger runs. This adds one API call to the
     enrichment path.
-- Resolve the create-path taxonomy asymmetry explicitly:
-  - either keep "explicit tags only" for create as an intentional product rule
-  - or change create to use the full catalog plus explicit tags as anchors so
-    create, refine, combine, and re-enrich are comparable
-- Preserve `Suggested` and `Description` metadata from AI tag scores through
-  persistence so tag provenance is inspectable.
-- Land the schema/query work needed for that provenance:
-  - extend persisted issue tag-score shape
-  - update append-only and Postgres readers/writers
-  - update SQL queries and API types that assume `{tag, relevance}`
-- Add a server-side relevance floor (0.08) in `IssueTagScoresFromAnalysis` to
-  match the prompt instruction, so sub-threshold tags are never persisted even
-  if the model returns them.
-- Ensure create, refine, combine, and re-enrich flows all use the same
+- [x] Resolve the create-path taxonomy asymmetry explicitly:
+  - [ ] either keep "explicit tags only" for create as an intentional product
+    rule
+  - [x] or change create to use the full catalog plus explicit tags as anchors
+    so create, refine, combine, and re-enrich are comparable
+- [x] Preserve `Suggested` and `Description` metadata from AI tag scores
+  through persistence so tag provenance is inspectable.
+- [ ] Land the schema/query work needed for that provenance:
+  - [x] extend persisted issue tag-score shape
+  - [x] update append-only and Postgres readers/writers
+  - [ ] update remaining SQL/query/API surfaces that still assume
+    `{tag, relevance}` only
+- [x] Add a server-side relevance floor (0.08) in `IssueTagScoresFromAnalysis`
+  to match the prompt instruction, so sub-threshold tags are never persisted
+  even if the model returns them.
+- [x] Ensure create, refine, combine, and re-enrich flows all use the same
   specificity-aware ranking and display rules.
   - Concretely, remove the current create/refine use of legacy `displayTags`
     when specificity-aware display is intended.
-- Remove remaining frontend reliance on hardcoded generic bucket tags and use
-  persisted specificity consistently.
+- [ ] Remove remaining frontend reliance on hardcoded generic bucket tags and
+  use persisted specificity consistently.
 
 ### Why this phase
 
@@ -315,11 +313,11 @@ architectural changes.
 
 ### Deliverables
 
-- During enrichment, select 2–3 high-R² issues from the corpus that are
+- [ ] During enrichment, select 2–3 high-R² issues from the corpus that are
   semantically close to the current issue (by embedding similarity).
-- Include their canonical text and assigned tags as few-shot examples in the
-  tagging prompt, before the current issue text.
-- Format examples to show what good specific tagging looks like:
+- [ ] Include their canonical text and assigned tags as few-shot examples in
+  the tagging prompt, before the current issue text.
+- [ ] Format examples to show what good specific tagging looks like:
   ```
   Example 1:
   Issue: "Backfill and dual-write embedding data so vector columns stay in sync"
@@ -371,31 +369,32 @@ Stop asking the model to classify against the entire catalog equally.
 
 ### Deliverables
 
-- Embed the issue's canonical text and retrieve the top-k most similar catalog
-  tags by cosine similarity.
-- Build a tagging candidate set from:
-  - top ~10–15 nearest catalog tags by embedding similarity
-  - a small set of broad anchor tags across key axes (issue kind, failure mode,
-    platform) to preserve recall on major dimensions
-  - user-supplied explicit tags when present
-- Pass that shortlist to the LLM instead of the entire catalog.
-- Retain the full catalog as a fallback path for debugging and controlled A/B
-  comparison via the benchmark.
-- Introduce an explicit candidate-set builder rather than treating retrieval as
-  only "hint tags in the prompt." Candidate selection should produce structured
-  provenance for each candidate source:
-  - retrieval
-  - anchor set
-  - explicit user input
-  - fallback/full-catalog path for debug
+- [x] Embed the issue's canonical text and retrieve the top-k most similar
+  catalog tags by cosine similarity.
+- [x] Build a tagging candidate set from:
+  - [x] top ~10–15 nearest catalog tags by embedding similarity
+  - [x] a small set of broad anchor tags across key axes (issue kind, failure
+    mode, platform) to preserve recall on major dimensions
+  - [x] user-supplied explicit tags when present
+- [x] Pass that shortlist to the LLM instead of the entire catalog.
+- [x] Retain the full catalog as a fallback path for debugging and controlled
+  A/B comparison via the benchmark.
+- [x] Introduce an explicit candidate-set builder rather than treating
+  retrieval as only "hint tags in the prompt." Candidate selection should
+  produce structured provenance for each candidate source:
+  - [x] retrieval
+  - [x] anchor set
+  - [x] explicit user input
+  - [x] fallback/full-catalog path for debug
 
 ### Relationship to hint tags
 
 Phase 2 subsumes the Phase 1 hint mechanism. When the taxonomy *is* the
 retrieval shortlist, every tag was already selected by embedding similarity —
-marking some of them as "hints" adds no incremental signal. Once retrieval-first
-is the default path, `AnnotateHints` should be removed or reduced to an
-annotation-only role for debug surfaces.
+marking some of them as "hints" adds no incremental signal. The current
+implementation keeps `AnnotateHints` as a lightweight annotation layer for the
+debug/analyze surfaces, but it should still be reduced further over time rather
+than treated as the primary selection mechanism.
 
 ### Design rules
 
@@ -428,22 +427,22 @@ on a full second LLM pass.
 
 ### Deliverables
 
-- After the LLM scores tags, compute verification features for each assigned
-  and nearby unassigned tag:
-  - tag embedding alignment with the issue embedding
-  - tag specificity
-  - whether the tag came from retrieval, anchor set, or explicit user input
-  - whether a nearby unassigned tag strongly dominates a weak assigned tag
-- Use these features to produce a verification verdict:
-  - keep
-  - down-rank
-  - ask targeted follow-up
-  - flag for debug/review
-- After verification, check whether a high-alignment unassigned catalog tag
+- [ ] After the LLM scores tags, compute verification features for each
+  assigned and nearby unassigned tag:
+  - [ ] tag embedding alignment with the issue embedding
+  - [ ] tag specificity
+  - [ ] whether the tag came from retrieval, anchor set, or explicit user input
+  - [ ] whether a nearby unassigned tag strongly dominates a weak assigned tag
+- [ ] Use these features to produce a verification verdict:
+  - [ ] keep
+  - [ ] down-rank
+  - [ ] ask targeted follow-up
+  - [ ] flag for debug/review
+- [ ] After verification, check whether a high-alignment unassigned catalog tag
   exists (residual-near tag). If so, add it as a candidate and optionally
   re-score with a targeted LLM check for that single tag.
-- Gate the optional LLM re-check behind a confidence threshold: only invoke it
-  when the embedding alignment gap between the best unassigned tag and the
+- [ ] Gate the optional LLM re-check behind a confidence threshold: only invoke
+  it when the embedding alignment gap between the best unassigned tag and the
   worst assigned tag exceeds a margin.
 
 ### Design rules
@@ -498,22 +497,22 @@ Treat taxonomy expansion as a controlled workflow.
 
 ### Deliverables
 
-- Introduce a `proposed` or equivalent pre-canonical tag state.
-- Do not auto-promote a newly suggested tag into the main catalog after a
+- [ ] Introduce a `proposed` or equivalent pre-canonical tag state.
+- [ ] Do not auto-promote a newly suggested tag into the main catalog after a
   single issue. `EnsureStoredTags` should persist proposed tags separately from
   active catalog tags.
-- Add promotion rules such as:
-  - repeated appearance across multiple issues (≥ 3)
-  - strong residual clustering around the same concept
-  - explicit user acceptance via a review surface
-- Add rejection/merge paths for noisy proposed tags.
-- Proposed tags should still be assigned to the originating issue and scored,
-  but not appear in the taxonomy for other issues until promoted.
-- Define visibility and indexing rules explicitly:
-  - whether proposed tags appear on issue detail pages
-  - whether proposed tags participate in search
-  - whether proposed tags are included in debug/R² review surfaces
-  - whether proposed tags are excluded from future taxonomy construction by
+- [ ] Add promotion rules such as:
+  - [ ] repeated appearance across multiple issues (≥ 3)
+  - [ ] strong residual clustering around the same concept
+  - [ ] explicit user acceptance via a review surface
+- [ ] Add rejection/merge paths for noisy proposed tags.
+- [ ] Proposed tags should still be assigned to the originating issue and
+  scored, but not appear in the taxonomy for other issues until promoted.
+- [ ] Define visibility and indexing rules explicitly:
+  - [ ] whether proposed tags appear on issue detail pages
+  - [ ] whether proposed tags participate in search
+  - [ ] whether proposed tags are included in debug/R² review surfaces
+  - [ ] whether proposed tags are excluded from future taxonomy construction by
     default
 
 ### Implementation note
@@ -550,38 +549,58 @@ produces.
 
 ### Deliverables
 
-- Periodically run residual clustering over all issues (the `residualNeighbors`
-  infrastructure already identifies clusters sharing unexplained concepts).
-- Before proposing a new tag for a residual cluster, run a merge-before-create
-  check:
-  - is there an existing active tag that already fits the cluster?
-  - is there a proposed tag that should be promoted instead?
-  - are multiple tags in the cluster actually aliases or merge candidates?
-- When a residual cluster exceeds a size threshold (e.g., ≥ 4 issues with
+- [ ] Periodically run residual clustering over all issues (the
+  `residualNeighbors` infrastructure already identifies clusters sharing
+  unexplained concepts).
+- [ ] Before proposing a new tag for a residual cluster, run a
+  merge-before-create check:
+  - [ ] is there an existing active tag that already fits the cluster?
+  - [ ] is there a proposed tag that should be promoted instead?
+  - [ ] are multiple tags in the cluster actually aliases or merge candidates?
+- [ ] When a residual cluster exceeds a size threshold (e.g., ≥ 4 issues with
   pairwise residual similarity > 0.4), automatically propose a tag:
-  - Generate a candidate tag name and description from the cluster's common
+  - [ ] Generate a candidate tag name and description from the cluster's common
     text patterns.
-  - Surface the proposal in the review queue (Phase 6) with the cluster members
-    as evidence.
-- Periodically refine existing active tag descriptions using evidence from the
-  corpus, not just manual intuition:
-  - gather issues with high loading, high alignment, or repeated confident use
-    of the tag
-  - extract common positive patterns and recurring false-positive neighbors
-  - update the tag description so it states what the tag captures and what it
-    excludes, with examples grounded in real issue language
-  - re-embed the tag after materially changing its description and re-evaluate
-    retrieval and benchmark impact
-- Grow the tag set along explicit reusable axes such as:
-  - issue kind (bug, improvement, cleanup, investigation)
-  - failure mode (crash, data loss, performance regression)
-  - platform (iOS, web, API)
-  - workflow (onboarding, export, search)
-  - surface (dashboard, settings, editor)
-  - subsystem or artifact (database, auth, enrichment pipeline)
-- Improve tag descriptions so each tag states what it captures and excludes.
-- Avoid exploding into cross-product tags unless the concept is truly stable
-  and reusable.
+  - [ ] Surface the proposal in the review queue (Phase 6) with the cluster
+    members as evidence.
+- [ ] Periodically refine existing active tag descriptions using evidence from
+  the corpus, not just manual intuition:
+  - [ ] gather issues with high loading, high alignment, or repeated confident
+    use of the tag
+  - [ ] extract common positive patterns and recurring false-positive neighbors
+  - [ ] update the tag description so it states what the tag captures and what
+    it excludes, with examples grounded in real issue language
+  - [ ] re-embed the tag after materially changing its description and
+    re-evaluate retrieval and benchmark impact
+- [ ] Periodically run a catalog-wide taxonomy maintenance pass over active tags
+  using corpus evidence and LLM assistance:
+  - [ ] collect, for each active tag:
+    - [ ] representative high-confidence / high-alignment issues
+    - [ ] recurring low-alignment false-positive issues
+    - [ ] nearest semantically similar tags and likely merge candidates
+    - [ ] usage frequency and common co-occurrence patterns
+  - [ ] ask for an explicit maintenance recommendation per tag:
+    - [ ] keep as-is
+    - [ ] improve description
+    - [ ] split into narrower reusable concepts
+    - [ ] merge with another tag
+    - [ ] demote or deprecate as a low-information tag
+  - [ ] treat accepted changes as explicit taxonomy edits:
+    - [ ] update descriptions in place when wording is the main problem
+    - [ ] re-embed changed tags after material description edits
+    - [ ] move deprecated or merged tags out of the active runtime taxonomy
+    - [ ] re-evaluate retrieval quality and benchmark impact after each batch
+- [ ] Grow the tag set along explicit reusable axes such as:
+  - [ ] issue kind (bug, improvement, cleanup, investigation)
+  - [ ] failure mode (crash, data loss, performance regression)
+  - [ ] platform (iOS, web, API)
+  - [ ] workflow (onboarding, export, search)
+  - [ ] surface (dashboard, settings, editor)
+  - [ ] subsystem or artifact (database, auth, enrichment pipeline)
+- [ ] Improve tag descriptions so each tag states what it captures and
+  excludes.
+- [ ] Avoid exploding into cross-product tags unless the concept is truly
+  stable and reusable.
 
 ### Why this phase
 
@@ -602,26 +621,27 @@ Use the existing diagnostics as an operating system for taxonomy quality.
 
 ### Deliverables
 
-- A periodic review flow for:
-  - lowest-R² issues, with `splat issues re-enrich` as the action
-  - recurring residual clusters (Phase 5 proposals)
-  - proposed tags awaiting promotion or merge (Phase 4)
-  - high-relevance / low-alignment tags flagged by verification (Phase 3)
-- A dashboard or report showing:
-  - share of issues tagged only with broad tags (specificity < 0.3)
-  - share of issues with at least one specific tag (specificity ≥ 0.3)
-  - tag reuse distribution (how many issues per tag)
-  - aggregate R² trend over time
-  - benchmark precision/recall trends across releases
-- Targeted automatic re-enrichment when the taxonomy changes in a way that may
-  affect tagging, for example:
-  - a proposed tag is promoted to active
-  - a tag description changes materially
-  - retrieval configuration changes
-  - a merge changes canonical tag identity
-  - a residual cluster proposal becomes available for a known slice of issues
-- Re-enrichment should prefer impacted issues over "all low-R² issues." Low-R²
-  remains a prioritization signal, not the sole trigger.
+- [ ] A periodic review flow for:
+  - [ ] lowest-R² issues, with `splat issues re-enrich` as the action
+  - [ ] recurring residual clusters (Phase 5 proposals)
+  - [ ] proposed tags awaiting promotion or merge (Phase 4)
+  - [ ] high-relevance / low-alignment tags flagged by verification (Phase 3)
+- [ ] A dashboard or report showing:
+  - [ ] share of issues tagged only with broad tags (specificity < 0.3)
+  - [ ] share of issues with at least one specific tag (specificity ≥ 0.3)
+  - [ ] tag reuse distribution (how many issues per tag)
+  - [ ] aggregate R² trend over time
+  - [ ] benchmark precision/recall trends across releases
+- [ ] Targeted automatic re-enrichment when the taxonomy changes in a way that
+  may affect tagging, for example:
+  - [ ] a proposed tag is promoted to active
+  - [ ] a tag description changes materially
+  - [ ] retrieval configuration changes
+  - [ ] a merge changes canonical tag identity
+  - [ ] a residual cluster proposal becomes available for a known slice of
+    issues
+- [ ] Re-enrichment should prefer impacted issues over "all low-R² issues."
+  Low-R² remains a prioritization signal, not the sole trigger.
 
 ### Why this phase
 

@@ -182,28 +182,30 @@ func mergeTagScores(scores []TagRelevance, canonical string, aliases map[string]
 		return scores
 	}
 
-	var canonicalRelevance float64
+	canonicalScore := TagRelevance{Tag: canonical}
 	hasCanonical := false
 	out := make([]TagRelevance, 0, len(scores))
 	for _, score := range scores {
 		norm := sanitizeTagName(score.Tag)
 		if _, isAlias := aliases[norm]; isAlias {
-			if score.Relevance > canonicalRelevance {
-				canonicalRelevance = score.Relevance
+			if score.Relevance > canonicalScore.Relevance {
+				canonicalScore = score
+				canonicalScore.Tag = canonical
 			}
 			continue
 		}
 		if norm == canonical {
 			hasCanonical = true
-			if score.Relevance > canonicalRelevance {
-				canonicalRelevance = score.Relevance
+			if score.Relevance > canonicalScore.Relevance {
+				canonicalScore = score
+				canonicalScore.Tag = canonical
 			}
 			continue
 		}
 		out = append(out, score)
 	}
-	if hasCanonical || canonicalRelevance > 0 {
-		out = append([]TagRelevance{{Tag: canonical, Relevance: canonicalRelevance}}, out...)
+	if hasCanonical || canonicalScore.Relevance > 0 {
+		out = append([]TagRelevance{canonicalScore}, out...)
 	}
 	return out
 }

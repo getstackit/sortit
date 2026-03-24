@@ -4,8 +4,10 @@ import "strings"
 
 // TagRelevance represents the relevance score of a tag to an issue.
 type TagRelevance struct {
-	Tag       string  `json:"tag"`
-	Relevance float64 `json:"relevance"`
+	Tag         string  `json:"tag"`
+	Relevance   float64 `json:"relevance"`
+	Suggested   bool    `json:"suggested,omitempty"`
+	Description string  `json:"description,omitempty"`
 }
 
 // NormalizeTagName lowercases and collapses whitespace in a tag name.

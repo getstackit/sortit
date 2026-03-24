@@ -27,7 +27,7 @@ func TestPostgresStoreCreateListAndGet(t *testing.T) {
 		Raw:       "  add postgres storage  ",
 		CreatedBy: "  Casey ",
 		Tags:      []string{"backend", " backend ", ""},
-		TagScores: []TagRelevance{{Tag: "backend", Relevance: 0.9}},
+		TagScores: []TagRelevance{{Tag: "backend", Relevance: 0.9, Suggested: true, Description: "server-side setup flow"}},
 		Embedding: []float64{0.25, 0.5},
 	})
 	if err := store.SaveIssue(context.Background(), issue); err != nil {
@@ -60,6 +60,12 @@ func TestPostgresStoreCreateListAndGet(t *testing.T) {
 	if len(items[0].TagScores) != 1 {
 		t.Fatalf("expected persisted tag scores, got %#v", items[0].TagScores)
 	}
+	if !items[0].TagScores[0].Suggested {
+		t.Fatal("expected persisted suggested flag on list result")
+	}
+	if items[0].TagScores[0].Description != "server-side setup flow" {
+		t.Fatalf("expected persisted description on list result, got %q", items[0].TagScores[0].Description)
+	}
 	if len(items[0].Embedding) != 2 {
 		t.Fatalf("expected persisted embedding, got %#v", items[0].Embedding)
 	}
@@ -79,6 +85,12 @@ func TestPostgresStoreCreateListAndGet(t *testing.T) {
 	}
 	if loaded.Discussion[0].Raw != issue.Raw {
 		t.Fatalf("expected discussion to preserve original raw, got %q", loaded.Discussion[0].Raw)
+	}
+	if len(loaded.TagScores) != 1 || !loaded.TagScores[0].Suggested {
+		t.Fatalf("expected suggested metadata on get result, got %#v", loaded.TagScores)
+	}
+	if loaded.TagScores[0].Description != "server-side setup flow" {
+		t.Fatalf("expected description on get result, got %q", loaded.TagScores[0].Description)
 	}
 	assertIssueEmbeddingVectorText(t, store, issue.ID, "[0.25,0.5]")
 }
@@ -176,7 +188,7 @@ func TestPostgresStorePersistsIssueSnapshotsOnEnrichmentUpdate(t *testing.T) {
 		Tags: []string{"export", "safari"},
 		TagScores: []TagRelevance{
 			{Tag: "export", Relevance: 0.9},
-			{Tag: "safari", Relevance: 0.7},
+			{Tag: "safari", Relevance: 0.7, Suggested: true, Description: "ipad safari export issue"},
 		},
 		Embedding:                []float64{1, 0},
 		EnrichmentTargetSequence: &seq1,
@@ -211,6 +223,12 @@ func TestPostgresStorePersistsIssueSnapshotsOnEnrichmentUpdate(t *testing.T) {
 	}
 	if snapshots[1].Sequence != 2 || snapshots[1].Raw != raw2 {
 		t.Fatalf("unexpected second snapshot: %#v", snapshots[1])
+	}
+	if len(snapshots[0].TagScores) != 2 || !snapshots[0].TagScores[1].Suggested {
+		t.Fatalf("expected suggested metadata in first snapshot, got %#v", snapshots[0].TagScores)
+	}
+	if snapshots[0].TagScores[1].Description != "ipad safari export issue" {
+		t.Fatalf("expected suggested description in first snapshot, got %q", snapshots[0].TagScores[1].Description)
 	}
 	if len(snapshots[1].Embedding) != 2 || snapshots[1].Embedding[0] != 0.8 || snapshots[1].Embedding[1] != 0.2 {
 		t.Fatalf("unexpected snapshot embedding: %#v", snapshots[1].Embedding)
@@ -2015,7 +2033,7 @@ func TestPostgresStoreMergeTagsUsesAppendOnlyProjection(t *testing.T) {
 		Raw:       "alias tag should merge",
 		CreatedBy: "Casey",
 		Tags:      []string{"defect"},
-		TagScores: []TagRelevance{{Tag: "defect", Relevance: 0.9}},
+		TagScores: []TagRelevance{{Tag: "defect", Relevance: 0.9, Suggested: true, Description: "legacy defect wording"}},
 	})
 	if err := store.SaveIssue(ctx, issue); err != nil {
 		t.Fatalf("save issue: %v", err)
@@ -2072,5 +2090,11 @@ func TestPostgresStoreMergeTagsUsesAppendOnlyProjection(t *testing.T) {
 	}
 	if len(updated.TagScores) != 1 || updated.TagScores[0].Tag != "bug" {
 		t.Fatalf("expected issue tag scores rewritten to canonical bug, got %#v", updated.TagScores)
+	}
+	if !updated.TagScores[0].Suggested {
+		t.Fatal("expected merge to preserve suggested flag on winning score")
+	}
+	if updated.TagScores[0].Description != "legacy defect wording" {
+		t.Fatalf("expected merge to preserve score description, got %q", updated.TagScores[0].Description)
 	}
 }

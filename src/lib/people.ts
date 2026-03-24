@@ -5,6 +5,8 @@ import { getJSON } from "@/lib/http";
 export type TagRelevance = {
   tag: string;
   relevance: number;
+  suggested?: boolean;
+  description?: string;
 };
 
 export type PersonTagProfile = {

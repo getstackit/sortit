@@ -17,8 +17,9 @@ import (
 )
 
 type DebugAnalyzeIssue struct {
-	Text string
-	Tags []string
+	Text          string
+	Tags          []string
+	CandidateMode services.CandidateMode
 }
 
 type DebugIssueSimilarity struct {
@@ -30,6 +31,7 @@ type DebugIssueSimilarity struct {
 
 type DebugAnalyzeIssueResult struct {
 	Tags                   []ai.TagScore
+	CandidateSet           services.CandidateTaxonomy
 	Embedding              ai.EmbeddingInfo
 	Tagger                 ai.ModelInfo
 	Embedder               ai.ModelInfo
@@ -49,12 +51,24 @@ type issueEmbeddingSimilarityLister interface {
 }
 
 func (h DebugAnalyzeIssueHandler) Handle(ctx context.Context, input DebugAnalyzeIssue) (DebugAnalyzeIssueResult, error) {
-	tags, err := h.Catalog.IssueTaxonomy(ctx, input.Tags)
+	mode, err := services.ParseCandidateMode(string(input.CandidateMode))
 	if err != nil {
 		return DebugAnalyzeIssueResult{}, err
 	}
+	if len(input.Tags) > 0 {
+		mode = services.CandidateModeExplicitOnly
+	}
+	seedEmbedding, err := h.Analyzer.EmbedText(ctx, input.Text)
+	if err != nil {
+		return DebugAnalyzeIssueResult{}, err
+	}
+	candidates, err := h.Catalog.IssueTaxonomyCandidates(ctx, services.Float32VectorToFloat64(seedEmbedding.Vector), input.Tags, mode, 15)
+	if err != nil {
+		return DebugAnalyzeIssueResult{}, err
+	}
+	candidates = h.Catalog.AnnotateCandidateHints(ctx, candidates, services.Float32VectorToFloat64(seedEmbedding.Vector), 5)
 
-	analyzed, err := h.Analyzer.AnalyzeIssueData(ctx, input.Text, tags)
+	analyzed, err := h.Analyzer.AnalyzeIssueData(ctx, input.Text, candidates.AITags())
 	if err != nil {
 		return DebugAnalyzeIssueResult{}, err
 	}
@@ -66,6 +80,7 @@ func (h DebugAnalyzeIssueHandler) Handle(ctx context.Context, input DebugAnalyze
 
 	return DebugAnalyzeIssueResult{
 		Tags:                   analyzed.Tags,
+		CandidateSet:           candidates,
 		Embedding:              analyzed.Embedding.Info,
 		Tagger:                 analyzed.Tagger,
 		Embedder:               analyzed.Embedder,
@@ -159,14 +174,49 @@ type DebugFactorWeightsResult struct {
 	DecomposedCount int               `json:"decomposedCount"`
 	Decomposed      bool              `json:"decomposed"`
 	LowR2Issues     []DebugLowR2Issue `json:"lowR2Issues"`
+	ReviewQueue     DebugReviewQueue  `json:"reviewQueue"`
 }
 
 // DebugLowR2Issue identifies an issue poorly explained by the tag factor model.
 type DebugLowR2Issue struct {
-	ID   string   `json:"id"`
-	Raw  string   `json:"raw"`
-	R2   float64  `json:"r2"`
-	Tags []string `json:"tags"`
+	ID     string             `json:"id"`
+	Raw    string             `json:"raw"`
+	Status issues.IssueStatus `json:"status"`
+	R2     float64            `json:"r2"`
+	Tags   []string           `json:"tags"`
+}
+
+type DebugReviewQueue struct {
+	LowR2Issues      []DebugReviewIssue        `json:"lowR2Issues"`
+	LowAlignmentTags []DebugReviewLowAlignment `json:"lowAlignmentTags"`
+	ResidualMisses   []DebugReviewResidualMiss `json:"residualMisses"`
+}
+
+type DebugReviewIssue struct {
+	ID        string                `json:"id"`
+	Raw       string                `json:"raw"`
+	Status    issues.IssueStatus    `json:"status"`
+	R2        float64               `json:"r2"`
+	TagScores []issues.TagRelevance `json:"tagScores"`
+	Diagnosis []string              `json:"diagnosis"`
+}
+
+type DebugReviewLowAlignment struct {
+	IssueID     string              `json:"issueId"`
+	IssueRaw    string              `json:"issueRaw"`
+	IssueStatus issues.IssueStatus  `json:"issueStatus"`
+	IssueR2     float64             `json:"issueR2"`
+	TagScore    issues.TagRelevance `json:"tagScore"`
+	Alignment   float64             `json:"alignment"`
+}
+
+type DebugReviewResidualMiss struct {
+	IssueID       string                  `json:"issueId"`
+	IssueRaw      string                  `json:"issueRaw"`
+	IssueStatus   issues.IssueStatus      `json:"issueStatus"`
+	IssueR2       float64                 `json:"issueR2"`
+	TagScores     []issues.TagRelevance   `json:"tagScores"`
+	CandidateTags []DebugResidualTagMatch `json:"candidateTags"`
 }
 
 type DebugFactorWeightsHandler struct {
@@ -219,10 +269,11 @@ func (h DebugFactorWeightsHandler) Handle(ctx context.Context) (DebugFactorWeigh
 				tags = append(tags, ts.Tag)
 			}
 			lowR2 = append(lowR2, DebugLowR2Issue{
-				ID:   id,
-				Raw:  truncateRaw(issue.Raw, 120),
-				R2:   math.Round(r2*1000) / 1000,
-				Tags: tags,
+				ID:     id,
+				Raw:    truncateRaw(issue.Raw, 120),
+				Status: issue.Status,
+				R2:     math.Round(r2*1000) / 1000,
+				Tags:   tags,
 			})
 		}
 	})
@@ -233,6 +284,8 @@ func (h DebugFactorWeightsHandler) Handle(ctx context.Context) (DebugFactorWeigh
 		lowR2 = lowR2[:20]
 	}
 
+	reviewQueue := buildDebugReviewQueue(storeIssues, issueEmbeddings, tagNames, tagEmbeddings, decomp)
+
 	return DebugFactorWeightsResult{
 		FactorWeight:    math.Round(decomp.FactorWeight*1000) / 1000,
 		ResidualWeight:  math.Round(decomp.ResidualWeight*1000) / 1000,
@@ -241,6 +294,7 @@ func (h DebugFactorWeightsHandler) Handle(ctx context.Context) (DebugFactorWeigh
 		DecomposedCount: decomp.DecomposedCount(),
 		Decomposed:      decomp.Decomposed(),
 		LowR2Issues:     lowR2,
+		ReviewQueue:     reviewQueue,
 	}, nil
 }
 
@@ -565,4 +619,275 @@ func diagnoseR2(r DebugIssueR2Result) []string {
 	}
 
 	return diagnosis
+}
+
+func buildDebugReviewQueue(
+	allIssues []issues.Issue,
+	issueEmbeddings map[string][]float64,
+	tagNames []string,
+	tagEmbeddings map[string][]float64,
+	decomp issuemap.FactorDecomposition,
+) DebugReviewQueue {
+	if !decomp.Decomposed() {
+		return DebugReviewQueue{}
+	}
+
+	embDim := 0
+	for _, emb := range tagEmbeddings {
+		if len(emb) > 0 {
+			embDim = len(emb)
+			break
+		}
+	}
+	if embDim == 0 {
+		return DebugReviewQueue{}
+	}
+
+	issueByID := make(map[string]issues.Issue, len(allIssues))
+	for _, issue := range allIssues {
+		issueByID[issue.ID] = issue
+	}
+
+	var lowR2Issues []DebugReviewIssue
+	var lowAlignment []DebugReviewLowAlignment
+	var residualMisses []DebugReviewResidualMiss
+
+	for _, issue := range allIssues {
+		if issue.Status != issues.StatusOpen {
+			continue
+		}
+
+		targetEmb := issueEmbeddings[issue.ID]
+		if len(targetEmb) != embDim {
+			continue
+		}
+		r2, ok := decomp.IssueR2(issue.ID)
+		if !ok {
+			continue
+		}
+		roundedR2 := math.Round(r2*1000) / 1000
+
+		issueTags, nearestResidualTags, residualNeighbors := buildDebugIssueSignals(
+			issue,
+			targetEmb,
+			allIssues,
+			issueByID,
+			tagNames,
+			tagEmbeddings,
+			embDim,
+			decomp,
+		)
+
+		if roundedR2 < 0.15 {
+			lowR2Issues = append(lowR2Issues, DebugReviewIssue{
+				ID:        issue.ID,
+				Raw:       truncateRaw(issue.Raw, 120),
+				Status:    issue.Status,
+				R2:        roundedR2,
+				TagScores: copyDebugTagScores(issue.TagScores),
+				Diagnosis: diagnoseR2(DebugIssueR2Result{
+					ID:                  issue.ID,
+					Raw:                 issue.Raw,
+					R2:                  roundedR2,
+					TagCount:            len(issueTags),
+					Tags:                issueTags,
+					NearestResidualTags: nearestResidualTags,
+					ResidualNeighbors:   residualNeighbors,
+				}),
+			})
+		}
+
+		for i, tag := range issueTags {
+			if tag.Relevance >= 0.3 && tag.Alignment < 0.1 && i < len(issue.TagScores) {
+				lowAlignment = append(lowAlignment, DebugReviewLowAlignment{
+					IssueID:     issue.ID,
+					IssueRaw:    truncateRaw(issue.Raw, 120),
+					IssueStatus: issue.Status,
+					IssueR2:     roundedR2,
+					TagScore:    issue.TagScores[i],
+					Alignment:   tag.Alignment,
+				})
+			}
+		}
+
+		unassignedCandidates := make([]DebugResidualTagMatch, 0, len(nearestResidualTags))
+		for _, candidate := range nearestResidualTags {
+			if candidate.Assigned || candidate.Similarity <= 0.2 {
+				continue
+			}
+			unassignedCandidates = append(unassignedCandidates, candidate)
+		}
+		if len(unassignedCandidates) > 0 {
+			if len(unassignedCandidates) > 3 {
+				unassignedCandidates = unassignedCandidates[:3]
+			}
+			residualMisses = append(residualMisses, DebugReviewResidualMiss{
+				IssueID:       issue.ID,
+				IssueRaw:      truncateRaw(issue.Raw, 120),
+				IssueStatus:   issue.Status,
+				IssueR2:       roundedR2,
+				TagScores:     copyDebugTagScores(issue.TagScores),
+				CandidateTags: unassignedCandidates,
+			})
+		}
+	}
+
+	slices.SortFunc(lowR2Issues, func(a, b DebugReviewIssue) int {
+		if c := cmp.Compare(a.R2, b.R2); c != 0 {
+			return c
+		}
+		return cmp.Compare(a.ID, b.ID)
+	})
+	slices.SortFunc(lowAlignment, func(a, b DebugReviewLowAlignment) int {
+		if c := cmp.Compare(a.Alignment, b.Alignment); c != 0 {
+			return c
+		}
+		if c := cmp.Compare(b.TagScore.Relevance, a.TagScore.Relevance); c != 0 {
+			return c
+		}
+		return cmp.Compare(a.IssueID, b.IssueID)
+	})
+	slices.SortFunc(residualMisses, func(a, b DebugReviewResidualMiss) int {
+		topA := 0.0
+		if len(a.CandidateTags) > 0 {
+			topA = a.CandidateTags[0].Similarity
+		}
+		topB := 0.0
+		if len(b.CandidateTags) > 0 {
+			topB = b.CandidateTags[0].Similarity
+		}
+		if c := cmp.Compare(topB, topA); c != 0 {
+			return c
+		}
+		if c := cmp.Compare(a.IssueR2, b.IssueR2); c != 0 {
+			return c
+		}
+		return cmp.Compare(a.IssueID, b.IssueID)
+	})
+
+	if len(lowR2Issues) > 12 {
+		lowR2Issues = lowR2Issues[:12]
+	}
+	if len(lowAlignment) > 12 {
+		lowAlignment = lowAlignment[:12]
+	}
+	if len(residualMisses) > 12 {
+		residualMisses = residualMisses[:12]
+	}
+
+	return DebugReviewQueue{
+		LowR2Issues:      lowR2Issues,
+		LowAlignmentTags: lowAlignment,
+		ResidualMisses:   residualMisses,
+	}
+}
+
+func buildDebugIssueSignals(
+	issue issues.Issue,
+	targetEmb []float64,
+	allIssues []issues.Issue,
+	issueByID map[string]issues.Issue,
+	tagNames []string,
+	tagEmbeddings map[string][]float64,
+	embDim int,
+	decomp issuemap.FactorDecomposition,
+) ([]DebugIssueR2Tag, []DebugResidualTagMatch, []DebugResidualNeighbor) {
+	issueTags := make([]DebugIssueR2Tag, 0, len(issue.TagScores))
+	assignedTags := make(map[string]struct{}, len(issue.TagScores))
+	for _, ts := range issue.TagScores {
+		alignment := 0.0
+		if tagEmb, ok := tagEmbeddings[ts.Tag]; ok && len(tagEmb) == embDim {
+			alignment = vectors.CosineSimilarity(targetEmb, tagEmb)
+		}
+		issueTags = append(issueTags, DebugIssueR2Tag{
+			Tag:       ts.Tag,
+			Relevance: ts.Relevance,
+			Alignment: math.Round(alignment*1000) / 1000,
+		})
+		assignedTags[ts.Tag] = struct{}{}
+	}
+
+	nearestResidualTags := make([]DebugResidualTagMatch, 0)
+	residualNeighbors := make([]DebugResidualNeighbor, 0)
+
+	residualEmb := decomp.ResidualEmbedding(issue.ID)
+	if len(residualEmb) == 0 {
+		return issueTags, nearestResidualTags, residualNeighbors
+	}
+
+	type tagSim struct {
+		tag      string
+		sim      float64
+		assigned bool
+	}
+	candidates := make([]tagSim, 0, len(tagNames))
+	for _, name := range tagNames {
+		emb := tagEmbeddings[name]
+		if len(emb) != embDim {
+			continue
+		}
+		sim := vectors.CosineSimilarity(residualEmb, emb)
+		_, assigned := assignedTags[name]
+		candidates = append(candidates, tagSim{tag: name, sim: sim, assigned: assigned})
+	}
+	slices.SortFunc(candidates, func(a, b tagSim) int {
+		return cmp.Compare(b.sim, a.sim)
+	})
+	limit := min(10, len(candidates))
+	for _, c := range candidates[:limit] {
+		nearestResidualTags = append(nearestResidualTags, DebugResidualTagMatch{
+			Tag:        c.tag,
+			Similarity: math.Round(c.sim*1000) / 1000,
+			Assigned:   c.assigned,
+		})
+	}
+
+	type neighborSim struct {
+		id  string
+		sim float64
+	}
+	neighbors := make([]neighborSim, 0)
+	for _, other := range allIssues {
+		if other.ID == issue.ID {
+			continue
+		}
+		otherResidual := decomp.ResidualEmbedding(other.ID)
+		if len(otherResidual) == 0 {
+			continue
+		}
+		sim := vectors.CosineSimilarity(residualEmb, otherResidual)
+		if sim > 0.3 {
+			neighbors = append(neighbors, neighborSim{id: other.ID, sim: sim})
+		}
+	}
+	slices.SortFunc(neighbors, func(a, b neighborSim) int {
+		return cmp.Compare(b.sim, a.sim)
+	})
+	neighborLimit := min(8, len(neighbors))
+	for _, n := range neighbors[:neighborLimit] {
+		other := issueByID[n.id]
+		tags := make([]string, 0, len(other.TagScores))
+		for _, ts := range other.TagScores {
+			tags = append(tags, ts.Tag)
+		}
+		neighborR2, _ := decomp.IssueR2(n.id)
+		residualNeighbors = append(residualNeighbors, DebugResidualNeighbor{
+			ID:         n.id,
+			Raw:        truncateRaw(other.Raw, 120),
+			Similarity: math.Round(n.sim*1000) / 1000,
+			R2:         math.Round(neighborR2*1000) / 1000,
+			Tags:       tags,
+		})
+	}
+
+	return issueTags, nearestResidualTags, residualNeighbors
+}
+
+func copyDebugTagScores(scores []issues.TagRelevance) []issues.TagRelevance {
+	if len(scores) == 0 {
+		return nil
+	}
+	out := make([]issues.TagRelevance, len(scores))
+	copy(out, scores)
+	return out
 }

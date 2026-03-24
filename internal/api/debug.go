@@ -12,11 +12,13 @@ import (
 	"splat/internal/ai"
 	"splat/internal/issues"
 	"splat/internal/queries"
+	"splat/internal/services"
 )
 
 type debugIssueAnalyzeRequest struct {
-	Text string   `json:"text"`
-	Tags []string `json:"tags,omitempty"`
+	Text          string   `json:"text"`
+	Tags          []string `json:"tags,omitempty"`
+	CandidateMode string   `json:"candidateMode,omitempty"`
 }
 
 type debugIssueSimilarity struct {
@@ -27,13 +29,14 @@ type debugIssueSimilarity struct {
 }
 
 type debugIssueAnalyzeResponse struct {
-	Tags                   []ai.TagScore          `json:"tags"`
-	Embedding              ai.EmbeddingInfo       `json:"embedding"`
-	Tagger                 ai.ModelInfo           `json:"tagger"`
-	Embedder               ai.ModelInfo           `json:"embedder"`
-	ComparedIssueCount     int                    `json:"comparedIssueCount"`
-	AverageIssueSimilarity float64                `json:"averageIssueSimilarity"`
-	SimilarIssues          []debugIssueSimilarity `json:"similarIssues"`
+	Tags                   []ai.TagScore              `json:"tags"`
+	CandidateSet           services.CandidateTaxonomy `json:"candidateSet"`
+	Embedding              ai.EmbeddingInfo           `json:"embedding"`
+	Tagger                 ai.ModelInfo               `json:"tagger"`
+	Embedder               ai.ModelInfo               `json:"embedder"`
+	ComparedIssueCount     int                        `json:"comparedIssueCount"`
+	AverageIssueSimilarity float64                    `json:"averageIssueSimilarity"`
+	SimilarIssues          []debugIssueSimilarity     `json:"similarIssues"`
 }
 
 type debugInvalidateMapProjectionResponse struct {
@@ -52,8 +55,9 @@ func (s *Server) handleDebugIssueAnalyze(w http.ResponseWriter, r *http.Request)
 	}
 
 	analyzed, err := s.debugAnalyzeIssue.Handle(r.Context(), queries.DebugAnalyzeIssue{
-		Text: request.Text,
-		Tags: request.Tags,
+		Text:          request.Text,
+		Tags:          request.Tags,
+		CandidateMode: services.CandidateMode(request.CandidateMode),
 	})
 	if err != nil {
 		status := http.StatusInternalServerError
@@ -66,6 +70,7 @@ func (s *Server) handleDebugIssueAnalyze(w http.ResponseWriter, r *http.Request)
 
 	writeJSON(w, http.StatusOK, debugIssueAnalyzeResponse{
 		Tags:                   analyzed.Tags,
+		CandidateSet:           analyzed.CandidateSet,
 		Embedding:              analyzed.Embedding,
 		Tagger:                 analyzed.Tagger,
 		Embedder:               analyzed.Embedder,
@@ -115,6 +120,7 @@ func (s *Server) handleDebugRescoreTags(w http.ResponseWriter, r *http.Request) 
 
 func (s *Server) handleDebugEvalTags(w http.ResponseWriter, r *http.Request) {
 	fixture := strings.TrimSpace(r.URL.Query().Get("fixture"))
+	mode := strings.TrimSpace(r.URL.Query().Get("mode"))
 	runs := 1
 	if raw := strings.TrimSpace(r.URL.Query().Get("runs")); raw != "" {
 		parsed, err := strconv.Atoi(raw)
@@ -124,7 +130,16 @@ func (s *Server) handleDebugEvalTags(w http.ResponseWriter, r *http.Request) {
 		}
 		runs = parsed
 	}
-	result, err := s.debugEvalTags.HandleFixture(r.Context(), fixture, runs)
+	parsedMode, err := services.ParseCandidateMode(mode)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+	if parsedMode == services.CandidateModeExplicitOnly {
+		writeError(w, http.StatusBadRequest, "explicit-only candidate mode is not supported for benchmark evaluation")
+		return
+	}
+	result, err := s.debugEvalTags.HandleFixture(r.Context(), fixture, runs, parsedMode)
 	if err != nil {
 		status := http.StatusInternalServerError
 		if queries.AIUnavailable(err) {
@@ -174,8 +189,16 @@ func decodeDebugIssueAnalyzeRequest(r *http.Request) (debugIssueAnalyzeRequest, 
 	}
 
 	request.Text = strings.TrimSpace(request.Text)
+	request.CandidateMode = strings.TrimSpace(request.CandidateMode)
 	if request.Text == "" {
 		return debugIssueAnalyzeRequest{}, errors.New("text is required")
+	}
+	mode, err := services.ParseCandidateMode(request.CandidateMode)
+	if err != nil {
+		return debugIssueAnalyzeRequest{}, err
+	}
+	if mode == services.CandidateModeExplicitOnly && len(request.Tags) == 0 {
+		return debugIssueAnalyzeRequest{}, errors.New("explicit-only candidate mode requires at least one tag")
 	}
 	return request, nil
 }

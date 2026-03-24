@@ -408,7 +408,9 @@ func TestAnnotateHintsDoesNotMutateOriginal(t *testing.T) {
 func TestIssueTaxonomyShortlistPrefersNearestTagsAndKeepsAnchors(t *testing.T) {
 	store := &catalogTestStore{
 		tags: []issues.Tag{
+			{Name: "backend", Description: "server-side logic", Embedding: []float64{0, 0.2, 0.2}},
 			{Name: "bug", Description: "software defect", Embedding: []float64{0.2, 0.2, 0}},
+			{Name: "cleanup", Description: "maintenance work", Embedding: []float64{0.2, 0, 0.2}},
 			{Name: "feature", Description: "new capability", Embedding: []float64{0.1, 0.1, 0}},
 			{Name: "search", Description: "query and filtering", Embedding: []float64{1, 0, 0}},
 			{Name: "autocomplete", Description: "typeahead search suggestions", Embedding: []float64{0.95, 0.05, 0}},
@@ -428,7 +430,7 @@ func TestIssueTaxonomyShortlistPrefersNearestTagsAndKeepsAnchors(t *testing.T) {
 		names = append(names, tag.Name)
 	}
 
-	for _, want := range []string{"search", "autocomplete", "bug", "feature"} {
+	for _, want := range []string{"search", "autocomplete", "backend", "bug", "cleanup", "feature"} {
 		if !slices.Contains(names, want) {
 			t.Fatalf("expected shortlist to contain %q, got %#v", want, names)
 		}
@@ -438,6 +440,102 @@ func TestIssueTaxonomyShortlistPrefersNearestTagsAndKeepsAnchors(t *testing.T) {
 	}
 	if slices.Contains(names, "suggested-search-operators") {
 		t.Fatalf("expected shortlist to exclude proposed tag suggested-search-operators, got %#v", names)
+	}
+}
+
+func TestIssueTaxonomyCandidatesTracksProvenance(t *testing.T) {
+	store := &catalogTestStore{
+		tags: []issues.Tag{
+			{Name: "backend", Description: "server-side logic", Embedding: []float64{0, 0.2, 0.2}},
+			{Name: "bug", Description: "software defect", Embedding: []float64{0.2, 0.2, 0}},
+			{Name: "cleanup", Description: "maintenance work", Embedding: []float64{0.2, 0, 0.2}},
+			{Name: "feature", Description: "new capability", Embedding: []float64{0.1, 0.1, 0}},
+			{Name: "search", Description: "query and filtering", Embedding: []float64{1, 0, 0}},
+			{Name: "autocomplete", Description: "typeahead search suggestions", Embedding: []float64{0.95, 0.05, 0}},
+			{Name: "billing", Description: "payments", Embedding: []float64{0, 1, 0}},
+		},
+	}
+	service := NewCatalogService(store, nil, slog.Default())
+
+	result, err := service.IssueTaxonomyCandidates(context.Background(), []float64{1, 0, 0}, []string{"cleanup"}, CandidateModeRetrievalShortlist, 2)
+	if err != nil {
+		t.Fatalf("IssueTaxonomyCandidates: %v", err)
+	}
+	if result.Mode != CandidateModeRetrievalShortlist {
+		t.Fatalf("expected retrieval shortlist mode when preferred tags are provided, got %q", result.Mode)
+	}
+	candidateByName := make(map[string]CandidateTag, len(result.Tags))
+	for _, tag := range result.Tags {
+		candidateByName[tag.Name] = tag
+	}
+	if got, ok := candidateByName["cleanup"]; !ok {
+		t.Fatalf("expected cleanup explicit candidate, got %#v", result.Tags)
+	} else if !slices.Contains(got.Sources, CandidateSourceExplicit) {
+		t.Fatalf("expected cleanup to retain explicit provenance, got %#v", got.Sources)
+	}
+	if _, ok := candidateByName["search"]; !ok {
+		t.Fatalf("expected retrieved search tag alongside explicit tags, got %#v", result.Tags)
+	}
+	result, err = service.IssueTaxonomyCandidates(context.Background(), []float64{1, 0, 0}, nil, CandidateModeRetrievalShortlist, 2)
+	if err != nil {
+		t.Fatalf("IssueTaxonomyCandidates shortlist: %v", err)
+	}
+	if result.Mode != CandidateModeRetrievalShortlist {
+		t.Fatalf("expected retrieval shortlist mode, got %q", result.Mode)
+	}
+
+	candidateByName = make(map[string]CandidateTag, len(result.Tags))
+	for _, tag := range result.Tags {
+		candidateByName[tag.Name] = tag
+	}
+	if got, ok := candidateByName["search"]; !ok {
+		t.Fatalf("expected search candidate, got %#v", result.Tags)
+	} else {
+		if !slices.Contains(got.Sources, CandidateSourceRetrieval) || !slices.Contains(got.Sources, CandidateSourceAnchor) {
+			t.Fatalf("expected search to retain retrieval+anchor provenance, got %#v", got.Sources)
+		}
+		if got.Similarity == nil || *got.Similarity < 0.99 {
+			t.Fatalf("expected search similarity to be retained, got %#v", got.Similarity)
+		}
+	}
+	if got, ok := candidateByName["autocomplete"]; !ok {
+		t.Fatalf("expected autocomplete candidate, got %#v", result.Tags)
+	} else if len(got.Sources) != 1 || got.Sources[0] != CandidateSourceRetrieval {
+		t.Fatalf("expected autocomplete retrieval provenance, got %#v", got.Sources)
+	}
+	if got, ok := candidateByName["backend"]; !ok {
+		t.Fatalf("expected backend anchor candidate, got %#v", result.Tags)
+	} else if len(got.Sources) != 1 || got.Sources[0] != CandidateSourceAnchor {
+		t.Fatalf("expected backend anchor provenance, got %#v", got.Sources)
+	}
+	if _, ok := candidateByName["billing"]; ok {
+		t.Fatalf("expected distant billing tag to be excluded, got %#v", result.Tags)
+	}
+}
+
+func TestIssueTaxonomyCandidatesFallsBackToFullCatalog(t *testing.T) {
+	store := &catalogTestStore{
+		tags: []issues.Tag{
+			{Name: "bug", Description: "software defect"},
+			{Name: "database", Description: "schema and database work"},
+		},
+	}
+	service := NewCatalogService(store, nil, slog.Default())
+
+	result, err := service.IssueTaxonomyCandidates(context.Background(), nil, nil, CandidateModeRetrievalShortlist, 15)
+	if err != nil {
+		t.Fatalf("IssueTaxonomyCandidates fallback: %v", err)
+	}
+	if result.Mode != CandidateModeFullCatalog {
+		t.Fatalf("expected full-catalog fallback mode, got %q", result.Mode)
+	}
+	if len(result.Tags) != 2 {
+		t.Fatalf("expected full catalog fallback tags, got %#v", result.Tags)
+	}
+	for _, tag := range result.Tags {
+		if len(tag.Sources) != 1 || tag.Sources[0] != CandidateSourceFullCatalog {
+			t.Fatalf("expected full-catalog provenance, got %#v", tag)
+		}
 	}
 }
 
