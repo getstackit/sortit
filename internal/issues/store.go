@@ -969,7 +969,13 @@ func copyTagScores(input []TagRelevance) []TagRelevance {
 		return nil
 	}
 	out := make([]TagRelevance, len(input))
-	copy(out, input)
+	for i, score := range input {
+		out[i] = score
+		out[i].CandidateSources = append([]string(nil), score.CandidateSources...)
+		out[i].Alignment = copyFloat64Ptr(score.Alignment)
+		out[i].Specificity = copyFloat64Ptr(score.Specificity)
+		out[i].DominanceGap = copyFloat64Ptr(score.DominanceGap)
+	}
 	return out
 }
 

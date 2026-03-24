@@ -218,7 +218,7 @@ func (s *PostgresStore) MergeTags(ctx context.Context, canonical string, aliases
 		newTags := mergeTagList(tags, canonical, aliasSet)
 		newScores := mergeTagScores(tagScores, canonical, aliasSet)
 
-		if !slices.Equal(newTags, tags) || !slices.Equal(newScores, tagScores) {
+		if !slices.Equal(newTags, tags) || !equalTagScores(newScores, tagScores) {
 			updates = append(updates, issueUpdate{id: id, tags: newTags, tagScores: newScores})
 		}
 	}

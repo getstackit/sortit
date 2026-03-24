@@ -49,18 +49,23 @@ type DebugEvalTagsCaseResult struct {
 	Precision           float64    `json:"precision"`
 	Recall              float64    `json:"recall"`
 	ExactMatch          bool       `json:"exactMatch"`
+	DownrankedCount     int        `json:"downrankedCount,omitempty"`
+	FlaggedCount        int        `json:"flaggedCount,omitempty"`
 	StabilityExact      bool       `json:"stabilityExact,omitempty"`
 	StabilityJaccard    float64    `json:"stabilityJaccard,omitempty"`
 }
 
 type DebugEvalTagsResult struct {
 	CandidateMode    services.CandidateMode    `json:"candidateMode"`
+	VerifierEnabled  bool                      `json:"verifierEnabled"`
 	Fixture          string                    `json:"fixture"`
 	Runs             int                       `json:"runs"`
 	CaseCount        int                       `json:"caseCount"`
 	Precision        float64                   `json:"precision"`
 	Recall           float64                   `json:"recall"`
 	ExactMatchCount  int                       `json:"exactMatchCount"`
+	DownrankedCount  int                       `json:"downrankedCount,omitempty"`
+	FlaggedCount     int                       `json:"flaggedCount,omitempty"`
 	ExactStableCount int                       `json:"exactStableCount,omitempty"`
 	ExactStability   float64                   `json:"exactStability,omitempty"`
 	AverageStability float64                   `json:"averageStability,omitempty"`
@@ -75,10 +80,10 @@ type DebugEvalTagsHandler struct {
 }
 
 func (h DebugEvalTagsHandler) Handle(ctx context.Context) (DebugEvalTagsResult, error) {
-	return h.HandleFixture(ctx, "", 1, services.CandidateModeRetrievalShortlist)
+	return h.HandleFixture(ctx, "", 1, services.CandidateModeRetrievalShortlist, true)
 }
 
-func (h DebugEvalTagsHandler) HandleFixture(ctx context.Context, requestedFixture string, runs int, requestedMode services.CandidateMode) (DebugEvalTagsResult, error) {
+func (h DebugEvalTagsHandler) HandleFixture(ctx context.Context, requestedFixture string, runs int, requestedMode services.CandidateMode, verify bool) (DebugEvalTagsResult, error) {
 	if h.Catalog == nil {
 		return DebugEvalTagsResult{}, fmt.Errorf("tag catalog is unavailable")
 	}
@@ -98,31 +103,35 @@ func (h DebugEvalTagsHandler) HandleFixture(ctx context.Context, requestedFixtur
 	totalActual := 0
 	totalTruePositive := 0
 	exactMatches := 0
+	totalDownranked := 0
+	totalFlagged := 0
 	exactStableCount := 0
 	totalStability := 0.0
 	for _, item := range fixture {
-		actualTags, err := h.evaluateCase(ctx, item, mode)
+		actualTags, downrankedCount, flaggedCount, err := h.evaluateCase(ctx, item, mode, verify)
 		if err != nil {
 			return DebugEvalTagsResult{}, err
 		}
 		missing, unexpected, truePositive := diffEvalTags(item.ExpectedTags, actualTags)
 		caseResult := DebugEvalTagsCaseResult{
-			SourceIssueID:  item.SourceIssueID,
-			Category:       item.Category,
-			ID:             item.ID,
-			Text:           item.Text,
-			ExpectedTags:   append([]string(nil), item.ExpectedTags...),
-			ActualTags:     actualTags,
-			MissingTags:    missing,
-			UnexpectedTags: unexpected,
-			Precision:      roundMetric(ratio(truePositive, len(actualTags))),
-			Recall:         roundMetric(ratio(truePositive, len(item.ExpectedTags))),
-			ExactMatch:     len(missing) == 0 && len(unexpected) == 0,
+			SourceIssueID:   item.SourceIssueID,
+			Category:        item.Category,
+			ID:              item.ID,
+			Text:            item.Text,
+			ExpectedTags:    append([]string(nil), item.ExpectedTags...),
+			ActualTags:      actualTags,
+			MissingTags:     missing,
+			UnexpectedTags:  unexpected,
+			Precision:       roundMetric(ratio(truePositive, len(actualTags))),
+			Recall:          roundMetric(ratio(truePositive, len(item.ExpectedTags))),
+			ExactMatch:      len(missing) == 0 && len(unexpected) == 0,
+			DownrankedCount: downrankedCount,
+			FlaggedCount:    flaggedCount,
 		}
 		caseResult.StabilityExact = true
 		caseResult.StabilityJaccard = 1
 		if runs > 1 {
-			alternateTags, exactStable, stabilityJaccard, err := h.evaluateCaseStability(ctx, item, mode, actualTags, runs)
+			alternateTags, exactStable, stabilityJaccard, err := h.evaluateCaseStability(ctx, item, mode, actualTags, runs, verify)
 			if err != nil {
 				return DebugEvalTagsResult{}, err
 			}
@@ -141,17 +150,22 @@ func (h DebugEvalTagsHandler) HandleFixture(ctx context.Context, requestedFixtur
 		totalExpected += len(item.ExpectedTags)
 		totalActual += len(actualTags)
 		totalTruePositive += truePositive
+		totalDownranked += downrankedCount
+		totalFlagged += flaggedCount
 		totalStability += caseResult.StabilityJaccard
 	}
 
 	return DebugEvalTagsResult{
 		CandidateMode:    mode,
+		VerifierEnabled:  verify,
 		Fixture:          fixtureName,
 		Runs:             runs,
 		CaseCount:        len(results),
 		Precision:        roundMetric(ratio(totalTruePositive, totalActual)),
 		Recall:           roundMetric(ratio(totalTruePositive, totalExpected)),
 		ExactMatchCount:  exactMatches,
+		DownrankedCount:  totalDownranked,
+		FlaggedCount:     totalFlagged,
 		ExactStableCount: exactStableCount,
 		ExactStability:   roundMetric(ratio(exactStableCount, len(results))),
 		AverageStability: roundMetric(totalStability / float64(max(1, len(results)))),
@@ -159,7 +173,68 @@ func (h DebugEvalTagsHandler) HandleFixture(ctx context.Context, requestedFixtur
 	}, nil
 }
 
-func (h DebugEvalTagsHandler) evaluateCase(ctx context.Context, item DebugTagEvalCase, mode services.CandidateMode) ([]string, error) {
+func (h DebugEvalTagsHandler) evaluateCase(ctx context.Context, item DebugTagEvalCase, mode services.CandidateMode, verify bool) ([]string, int, int, error) {
+	if h.Enricher == nil {
+		actualTags, err := h.evaluateCaseLegacy(ctx, item, mode)
+		if err != nil {
+			return nil, 0, 0, err
+		}
+		return actualTags, 0, 0, nil
+	}
+
+	analysis, err := h.Enricher.AnalyzeText(ctx, item.Text, services.AnalyzeTextOptions{
+		CandidateMode: mode,
+		Verify:        verify,
+	})
+	if err != nil {
+		return nil, 0, 0, err
+	}
+	downrankedCount, flaggedCount := countVerificationVerdicts(analysis.TagScores)
+	return predictedEvalTagRelevance(analysis.TagScores), downrankedCount, flaggedCount, nil
+}
+
+func countVerificationVerdicts(scores []issues.TagRelevance) (int, int) {
+	downranked := 0
+	flagged := 0
+	for _, score := range scores {
+		switch score.VerificationVerdict {
+		case domain.TagVerificationVerdictDownRank:
+			downranked++
+		case domain.TagVerificationVerdictFlagged:
+			flagged++
+		}
+	}
+	return downranked, flagged
+}
+
+func (h DebugEvalTagsHandler) evaluateCaseStability(ctx context.Context, item DebugTagEvalCase, mode services.CandidateMode, baseline []string, runs int, verify bool) ([][]string, bool, float64, error) {
+	if runs <= 1 {
+		return nil, true, 1, nil
+	}
+
+	alternateSets := make([][]string, 0)
+	seenAlternates := make(map[string]struct{})
+	exactStable := true
+	totalJaccard := 0.0
+	for range runs - 1 {
+		repeatedTags, _, _, err := h.evaluateCase(ctx, item, mode, verify)
+		if err != nil {
+			return nil, false, 0, err
+		}
+		if !equalTagSets(baseline, repeatedTags) {
+			exactStable = false
+			key := canonicalTagSetKey(repeatedTags)
+			if _, ok := seenAlternates[key]; !ok {
+				seenAlternates[key] = struct{}{}
+				alternateSets = append(alternateSets, append([]string(nil), repeatedTags...))
+			}
+		}
+		totalJaccard += jaccardTagSets(baseline, repeatedTags)
+	}
+	return alternateSets, exactStable, totalJaccard / float64(runs-1), nil
+}
+
+func (h DebugEvalTagsHandler) evaluateCaseLegacy(ctx context.Context, item DebugTagEvalCase, mode services.CandidateMode) ([]string, error) {
 	if h.Analyzer == nil {
 		return nil, ai.ErrNotConfigured
 	}
@@ -179,33 +254,6 @@ func (h DebugEvalTagsHandler) evaluateCase(ctx context.Context, item DebugTagEva
 		return nil, err
 	}
 	return predictedEvalTags(analyzed.Tags), nil
-}
-
-func (h DebugEvalTagsHandler) evaluateCaseStability(ctx context.Context, item DebugTagEvalCase, mode services.CandidateMode, baseline []string, runs int) ([][]string, bool, float64, error) {
-	if runs <= 1 {
-		return nil, true, 1, nil
-	}
-
-	alternateSets := make([][]string, 0)
-	seenAlternates := make(map[string]struct{})
-	exactStable := true
-	totalJaccard := 0.0
-	for range runs - 1 {
-		repeatedTags, err := h.evaluateCase(ctx, item, mode)
-		if err != nil {
-			return nil, false, 0, err
-		}
-		if !equalTagSets(baseline, repeatedTags) {
-			exactStable = false
-			key := canonicalTagSetKey(repeatedTags)
-			if _, ok := seenAlternates[key]; !ok {
-				seenAlternates[key] = struct{}{}
-				alternateSets = append(alternateSets, append([]string(nil), repeatedTags...))
-			}
-		}
-		totalJaccard += jaccardTagSets(baseline, repeatedTags)
-	}
-	return alternateSets, exactStable, totalJaccard / float64(runs-1), nil
 }
 
 func (h DebugEvalTagsHandler) fixtureCases(requestedFixture string) ([]DebugTagEvalCase, string, error) {

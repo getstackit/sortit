@@ -7,6 +7,13 @@ export type TagRelevance = {
   relevance: number;
   suggested?: boolean;
   description?: string;
+  candidateSources?: string[];
+  alignment?: number | null;
+  specificity?: number | null;
+  verificationVerdict?: "keep" | "down-rank" | "flagged";
+  verificationReason?: string;
+  dominatedBy?: string;
+  dominanceGap?: number | null;
 };
 
 export type PersonTagProfile = {

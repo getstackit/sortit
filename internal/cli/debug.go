@@ -24,6 +24,7 @@ func newDebugCmd(opts *rootOptions) *cobra.Command {
 func newDebugEvalTagsCmd(opts *rootOptions) *cobra.Command {
 	var fixture string
 	var mode string
+	var verify bool
 	var runs int
 
 	cmd := &cobra.Command{
@@ -32,7 +33,7 @@ func newDebugEvalTagsCmd(opts *rootOptions) *cobra.Command {
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			client := opts.clientWithTimeout(debugEvalTagsClientTimeout)
 			var response queries.DebugEvalTagsResult
-			params := newQueryParams().add("fixture", fixture).add("mode", mode).addInt("runs", runs)
+			params := newQueryParams().add("fixture", fixture).add("mode", mode).addBool("verify", verify).addInt("runs", runs)
 			if err := client.Get(cmd.Context(), "/debug/eval-tags"+params.encode(), &response); err != nil {
 				return err
 			}
@@ -42,6 +43,7 @@ func newDebugEvalTagsCmd(opts *rootOptions) *cobra.Command {
 
 	cmd.Flags().StringVar(&fixture, "fixture", "", "Benchmark fixture to run: corpus (default) or synthetic")
 	cmd.Flags().StringVar(&mode, "mode", "retrieval-shortlist", "Candidate mode to evaluate: retrieval-shortlist (default) or full-catalog")
+	cmd.Flags().BoolVar(&verify, "verify", true, "Enable deterministic post-LLM tag verification")
 	cmd.Flags().IntVar(&runs, "runs", 1, "How many times to re-run each case for stability measurement")
 	return cmd
 }

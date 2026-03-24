@@ -16,6 +16,13 @@ type TagScore = {
   relevance: number;
   suggested?: boolean;
   description?: string;
+  candidateSources?: string[];
+  alignment?: number | null;
+  specificity?: number | null;
+  verificationVerdict?: "keep" | "down-rank" | "flagged";
+  verificationReason?: string;
+  dominatedBy?: string;
+  dominanceGap?: number | null;
 };
 
 type ModelInfo = {
@@ -168,15 +175,68 @@ function TagScoreList({ scores }: { scores: TagScore[] }) {
             <span className="text-muted-foreground">
               {formatFloat(score.relevance)}
             </span>
+            {score.verificationVerdict && (
+              <span
+                className={`rounded-full px-2 py-0.5 text-[10px] font-medium uppercase tracking-[0.14em] ${
+                  score.verificationVerdict === "flagged"
+                    ? "border border-rose-300 bg-rose-100 text-rose-900"
+                    : score.verificationVerdict === "down-rank"
+                      ? "border border-orange-300 bg-orange-100 text-orange-900"
+                      : "border border-emerald-300 bg-emerald-100 text-emerald-900"
+                }`}
+              >
+                {score.verificationVerdict}
+              </span>
+            )}
             {score.suggested && (
               <span className="rounded-full border border-amber-300 bg-amber-100 px-2 py-0.5 text-[10px] font-medium uppercase tracking-[0.14em] text-amber-900">
                 Suggested
               </span>
             )}
           </div>
+          {(typeof score.alignment === "number" ||
+            typeof score.specificity === "number") && (
+            <p className="mt-1 text-xs text-muted-foreground">
+              {typeof score.alignment === "number"
+                ? `align ${formatFloat(score.alignment)}`
+                : null}
+              {typeof score.alignment === "number" &&
+              typeof score.specificity === "number"
+                ? " / "
+                : null}
+              {typeof score.specificity === "number"
+                ? `spec ${formatFloat(score.specificity)}`
+                : null}
+            </p>
+          )}
+          {score.candidateSources && score.candidateSources.length > 0 && (
+            <div className="mt-2 flex flex-wrap gap-1">
+              {score.candidateSources.map((source) => (
+                <span
+                  key={`${score.tag}-${source}`}
+                  className="rounded-full border border-border/70 bg-background/70 px-2 py-0.5 text-[10px] font-medium uppercase tracking-[0.14em] text-muted-foreground"
+                >
+                  {source}
+                </span>
+              ))}
+            </div>
+          )}
           {score.description && (
             <p className="mt-1 max-w-72 text-xs leading-5 text-muted-foreground">
               {score.description}
+            </p>
+          )}
+          {score.verificationReason && (
+            <p className="mt-1 max-w-72 text-xs leading-5 text-muted-foreground">
+              {score.verificationReason}
+            </p>
+          )}
+          {score.dominatedBy && (
+            <p className="mt-1 text-xs leading-5 text-muted-foreground">
+              Dominated by {score.dominatedBy}
+              {typeof score.dominanceGap === "number"
+                ? ` (${formatFloat(score.dominanceGap)} gap)`
+                : ""}
             </p>
           )}
         </div>
@@ -205,6 +265,7 @@ export default function DebugPage() {
   const [text, setText] = useState(DEFAULT_TEXT);
   const [tags, setTags] = useState("");
   const [candidateMode, setCandidateMode] = useState<"retrieval-shortlist" | "full-catalog">("retrieval-shortlist");
+  const [verifyTags, setVerifyTags] = useState(true);
   const [result, setResult] = useState<IssueAnalysis | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
@@ -258,6 +319,7 @@ export default function DebugPage() {
             .map((value) => value.trim())
             .filter(Boolean),
           candidateMode,
+          verify: verifyTags,
         }),
       });
 
@@ -510,6 +572,23 @@ export default function DebugPage() {
                 </p>
               </div>
 
+              <div className="flex items-center justify-between rounded-2xl border border-border/70 bg-background/70 px-4 py-3">
+                <div>
+                  <p className="text-xs font-medium uppercase tracking-[0.18em] text-muted-foreground">
+                    Deterministic verifier
+                  </p>
+                  <p className="mt-1 text-sm text-muted-foreground">
+                    Down-rank or flag weak tags using alignment, specificity, and
+                    candidate-source signals after the model responds.
+                  </p>
+                </div>
+                <Switch
+                  checked={verifyTags}
+                  onCheckedChange={setVerifyTags}
+                  aria-label="Enable deterministic verifier"
+                />
+              </div>
+
               <div className="flex flex-wrap items-center gap-3">
                 <Button onClick={analyze} disabled={loading}>
                   {loading ? "Analyzing..." : "Analyze issue"}
@@ -538,6 +617,7 @@ export default function DebugPage() {
                     setText(DEFAULT_TEXT);
                     setTags("");
                     setCandidateMode("retrieval-shortlist");
+                    setVerifyTags(true);
                   }}
                   disabled={loading}
                 >
@@ -588,6 +668,9 @@ export default function DebugPage() {
                   <p className="mt-1">
                     Candidate set: {formatCandidateMode(result.candidateSet.mode)} /{" "}
                     {result.candidateSet.tags.length} tags
+                  </p>
+                  <p className="mt-1">
+                    Verifier: {verifyTags ? "enabled" : "disabled"}
                   </p>
                 </div>
               )}
@@ -1076,30 +1159,8 @@ export default function DebugPage() {
             )}
 
             {result && (
-              <div className="mt-4 flex flex-wrap gap-2">
-                {topTags.map((tag) => (
-                  <div
-                    key={tag.tag}
-                    className="app-subtle-surface rounded-2xl px-3 py-2 text-sm"
-                  >
-                    <div className="flex items-center gap-2">
-                      <span className="font-medium">{tag.tag}</span>
-                      <span className="text-muted-foreground">
-                        {formatFloat(tag.relevance)}
-                      </span>
-                      {tag.suggested && (
-                        <span className="rounded-full border border-amber-300 bg-amber-100 px-2 py-0.5 text-[10px] font-medium uppercase tracking-[0.14em] text-amber-900">
-                          Suggested
-                        </span>
-                      )}
-                    </div>
-                    {tag.description && (
-                      <p className="mt-1 max-w-72 text-xs leading-5 text-muted-foreground">
-                        {tag.description}
-                      </p>
-                    )}
-                  </div>
-                ))}
+              <div className="mt-4">
+                <TagScoreList scores={topTags} />
               </div>
             )}
           </section>

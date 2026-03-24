@@ -123,9 +123,11 @@ Implementation status uses checkboxes below:
 
 ### Known remaining issues
 
-- Issue tag score persistence now preserves `suggested` and `description`
-  provenance, but it does not yet persist verification metadata or candidate
-  source metadata needed by later phases.
+- Issue tag score persistence now preserves `suggested` / `description`
+  provenance plus verifier metadata (`candidateSources`, `alignment`,
+  `specificity`, `verificationVerdict`, `verificationReason`,
+  `dominatedBy`, `dominanceGap`), but some SQL/debug/query surfaces still only
+  reason about a narrower subset of that persisted shape.
 - Some SQL/debug/query surfaces still reason about issue tag scores primarily
   as `{tag, relevance}` records. That is sufficient for current filtering and
   ranking, but later verification and review features will require explicit
@@ -427,17 +429,17 @@ on a full second LLM pass.
 
 ### Deliverables
 
-- [ ] After the LLM scores tags, compute verification features for each
+- [x] After the LLM scores tags, compute verification features for each
   assigned and nearby unassigned tag:
-  - [ ] tag embedding alignment with the issue embedding
-  - [ ] tag specificity
-  - [ ] whether the tag came from retrieval, anchor set, or explicit user input
-  - [ ] whether a nearby unassigned tag strongly dominates a weak assigned tag
+  - [x] tag embedding alignment with the issue embedding
+  - [x] tag specificity
+  - [x] whether the tag came from retrieval, anchor set, or explicit user input
+  - [x] whether a nearby unassigned tag strongly dominates a weak assigned tag
 - [ ] Use these features to produce a verification verdict:
-  - [ ] keep
-  - [ ] down-rank
+  - [x] keep
+  - [x] down-rank
   - [ ] ask targeted follow-up
-  - [ ] flag for debug/review
+  - [x] flag for debug/review
 - [ ] After verification, check whether a high-alignment unassigned catalog tag
   exists (residual-near tag). If so, add it as a candidate and optionally
   re-score with a targeted LLM check for that single tag.

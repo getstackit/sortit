@@ -2,6 +2,7 @@ package issues
 
 import (
 	"context"
+	"slices"
 	"strings"
 	"time"
 )
@@ -208,6 +209,39 @@ func mergeTagScores(scores []TagRelevance, canonical string, aliases map[string]
 		out = append([]TagRelevance{canonicalScore}, out...)
 	}
 	return out
+}
+
+func equalTagScores(left, right []TagRelevance) bool {
+	if len(left) != len(right) {
+		return false
+	}
+	for i := range left {
+		if !equalTagScore(left[i], right[i]) {
+			return false
+		}
+	}
+	return true
+}
+
+func equalTagScore(left, right TagRelevance) bool {
+	return left.Tag == right.Tag &&
+		left.Relevance == right.Relevance &&
+		left.Suggested == right.Suggested &&
+		left.Description == right.Description &&
+		slices.Equal(left.CandidateSources, right.CandidateSources) &&
+		equalFloat64Ptr(left.Alignment, right.Alignment) &&
+		equalFloat64Ptr(left.Specificity, right.Specificity) &&
+		left.VerificationVerdict == right.VerificationVerdict &&
+		left.VerificationReason == right.VerificationReason &&
+		left.DominatedBy == right.DominatedBy &&
+		equalFloat64Ptr(left.DominanceGap, right.DominanceGap)
+}
+
+func equalFloat64Ptr(left, right *float64) bool {
+	if left == nil || right == nil {
+		return left == nil && right == nil
+	}
+	return *left == *right
 }
 
 func (s *InMemoryStore) EnqueueIssueEnrichment(_ context.Context, issueID string, targetSequence int) error {

@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"splat/internal/ai"
+	"splat/internal/domain"
 	"splat/internal/issues"
 	"splat/internal/queries"
 	"splat/internal/services"
@@ -156,6 +157,11 @@ func TestDebugIssueAnalyzeEndpoint(t *testing.T) {
 	if len(payload.CandidateSet.Tags) == 0 {
 		t.Fatal("expected candidate set metadata in analyze response")
 	}
+	for _, tag := range payload.Tags {
+		if tag.VerificationVerdict != domain.TagVerificationVerdictKeep {
+			t.Fatalf("expected verifier to annotate kept tags by default, got %#v", payload.Tags)
+		}
+	}
 }
 
 func TestDebugIssueAnalyzeEndpointReturnsEmbeddingSimilarities(t *testing.T) {
@@ -265,6 +271,46 @@ func TestDebugIssueAnalyzeEndpointUsesCustomTags(t *testing.T) {
 	}
 }
 
+func TestDebugIssueAnalyzeEndpointCanDisableVerifier(t *testing.T) {
+	tagger := &fakeTagger{
+		scores: []ai.TagScore{{Tag: "custom", Relevance: 0.61}},
+	}
+	server := NewServer(ServerConfig{
+		CORSOrigins: []string{"http://localhost:3000"},
+		APIPrefixes: []string{"/api"},
+		Analyzer: ai.NewAnalyzer(tagger, &fakeEmbedder{
+			result: ai.EmbeddingResult{
+				Vector: []float32{1, 0},
+				Info: ai.EmbeddingInfo{
+					Dimensions:          2,
+					Preview:             []float32{1, 0},
+					ChunkCount:          1,
+					EstimatedTokenCount: 3,
+				},
+			},
+		}),
+	})
+
+	req := httptest.NewRequest(http.MethodPost, "/api/ui/debug/issues/analyze", bytes.NewBufferString(`{"text":"Custom issue","verify":false}`))
+	req.Header.Set("Content-Type", "application/json")
+	rec := httptest.NewRecorder()
+	server.Handler().ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d", rec.Code)
+	}
+
+	var payload debugIssueAnalyzeResponse
+	if err := json.NewDecoder(rec.Body).Decode(&payload); err != nil {
+		t.Fatalf("decode payload: %v", err)
+	}
+	for _, tag := range payload.Tags {
+		if tag.VerificationVerdict != "" {
+			t.Fatalf("expected verifier metadata to be omitted when disabled, got %#v", payload.Tags)
+		}
+	}
+}
+
 func TestDebugIssueAnalyzeEndpointReturnsCandidateProvenance(t *testing.T) {
 	store := &debugAnalyzeStore{InMemoryStore: issues.NewInMemoryStore(nil)}
 	if err := store.UpsertTags(context.Background(), []issues.Tag{
@@ -324,6 +370,13 @@ func TestDebugIssueAnalyzeEndpointReturnsCandidateProvenance(t *testing.T) {
 	}
 	if _, ok := candidateByName["billing"]; ok {
 		t.Fatalf("expected billing to be excluded from shortlist, got %#v", payload.CandidateSet.Tags)
+	}
+	if len(payload.Tags) != 0 {
+		for _, tag := range payload.Tags {
+			if len(tag.CandidateSources) == 0 {
+				t.Fatalf("expected candidate source metadata on analyzed tags, got %#v", payload.Tags)
+			}
+		}
 	}
 }
 
@@ -415,6 +468,9 @@ func TestDebugEvalTagsEndpoint(t *testing.T) {
 	if payload.CandidateMode != services.CandidateModeRetrievalShortlist {
 		t.Fatalf("expected retrieval-shortlist benchmark mode, got %q", payload.CandidateMode)
 	}
+	if !payload.VerifierEnabled {
+		t.Fatal("expected benchmark verifier to default on")
+	}
 }
 
 func TestDebugEvalTagsEndpointSupportsFullCatalogMode(t *testing.T) {
@@ -448,6 +504,40 @@ func TestDebugEvalTagsEndpointSupportsFullCatalogMode(t *testing.T) {
 	}
 	if payload.CandidateMode != services.CandidateModeFullCatalog {
 		t.Fatalf("expected full-catalog benchmark mode, got %q", payload.CandidateMode)
+	}
+}
+
+func TestDebugEvalTagsEndpointSupportsVerifierToggle(t *testing.T) {
+	server := NewServer(ServerConfig{
+		CORSOrigins: []string{"http://localhost:3000"},
+		APIPrefixes: []string{"/api"},
+		Analyzer: ai.NewAnalyzer(&fakeTagger{}, &fakeEmbedder{
+			result: ai.EmbeddingResult{
+				Vector: []float32{1, 0},
+				Info: ai.EmbeddingInfo{
+					Dimensions:          2,
+					Preview:             []float32{1, 0},
+					ChunkCount:          1,
+					EstimatedTokenCount: 4,
+				},
+			},
+		}),
+	})
+
+	req := httptest.NewRequest(http.MethodGet, "/api/ui/debug/eval-tags?verify=off", nil)
+	rec := httptest.NewRecorder()
+	server.Handler().ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d", rec.Code)
+	}
+
+	var payload queries.DebugEvalTagsResult
+	if err := json.NewDecoder(rec.Body).Decode(&payload); err != nil {
+		t.Fatalf("decode payload: %v", err)
+	}
+	if payload.VerifierEnabled {
+		t.Fatal("expected verifier toggle to disable benchmark verification")
 	}
 }
 

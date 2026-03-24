@@ -20,6 +20,7 @@ type DebugAnalyzeIssue struct {
 	Text          string
 	Tags          []string
 	CandidateMode services.CandidateMode
+	Verify        bool
 }
 
 type DebugIssueSimilarity struct {
@@ -30,7 +31,7 @@ type DebugIssueSimilarity struct {
 }
 
 type DebugAnalyzeIssueResult struct {
-	Tags                   []ai.TagScore
+	Tags                   []issues.TagRelevance
 	CandidateSet           services.CandidateTaxonomy
 	Embedding              ai.EmbeddingInfo
 	Tagger                 ai.ModelInfo
@@ -43,6 +44,7 @@ type DebugAnalyzeIssueResult struct {
 type DebugAnalyzeIssueHandler struct {
 	Analyzer *ai.Analyzer
 	Catalog  *services.CatalogService
+	Enricher *services.IssueEnricher
 	Store    issues.Store
 }
 
@@ -58,32 +60,29 @@ func (h DebugAnalyzeIssueHandler) Handle(ctx context.Context, input DebugAnalyze
 	if len(input.Tags) > 0 {
 		mode = services.CandidateModeExplicitOnly
 	}
-	seedEmbedding, err := h.Analyzer.EmbedText(ctx, input.Text)
-	if err != nil {
-		return DebugAnalyzeIssueResult{}, err
+	if h.Enricher == nil {
+		return DebugAnalyzeIssueResult{}, errors.New("issue enricher is not available")
 	}
-	candidates, err := h.Catalog.IssueTaxonomyCandidates(ctx, services.Float32VectorToFloat64(seedEmbedding.Vector), input.Tags, mode, 15)
-	if err != nil {
-		return DebugAnalyzeIssueResult{}, err
-	}
-	candidates = h.Catalog.AnnotateCandidateHints(ctx, candidates, services.Float32VectorToFloat64(seedEmbedding.Vector), 5)
-
-	analyzed, err := h.Analyzer.AnalyzeIssueData(ctx, input.Text, candidates.AITags())
+	analysis, err := h.Enricher.AnalyzeText(ctx, input.Text, services.AnalyzeTextOptions{
+		PreferredTags: input.Tags,
+		CandidateMode: mode,
+		Verify:        input.Verify,
+	})
 	if err != nil {
 		return DebugAnalyzeIssueResult{}, err
 	}
 
-	similarities, comparedIssueCount, averageSimilarity, err := h.issueEmbeddingSimilarities(ctx, services.Float32VectorToFloat64(analyzed.Embedding.Vector))
+	similarities, comparedIssueCount, averageSimilarity, err := h.issueEmbeddingSimilarities(ctx, services.Float32VectorToFloat64(analysis.Analyzed.Embedding.Vector))
 	if err != nil {
 		return DebugAnalyzeIssueResult{}, err
 	}
 
 	return DebugAnalyzeIssueResult{
-		Tags:                   analyzed.Tags,
-		CandidateSet:           candidates,
-		Embedding:              analyzed.Embedding.Info,
-		Tagger:                 analyzed.Tagger,
-		Embedder:               analyzed.Embedder,
+		Tags:                   analysis.TagScores,
+		CandidateSet:           analysis.CandidateSet,
+		Embedding:              analysis.Analyzed.Embedding.Info,
+		Tagger:                 analysis.Analyzed.Tagger,
+		Embedder:               analysis.Analyzed.Embedder,
 		ComparedIssueCount:     comparedIssueCount,
 		AverageIssueSimilarity: averageSimilarity,
 		SimilarIssues:          similarities,

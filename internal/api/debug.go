@@ -19,6 +19,7 @@ type debugIssueAnalyzeRequest struct {
 	Text          string   `json:"text"`
 	Tags          []string `json:"tags,omitempty"`
 	CandidateMode string   `json:"candidateMode,omitempty"`
+	Verify        *bool    `json:"verify,omitempty"`
 }
 
 type debugIssueSimilarity struct {
@@ -29,7 +30,7 @@ type debugIssueSimilarity struct {
 }
 
 type debugIssueAnalyzeResponse struct {
-	Tags                   []ai.TagScore              `json:"tags"`
+	Tags                   []issues.TagRelevance      `json:"tags"`
 	CandidateSet           services.CandidateTaxonomy `json:"candidateSet"`
 	Embedding              ai.EmbeddingInfo           `json:"embedding"`
 	Tagger                 ai.ModelInfo               `json:"tagger"`
@@ -58,6 +59,7 @@ func (s *Server) handleDebugIssueAnalyze(w http.ResponseWriter, r *http.Request)
 		Text:          request.Text,
 		Tags:          request.Tags,
 		CandidateMode: services.CandidateMode(request.CandidateMode),
+		Verify:        request.Verify == nil || *request.Verify,
 	})
 	if err != nil {
 		status := http.StatusInternalServerError
@@ -121,6 +123,10 @@ func (s *Server) handleDebugRescoreTags(w http.ResponseWriter, r *http.Request) 
 func (s *Server) handleDebugEvalTags(w http.ResponseWriter, r *http.Request) {
 	fixture := strings.TrimSpace(r.URL.Query().Get("fixture"))
 	mode := strings.TrimSpace(r.URL.Query().Get("mode"))
+	verify := true
+	if raw := strings.TrimSpace(r.URL.Query().Get("verify")); raw != "" {
+		verify = !strings.EqualFold(raw, "false") && !strings.EqualFold(raw, "off") && raw != "0"
+	}
 	runs := 1
 	if raw := strings.TrimSpace(r.URL.Query().Get("runs")); raw != "" {
 		parsed, err := strconv.Atoi(raw)
@@ -139,7 +145,7 @@ func (s *Server) handleDebugEvalTags(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, "explicit-only candidate mode is not supported for benchmark evaluation")
 		return
 	}
-	result, err := s.debugEvalTags.HandleFixture(r.Context(), fixture, runs, parsedMode)
+	result, err := s.debugEvalTags.HandleFixture(r.Context(), fixture, runs, parsedMode, verify)
 	if err != nil {
 		status := http.StatusInternalServerError
 		if queries.AIUnavailable(err) {

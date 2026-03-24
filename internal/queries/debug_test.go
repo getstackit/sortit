@@ -382,7 +382,7 @@ func TestDebugEvalTagsReportsStabilityAcrossRuns(t *testing.T) {
 		},
 	}
 
-	result, err := handler.HandleFixture(ctx, "", 3, services.CandidateModeRetrievalShortlist)
+	result, err := handler.HandleFixture(ctx, "", 3, services.CandidateModeRetrievalShortlist, true)
 	if err != nil {
 		t.Fatalf("HandleFixture runs=3: %v", err)
 	}
@@ -406,6 +406,9 @@ func TestDebugEvalTagsReportsStabilityAcrossRuns(t *testing.T) {
 	}
 	if got := result.Cases[0].AlternateActualTags; len(got) != 1 || len(got[0]) != 2 || got[0][0] != "export" || got[0][1] != testBugTag {
 		t.Fatalf("unexpected alternate actual tags %+v", got)
+	}
+	if !result.VerifierEnabled {
+		t.Fatal("expected verifier to default on")
 	}
 }
 

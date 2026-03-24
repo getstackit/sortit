@@ -563,7 +563,7 @@ func NewServer(cfg ServerConfig) *Server {
 		listTags:           queries.ListTagsHandler{Catalog: catalog},
 		getMap:             queries.MapHandler{IssueStore: store, Catalog: catalog, Projection: mapProjectionLoader},
 		getMapEdges:        queries.EdgeHandler{IssueStore: store, Catalog: catalog, Projection: mapProjectionLoader},
-		debugAnalyzeIssue:  queries.DebugAnalyzeIssueHandler{Analyzer: cfg.Analyzer, Catalog: catalog, Store: store},
+		debugAnalyzeIssue:  queries.DebugAnalyzeIssueHandler{Analyzer: cfg.Analyzer, Catalog: catalog, Enricher: enricher, Store: store},
 		debugEvalTags:      queries.DebugEvalTagsHandler{Analyzer: cfg.Analyzer, Catalog: catalog, Enricher: enricher},
 		debugFactorWeights: queries.DebugFactorWeightsHandler{Store: store, Catalog: catalog},
 		debugIssueR2:       queries.DebugIssueR2Handler{Store: store, Catalog: catalog},

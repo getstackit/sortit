@@ -6,6 +6,7 @@ import (
 	"testing"
 
 	"splat/internal/ai"
+	"splat/internal/domain"
 	"splat/internal/issues"
 )
 
@@ -31,6 +32,24 @@ func (t *enricherTestTagger) Model() string {
 type enricherTestEmbedder struct {
 	calls   []string
 	vectors map[string][]float32
+}
+
+type enricherStaticTagger struct {
+	capturedTags []ai.Tag
+	scores       []ai.TagScore
+}
+
+func (t *enricherStaticTagger) Score(_ context.Context, _ string, tags []ai.Tag) ([]ai.TagScore, error) {
+	t.capturedTags = append([]ai.Tag(nil), tags...)
+	return append([]ai.TagScore(nil), t.scores...), nil
+}
+
+func (t *enricherStaticTagger) Provider() string {
+	return testProviderName
+}
+
+func (t *enricherStaticTagger) Model() string {
+	return testProviderName
 }
 
 func (e *enricherTestEmbedder) EmbedText(_ context.Context, text string) (ai.EmbeddingResult, error) {
@@ -179,5 +198,91 @@ func TestAnalyzeCreateInputUsesShortlistAndKeepsExplicitTagsAsAnchors(t *testing
 
 	if len(input.Tags) != 1 || input.Tags[0] != "cleanup" {
 		t.Fatalf("expected explicit tags to be preserved, got %#v", input.Tags)
+	}
+}
+
+func TestAnalyzeTextFlagsWeakAnchorOnlyTagAgainstStrongerCandidate(t *testing.T) {
+	backendSpecificity := 0.2
+	databaseSpecificity := 0.8
+	store := &catalogTestStore{
+		tags: []issues.Tag{
+			{Name: "backend", Embedding: []float64{0, 1}, Specificity: &backendSpecificity},
+			{Name: "database", Embedding: []float64{1, 0}, Specificity: &databaseSpecificity},
+		},
+	}
+	tagger := &enricherStaticTagger{
+		scores: []ai.TagScore{{Tag: "backend", Relevance: 0.9}},
+	}
+	embedder := &enricherTestEmbedder{
+		vectors: map[string][]float32{
+			"database issue": {1, 0},
+		},
+	}
+	analyzer := ai.NewAnalyzer(tagger, embedder)
+	catalog := NewCatalogService(store, analyzer, slog.Default())
+	enricher := NewIssueEnricher(analyzer, catalog, slog.Default())
+
+	result, err := enricher.AnalyzeText(context.Background(), "database issue", AnalyzeTextOptions{
+		CandidateMode: CandidateModeRetrievalShortlist,
+		Verify:        true,
+	})
+	if err != nil {
+		t.Fatalf("AnalyzeText: %v", err)
+	}
+	if len(result.TagScores) != 1 {
+		t.Fatalf("expected 1 verified tag score, got %#v", result.TagScores)
+	}
+
+	score := result.TagScores[0]
+	if score.Tag != "backend" {
+		t.Fatalf("expected backend score, got %#v", score)
+	}
+	if score.VerificationVerdict != domain.TagVerificationVerdictFlagged {
+		t.Fatalf("expected flagged verdict, got %#v", score)
+	}
+	if score.Alignment == nil || *score.Alignment != 0 {
+		t.Fatalf("expected zero alignment on backend, got %#v", score.Alignment)
+	}
+	if score.Specificity == nil || *score.Specificity != backendSpecificity {
+		t.Fatalf("expected backend specificity %v, got %#v", backendSpecificity, score.Specificity)
+	}
+	if score.DominatedBy != "database" {
+		t.Fatalf("expected dominating candidate database, got %#v", score)
+	}
+	if len(score.CandidateSources) != 1 || score.CandidateSources[0] != string(CandidateSourceAnchor) {
+		t.Fatalf("expected anchor-only provenance, got %#v", score.CandidateSources)
+	}
+}
+
+func TestAnalyzeTextCanDisableVerifier(t *testing.T) {
+	store := &catalogTestStore{
+		tags: []issues.Tag{
+			{Name: "database", Embedding: []float64{1, 0}},
+		},
+	}
+	tagger := &enricherStaticTagger{
+		scores: []ai.TagScore{{Tag: "database", Relevance: 0.9}},
+	}
+	embedder := &enricherTestEmbedder{
+		vectors: map[string][]float32{
+			"database issue": {1, 0},
+		},
+	}
+	analyzer := ai.NewAnalyzer(tagger, embedder)
+	catalog := NewCatalogService(store, analyzer, slog.Default())
+	enricher := NewIssueEnricher(analyzer, catalog, slog.Default())
+
+	result, err := enricher.AnalyzeText(context.Background(), "database issue", AnalyzeTextOptions{
+		CandidateMode: CandidateModeRetrievalShortlist,
+		Verify:        false,
+	})
+	if err != nil {
+		t.Fatalf("AnalyzeText verify=false: %v", err)
+	}
+	if len(result.TagScores) != 1 {
+		t.Fatalf("expected 1 tag score, got %#v", result.TagScores)
+	}
+	if result.TagScores[0].VerificationVerdict != "" {
+		t.Fatalf("expected verifier metadata to be omitted, got %#v", result.TagScores[0])
 	}
 }

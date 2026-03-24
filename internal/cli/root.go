@@ -685,6 +685,11 @@ func (q queryParams) addInt(key string, value int) queryParams {
 	return q
 }
 
+func (q queryParams) addBool(key string, value bool) queryParams {
+	q[key] = fmt.Sprintf("%t", value)
+	return q
+}
+
 func (q queryParams) addCSV(key string, values []string) queryParams {
 	normalized := normalizeCSV(values)
 	if len(normalized) > 0 {
