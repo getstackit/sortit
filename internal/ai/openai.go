@@ -305,6 +305,8 @@ func buildOpenAITaggingPrompt(text string, tags []Tag, examples []FewShotExample
 	builder.WriteString("Only suggest a new tag if an important residual concept remains after choosing the best existing tags.\n")
 	builder.WriteString("Prefer a concrete reusable surface, subsystem, workflow, or artifact tag over broad buckets like backend, frontend, or ui.\n")
 	builder.WriteString("Do not suggest a tag that is already implied by a combination of existing tags.\n")
+	builder.WriteString("Examples are reference patterns, not templates. Do not copy example-only tags unless the same surface, subsystem, workflow, or artifact is clearly supported by the current issue text.\n")
+	builder.WriteString("Prefer a compact tag set. Add another tag only when it contributes distinct evidence-backed information rather than a near-synonym or predictable co-occurrence.\n")
 
 	if len(examples) > 0 {
 		builder.WriteString("\nHere are examples of well-tagged issues for reference:\n")

@@ -315,16 +315,36 @@ architectural changes.
 
 ### Deliverables
 
-- [ ] During enrichment, select 2–3 high-R² issues from the corpus that are
-  semantically close to the current issue (by embedding similarity).
-- [ ] Include their canonical text and assigned tags as few-shot examples in
+- [x] During enrichment, select up to 3 semantically close curated exemplars
+  for the current issue.
+- [ ] Replace the curated exemplar pool with live high-R² corpus selection, or
+  persist an explicit exemplar pool of known-good issue IDs refreshed from the
+  corpus over time.
+- [x] Include exemplar issue text and assigned tags as few-shot examples in
   the tagging prompt, before the current issue text.
-- [ ] Format examples to show what good specific tagging looks like:
+- [x] Format examples to show what good specific tagging looks like:
   ```
   Example 1:
   Issue: "Backfill and dual-write embedding data so vector columns stay in sync"
   Tags: data-persistence (0.92), database-migration (0.88), integration (0.75)
   ```
+
+### Current status
+
+The codebase now ships a curated exemplar pool and prompt wiring for few-shot
+examples, and current tuning work is improving the benchmark, but the release
+gate is still open.
+
+Latest local benchmark check on March 26, 2026 (`fixture=corpus`) after
+exemplar-admission and prompt-tuning changes:
+
+- retrieval-shortlist + verifier: precision 0.788, recall 0.929
+- full-catalog + verifier: precision 0.743, recall 0.929
+- retrieval-shortlist without verifier: precision 0.813, recall 0.929
+
+That means Phase 1.5 is now showing a local precision win over the current
+full-catalog baseline, but it still needs repeated runs and continued tuning
+before the phase should be treated as complete.
 
 ### Prerequisites
 

@@ -24,8 +24,8 @@ func TestExemplarPoolSelectReturnsMostSimilar(t *testing.T) {
 	queryEmbedding := Float32VectorToFloat64(result.Vector)
 
 	selected := pool.Select(context.Background(), embedder, queryEmbedding, nil, 2)
-	if len(selected) != 2 {
-		t.Fatalf("expected 2 exemplars, got %d", len(selected))
+	if len(selected) == 0 {
+		t.Fatal("expected at least one exemplar")
 	}
 	// The first result should be the most similar — the database example.
 	if selected[0].Text != "database migration schema change" {
@@ -34,32 +34,47 @@ func TestExemplarPoolSelectReturnsMostSimilar(t *testing.T) {
 }
 
 func TestExemplarPoolSelectPrefersSharedTags(t *testing.T) {
-	embedder := ai.NewStubEmbedder()
-
 	pool := NewExemplarPool([]ai.FewShotExample{
 		{
-			Text: "frontend button issue",
-			Tags: []ai.FewShotTag{{Name: "frontend", Relevance: 0.9}},
+			Text:      "frontend button issue",
+			Tags:      []ai.FewShotTag{{Name: "frontend", Relevance: 0.9}},
+			Embedding: []float64{0.95, 0.05},
 		},
 		{
-			Text: "api timeout error",
-			Tags: []ai.FewShotTag{{Name: "backend", Relevance: 0.9}},
+			Text:      "copy button on issue detail page",
+			Tags:      []ai.FewShotTag{{Name: "issue-detail-page", Relevance: 0.9}},
+			Embedding: []float64{0.8, 0.2},
 		},
 	})
 
-	result, err := embedder.EmbedText(context.Background(), "some query")
-	if err != nil {
-		t.Fatalf("embed query: %v", err)
-	}
-	queryEmbedding := Float32VectorToFloat64(result.Vector)
-
-	// When candidate tags include "backend", prefer the backend example.
-	selected := pool.Select(context.Background(), embedder, queryEmbedding, []string{"backend"}, 1)
+	// Prefer the example that shares a specific candidate tag over one that only
+	// shares a broad bucket tag, even if the broad example is slightly closer.
+	selected := pool.Select(context.Background(), nil, []float64{1, 0}, []string{"frontend", "issue-detail-page"}, 1)
 	if len(selected) != 1 {
 		t.Fatalf("expected 1 exemplar, got %d", len(selected))
 	}
-	if selected[0].Tags[0].Name != "backend" {
-		t.Errorf("expected backend example, got %q", selected[0].Tags[0].Name)
+	if selected[0].Tags[0].Name != "issue-detail-page" {
+		t.Errorf("expected specific shared-tag example, got %q", selected[0].Tags[0].Name)
+	}
+}
+
+func TestExemplarPoolSkipsWeakBroadTagMatches(t *testing.T) {
+	pool := NewExemplarPool([]ai.FewShotExample{
+		{
+			Text:      "frontend button issue",
+			Tags:      []ai.FewShotTag{{Name: "frontend", Relevance: 0.9}},
+			Embedding: []float64{0.1, 0.99},
+		},
+		{
+			Text:      "bug in search results page",
+			Tags:      []ai.FewShotTag{{Name: "bug", Relevance: 0.9}},
+			Embedding: []float64{0, 1},
+		},
+	})
+
+	selected := pool.Select(context.Background(), nil, []float64{1, 0}, []string{"frontend", "bug"}, 2)
+	if len(selected) != 0 {
+		t.Fatalf("expected weak broad-tag exemplars to be skipped, got %#v", selected)
 	}
 }
 

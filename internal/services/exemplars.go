@@ -19,6 +19,31 @@ type ExemplarPool struct {
 	embedded bool
 }
 
+type scoredExemplar struct {
+	index               int
+	similarity          float64
+	sharedCount         int
+	specificSharedCount int
+}
+
+const (
+	exemplarBroadSharedSimilarityFloor = 0.42
+	exemplarFallbackSimilarityFloor    = 0.55
+)
+
+var broadExemplarTags = map[string]struct{}{
+	"backend":     {},
+	"bug":         {},
+	"cleanup":     {},
+	"feature":     {},
+	"frontend":    {},
+	"idea":        {},
+	"improvement": {},
+	"performance": {},
+	"ui":          {},
+	"ux":          {},
+}
+
 // NewExemplarPool creates a pool from a curated list of examples.
 func NewExemplarPool(items []ai.FewShotExample) *ExemplarPool {
 	if len(items) == 0 {
@@ -48,54 +73,63 @@ func (p *ExemplarPool) Select(ctx context.Context, embedder textEmbedder, issueE
 
 	candidateSet := make(map[string]struct{}, len(candidateTags))
 	for _, name := range candidateTags {
+		name = normalizeCatalogTagName(name)
+		if name == "" {
+			continue
+		}
 		candidateSet[name] = struct{}{}
 	}
 
-	type scored struct {
-		index      int
-		similarity float64
-		shared     bool // shares a tag with the candidate set
-	}
-
-	candidates := make([]scored, 0, len(p.items))
+	candidates := make([]scoredExemplar, 0, len(p.items))
 	for i, item := range p.items {
 		if len(item.Embedding) == 0 {
 			continue
 		}
 		sim := vectors.CosineSimilarity(issueEmbedding, item.Embedding)
 
-		shared := false
+		sharedCount := 0
+		specificSharedCount := 0
 		if len(candidateSet) > 0 {
 			for _, tag := range item.Tags {
-				if _, ok := candidateSet[tag.Name]; ok {
-					shared = true
-					break
+				name := normalizeCatalogTagName(tag.Name)
+				if _, ok := candidateSet[name]; ok {
+					sharedCount++
+					if !isBroadExemplarTag(name) {
+						specificSharedCount++
+					}
 				}
 			}
 		}
 
-		candidates = append(candidates, scored{
-			index:      i,
-			similarity: sim,
-			shared:     shared,
+		candidates = append(candidates, scoredExemplar{
+			index:               i,
+			similarity:          sim,
+			sharedCount:         sharedCount,
+			specificSharedCount: specificSharedCount,
 		})
 	}
 
-	// Sort: prefer shared-tag examples, then by similarity descending.
-	slices.SortFunc(candidates, func(a, b scored) int {
-		if a.shared != b.shared {
-			if a.shared {
-				return -1
-			}
-			return 1
+	// Sort: prefer examples that share specific candidate tags, then by total
+	// overlap, then by semantic similarity.
+	slices.SortFunc(candidates, func(a, b scoredExemplar) int {
+		if a.specificSharedCount != b.specificSharedCount {
+			return cmp.Compare(b.specificSharedCount, a.specificSharedCount)
+		}
+		if a.sharedCount != b.sharedCount {
+			return cmp.Compare(b.sharedCount, a.sharedCount)
 		}
 		return cmp.Compare(b.similarity, a.similarity)
 	})
 
-	n := min(limit, len(candidates))
-	out := make([]ai.FewShotExample, n)
-	for i := 0; i < n; i++ {
-		out[i] = p.items[candidates[i].index]
+	out := make([]ai.FewShotExample, 0, min(limit, len(candidates)))
+	for _, candidate := range candidates {
+		if !allowExemplarCandidate(candidate) {
+			continue
+		}
+		out = append(out, p.items[candidate.index])
+		if len(out) >= limit {
+			break
+		}
 	}
 	return out
 }
@@ -120,6 +154,22 @@ func (p *ExemplarPool) ensureEmbeddings(ctx context.Context, embedder textEmbedd
 		}
 		p.items[i].Embedding = Float32VectorToFloat64(result.Vector)
 	}
+}
+
+func allowExemplarCandidate(candidate scoredExemplar) bool {
+	if candidate.specificSharedCount > 0 {
+		return true
+	}
+	if candidate.sharedCount > 0 {
+		return candidate.similarity >= exemplarBroadSharedSimilarityFloor
+	}
+	return candidate.similarity >= exemplarFallbackSimilarityFloor
+}
+
+func isBroadExemplarTag(name string) bool {
+	name = normalizeCatalogTagName(name)
+	_, ok := broadExemplarTags[name]
+	return ok
 }
 
 // DefaultExemplarPool returns the built-in curated exemplar pool.

@@ -24,6 +24,12 @@ func TestBuildOpenAITaggingPromptIncludesGuidanceAndDescriptions(t *testing.T) {
 	if !strings.Contains(prompt, "already implied by a combination of existing tags") {
 		t.Fatalf("expected prompt to reject correlated suggestions")
 	}
+	if !strings.Contains(prompt, "Examples are reference patterns, not templates.") {
+		t.Fatalf("expected prompt to warn against copying example-only tags")
+	}
+	if !strings.Contains(prompt, "Prefer a compact tag set.") {
+		t.Fatalf("expected prompt to prefer compact tag sets")
+	}
 	if !strings.Contains(prompt, "kind, failure mode, surface, platform, experience, and implementation layer") {
 		t.Fatalf("expected prompt to mention taxonomy lanes")
 	}
