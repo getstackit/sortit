@@ -16,7 +16,7 @@ type enricherTestTagger struct {
 	capturedTags []ai.Tag
 }
 
-func (t *enricherTestTagger) Score(_ context.Context, _ string, tags []ai.Tag) ([]ai.TagScore, error) {
+func (t *enricherTestTagger) Score(_ context.Context, _ string, tags []ai.Tag, _ []ai.FewShotExample) ([]ai.TagScore, error) {
 	t.capturedTags = append([]ai.Tag(nil), tags...)
 	return []ai.TagScore{{Tag: "database", Relevance: 0.9}}, nil
 }
@@ -39,7 +39,7 @@ type enricherStaticTagger struct {
 	scores       []ai.TagScore
 }
 
-func (t *enricherStaticTagger) Score(_ context.Context, _ string, tags []ai.Tag) ([]ai.TagScore, error) {
+func (t *enricherStaticTagger) Score(_ context.Context, _ string, tags []ai.Tag, _ []ai.FewShotExample) ([]ai.TagScore, error) {
 	t.capturedTags = append([]ai.Tag(nil), tags...)
 	return append([]ai.TagScore(nil), t.scores...), nil
 }
@@ -82,6 +82,7 @@ func TestAnalyzePersistedIssueUsesFreshEmbeddingForShortlist(t *testing.T) {
 	analyzer := ai.NewAnalyzer(tagger, embedder)
 	catalog := NewCatalogService(store, analyzer, slog.Default())
 	enricher := NewIssueEnricher(analyzer, catalog, slog.Default())
+	enricher.SetExemplarPool(nil) // disable few-shot to keep embed call count predictable
 
 	_, err := enricher.AnalyzePersistedIssue(context.Background(), issues.Issue{
 		ID:        "issue-1",
@@ -170,6 +171,7 @@ func TestAnalyzeCreateInputUsesShortlistAndKeepsExplicitTagsAsAnchors(t *testing
 	analyzer := ai.NewAnalyzer(tagger, embedder)
 	catalog := NewCatalogService(store, analyzer, slog.Default())
 	enricher := NewIssueEnricher(analyzer, catalog, slog.Default())
+	enricher.SetExemplarPool(nil) // disable few-shot to keep embed call count predictable
 
 	input, err := enricher.AnalyzeCreateInput(context.Background(), issues.CreateInput{
 		Raw:  "database migration",

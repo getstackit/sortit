@@ -22,7 +22,7 @@ type fakeTagger struct {
 	scores       []ai.TagScore
 }
 
-func (t *fakeTagger) Score(_ context.Context, _ string, tags []ai.Tag) ([]ai.TagScore, error) {
+func (t *fakeTagger) Score(_ context.Context, _ string, tags []ai.Tag, _ []ai.FewShotExample) ([]ai.TagScore, error) {
 	t.capturedTags = append([]ai.Tag(nil), tags...)
 	return append([]ai.TagScore(nil), t.scores...), nil
 }
@@ -740,7 +740,7 @@ func TestDebugIssueAnalyzeEndpointRejectsInvalidInput(t *testing.T) {
 		}
 	})
 
-	t.Run("analyzer not configured", func(t *testing.T) {
+	t.Run("analyzer not configured falls back to stub", func(t *testing.T) {
 		req := httptest.NewRequest(
 			http.MethodPost,
 			"/api/ui/debug/issues/analyze",
@@ -750,8 +750,10 @@ func TestDebugIssueAnalyzeEndpointRejectsInvalidInput(t *testing.T) {
 
 		handler.ServeHTTP(rec, req)
 
-		if rec.Code != http.StatusServiceUnavailable {
-			t.Fatalf("expected 503, got %d", rec.Code)
+		// FallbackAnalyzer provides a stub when no real analyzer is configured,
+		// so the endpoint succeeds with stub results rather than returning 503.
+		if rec.Code != http.StatusOK {
+			t.Fatalf("expected 200, got %d", rec.Code)
 		}
 	})
 }

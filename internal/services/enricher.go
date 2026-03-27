@@ -17,9 +17,10 @@ import (
 )
 
 type IssueEnricher struct {
-	analyzer *ai.Analyzer
-	catalog  *CatalogService
-	logger   *slog.Logger
+	analyzer   *ai.Analyzer
+	catalog    *CatalogService
+	logger     *slog.Logger
+	exemplars  *ExemplarPool
 }
 
 type AnalyzeTextOptions struct {
@@ -39,10 +40,17 @@ const persistedIssueHintLimit = 5
 
 func NewIssueEnricher(analyzer *ai.Analyzer, catalog *CatalogService, logger *slog.Logger) *IssueEnricher {
 	return &IssueEnricher{
-		analyzer: analyzer,
-		catalog:  catalog,
-		logger:   logger,
+		analyzer:  analyzer,
+		catalog:   catalog,
+		logger:    logger,
+		exemplars: DefaultExemplarPool(),
 	}
+}
+
+// SetExemplarPool replaces the default exemplar pool. Pass nil to disable
+// few-shot examples.
+func (s *IssueEnricher) SetExemplarPool(pool *ExemplarPool) {
+	s.exemplars = pool
 }
 
 func (s *IssueEnricher) AnalyzeCreateInput(ctx context.Context, input issues.CreateInput) (issues.CreateInput, error) {
@@ -290,7 +298,17 @@ func (s *IssueEnricher) analyzeWithCandidateTaxonomy(ctx context.Context, raw st
 	}
 	candidates = s.catalog.AnnotateCandidateHints(ctx, candidates, freshEmbeddingVector, persistedIssueHintLimit)
 
-	analyzed, err := s.analyzer.AnalyzeIssueData(ctx, raw, candidates.AITags())
+	// Select few-shot examples using the fresh embedding and candidate tag names.
+	var examples []ai.FewShotExample
+	if s.exemplars != nil && s.analyzer != nil {
+		candidateTagNames := make([]string, 0, len(candidates.Tags))
+		for _, tag := range candidates.Tags {
+			candidateTagNames = append(candidateTagNames, tag.Name)
+		}
+		examples = s.exemplars.Select(ctx, s.analyzer, freshEmbeddingVector, candidateTagNames, 3)
+	}
+
+	analyzed, err := s.analyzer.AnalyzeIssueData(ctx, raw, candidates.AITags(), examples)
 	if err != nil {
 		return ai.AnalyzedIssue{}, CandidateTaxonomy{}, err
 	}

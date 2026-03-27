@@ -18,7 +18,7 @@ import (
 
 type integrationMockTagger struct{}
 
-func (t *integrationMockTagger) Score(_ context.Context, text string, _ []ai.Tag) ([]ai.TagScore, error) {
+func (t *integrationMockTagger) Score(_ context.Context, text string, _ []ai.Tag, _ []ai.FewShotExample) ([]ai.TagScore, error) {
 	lower := strings.ToLower(text)
 	switch {
 	case strings.Contains(lower, "signup"):

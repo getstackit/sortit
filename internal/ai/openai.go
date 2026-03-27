@@ -138,7 +138,7 @@ func NewOpenAIEmbedder(cfg OpenAIConfig) (*OpenAIEmbedder, error) {
 	}, nil
 }
 
-func (t *OpenAITagger) Score(ctx context.Context, text string, tags []Tag) ([]TagScore, error) {
+func (t *OpenAITagger) Score(ctx context.Context, text string, tags []Tag, examples []FewShotExample) ([]TagScore, error) {
 	request := openAIChatCompletionRequest{
 		Model:       t.model,
 		Temperature: 0,
@@ -152,7 +152,7 @@ func (t *OpenAITagger) Score(ctx context.Context, text string, tags []Tag) ([]Ta
 			},
 			{
 				Role:    "user",
-				Content: buildOpenAITaggingPrompt(text, tags),
+				Content: buildOpenAITaggingPrompt(text, tags, examples),
 			},
 		},
 	}
@@ -296,7 +296,7 @@ func (c *openAIClient) doJSON(ctx context.Context, requestPath string, requestBo
 	return nil
 }
 
-func buildOpenAITaggingPrompt(text string, tags []Tag) string {
+func buildOpenAITaggingPrompt(text string, tags []Tag, examples []FewShotExample) string {
 	var builder strings.Builder
 	builder.WriteString("Classify the issue against the supplied taxonomy.\n")
 	builder.WriteString("Consider issue type, failure mode, affected surface, platform, and user workflow.\n")
@@ -304,8 +304,25 @@ func buildOpenAITaggingPrompt(text string, tags []Tag) string {
 	builder.WriteString("Reuse supplied tags when they fit. Prefer specific tags over generic ones.\n")
 	builder.WriteString("Only suggest a new tag if an important residual concept remains after choosing the best existing tags.\n")
 	builder.WriteString("Prefer a concrete reusable surface, subsystem, workflow, or artifact tag over broad buckets like backend, frontend, or ui.\n")
-	builder.WriteString("Do not suggest a tag that is already implied by a combination of existing tags.\n\n")
-	builder.WriteString("Issue text:\n")
+	builder.WriteString("Do not suggest a tag that is already implied by a combination of existing tags.\n")
+
+	if len(examples) > 0 {
+		builder.WriteString("\nHere are examples of well-tagged issues for reference:\n")
+		for i, ex := range examples {
+			fmt.Fprintf(&builder, "\nExample %d:\n", i+1)
+			fmt.Fprintf(&builder, "Issue: %s\n", truncateExampleText(ex.Text, 200))
+			builder.WriteString("Tags: ")
+			for j, tag := range ex.Tags {
+				if j > 0 {
+					builder.WriteString(", ")
+				}
+				fmt.Fprintf(&builder, "%s (%.2f)", tag.Name, tag.Relevance)
+			}
+			builder.WriteString("\n")
+		}
+	}
+
+	builder.WriteString("\nIssue text:\n")
 	builder.WriteString(text)
 
 	// Separate hint tags from regular taxonomy tags.
@@ -343,6 +360,16 @@ func buildOpenAITaggingPrompt(text string, tags []Tag) string {
 	}
 
 	return builder.String()
+}
+
+// truncateExampleText truncates text to roughly maxWords words to limit prompt
+// token growth from few-shot examples.
+func truncateExampleText(text string, maxWords int) string {
+	words := strings.Fields(text)
+	if len(words) <= maxWords {
+		return text
+	}
+	return strings.Join(words[:maxWords], " ") + "…"
 }
 
 func buildOpenAITaggingSystemPrompt() string {

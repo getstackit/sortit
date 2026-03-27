@@ -42,7 +42,7 @@ func (h SearchUnifiedHandler) Handle(ctx context.Context, input SearchUnified) (
 		return SearchUnifiedResponse{}, err
 	}
 
-	analyzed, err := h.Analyzer.AnalyzeIssueData(ctx, query, taxonomy)
+	analyzed, err := h.Analyzer.AnalyzeIssueData(ctx, query, taxonomy, nil)
 	if err != nil {
 		return SearchUnifiedResponse{}, err
 	}

@@ -42,7 +42,7 @@ func (h SearchIssuesHandler) Handle(ctx context.Context, input SearchIssues) (is
 		return issuemap.SearchResponse{}, err
 	}
 
-	analyzed, err := h.Analyzer.AnalyzeIssueData(ctx, query, taxonomy)
+	analyzed, err := h.Analyzer.AnalyzeIssueData(ctx, query, taxonomy, nil)
 	if err != nil {
 		return issuemap.SearchResponse{}, err
 	}

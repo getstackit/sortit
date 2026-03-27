@@ -10,7 +10,7 @@ func TestBuildOpenAITaggingPromptIncludesGuidanceAndDescriptions(t *testing.T) {
 	prompt := buildOpenAITaggingPrompt("Safari export hangs on iPad", []Tag{
 		{Name: "export", Description: "download, file generation, sharing, or data extraction workflows. Excludes general browsing unless data leaves the product."},
 		{Name: "safari", Description: "Safari or WebKit-specific behavior"},
-	})
+	}, nil)
 
 	if !strings.Contains(prompt, "important residual concept remains") {
 		t.Fatalf("expected prompt to mention residual concept test")
@@ -37,7 +37,7 @@ func TestBuildOpenAITaggingPromptIncludesHintTags(t *testing.T) {
 		{Name: "database", Description: "database-related work"},
 		{Name: "cleanup", Description: "cleanup and tech debt"},
 		{Name: "suggested-database-migration", Description: "schema migration work", Hint: true},
-	})
+	}, nil)
 
 	if !strings.Contains(prompt, "High-affinity tags") {
 		t.Fatalf("expected prompt to include high-affinity tags section")
@@ -51,10 +51,51 @@ func TestBuildOpenAITaggingPromptOmitsHintSectionWhenNoHints(t *testing.T) {
 	prompt := buildOpenAITaggingPrompt("Safari export hangs on iPad", []Tag{
 		{Name: "export"},
 		{Name: "safari"},
-	})
+	}, nil)
 
 	if strings.Contains(prompt, "High-affinity tags") {
 		t.Fatalf("expected no high-affinity tags section when no hints are present")
+	}
+}
+
+func TestBuildOpenAITaggingPromptIncludesFewShotExamples(t *testing.T) {
+	examples := []FewShotExample{
+		{
+			Text: "Search box clears after typing second character",
+			Tags: []FewShotTag{
+				{Name: "bug", Relevance: 0.95},
+				{Name: "search", Relevance: 0.90},
+			},
+		},
+	}
+	prompt := buildOpenAITaggingPrompt("some issue text", []Tag{
+		{Name: "bug"},
+	}, examples)
+
+	if !strings.Contains(prompt, "well-tagged issues for reference") {
+		t.Fatal("expected prompt to include examples section header")
+	}
+	if !strings.Contains(prompt, "Example 1:") {
+		t.Fatal("expected prompt to include example numbering")
+	}
+	if !strings.Contains(prompt, "Search box clears after typing second character") {
+		t.Fatal("expected prompt to include example text")
+	}
+	if !strings.Contains(prompt, "bug (0.95)") {
+		t.Fatal("expected prompt to include example tag with relevance")
+	}
+	if !strings.Contains(prompt, "search (0.90)") {
+		t.Fatal("expected prompt to include second example tag")
+	}
+}
+
+func TestBuildOpenAITaggingPromptOmitsExamplesSectionWhenEmpty(t *testing.T) {
+	prompt := buildOpenAITaggingPrompt("some issue text", []Tag{
+		{Name: "bug"},
+	}, nil)
+
+	if strings.Contains(prompt, "well-tagged issues for reference") {
+		t.Fatal("expected no examples section when no examples provided")
 	}
 }
 

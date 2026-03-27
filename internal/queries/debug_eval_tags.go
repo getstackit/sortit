@@ -249,7 +249,7 @@ func (h DebugEvalTagsHandler) evaluateCaseLegacy(ctx context.Context, item Debug
 	}
 	candidates = h.Catalog.AnnotateCandidateHints(ctx, candidates, services.Float32VectorToFloat64(seedEmbedding.Vector), 5)
 
-	analyzed, err := h.Analyzer.AnalyzeIssueData(ctx, item.Text, candidates.AITags())
+	analyzed, err := h.Analyzer.AnalyzeIssueData(ctx, item.Text, candidates.AITags(), nil)
 	if err != nil {
 		return nil, err
 	}
