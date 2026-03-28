@@ -12,6 +12,7 @@ import (
 	"splat/internal/auth"
 	"splat/internal/commands"
 	"splat/internal/issues"
+	issueenrichment "splat/internal/issues/enrichment"
 	issuemap "splat/internal/map"
 	"splat/internal/queries"
 	"splat/internal/services"
@@ -470,7 +471,7 @@ func newTestHandlers() *handlers {
 	)
 	store := issues.NewInMemoryStore(nil)
 	catalog := services.NewCatalogService(nil, analyzer, slog.Default())
-	enricher := services.NewIssueEnricher(analyzer, catalog, slog.Default())
+	enricher := issueenrichment.NewIssueEnricher(analyzer, catalog, slog.Default())
 	runner := &commands.CommandRunner{DB: store}
 	eventBus := issues.NewEventBus()
 
@@ -522,7 +523,7 @@ func drainTestEnrichment(t *testing.T, handler *handlers) {
 	if !ok {
 		t.Fatal("expected get issue reader to also implement issues.Store in tests")
 	}
-	worker := &services.IssueEnrichmentWorker{
+	worker := &issueenrichment.IssueEnrichmentWorker{
 		Logger:   slog.Default(),
 		Store:    store,
 		DB:       handler.createIssue.Runner.DB,

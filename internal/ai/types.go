@@ -52,9 +52,9 @@ type IssueAnalysis struct {
 // FewShotExample is a curated tagging example included in the prompt so the
 // model can see what correct, specific tagging looks like.
 type FewShotExample struct {
-	Text string         `json:"text"`
-	Tags []FewShotTag   `json:"tags"`
-	Embedding []float64 `json:"-"`
+	Text      string       `json:"text"`
+	Tags      []FewShotTag `json:"tags"`
+	Embedding []float64    `json:"-"`
 }
 
 // FewShotTag is a single tag assignment inside a few-shot example.

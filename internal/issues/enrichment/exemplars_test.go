@@ -1,4 +1,4 @@
-package services
+package enrichment
 
 import (
 	"context"
@@ -16,7 +16,6 @@ func TestExemplarPoolSelectReturnsMostSimilar(t *testing.T) {
 		{Text: "api endpoint timeout error"},
 	})
 
-	// Embed a query text that is close to the database example.
 	result, err := embedder.EmbedText(context.Background(), "database schema migration")
 	if err != nil {
 		t.Fatalf("embed query: %v", err)
@@ -27,7 +26,6 @@ func TestExemplarPoolSelectReturnsMostSimilar(t *testing.T) {
 	if len(selected) == 0 {
 		t.Fatal("expected at least one exemplar")
 	}
-	// The first result should be the most similar — the database example.
 	if selected[0].Text != "database migration schema change" {
 		t.Errorf("expected database example first, got %q", selected[0].Text)
 	}
@@ -47,8 +45,6 @@ func TestExemplarPoolSelectPrefersSharedTags(t *testing.T) {
 		},
 	})
 
-	// Prefer the example that shares a specific candidate tag over one that only
-	// shares a broad bucket tag, even if the broad example is slightly closer.
 	selected := pool.Select(context.Background(), nil, []float64{1, 0}, []string{"frontend", "issue-detail-page"}, 1)
 	if len(selected) != 1 {
 		t.Fatalf("expected 1 exemplar, got %d", len(selected))

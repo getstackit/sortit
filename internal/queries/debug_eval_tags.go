@@ -12,6 +12,7 @@ import (
 	"splat/internal/ai"
 	"splat/internal/domain"
 	"splat/internal/issues"
+	issueenrichment "splat/internal/issues/enrichment"
 	"splat/internal/services"
 )
 
@@ -75,7 +76,7 @@ type DebugEvalTagsResult struct {
 type DebugEvalTagsHandler struct {
 	Analyzer *ai.Analyzer
 	Catalog  *services.CatalogService
-	Enricher *services.IssueEnricher
+	Enricher *issueenrichment.IssueEnricher
 	Fixture  []DebugTagEvalCase
 }
 
@@ -182,7 +183,7 @@ func (h DebugEvalTagsHandler) evaluateCase(ctx context.Context, item DebugTagEva
 		return actualTags, 0, 0, nil
 	}
 
-	analysis, err := h.Enricher.AnalyzeText(ctx, item.Text, services.AnalyzeTextOptions{
+	analysis, err := h.Enricher.AnalyzeText(ctx, item.Text, issueenrichment.AnalyzeTextOptions{
 		CandidateMode: mode,
 		Verify:        verify,
 	})
@@ -243,11 +244,11 @@ func (h DebugEvalTagsHandler) evaluateCaseLegacy(ctx context.Context, item Debug
 	if err != nil {
 		return nil, err
 	}
-	candidates, err := h.Catalog.IssueTaxonomyCandidates(ctx, services.Float32VectorToFloat64(seedEmbedding.Vector), nil, mode, 15)
+	candidates, err := h.Catalog.IssueTaxonomyCandidates(ctx, issueenrichment.Float32VectorToFloat64(seedEmbedding.Vector), nil, mode, 15)
 	if err != nil {
 		return nil, err
 	}
-	candidates = h.Catalog.AnnotateCandidateHints(ctx, candidates, services.Float32VectorToFloat64(seedEmbedding.Vector), 5)
+	candidates = h.Catalog.AnnotateCandidateHints(ctx, candidates, issueenrichment.Float32VectorToFloat64(seedEmbedding.Vector), 5)
 
 	analyzed, err := h.Analyzer.AnalyzeIssueData(ctx, item.Text, candidates.AITags(), nil)
 	if err != nil {

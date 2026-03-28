@@ -1,4 +1,4 @@
-package services
+package enrichment
 
 import (
 	"cmp"
@@ -54,7 +54,6 @@ func NewExemplarPool(items []ai.FewShotExample) *ExemplarPool {
 	return &ExemplarPool{items: pool}
 }
 
-// textEmbedder is the minimal interface needed to compute exemplar embeddings.
 type textEmbedder interface {
 	EmbedText(ctx context.Context, text string) (ai.EmbeddingResult, error)
 }
@@ -73,7 +72,7 @@ func (p *ExemplarPool) Select(ctx context.Context, embedder textEmbedder, issueE
 
 	candidateSet := make(map[string]struct{}, len(candidateTags))
 	for _, name := range candidateTags {
-		name = normalizeCatalogTagName(name)
+		name = normalizeTagName(name)
 		if name == "" {
 			continue
 		}
@@ -91,7 +90,7 @@ func (p *ExemplarPool) Select(ctx context.Context, embedder textEmbedder, issueE
 		specificSharedCount := 0
 		if len(candidateSet) > 0 {
 			for _, tag := range item.Tags {
-				name := normalizeCatalogTagName(tag.Name)
+				name := normalizeTagName(tag.Name)
 				if _, ok := candidateSet[name]; ok {
 					sharedCount++
 					if !isBroadExemplarTag(name) {
@@ -109,8 +108,6 @@ func (p *ExemplarPool) Select(ctx context.Context, embedder textEmbedder, issueE
 		})
 	}
 
-	// Sort: prefer examples that share specific candidate tags, then by total
-	// overlap, then by semantic similarity.
 	slices.SortFunc(candidates, func(a, b scoredExemplar) int {
 		if a.specificSharedCount != b.specificSharedCount {
 			return cmp.Compare(b.specificSharedCount, a.specificSharedCount)
@@ -134,7 +131,6 @@ func (p *ExemplarPool) Select(ctx context.Context, embedder textEmbedder, issueE
 	return out
 }
 
-// ensureEmbeddings lazily computes embeddings for all exemplars.
 func (p *ExemplarPool) ensureEmbeddings(ctx context.Context, embedder textEmbedder) {
 	p.mu.Lock()
 	defer p.mu.Unlock()
@@ -167,7 +163,7 @@ func allowExemplarCandidate(candidate scoredExemplar) bool {
 }
 
 func isBroadExemplarTag(name string) bool {
-	name = normalizeCatalogTagName(name)
+	name = normalizeTagName(name)
 	_, ok := broadExemplarTags[name]
 	return ok
 }

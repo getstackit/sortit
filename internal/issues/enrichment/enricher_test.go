@@ -1,16 +1,35 @@
-package services
+package enrichment
 
 import (
 	"context"
 	"log/slog"
 	"testing"
+	"time"
 
 	"splat/internal/ai"
 	"splat/internal/domain"
 	"splat/internal/issues"
+	"splat/internal/services"
 )
 
 const testProviderName = "test"
+
+type catalogTestStore struct {
+	tags []issues.Tag
+}
+
+func (s *catalogTestStore) ListTags(context.Context) ([]issues.Tag, error) {
+	return append([]issues.Tag(nil), s.tags...), nil
+}
+
+func (s *catalogTestStore) UpsertTags(_ context.Context, tags []issues.Tag) error {
+	s.tags = append([]issues.Tag(nil), tags...)
+	return nil
+}
+
+func (s *catalogTestStore) UpdateTagSpecificity(context.Context, string, *float64, *float64, *float64, *time.Time) error {
+	return nil
+}
 
 type enricherTestTagger struct {
 	capturedTags []ai.Tag
@@ -21,18 +40,22 @@ func (t *enricherTestTagger) Score(_ context.Context, _ string, tags []ai.Tag, _
 	return []ai.TagScore{{Tag: "database", Relevance: 0.9}}, nil
 }
 
-func (t *enricherTestTagger) Provider() string {
-	return testProviderName
-}
-
-func (t *enricherTestTagger) Model() string {
-	return testProviderName
-}
+func (t *enricherTestTagger) Provider() string { return testProviderName }
+func (t *enricherTestTagger) Model() string    { return testProviderName }
 
 type enricherTestEmbedder struct {
 	calls   []string
 	vectors map[string][]float32
 }
+
+func (e *enricherTestEmbedder) EmbedText(_ context.Context, text string) (ai.EmbeddingResult, error) {
+	e.calls = append(e.calls, text)
+	vector := append([]float32(nil), e.vectors[text]...)
+	return ai.EmbeddingResult{Vector: vector}, nil
+}
+
+func (e *enricherTestEmbedder) Provider() string { return testProviderName }
+func (e *enricherTestEmbedder) Model() string    { return testProviderName }
 
 type enricherStaticTagger struct {
 	capturedTags []ai.Tag
@@ -44,27 +67,8 @@ func (t *enricherStaticTagger) Score(_ context.Context, _ string, tags []ai.Tag,
 	return append([]ai.TagScore(nil), t.scores...), nil
 }
 
-func (t *enricherStaticTagger) Provider() string {
-	return testProviderName
-}
-
-func (t *enricherStaticTagger) Model() string {
-	return testProviderName
-}
-
-func (e *enricherTestEmbedder) EmbedText(_ context.Context, text string) (ai.EmbeddingResult, error) {
-	e.calls = append(e.calls, text)
-	vector := append([]float32(nil), e.vectors[text]...)
-	return ai.EmbeddingResult{Vector: vector}, nil
-}
-
-func (e *enricherTestEmbedder) Provider() string {
-	return testProviderName
-}
-
-func (e *enricherTestEmbedder) Model() string {
-	return testProviderName
-}
+func (t *enricherStaticTagger) Provider() string { return testProviderName }
+func (t *enricherStaticTagger) Model() string    { return testProviderName }
 
 func TestAnalyzePersistedIssueUsesFreshEmbeddingForShortlist(t *testing.T) {
 	store := &catalogTestStore{
@@ -80,14 +84,14 @@ func TestAnalyzePersistedIssueUsesFreshEmbeddingForShortlist(t *testing.T) {
 		},
 	}
 	analyzer := ai.NewAnalyzer(tagger, embedder)
-	catalog := NewCatalogService(store, analyzer, slog.Default())
+	catalog := services.NewCatalogService(store, analyzer, slog.Default())
 	enricher := NewIssueEnricher(analyzer, catalog, slog.Default())
-	enricher.SetExemplarPool(nil) // disable few-shot to keep embed call count predictable
+	enricher.SetExemplarPool(nil)
 
 	_, err := enricher.AnalyzePersistedIssue(context.Background(), issues.Issue{
 		ID:        "issue-1",
 		Raw:       "database issue",
-		Embedding: []float64{0, 1}, // stale embedding points at cleanup
+		Embedding: []float64{0, 1},
 	}, 1)
 	if err != nil {
 		t.Fatalf("AnalyzePersistedIssue: %v", err)
@@ -169,9 +173,9 @@ func TestAnalyzeCreateInputUsesShortlistAndKeepsExplicitTagsAsAnchors(t *testing
 		},
 	}
 	analyzer := ai.NewAnalyzer(tagger, embedder)
-	catalog := NewCatalogService(store, analyzer, slog.Default())
+	catalog := services.NewCatalogService(store, analyzer, slog.Default())
 	enricher := NewIssueEnricher(analyzer, catalog, slog.Default())
-	enricher.SetExemplarPool(nil) // disable few-shot to keep embed call count predictable
+	enricher.SetExemplarPool(nil)
 
 	input, err := enricher.AnalyzeCreateInput(context.Background(), issues.CreateInput{
 		Raw:  "database migration",
@@ -204,16 +208,16 @@ func TestAnalyzeCreateInputUsesShortlistAndKeepsExplicitTagsAsAnchors(t *testing
 }
 
 func TestAnalyzeTextFlagsWeakAnchorOnlyTagAgainstStrongerCandidate(t *testing.T) {
-	backendSpecificity := 0.2
+	cleanupSpecificity := 0.2
 	databaseSpecificity := 0.8
 	store := &catalogTestStore{
 		tags: []issues.Tag{
-			{Name: "backend", Embedding: []float64{0, 1}, Specificity: &backendSpecificity},
+			{Name: "cleanup", Embedding: []float64{0, 1}, Specificity: &cleanupSpecificity},
 			{Name: "database", Embedding: []float64{1, 0}, Specificity: &databaseSpecificity},
 		},
 	}
 	tagger := &enricherStaticTagger{
-		scores: []ai.TagScore{{Tag: "backend", Relevance: 0.9}},
+		scores: []ai.TagScore{{Tag: "cleanup", Relevance: 0.9}},
 	}
 	embedder := &enricherTestEmbedder{
 		vectors: map[string][]float32{
@@ -221,11 +225,11 @@ func TestAnalyzeTextFlagsWeakAnchorOnlyTagAgainstStrongerCandidate(t *testing.T)
 		},
 	}
 	analyzer := ai.NewAnalyzer(tagger, embedder)
-	catalog := NewCatalogService(store, analyzer, slog.Default())
+	catalog := services.NewCatalogService(store, analyzer, slog.Default())
 	enricher := NewIssueEnricher(analyzer, catalog, slog.Default())
 
 	result, err := enricher.AnalyzeText(context.Background(), "database issue", AnalyzeTextOptions{
-		CandidateMode: CandidateModeRetrievalShortlist,
+		CandidateMode: services.CandidateModeRetrievalShortlist,
 		Verify:        true,
 	})
 	if err != nil {
@@ -236,22 +240,22 @@ func TestAnalyzeTextFlagsWeakAnchorOnlyTagAgainstStrongerCandidate(t *testing.T)
 	}
 
 	score := result.TagScores[0]
-	if score.Tag != "backend" {
-		t.Fatalf("expected backend score, got %#v", score)
+	if score.Tag != "cleanup" {
+		t.Fatalf("expected cleanup score, got %#v", score)
 	}
 	if score.VerificationVerdict != domain.TagVerificationVerdictFlagged {
 		t.Fatalf("expected flagged verdict, got %#v", score)
 	}
 	if score.Alignment == nil || *score.Alignment != 0 {
-		t.Fatalf("expected zero alignment on backend, got %#v", score.Alignment)
+		t.Fatalf("expected zero alignment on cleanup, got %#v", score.Alignment)
 	}
-	if score.Specificity == nil || *score.Specificity != backendSpecificity {
-		t.Fatalf("expected backend specificity %v, got %#v", backendSpecificity, score.Specificity)
+	if score.Specificity == nil || *score.Specificity != cleanupSpecificity {
+		t.Fatalf("expected cleanup specificity %v, got %#v", cleanupSpecificity, score.Specificity)
 	}
 	if score.DominatedBy != "database" {
 		t.Fatalf("expected dominating candidate database, got %#v", score)
 	}
-	if len(score.CandidateSources) != 1 || score.CandidateSources[0] != string(CandidateSourceAnchor) {
+	if len(score.CandidateSources) != 1 || score.CandidateSources[0] != string(services.CandidateSourceAnchor) {
 		t.Fatalf("expected anchor-only provenance, got %#v", score.CandidateSources)
 	}
 }
@@ -271,11 +275,11 @@ func TestAnalyzeTextCanDisableVerifier(t *testing.T) {
 		},
 	}
 	analyzer := ai.NewAnalyzer(tagger, embedder)
-	catalog := NewCatalogService(store, analyzer, slog.Default())
+	catalog := services.NewCatalogService(store, analyzer, slog.Default())
 	enricher := NewIssueEnricher(analyzer, catalog, slog.Default())
 
 	result, err := enricher.AnalyzeText(context.Background(), "database issue", AnalyzeTextOptions{
-		CandidateMode: CandidateModeRetrievalShortlist,
+		CandidateMode: services.CandidateModeRetrievalShortlist,
 		Verify:        false,
 	})
 	if err != nil {

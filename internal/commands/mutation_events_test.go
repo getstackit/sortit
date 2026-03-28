@@ -9,13 +9,14 @@ import (
 
 	"splat/internal/ai"
 	"splat/internal/issues"
+	issueenrichment "splat/internal/issues/enrichment"
 	"splat/internal/services"
 )
 
 type commandTestFixture struct {
 	store    *issues.InMemoryStore
 	runner   *CommandRunner
-	enricher *services.IssueEnricher
+	enricher *issueenrichment.IssueEnricher
 	bus      *recordingEventBus
 }
 
@@ -30,7 +31,7 @@ func newCommandTestFixture() commandTestFixture {
 	return commandTestFixture{
 		store:    store,
 		runner:   &CommandRunner{DB: store},
-		enricher: services.NewIssueEnricher(analyzer, catalog, slog.Default()),
+		enricher: issueenrichment.NewIssueEnricher(analyzer, catalog, slog.Default()),
 		bus:      &recordingEventBus{},
 	}
 }

@@ -8,6 +8,7 @@ import (
 
 	"splat/internal/ai"
 	"splat/internal/issues"
+	issueenrichment "splat/internal/issues/enrichment"
 	issuemap "splat/internal/map"
 	"splat/internal/services"
 )
@@ -49,8 +50,8 @@ func (h SearchIssuesHandler) Handle(ctx context.Context, input SearchIssues) (is
 
 	searchOpts := issuemap.SearchOptions{
 		Query:      query,
-		QueryTags:  services.IssueTagScoresFromAnalysis(analyzed.Tags),
-		QueryEmbed: services.Float32VectorToFloat64(analyzed.Embedding.Vector),
+		QueryTags:  issueenrichment.IssueTagScoresFromAnalysis(analyzed.Tags),
+		QueryEmbed: issueenrichment.Float32VectorToFloat64(analyzed.Embedding.Vector),
 		Limit:      input.Limit,
 		Offset:     input.Offset,
 		SortBy:     input.SortBy,

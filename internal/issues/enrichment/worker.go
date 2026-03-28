@@ -1,4 +1,4 @@
-package services
+package enrichment
 
 import (
 	"context"
@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"splat/internal/issues"
+	"splat/internal/services"
 )
 
 const (
@@ -22,7 +23,7 @@ type IssueEnrichmentWorker struct {
 	DB            issues.UnitOfWorkBeginner
 	Jobs          issues.EnrichmentJobClaimer
 	Enricher      *IssueEnricher
-	Catalog       *CatalogService
+	Catalog       *services.CatalogService
 	PollInterval  time.Duration
 	LeaseDuration time.Duration
 	RetryDelay    time.Duration
@@ -230,8 +231,6 @@ func (w *IssueEnrichmentWorker) withJobUnitOfWork(
 	return changed, nil
 }
 
-// scoreAffectedTags re-scores the specificity of tags touched by an enrichment.
-// Errors are logged but do not fail the enrichment.
 func (w *IssueEnrichmentWorker) scoreAffectedTags(ctx context.Context, fields issues.IssueFieldUpdate) {
 	if w.Catalog == nil || len(fields.TagScores) == 0 {
 		return

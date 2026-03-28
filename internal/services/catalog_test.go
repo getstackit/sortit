@@ -11,6 +11,8 @@ import (
 	"splat/internal/issues"
 )
 
+const testProviderName = "test"
+
 type catalogTestStore struct {
 	tags               []issues.Tag
 	upserted           []issues.Tag

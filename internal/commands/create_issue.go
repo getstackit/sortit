@@ -6,7 +6,7 @@ import (
 	"log/slog"
 
 	"splat/internal/issues"
-	"splat/internal/services"
+	issueenrichment "splat/internal/issues/enrichment"
 )
 
 type CreateIssue struct {
@@ -18,7 +18,7 @@ type CreateIssue struct {
 type CreateIssueHandler struct {
 	Logger   *slog.Logger
 	Runner   *CommandRunner
-	Enricher *services.IssueEnricher
+	Enricher *issueenrichment.IssueEnricher
 	Events   issues.EventPublisher
 }
 

@@ -8,7 +8,7 @@ import (
 	"time"
 
 	"splat/internal/issues"
-	"splat/internal/services"
+	issueenrichment "splat/internal/issues/enrichment"
 )
 
 type SplitIssueChild struct {
@@ -26,7 +26,7 @@ type SplitIssue struct {
 
 type SplitIssueHandler struct {
 	Runner   *CommandRunner
-	Enricher *services.IssueEnricher
+	Enricher *issueenrichment.IssueEnricher
 	Events   issues.EventPublisher
 }
 

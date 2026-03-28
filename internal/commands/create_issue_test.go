@@ -7,6 +7,7 @@ import (
 
 	"splat/internal/ai"
 	"splat/internal/issues"
+	issueenrichment "splat/internal/issues/enrichment"
 	"splat/internal/services"
 )
 
@@ -35,7 +36,7 @@ func TestCreateIssuePublishesReportEventAfterCommit(t *testing.T) {
 	handler := CreateIssueHandler{
 		Logger:   slog.Default(),
 		Runner:   &CommandRunner{DB: store},
-		Enricher: services.NewIssueEnricher(analyzer, catalog, slog.Default()),
+		Enricher: issueenrichment.NewIssueEnricher(analyzer, catalog, slog.Default()),
 		Events:   &recordingEventBus{},
 	}
 

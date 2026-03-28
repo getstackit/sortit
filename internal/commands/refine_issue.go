@@ -5,7 +5,7 @@ import (
 	"fmt"
 
 	"splat/internal/issues"
-	"splat/internal/services"
+	issueenrichment "splat/internal/issues/enrichment"
 )
 
 type RefineIssue struct {
@@ -17,7 +17,7 @@ type RefineIssue struct {
 type RefineIssueHandler struct {
 	Runner   *CommandRunner
 	Store    issues.Store
-	Enricher *services.IssueEnricher
+	Enricher *issueenrichment.IssueEnricher
 	Events   issues.EventPublisher
 }
 

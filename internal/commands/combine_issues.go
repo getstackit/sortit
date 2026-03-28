@@ -7,7 +7,7 @@ import (
 	"time"
 
 	"splat/internal/issues"
-	"splat/internal/services"
+	issueenrichment "splat/internal/issues/enrichment"
 )
 
 type CombineIssues struct {
@@ -19,7 +19,7 @@ type CombineIssues struct {
 type CombineIssuesHandler struct {
 	Runner   *CommandRunner
 	Store    issues.Store
-	Enricher *services.IssueEnricher
+	Enricher *issueenrichment.IssueEnricher
 	Events   issues.EventPublisher
 }
 

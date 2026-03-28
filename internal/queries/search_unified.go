@@ -8,6 +8,7 @@ import (
 
 	"splat/internal/ai"
 	"splat/internal/issues"
+	issueenrichment "splat/internal/issues/enrichment"
 	issuemap "splat/internal/map"
 	"splat/internal/services"
 )
@@ -46,8 +47,8 @@ func (h SearchUnifiedHandler) Handle(ctx context.Context, input SearchUnified) (
 	if err != nil {
 		return SearchUnifiedResponse{}, err
 	}
-	queryEmbedding := services.Float32VectorToFloat64(analyzed.Embedding.Vector)
-	queryTags := services.IssueTagScoresFromAnalysis(analyzed.Tags)
+	queryEmbedding := issueenrichment.Float32VectorToFloat64(analyzed.Embedding.Vector)
+	queryTags := issueenrichment.IssueTagScoresFromAnalysis(analyzed.Tags)
 
 	if searcher, ok := semanticSearchStore(h.Store); ok {
 		storeTags, err := h.Catalog.StoredTags(ctx)

@@ -11,6 +11,7 @@ import (
 
 	"splat/internal/ai"
 	"splat/internal/issues"
+	issueenrichment "splat/internal/issues/enrichment"
 	issuemap "splat/internal/map"
 	"splat/internal/services"
 	"splat/internal/vectors"
@@ -44,7 +45,7 @@ type DebugAnalyzeIssueResult struct {
 type DebugAnalyzeIssueHandler struct {
 	Analyzer *ai.Analyzer
 	Catalog  *services.CatalogService
-	Enricher *services.IssueEnricher
+	Enricher *issueenrichment.IssueEnricher
 	Store    issues.Store
 }
 
@@ -63,7 +64,7 @@ func (h DebugAnalyzeIssueHandler) Handle(ctx context.Context, input DebugAnalyze
 	if h.Enricher == nil {
 		return DebugAnalyzeIssueResult{}, errors.New("issue enricher is not available")
 	}
-	analysis, err := h.Enricher.AnalyzeText(ctx, input.Text, services.AnalyzeTextOptions{
+	analysis, err := h.Enricher.AnalyzeText(ctx, input.Text, issueenrichment.AnalyzeTextOptions{
 		PreferredTags: input.Tags,
 		CandidateMode: mode,
 		Verify:        input.Verify,
@@ -72,7 +73,7 @@ func (h DebugAnalyzeIssueHandler) Handle(ctx context.Context, input DebugAnalyze
 		return DebugAnalyzeIssueResult{}, err
 	}
 
-	similarities, comparedIssueCount, averageSimilarity, err := h.issueEmbeddingSimilarities(ctx, services.Float32VectorToFloat64(analysis.Analyzed.Embedding.Vector))
+	similarities, comparedIssueCount, averageSimilarity, err := h.issueEmbeddingSimilarities(ctx, issueenrichment.Float32VectorToFloat64(analysis.Analyzed.Embedding.Vector))
 	if err != nil {
 		return DebugAnalyzeIssueResult{}, err
 	}

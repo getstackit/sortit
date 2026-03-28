@@ -9,6 +9,7 @@ import (
 
 	"splat/internal/ai"
 	"splat/internal/issues"
+	issueenrichment "splat/internal/issues/enrichment"
 	"splat/internal/services"
 )
 
@@ -298,7 +299,7 @@ func TestDebugEvalTagsReportsAggregateMetrics(t *testing.T) {
 	handler := DebugEvalTagsHandler{
 		Analyzer: analyzer,
 		Catalog:  catalog,
-		Enricher: services.NewIssueEnricher(analyzer, catalog, slog.Default()),
+		Enricher: issueenrichment.NewIssueEnricher(analyzer, catalog, slog.Default()),
 		Fixture: []DebugTagEvalCase{
 			{ID: "a", Text: "issue a", ExpectedTags: []string{"export", "safari"}},
 			{ID: "b", Text: "issue b", ExpectedTags: []string{"search"}},
@@ -376,7 +377,7 @@ func TestDebugEvalTagsReportsStabilityAcrossRuns(t *testing.T) {
 	handler := DebugEvalTagsHandler{
 		Analyzer: analyzer,
 		Catalog:  catalog,
-		Enricher: services.NewIssueEnricher(analyzer, catalog, slog.Default()),
+		Enricher: issueenrichment.NewIssueEnricher(analyzer, catalog, slog.Default()),
 		Fixture: []DebugTagEvalCase{
 			{ID: "a", Text: "issue a", ExpectedTags: []string{"export"}},
 		},

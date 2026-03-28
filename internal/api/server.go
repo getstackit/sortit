@@ -16,6 +16,7 @@ import (
 	"splat/internal/auth"
 	"splat/internal/commands"
 	"splat/internal/issues"
+	issueenrichment "splat/internal/issues/enrichment"
 	mcpserver "splat/internal/mcp"
 	"splat/internal/queries"
 	"splat/internal/services"
@@ -39,7 +40,7 @@ type Server struct {
 	startedAt           time.Time
 	revisions           *issues.RevisionTracker
 	mapProjectionLoader *queries.MapProjectionLoader
-	enrichmentWorker    *services.IssueEnrichmentWorker
+	enrichmentWorker    *issueenrichment.IssueEnrichmentWorker
 	enrichmentCancel    context.CancelFunc
 	enrichmentDone      chan struct{}
 	createIssue         commands.CreateIssueHandler
@@ -462,12 +463,12 @@ func NewServer(cfg ServerConfig) *Server {
 	catalogLogger := logger.With("component", "catalog")
 	catalog := services.NewCatalogService(tagStore, commandAnalyzer, catalogLogger)
 	enricherLogger := logger.With("component", "enricher")
-	enricher := services.NewIssueEnricher(commandAnalyzer, catalog, enricherLogger)
-	var enrichmentWorker *services.IssueEnrichmentWorker
+	enricher := issueenrichment.NewIssueEnricher(commandAnalyzer, catalog, enricherLogger)
+	var enrichmentWorker *issueenrichment.IssueEnrichmentWorker
 	workerLogger := logger.With("component", "enrichment_worker")
 	if claimer := enrichmentJobClaimerFromStore(baseStore); claimer != nil && uowBeginner != nil {
 		invalidator := mapProjectionInvalidatorFromIssueStore(baseStore)
-		enrichmentWorker = &services.IssueEnrichmentWorker{
+		enrichmentWorker = &issueenrichment.IssueEnrichmentWorker{
 			Logger:   workerLogger,
 			Store:    baseStore,
 			DB:       uowBeginner,
