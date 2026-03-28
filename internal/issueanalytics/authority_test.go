@@ -1,6 +1,10 @@
-package issues
+package issueanalytics
 
-import "testing"
+import (
+	"testing"
+
+	"splat/internal/issues"
+)
 
 func TestCanonicalLinkAuthority(t *testing.T) {
 	tests := []struct {
@@ -28,20 +32,20 @@ func TestCanonicalLinkAuthority(t *testing.T) {
 
 func TestIssueAuthority(t *testing.T) {
 	t.Run("no links", func(t *testing.T) {
-		issue := Issue{}
+		issue := issues.Issue{}
 		if a := IssueAuthority(issue); a != 0 {
 			t.Errorf("IssueAuthority(no links) = %v, want 0", a)
 		}
 	})
 
 	t.Run("only non-canonical links ignored", func(t *testing.T) {
-		issue := Issue{
+		issue := issues.Issue{
 			ID: "target",
-			Links: []IssueLink{
-				{Type: IssueLinkTypeRelatedTo, SourceIssueID: "a", TargetIssueID: "target"},
-				{Type: IssueLinkTypeParentOf, SourceIssueID: "b", TargetIssueID: "target"},
-				{Type: IssueLinkTypeDerivedFrom, SourceIssueID: "c", TargetIssueID: "target"},
-				{Type: IssueLinkTypeChildOf, SourceIssueID: "d", TargetIssueID: "target"},
+			Links: []issues.IssueLink{
+				{Type: issues.IssueLinkTypeRelatedTo, SourceIssueID: "a", TargetIssueID: "target"},
+				{Type: issues.IssueLinkTypeParentOf, SourceIssueID: "b", TargetIssueID: "target"},
+				{Type: issues.IssueLinkTypeDerivedFrom, SourceIssueID: "c", TargetIssueID: "target"},
+				{Type: issues.IssueLinkTypeChildOf, SourceIssueID: "d", TargetIssueID: "target"},
 			},
 		}
 		if a := IssueAuthority(issue); a != 0 {
@@ -50,11 +54,11 @@ func TestIssueAuthority(t *testing.T) {
 	})
 
 	t.Run("counts inbound duplicate_of and merged_into", func(t *testing.T) {
-		issue := Issue{
+		issue := issues.Issue{
 			ID: "target",
-			Links: []IssueLink{
-				{Type: IssueLinkTypeDuplicateOf, SourceIssueID: "a", TargetIssueID: "target"},
-				{Type: IssueLinkTypeMergedInto, SourceIssueID: "b", TargetIssueID: "target"},
+			Links: []issues.IssueLink{
+				{Type: issues.IssueLinkTypeDuplicateOf, SourceIssueID: "a", TargetIssueID: "target"},
+				{Type: issues.IssueLinkTypeMergedInto, SourceIssueID: "b", TargetIssueID: "target"},
 			},
 		}
 		if a := IssueAuthority(issue); a != 0.5 {
@@ -63,11 +67,11 @@ func TestIssueAuthority(t *testing.T) {
 	})
 
 	t.Run("outbound canonical links ignored", func(t *testing.T) {
-		issue := Issue{
+		issue := issues.Issue{
 			ID: "source",
-			Links: []IssueLink{
-				{Type: IssueLinkTypeDuplicateOf, SourceIssueID: "source", TargetIssueID: "other"},
-				{Type: IssueLinkTypeMergedInto, SourceIssueID: "source", TargetIssueID: "other"},
+			Links: []issues.IssueLink{
+				{Type: issues.IssueLinkTypeDuplicateOf, SourceIssueID: "source", TargetIssueID: "other"},
+				{Type: issues.IssueLinkTypeMergedInto, SourceIssueID: "source", TargetIssueID: "other"},
 			},
 		}
 		if a := IssueAuthority(issue); a != 0 {
@@ -76,13 +80,13 @@ func TestIssueAuthority(t *testing.T) {
 	})
 
 	t.Run("mixed links counts only inbound canonical", func(t *testing.T) {
-		issue := Issue{
+		issue := issues.Issue{
 			ID: "target",
-			Links: []IssueLink{
-				{Type: IssueLinkTypeDuplicateOf, SourceIssueID: "a", TargetIssueID: "target"},
-				{Type: IssueLinkTypeRelatedTo, SourceIssueID: "b", TargetIssueID: "target"},
-				{Type: IssueLinkTypeMergedInto, SourceIssueID: "target", TargetIssueID: "c"}, // outbound, ignored
-				{Type: IssueLinkTypeDuplicateOf, SourceIssueID: "d", TargetIssueID: "target"},
+			Links: []issues.IssueLink{
+				{Type: issues.IssueLinkTypeDuplicateOf, SourceIssueID: "a", TargetIssueID: "target"},
+				{Type: issues.IssueLinkTypeRelatedTo, SourceIssueID: "b", TargetIssueID: "target"},
+				{Type: issues.IssueLinkTypeMergedInto, SourceIssueID: "target", TargetIssueID: "c"}, // outbound, ignored
+				{Type: issues.IssueLinkTypeDuplicateOf, SourceIssueID: "d", TargetIssueID: "target"},
 			},
 		}
 		if a := IssueAuthority(issue); a != 0.5 {

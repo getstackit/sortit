@@ -8,8 +8,8 @@ import (
 	"time"
 
 	"splat/internal/ai"
+	issueenrichment "splat/internal/issueenrichment"
 	"splat/internal/issues"
-	issueenrichment "splat/internal/issues/enrichment"
 	"splat/internal/services"
 )
 

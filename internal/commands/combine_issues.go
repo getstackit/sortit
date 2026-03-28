@@ -6,8 +6,8 @@ import (
 	"strings"
 	"time"
 
+	issueenrichment "splat/internal/issueenrichment"
 	"splat/internal/issues"
-	issueenrichment "splat/internal/issues/enrichment"
 )
 
 type CombineIssues struct {

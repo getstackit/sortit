@@ -11,8 +11,9 @@ import (
 	"splat/internal/ai"
 	"splat/internal/auth"
 	"splat/internal/commands"
+	issueenrichment "splat/internal/issueenrichment"
+	"splat/internal/issueevents"
 	"splat/internal/issues"
-	issueenrichment "splat/internal/issues/enrichment"
 	issuemap "splat/internal/map"
 	"splat/internal/queries"
 	"splat/internal/services"
@@ -473,7 +474,7 @@ func newTestHandlers() *handlers {
 	catalog := services.NewCatalogService(nil, analyzer, slog.Default())
 	enricher := issueenrichment.NewIssueEnricher(analyzer, catalog, slog.Default())
 	runner := &commands.CommandRunner{DB: store}
-	eventBus := issues.NewEventBus()
+	eventBus := issueevents.NewEventBus()
 
 	return &handlers{
 		createIssue: commands.CreateIssueHandler{

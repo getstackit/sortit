@@ -7,6 +7,7 @@ import (
 	"slices"
 	"strings"
 
+	"splat/internal/issueanalytics"
 	"splat/internal/issues"
 )
 
@@ -252,7 +253,7 @@ func silhouetteScore(xs, ys []float64, assign []int, k int) float64 {
 func clusterTopTag(group []issues.Issue) string {
 	scores := map[string]float64{}
 	for _, issue := range group {
-		weight := 1 + issues.IssueHubness(issue)
+		weight := 1 + issueanalytics.IssueHubness(issue)
 		for _, t := range issue.TagScores {
 			scores[t.Tag] += t.Relevance * weight
 		}
@@ -272,7 +273,7 @@ func clusterTopTag(group []issues.Issue) string {
 func clusterLabel(group []issues.Issue) string {
 	scores := map[string]float64{}
 	for _, issue := range group {
-		weight := 1 + issues.IssueHubness(issue)
+		weight := 1 + issueanalytics.IssueHubness(issue)
 		for _, t := range issue.TagScores {
 			scores[t.Tag] += t.Relevance * weight
 		}
@@ -308,7 +309,7 @@ func clusterLabel(group []issues.Issue) string {
 func clusterColor(group []issues.Issue) string {
 	scores := map[string]float64{}
 	for _, issue := range group {
-		weight := 1 + issues.IssueHubness(issue)
+		weight := 1 + issueanalytics.IssueHubness(issue)
 		for _, t := range issue.TagScores {
 			scores[t.Tag] += t.Relevance * weight
 		}

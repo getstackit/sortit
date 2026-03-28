@@ -7,8 +7,8 @@ import (
 	"sync"
 	"time"
 
+	issueenrichment "splat/internal/issueenrichment"
 	"splat/internal/issues"
-	issueenrichment "splat/internal/issues/enrichment"
 )
 
 type SplitIssueChild struct {

@@ -7,6 +7,7 @@ import (
 
 	"gonum.org/v1/gonum/mat"
 
+	"splat/internal/issueanalytics"
 	"splat/internal/issues"
 	"splat/internal/scoring"
 	"splat/internal/vectors"
@@ -317,7 +318,7 @@ func correlationShrinkageAlpha(data []float64, t int) float64 {
 func issueProjectionWeights(items []issues.Issue) []float64 {
 	weights := make([]float64, len(items))
 	for i, item := range items {
-		cc := issues.ComputeContentConfidence(item.Raw)
+		cc := issueanalytics.ComputeContentConfidence(item.Raw)
 		maturity := scoring.DefaultMaturity
 		if item.LifecycleMetrics != nil && item.LifecycleMetrics.Maturity != nil {
 			maturity = *item.LifecycleMetrics.Maturity

@@ -1,9 +1,11 @@
-package issues
+package issueanalytics
 
 import (
 	"math"
 	"testing"
 	"time"
+
+	"splat/internal/issues"
 )
 
 func TestTimeDecayWeightUsesTrueHalfLife(t *testing.T) {
@@ -20,14 +22,14 @@ func TestTimeDecayWeightUsesTrueHalfLife(t *testing.T) {
 func TestIssueFreshnessWeightPrefersRecentActivityOverCreationTime(t *testing.T) {
 	now := time.Date(2026, 3, 16, 12, 0, 0, 0, time.UTC)
 
-	dormant := Issue{
+	dormant := issues.Issue{
 		ID:        "issue-dormant",
 		CreatedAt: now.Add(-200 * 24 * time.Hour),
 	}
-	revived := Issue{
+	revived := issues.Issue{
 		ID:        "issue-revived",
 		CreatedAt: now.Add(-200 * 24 * time.Hour),
-		Discussion: []IssuePost{
+		Discussion: []issues.IssuePost{
 			{Kind: "progress", CreatedAt: now.Add(-24 * time.Hour)},
 		},
 	}
@@ -38,7 +40,7 @@ func TestIssueFreshnessWeightPrefersRecentActivityOverCreationTime(t *testing.T)
 }
 
 func TestIssueFreshnessWeightReturnsOneForUnknownTimestamp(t *testing.T) {
-	if got := IssueFreshnessWeight(Issue{}, time.Date(2026, 3, 16, 12, 0, 0, 0, time.UTC)); got != 1 {
+	if got := IssueFreshnessWeight(issues.Issue{}, time.Date(2026, 3, 16, 12, 0, 0, 0, time.UTC)); got != 1 {
 		t.Fatalf("IssueFreshnessWeight(zero) = %v, want 1", got)
 	}
 }

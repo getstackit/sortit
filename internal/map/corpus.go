@@ -6,6 +6,7 @@ import (
 	"strings"
 	"time"
 
+	"splat/internal/issueanalytics"
 	"splat/internal/issues"
 )
 
@@ -155,7 +156,7 @@ func BuildMapProjectionProfiled(
 				Tags:       item.TagScores,
 				X:          position.X,
 				Y:          position.Y,
-				Hubness:    issues.MapProjectionIssueHubness(storeIssues[i]),
+				Hubness:    issueanalytics.MapProjectionIssueHubness(storeIssues[i]),
 			}
 			mapIssues[i] = mapIssue
 		}

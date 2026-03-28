@@ -4,8 +4,8 @@ import (
 	"context"
 	"fmt"
 
+	issueenrichment "splat/internal/issueenrichment"
 	"splat/internal/issues"
-	issueenrichment "splat/internal/issues/enrichment"
 )
 
 type RefineIssue struct {

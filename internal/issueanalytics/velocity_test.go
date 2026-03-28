@@ -1,14 +1,16 @@
-package issues
+package issueanalytics
 
 import (
 	"testing"
 	"time"
+
+	"splat/internal/issues"
 )
 
 func TestComputeIssueVelocityIgnoresNonMeaningfulOrOldEvents(t *testing.T) {
 	now := time.Date(2026, 3, 15, 12, 0, 0, 0, time.UTC)
 
-	velocity, count := ComputeIssueVelocity([]IssuePost{
+	velocity, count := ComputeIssueVelocity([]issues.IssuePost{
 		{Sequence: 1, Kind: "report", CreatedAt: now.Add(-24 * time.Hour)},
 		{Sequence: 2, Kind: "closed", CreatedAt: now.Add(-24 * time.Hour)},
 		{Sequence: 3, Kind: "refinement", CreatedAt: now.Add(-45 * 24 * time.Hour)},
@@ -25,13 +27,13 @@ func TestComputeIssueVelocityIgnoresNonMeaningfulOrOldEvents(t *testing.T) {
 func TestComputeIssueVelocityPrefersRecentMixedActivity(t *testing.T) {
 	now := time.Date(2026, 3, 15, 12, 0, 0, 0, time.UTC)
 
-	singleRecent, singleCount := ComputeIssueVelocity([]IssuePost{
+	singleRecent, singleCount := ComputeIssueVelocity([]issues.IssuePost{
 		{Sequence: 2, Kind: "refinement", CreatedAt: now.Add(-24 * time.Hour)},
 	}, nil, now)
-	mixedRecent, mixedCount := ComputeIssueVelocity([]IssuePost{
+	mixedRecent, mixedCount := ComputeIssueVelocity([]issues.IssuePost{
 		{Sequence: 2, Kind: "refinement", CreatedAt: now.Add(-24 * time.Hour)},
 		{Sequence: 3, Kind: "progress", CreatedAt: now.Add(-48 * time.Hour)},
-	}, []IssueLink{
+	}, []issues.IssueLink{
 		{CreatedAt: now.Add(-12 * time.Hour)},
 	}, now)
 
@@ -49,7 +51,7 @@ func TestComputeIssueVelocityPrefersRecentMixedActivity(t *testing.T) {
 func TestAttachIssueVelocityPopulatesMetrics(t *testing.T) {
 	now := time.Date(2026, 3, 15, 12, 0, 0, 0, time.UTC)
 
-	metrics := AttachIssueVelocity([]IssuePost{
+	metrics := AttachIssueVelocity([]issues.IssuePost{
 		{Sequence: 2, Kind: "progress", CreatedAt: now.Add(-6 * time.Hour)},
 	}, nil, nil, now)
 

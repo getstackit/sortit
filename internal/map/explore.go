@@ -10,6 +10,7 @@ import (
 
 	"gonum.org/v1/gonum/mat"
 
+	"splat/internal/issueanalytics"
 	"splat/internal/issues"
 	"splat/internal/scoring"
 	"splat/internal/vectors"
@@ -112,8 +113,8 @@ func ExploreFromIssuesWithTags(storeIssues []issues.Issue, storeTags []issues.Ta
 		}
 
 		boost := relationshipBoost(boosts, target.ID, candidate.ID)
-		authority := issues.IssueAuthority(candidate) * scoring.AuthorityConsumerWt
-		combined := minFloat(1, (blended+boost+authority)*math.Sqrt(issues.IssueFreshnessWeight(candidate, now)))
+		authority := issueanalytics.IssueAuthority(candidate) * scoring.AuthorityConsumerWt
+		combined := minFloat(1, (blended+boost+authority)*math.Sqrt(issueanalytics.IssueFreshnessWeight(candidate, now)))
 		sharedTags := sharedRelevantTags(targetSummary.Tags, candidateSummary.Tags, scoring.SharedTagsLimit)
 
 		related = append(related, RelatedIssue{

@@ -1,6 +1,10 @@
-package issues
+package issueanalytics
 
-import "testing"
+import (
+	"testing"
+
+	"splat/internal/issues"
+)
 
 func TestLinkCountHubness(t *testing.T) {
 	tests := []struct {
@@ -27,12 +31,12 @@ func TestLinkCountHubness(t *testing.T) {
 }
 
 func TestIssueHubness(t *testing.T) {
-	issue := Issue{}
+	issue := issues.Issue{}
 	if h := IssueHubness(issue); h != 0 {
 		t.Errorf("IssueHubness(no links) = %v, want 0", h)
 	}
 
-	issue.Links = make([]IssueLink, 4)
+	issue.Links = make([]issues.IssueLink, 4)
 	if h := IssueHubness(issue); h != 0.6 {
 		t.Errorf("IssueHubness(4 links) = %v, want 0.6", h)
 	}

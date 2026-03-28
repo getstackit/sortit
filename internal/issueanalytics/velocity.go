@@ -1,8 +1,10 @@
-package issues
+package issueanalytics
 
 import (
 	"math"
 	"time"
+
+	"splat/internal/issues"
 )
 
 const (
@@ -19,17 +21,17 @@ type issueVelocityEvent struct {
 	weight    float64
 }
 
-func AttachIssueVelocity(posts []IssuePost, links []IssueLink, metrics *IssueLifecycleMetrics, now time.Time) *IssueLifecycleMetrics {
+func AttachIssueVelocity(posts []issues.IssuePost, links []issues.IssueLink, metrics *issues.IssueLifecycleMetrics, now time.Time) *issues.IssueLifecycleMetrics {
 	velocity, recentActivityCount := ComputeIssueVelocity(posts, links, now)
 	if metrics == nil {
-		metrics = &IssueLifecycleMetrics{}
+		metrics = &issues.IssueLifecycleMetrics{}
 	}
 	metrics.Velocity = cloneFloat64Ptr(&velocity)
 	metrics.RecentActivityCount = recentActivityCount
 	return metrics
 }
 
-func ComputeIssueVelocity(posts []IssuePost, links []IssueLink, now time.Time) (float64, int) {
+func ComputeIssueVelocity(posts []issues.IssuePost, links []issues.IssueLink, now time.Time) (float64, int) {
 	if now.IsZero() {
 		now = time.Now().UTC()
 	}
@@ -59,7 +61,7 @@ func ComputeIssueVelocity(posts []IssuePost, links []IssueLink, now time.Time) (
 	return clamp01(1 - math.Exp(-weighted/issueVelocitySaturation)), count
 }
 
-func issueVelocityEvents(posts []IssuePost, links []IssueLink) []issueVelocityEvent {
+func issueVelocityEvents(posts []issues.IssuePost, links []issues.IssueLink) []issueVelocityEvent {
 	events := make([]issueVelocityEvent, 0, len(posts)+len(links))
 	for _, post := range posts {
 		switch issuePostKind(post) {

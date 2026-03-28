@@ -4,6 +4,7 @@ import (
 	"context"
 	"time"
 
+	"splat/internal/issueanalytics"
 	"splat/internal/issues"
 )
 
@@ -19,7 +20,7 @@ func hydrateIssueWithVelocity(
 			item = detailed
 		}
 	}
-	item.LifecycleMetrics = issues.AttachIssueVelocity(item.Discussion, item.Links, item.LifecycleMetrics, now)
+	item.LifecycleMetrics = issueanalytics.AttachIssueVelocity(item.Discussion, item.Links, item.LifecycleMetrics, now)
 	return item
 }
 

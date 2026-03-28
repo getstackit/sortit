@@ -1,25 +1,13 @@
-package issues
+package issueevents
 
 import (
 	"context"
 	"sync"
+
+	"splat/internal/issues"
 )
 
-type EventListener func(context.Context, Event)
-
-type EventPublisher interface {
-	Publish(context.Context, Event)
-	PublishOne(context.Context, Event)
-}
-
-type EventSubscriber interface {
-	Subscribe(EventListener)
-}
-
-type EventBus interface {
-	EventPublisher
-	EventSubscriber
-}
+type EventListener = issues.EventListener
 
 type InProcessEventBus struct {
 	mu        sync.RWMutex
@@ -40,7 +28,7 @@ func (b *InProcessEventBus) Subscribe(listener EventListener) {
 	b.listeners = append(b.listeners, listener)
 }
 
-func (b *InProcessEventBus) Publish(ctx context.Context, event Event) {
+func (b *InProcessEventBus) Publish(ctx context.Context, event issues.Event) {
 	if b == nil {
 		return
 	}
@@ -54,6 +42,6 @@ func (b *InProcessEventBus) Publish(ctx context.Context, event Event) {
 	}
 }
 
-func (b *InProcessEventBus) PublishOne(ctx context.Context, event Event) {
+func (b *InProcessEventBus) PublishOne(ctx context.Context, event issues.Event) {
 	b.Publish(ctx, event)
 }

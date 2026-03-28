@@ -1,17 +1,20 @@
-package issues
+package issueanalytics
 
-import "splat/internal/scoring"
+import (
+	"splat/internal/issues"
+	"splat/internal/scoring"
+)
 
 // IssueHubness computes a graph-connectedness score for an issue based on its
 // link count. The score is bounded between 0 and 1, with 7+ links yielding 1.0.
 // This measures how much an issue acts as an anchor in the issue graph, not
 // whether it is the canonical representative (which is authority, a separate signal).
-func IssueHubness(issue Issue) float64 {
+func IssueHubness(issue issues.Issue) float64 {
 	return LinkCountHubness(len(issue.Links))
 }
 
 // MapProjectionIssueHubness computes hubness for a MapProjectionIssue.
-func MapProjectionIssueHubness(issue MapProjectionIssue) float64 {
+func MapProjectionIssueHubness(issue issues.MapProjectionIssue) float64 {
 	return LinkCountHubness(len(issue.Links))
 }
 

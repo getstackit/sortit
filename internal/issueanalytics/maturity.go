@@ -1,28 +1,30 @@
-package issues
+package issueanalytics
 
 import (
 	"math"
 	"time"
+
+	"splat/internal/issues"
 )
 
-func DeriveIssueLifecycleMetrics(raw string, posts []IssuePost, snapshots []IssueSnapshot) *IssueLifecycleMetrics {
+func DeriveIssueLifecycleMetrics(raw string, posts []issues.IssuePost, snapshots []issues.IssueSnapshot) *issues.IssueLifecycleMetrics {
 	return DeriveIssueLifecycleMetricsAt(raw, posts, nil, snapshots, time.Now().UTC())
 }
 
-func DeriveIssueLifecycleMetricsAt(raw string, posts []IssuePost, links []IssueLink, snapshots []IssueSnapshot, now time.Time) *IssueLifecycleMetrics {
-	metrics := ComputeIssueLifecycleMetrics(snapshots)
+func DeriveIssueLifecycleMetricsAt(raw string, posts []issues.IssuePost, links []issues.IssueLink, snapshots []issues.IssueSnapshot, now time.Time) *issues.IssueLifecycleMetrics {
+	metrics := issues.ComputeIssueLifecycleMetrics(snapshots)
 	metrics = AttachIssueMaturity(raw, posts, metrics)
 	return AttachIssueVelocity(posts, links, metrics, now)
 }
 
-func AttachIssueMaturity(raw string, posts []IssuePost, metrics *IssueLifecycleMetrics) *IssueLifecycleMetrics {
+func AttachIssueMaturity(raw string, posts []issues.IssuePost, metrics *issues.IssueLifecycleMetrics) *issues.IssueLifecycleMetrics {
 	refinementCount, progressCount := CountIssuePostKinds(posts)
 	contentConfidence := ComputeContentConfidence(raw)
 	stabilitySignal := issueStabilitySignal(metrics)
 	maturity := computeIssueMaturity(contentConfidence, refinementCount, progressCount, stabilitySignal)
 
 	if metrics == nil {
-		metrics = &IssueLifecycleMetrics{}
+		metrics = &issues.IssueLifecycleMetrics{}
 	}
 	metrics.Maturity = cloneFloat64Ptr(&maturity)
 	metrics.RefinementCount = refinementCount
@@ -30,7 +32,7 @@ func AttachIssueMaturity(raw string, posts []IssuePost, metrics *IssueLifecycleM
 	return metrics
 }
 
-func CountIssuePostKinds(posts []IssuePost) (refinementCount int, progressCount int) {
+func CountIssuePostKinds(posts []issues.IssuePost) (refinementCount int, progressCount int) {
 	for _, post := range posts {
 		switch issuePostKind(post) {
 		case "progress":
@@ -40,16 +42,6 @@ func CountIssuePostKinds(posts []IssuePost) (refinementCount int, progressCount 
 		}
 	}
 	return refinementCount, progressCount
-}
-
-func issuePostKind(post IssuePost) string {
-	if post.Kind != "" {
-		return post.Kind
-	}
-	if post.Sequence == 1 {
-		return "report"
-	}
-	return "refinement"
 }
 
 func computeIssueMaturity(contentConfidence float64, refinementCount int, progressCount int, stabilitySignal float64) float64 {
@@ -65,7 +57,7 @@ func computeIssueMaturity(contentConfidence float64, refinementCount int, progre
 	)
 }
 
-func issueStabilitySignal(metrics *IssueLifecycleMetrics) float64 {
+func issueStabilitySignal(metrics *issues.IssueLifecycleMetrics) float64 {
 	if metrics != nil && metrics.Stability != nil {
 		return clamp01(*metrics.Stability)
 	}

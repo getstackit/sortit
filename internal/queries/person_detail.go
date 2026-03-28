@@ -7,6 +7,7 @@ import (
 	"strings"
 	"time"
 
+	"splat/internal/issueanalytics"
 	"splat/internal/issues"
 	issuemap "splat/internal/map"
 	"splat/internal/scoring"
@@ -170,10 +171,10 @@ func (h GetPersonDetailHandler) recommendOpenIssues(
 			combinedScore = scoring.PersonRecommendFactor*factorScore + scoring.PersonRecommendSemantic*semanticScore
 		}
 
-		combinedScore *= issues.IssueFreshnessWeight(issue, now)
+		combinedScore *= issueanalytics.IssueFreshnessWeight(issue, now)
 		combinedScore *= scoring.PersonMaturityBase + scoring.PersonMaturityWeight*issuesMaturity(issue)
 		combinedScore *= 1 - scoring.PersonVelocityPenalty*issueVelocity(issue)
-		combinedScore += issues.IssueAuthority(issue) * scoring.AuthorityConsumerWt
+		combinedScore += issueanalytics.IssueAuthority(issue) * scoring.AuthorityConsumerWt
 		sharedTags := topSharedTags(profile, issueTags, scoring.SharedTagsLimit)
 		reason := recommendationReason(sharedTags, factorScore, semanticScore)
 		recommendations = append(recommendations, PersonIssueRecommendation{

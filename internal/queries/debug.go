@@ -10,8 +10,8 @@ import (
 	"strings"
 
 	"splat/internal/ai"
+	issueenrichment "splat/internal/issueenrichment"
 	"splat/internal/issues"
-	issueenrichment "splat/internal/issues/enrichment"
 	issuemap "splat/internal/map"
 	"splat/internal/services"
 	"splat/internal/vectors"

@@ -1,13 +1,14 @@
-package issues
+package issueanalytics
 
 import (
 	"math"
 	"time"
 
+	"splat/internal/issues"
 	"splat/internal/scoring"
 )
 
-func IssueFreshnessWeight(issue Issue, now time.Time) float64 {
+func IssueFreshnessWeight(issue issues.Issue, now time.Time) float64 {
 	return TimeDecayWeight(issueFreshnessTimestamp(issue), now, scoring.FreshnessFloor, scoring.FreshnessHalfLifeDays)
 }
 
@@ -32,7 +33,7 @@ func TimeDecayWeight(timestamp, now time.Time, floor, halfLifeDays float64) floa
 	return floor + (1-floor)*decay
 }
 
-func issueFreshnessTimestamp(issue Issue) time.Time {
+func issueFreshnessTimestamp(issue issues.Issue) time.Time {
 	latest := issue.CreatedAt
 	if issue.ClosedAt != nil && issue.ClosedAt.After(latest) {
 		latest = issue.ClosedAt.UTC()

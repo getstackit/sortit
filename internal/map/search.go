@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"splat/internal/domain"
+	"splat/internal/issueanalytics"
 	"splat/internal/issues"
 	"splat/internal/scoring"
 	"splat/internal/vectors"
@@ -162,9 +163,9 @@ func SearchFromQueryWithTags(
 		// Note: the DB query also applies recency decay (90-day half-life) to rank
 		// the retrieval window. This app-side freshness weight fine-tunes within
 		// the semantic/factor blend on the already-retrieved candidates.
-		combined *= issues.IssueFreshnessWeight(candidate, now)
+		combined *= issueanalytics.IssueFreshnessWeight(candidate, now)
 		combined *= 1 + scoring.SearchVelocityBoost*issueVelocityScore(candidate)
-		combined += issues.IssueAuthority(candidate) * scoring.AuthorityConsumerWt
+		combined += issueanalytics.IssueAuthority(candidate) * scoring.AuthorityConsumerWt
 		combined -= issueSpecificityPenalty(candidateSummary.Tags, tagSpecificity)
 		if genericQuery {
 			combined += specificCooccurrenceBoost(candidateSummary.Tags, tagSpecificity)
@@ -175,7 +176,7 @@ func SearchFromQueryWithTags(
 			combined:   combined,
 			semantic:   semanticSim,
 			factor:     factorSim,
-			confidence: issues.ComputeContentConfidence(candidate.Raw),
+			confidence: issueanalytics.ComputeContentConfidence(candidate.Raw),
 		})
 
 		related = append(related, RelatedIssue{

@@ -6,7 +6,7 @@ import (
 	"os"
 	"strings"
 
-	"splat/internal/issues/schemaexport"
+	"splat/internal/schemaexport"
 )
 
 func main() {

@@ -6,6 +6,7 @@ import (
 	"strings"
 	"time"
 
+	"splat/internal/issueanalytics"
 	"splat/internal/issues"
 )
 
@@ -65,7 +66,7 @@ func (h GetIssueHandler) Handle(ctx context.Context, input GetIssue) (_ issues.I
 	if err != nil {
 		return issues.Issue{}, err
 	}
-	issue.LifecycleMetrics = issues.DeriveIssueLifecycleMetricsAt(issue.Raw, issue.Discussion, issue.Links, snapshots, time.Now().UTC())
+	issue.LifecycleMetrics = issueanalytics.DeriveIssueLifecycleMetricsAt(issue.Raw, issue.Discussion, issue.Links, snapshots, time.Now().UTC())
 	return issue, nil
 }
 

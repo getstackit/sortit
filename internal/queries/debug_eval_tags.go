@@ -11,8 +11,8 @@ import (
 
 	"splat/internal/ai"
 	"splat/internal/domain"
+	issueenrichment "splat/internal/issueenrichment"
 	"splat/internal/issues"
-	issueenrichment "splat/internal/issues/enrichment"
 	"splat/internal/services"
 )
 

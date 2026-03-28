@@ -15,8 +15,9 @@ import (
 	"splat/internal/ai"
 	"splat/internal/auth"
 	"splat/internal/commands"
+	issueenrichment "splat/internal/issueenrichment"
+	"splat/internal/issueevents"
 	"splat/internal/issues"
-	issueenrichment "splat/internal/issues/enrichment"
 	mcpserver "splat/internal/mcp"
 	"splat/internal/queries"
 	"splat/internal/services"
@@ -447,7 +448,7 @@ func NewServer(cfg ServerConfig) *Server {
 
 	// CommandRunner manages DB transaction lifecycle for command handlers.
 	uowBeginner := unitOfWorkBeginnerFromStore(baseStore)
-	eventBus := issues.NewEventBus()
+	eventBus := issueevents.NewEventBus()
 	if listener := projectionInvalidationListener(
 		mapProjectionInvalidatorFromIssueStore(baseStore),
 	); listener != nil {
