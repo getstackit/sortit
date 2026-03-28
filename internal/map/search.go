@@ -9,6 +9,7 @@ import (
 
 	"splat/internal/domain"
 	"splat/internal/issueanalytics"
+	"splat/internal/issuemath"
 	"splat/internal/issues"
 	"splat/internal/scoring"
 	"splat/internal/vectors"
@@ -85,7 +86,7 @@ func SearchFromQueryWithTags(
 
 	_, visible, _ := deriveRelationshipSemantics(storeIssues)
 	mapIssues, tagNames, issueEmbeddings, tagEmbeddings := runtimeMapInputs(storeIssues, storeTags)
-	decomp := ComputeFactorDecomposition(mapIssues, tagNames, issueEmbeddings, tagEmbeddings)
+	decomp := issuemath.ComputeFactorDecomposition(mapIssues, tagNames, issueEmbeddings, tagEmbeddings)
 
 	querySummary := SearchQuery{
 		Raw:  queryRaw,
@@ -106,8 +107,8 @@ func SearchFromQueryWithTags(
 	var queryFactorEmb, queryResidualEmb []float64
 	var factorVectors map[string][]float64
 	if useDecomp {
-		tagCov := buildTagCovariance(tagNames, tagEmbeddings)
-		queryFactorEmb, queryResidualEmb = DecomposeEmbedding(queryVector, querySummary.Tags, tagNames, tagEmbeddings, tagCov)
+		tagCov := issuemath.BuildTagCovariance(tagNames, tagEmbeddings)
+		queryFactorEmb, queryResidualEmb = issuemath.DecomposeEmbedding(queryVector, querySummary.Tags, tagNames, tagEmbeddings, tagCov)
 	} else {
 		factorVectors = runtimeFactorVectors(mapIssues, tagNames, tagEmbeddings)
 	}
@@ -130,7 +131,10 @@ func SearchFromQueryWithTags(
 	// When query matches a tag name, nudge factor weight up.
 	searchDecomp := decomp
 	if tagCorrelationBoost && useDecomp {
-		searchDecomp.FactorWeight = clamp(decomp.FactorWeight+scoring.TagCorrelationFactorNudge, scoring.MinFactorWeight, scoring.MaxFactorWeight)
+		searchDecomp.FactorWeight = min(
+			max(decomp.FactorWeight+scoring.TagCorrelationFactorNudge, scoring.MinFactorWeight),
+			scoring.MaxFactorWeight,
+		)
 		searchDecomp.ResidualWeight = 1 - searchDecomp.FactorWeight
 	}
 
@@ -145,7 +149,7 @@ func SearchFromQueryWithTags(
 
 		var factorSim, residualSim, blended float64
 		if useDecomp && len(decomp.FactorEmbedding(candidate.ID)) > 0 {
-			factorSim, _, blended = BlendFromDecomposition(
+			factorSim, _, blended = issuemath.BlendFromDecomposition(
 				searchDecomp, queryFactorEmb, queryResidualEmb,
 				decomp.FactorEmbedding(candidate.ID), decomp.ResidualEmbedding(candidate.ID),
 			)

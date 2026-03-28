@@ -1,8 +1,10 @@
-package vectors
+package issuemath
 
 import (
 	"cmp"
 	"slices"
+
+	"splat/internal/vectors"
 )
 
 // NeighborhoodSpecificityResult holds the intermediate local-density value and
@@ -91,6 +93,6 @@ func assignPercentileSpecificity(results []NeighborhoodSpecificityResult) {
 }
 
 func cosineDistance(a, b []float64) float64 {
-	sim := CosineSimilarity(a, b)
+	sim := vectors.CosineSimilarity(a, b)
 	return 1 - sim
 }

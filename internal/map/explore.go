@@ -11,6 +11,7 @@ import (
 	"gonum.org/v1/gonum/mat"
 
 	"splat/internal/issueanalytics"
+	"splat/internal/issuemath"
 	"splat/internal/issues"
 	"splat/internal/scoring"
 	"splat/internal/vectors"
@@ -78,7 +79,7 @@ func ExploreFromIssuesWithTags(storeIssues []issues.Issue, storeTags []issues.Ta
 
 	canonical, visible, boosts := deriveRelationshipSemantics(candidateSet)
 	mapIssues, tagNames, issueEmbeddings, tagEmbeddings := runtimeMapInputs(candidateSet, storeTags)
-	decomp := ComputeFactorDecomposition(mapIssues, tagNames, issueEmbeddings, tagEmbeddings)
+	decomp := issuemath.ComputeFactorDecomposition(mapIssues, tagNames, issueEmbeddings, tagEmbeddings)
 
 	// Fall back to legacy factor vectors when decomposition didn't produce per-issue vectors.
 	useDecomp := decomp.Decomposed()
@@ -101,7 +102,7 @@ func ExploreFromIssuesWithTags(storeIssues []issues.Issue, storeTags []issues.Ta
 
 		var factorSim, residualSim, blended float64
 		if useDecomp && len(decomp.FactorEmbedding(candidate.ID)) > 0 {
-			factorSim, _, blended = BlendFromDecomposition(
+			factorSim, _, blended = issuemath.BlendFromDecomposition(
 				decomp,
 				decomp.FactorEmbedding(target.ID), decomp.ResidualEmbedding(target.ID),
 				decomp.FactorEmbedding(candidate.ID), decomp.ResidualEmbedding(candidate.ID),
@@ -192,7 +193,7 @@ func runtimeFactorVectors(items []issues.Issue, tags []string, tagEmbeddings map
 		tagIndex[tag] = i
 	}
 
-	tagCov := buildTagCovariance(tags, tagEmbeddings)
+	tagCov := issuemath.BuildTagCovariance(tags, tagEmbeddings)
 	base := make([]float64, len(tags))
 	for _, item := range items {
 		clear(base)

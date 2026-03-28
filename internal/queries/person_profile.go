@@ -5,6 +5,7 @@ import (
 	"strings"
 
 	"splat/internal/domain"
+	"splat/internal/issuemath"
 	"splat/internal/issues"
 	"splat/internal/services"
 )
@@ -81,6 +82,6 @@ func buildPersonTagProfile(allIssues []issues.PeopleAnalyticsIssue, person strin
 	return PersonTagProfile{
 		Person:     person,
 		IssueCount: len(matched),
-		TagProfile: meanTagProfile(matched, tagSpecificity),
+		TagProfile: issuemath.MeanTagProfile(matched, tagSpecificity),
 	}
 }

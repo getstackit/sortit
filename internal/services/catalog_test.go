@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"splat/internal/ai"
+	"splat/internal/issuemath"
 	"splat/internal/issues"
 )
 
@@ -246,8 +247,8 @@ func TestComputeEmbeddingSpecificityIsOrderInvariantByTagName(t *testing.T) {
 		first[2],
 	}
 
-	firstScores := computeEmbeddingSpecificity(first)
-	secondScores := computeEmbeddingSpecificity(second)
+	firstScores := issuemath.ComputeTagEmbeddingSpecificity(first)
+	secondScores := issuemath.ComputeTagEmbeddingSpecificity(second)
 	for _, name := range []string{"backend", "billing", "payments", "safari"} {
 		assertFloatPointerEqual(t, name, firstScores[name], secondScores[name])
 	}

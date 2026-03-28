@@ -1,4 +1,4 @@
-package issuemap
+package issuemath
 
 import (
 	"math"

@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"splat/internal/issueanalytics"
+	"splat/internal/issuemath"
 	"splat/internal/issues"
 )
 
@@ -134,7 +135,7 @@ func BuildMapProjectionProfiled(
 
 	if len(runtimeIssues) > 0 {
 		stepStartedAt = time.Now()
-		computedPositions, err := ComputePositions(runtimeIssues, tagNames, tagEmbeddings)
+		computedPositions, err := issuemath.ComputePositions(runtimeIssues, tagNames, tagEmbeddings)
 		if err != nil {
 			return MapProjection{}, BuildMapProjectionProfile{}, err
 		}

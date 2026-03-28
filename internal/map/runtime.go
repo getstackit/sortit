@@ -9,6 +9,7 @@ import (
 	"unicode"
 
 	"splat/internal/issueanalytics"
+	"splat/internal/issuemath"
 	"splat/internal/issues"
 )
 
@@ -80,7 +81,7 @@ func buildBaseMapDataFromIssues(storeIssues []issues.Issue, storeTags []issues.T
 		return mapBaseData{}, unavailableReason, len(mapIssuesInput), nil
 	}
 
-	positions, err := ComputePositions(mapIssuesInput, tags, tagEmbeddings)
+	positions, err := issuemath.ComputePositions(mapIssuesInput, tags, tagEmbeddings)
 	if err != nil {
 		return mapBaseData{}, "", 0, err
 	}

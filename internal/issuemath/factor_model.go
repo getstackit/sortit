@@ -1,4 +1,4 @@
-package issuemap
+package issuemath
 
 import (
 	"math"
@@ -353,19 +353,4 @@ func synthesizeFactorEmbedding(
 		factorEmb[d] = result.AtVec(d)
 	}
 	return factorEmb
-}
-
-func dotProduct(a, b []float64) float64 {
-	if len(a) != len(b) {
-		return 0
-	}
-	var sum float64
-	for i := range a {
-		sum += a[i] * b[i]
-	}
-	return sum
-}
-
-func clamp(v, lo, hi float64) float64 {
-	return math.Max(lo, math.Min(hi, v))
 }

@@ -1,4 +1,4 @@
-package issuemap
+package issuemath
 
 import (
 	"fmt"
@@ -18,14 +18,16 @@ type Position struct {
 	Y float64
 }
 
+const minProjectionIssueCount = 5
+
 func ComputePositions(issues []issues.Issue, tags []string, tagEmbeddings map[string][]float64) (map[string]Position, error) {
 	n := len(issues)
 	t := len(tags)
 	if n == 0 {
 		return map[string]Position{}, nil
 	}
-	if n < minMapIssueCount {
-		return nil, fmt.Errorf("insufficient issues for projection: got %d, need at least %d", n, minMapIssueCount)
+	if n < minProjectionIssueCount {
+		return nil, fmt.Errorf("insufficient issues for projection: got %d, need at least %d", n, minProjectionIssueCount)
 	}
 	if t < 2 {
 		return nil, fmt.Errorf("insufficient tag dimensions for projection: got %d, need at least 2", t)

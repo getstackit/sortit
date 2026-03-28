@@ -11,8 +11,8 @@ import (
 
 	"splat/internal/ai"
 	issueenrichment "splat/internal/issueenrichment"
+	"splat/internal/issuemath"
 	"splat/internal/issues"
-	issuemap "splat/internal/map"
 	"splat/internal/services"
 	"splat/internal/vectors"
 )
@@ -250,7 +250,7 @@ func (h DebugFactorWeightsHandler) Handle(ctx context.Context) (DebugFactorWeigh
 		}
 	}
 
-	decomp := issuemap.ComputeFactorDecomposition(storeIssues, tagNames, issueEmbeddings, tagEmbeddings)
+	decomp := issuemath.ComputeFactorDecomposition(storeIssues, tagNames, issueEmbeddings, tagEmbeddings)
 
 	// Build index for looking up issue data by ID.
 	issueByID := make(map[string]issues.Issue, len(storeIssues))
@@ -440,7 +440,7 @@ func (h DebugIssueR2Handler) Handle(ctx context.Context, issueID string) (DebugI
 	result.TagCount = len(result.Tags)
 
 	// Compute this issue's decomposition.
-	decomp := issuemap.ComputeFactorDecomposition(allIssues, tagNames, issueEmbeddings, tagEmbeddings)
+	decomp := issuemath.ComputeFactorDecomposition(allIssues, tagNames, issueEmbeddings, tagEmbeddings)
 	if !decomp.Decomposed() {
 		result.Skipped = true
 		result.SkipReason = "factor decomposition fell back to static weights"
@@ -626,7 +626,7 @@ func buildDebugReviewQueue(
 	issueEmbeddings map[string][]float64,
 	tagNames []string,
 	tagEmbeddings map[string][]float64,
-	decomp issuemap.FactorDecomposition,
+	decomp issuemath.FactorDecomposition,
 ) DebugReviewQueue {
 	if !decomp.Decomposed() {
 		return DebugReviewQueue{}
@@ -790,7 +790,7 @@ func buildDebugIssueSignals(
 	tagNames []string,
 	tagEmbeddings map[string][]float64,
 	embDim int,
-	decomp issuemap.FactorDecomposition,
+	decomp issuemath.FactorDecomposition,
 ) ([]DebugIssueR2Tag, []DebugResidualTagMatch, []DebugResidualNeighbor) {
 	issueTags := make([]DebugIssueR2Tag, 0, len(issue.TagScores))
 	assignedTags := make(map[string]struct{}, len(issue.TagScores))

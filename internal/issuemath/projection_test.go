@@ -1,4 +1,4 @@
-package issuemap
+package issuemath
 
 import (
 	"math"
@@ -12,7 +12,7 @@ func TestComputePositionsSingleIssueFallsBackToCenter(t *testing.T) {
 	_, err := ComputePositions([]issues.Issue{
 		{
 			ID: "1",
-			TagScores: []TagRelevance{
+			TagScores: []issues.TagRelevance{
 				{Tag: "bug", Relevance: 1},
 			},
 		},
@@ -24,11 +24,11 @@ func TestComputePositionsSingleIssueFallsBackToCenter(t *testing.T) {
 
 func TestComputePositionsSingleTagReturnsError(t *testing.T) {
 	items := []issues.Issue{
-		{ID: "1", TagScores: []TagRelevance{{Tag: "bug", Relevance: 0.9}}},
-		{ID: "2", TagScores: []TagRelevance{{Tag: "bug", Relevance: 0.7}}},
-		{ID: "3", TagScores: []TagRelevance{{Tag: "bug", Relevance: 0.5}}},
-		{ID: "4", TagScores: []TagRelevance{{Tag: "bug", Relevance: 0.4}}},
-		{ID: "5", TagScores: []TagRelevance{{Tag: "bug", Relevance: 0.3}}},
+		{ID: "1", TagScores: []issues.TagRelevance{{Tag: "bug", Relevance: 0.9}}},
+		{ID: "2", TagScores: []issues.TagRelevance{{Tag: "bug", Relevance: 0.7}}},
+		{ID: "3", TagScores: []issues.TagRelevance{{Tag: "bug", Relevance: 0.5}}},
+		{ID: "4", TagScores: []issues.TagRelevance{{Tag: "bug", Relevance: 0.4}}},
+		{ID: "5", TagScores: []issues.TagRelevance{{Tag: "bug", Relevance: 0.3}}},
 	}
 
 	_, err := ComputePositions(items, []string{"bug"}, nil)
@@ -69,11 +69,11 @@ func TestWeightedPCAProducesValidPositions(t *testing.T) {
 	mat := func(v float64) *float64 { return &v }
 
 	items := []issues.Issue{
-		{ID: "a", Raw: "A well-described feature request about improving search ranking quality.", TagScores: []TagRelevance{{Tag: "search", Relevance: 0.9}, {Tag: "backend", Relevance: 0.7}}, LifecycleMetrics: &issues.IssueLifecycleMetrics{Maturity: mat(0.9)}},
-		{ID: "b", Raw: "Fix the bug in the login page that causes a crash.", TagScores: []TagRelevance{{Tag: "bug", Relevance: 0.8}, {Tag: "frontend", Relevance: 0.6}}, LifecycleMetrics: &issues.IssueLifecycleMetrics{Maturity: mat(0.5)}},
-		{ID: "c", Raw: "short", TagScores: []TagRelevance{{Tag: "search", Relevance: 0.5}, {Tag: "bug", Relevance: 0.3}}, LifecycleMetrics: &issues.IssueLifecycleMetrics{Maturity: mat(0.1)}},
-		{ID: "d", Raw: "Add export to CSV for the dashboard metrics page.", TagScores: []TagRelevance{{Tag: "frontend", Relevance: 0.7}, {Tag: "backend", Relevance: 0.5}}, LifecycleMetrics: &issues.IssueLifecycleMetrics{Maturity: mat(0.6)}},
-		{ID: "e", Raw: "Search results should highlight matching keywords in the snippet.", TagScores: []TagRelevance{{Tag: "search", Relevance: 0.8}, {Tag: "frontend", Relevance: 0.4}}, LifecycleMetrics: &issues.IssueLifecycleMetrics{Maturity: mat(0.7)}},
+		{ID: "a", Raw: "A well-described feature request about improving search ranking quality.", TagScores: []issues.TagRelevance{{Tag: "search", Relevance: 0.9}, {Tag: "backend", Relevance: 0.7}}, LifecycleMetrics: &issues.IssueLifecycleMetrics{Maturity: mat(0.9)}},
+		{ID: "b", Raw: "Fix the bug in the login page that causes a crash.", TagScores: []issues.TagRelevance{{Tag: "bug", Relevance: 0.8}, {Tag: "frontend", Relevance: 0.6}}, LifecycleMetrics: &issues.IssueLifecycleMetrics{Maturity: mat(0.5)}},
+		{ID: "c", Raw: "short", TagScores: []issues.TagRelevance{{Tag: "search", Relevance: 0.5}, {Tag: "bug", Relevance: 0.3}}, LifecycleMetrics: &issues.IssueLifecycleMetrics{Maturity: mat(0.1)}},
+		{ID: "d", Raw: "Add export to CSV for the dashboard metrics page.", TagScores: []issues.TagRelevance{{Tag: "frontend", Relevance: 0.7}, {Tag: "backend", Relevance: 0.5}}, LifecycleMetrics: &issues.IssueLifecycleMetrics{Maturity: mat(0.6)}},
+		{ID: "e", Raw: "Search results should highlight matching keywords in the snippet.", TagScores: []issues.TagRelevance{{Tag: "search", Relevance: 0.8}, {Tag: "frontend", Relevance: 0.4}}, LifecycleMetrics: &issues.IssueLifecycleMetrics{Maturity: mat(0.7)}},
 	}
 
 	positions, err := ComputePositions(items, []string{"search", "backend", "bug", "frontend"}, nil)

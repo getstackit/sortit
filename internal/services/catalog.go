@@ -11,6 +11,7 @@ import (
 
 	"splat/internal/ai"
 	"splat/internal/domain"
+	"splat/internal/issuemath"
 	"splat/internal/issues"
 	"splat/internal/vectors"
 )
@@ -482,8 +483,6 @@ func CatalogTagsFromAnalysis(taxonomy []ai.Tag, explicit []string, scores []ai.T
 	return catalog
 }
 
-const minSpecificityCatalogSize = 4
-
 // ScoreTagSpecificity computes the canonical deterministic specificity score
 // for a single tag and persists it. The stored LLM sub-score is cleared so the
 // canonical field remains reproducible and embedding-derived.
@@ -512,7 +511,7 @@ func (s *CatalogService) ScoreTagSpecificity(ctx context.Context, tagName string
 		return fmt.Errorf("tag %q not found in catalog", tagName)
 	}
 
-	score := cloneFloat64Pointer(computeEmbeddingSpecificity(tags)[tagName])
+	score := cloneFloat64Pointer(issuemath.ComputeTagEmbeddingSpecificity(tags)[tagName])
 	now := time.Now().UTC()
 	if err := s.store.UpdateTagSpecificity(ctx, tagName, score, nil, cloneFloat64Pointer(score), &now); err != nil {
 		return fmt.Errorf("persist specificity for %q: %w", tagName, err)
@@ -544,7 +543,7 @@ func (s *CatalogService) ScoreAllTagsSpecificity(ctx context.Context) error {
 	}
 
 	orderedNames := sortedCatalogTagNames(tags)
-	embeddingScores := computeEmbeddingSpecificity(tags)
+	embeddingScores := issuemath.ComputeTagEmbeddingSpecificity(tags)
 	now := time.Now().UTC()
 
 	s.logger.InfoContext(ctx, "computed embedding specificity",
@@ -583,48 +582,6 @@ func countComputedScores(scores map[string]*float64) int {
 		}
 	}
 	return count
-}
-
-// computeEmbeddingSpecificity computes canonical embedding-based specificity
-// scores by tag name. Tags without embeddings, or catalogs too small to support
-// a meaningful relative measure, receive nil.
-func computeEmbeddingSpecificity(tags []issues.Tag) map[string]*float64 {
-	type scoredTag struct {
-		name      string
-		embedding []float64
-	}
-
-	scored := make([]scoredTag, 0, len(tags))
-	for _, tag := range tags {
-		name := normalizeCatalogTagName(tag.Name)
-		if name == "" || len(tag.Embedding) == 0 {
-			continue
-		}
-		scored = append(scored, scoredTag{
-			name:      name,
-			embedding: append([]float64(nil), tag.Embedding...),
-		})
-	}
-	slices.SortStableFunc(scored, func(a, b scoredTag) int {
-		return cmp.Compare(a.name, b.name)
-	})
-
-	scores := make(map[string]*float64, len(scored))
-	if len(scored) < minSpecificityCatalogSize {
-		return scores
-	}
-
-	embeddings := make([][]float64, len(scored))
-	for i, tag := range scored {
-		embeddings[i] = tag.embedding
-	}
-
-	results := vectors.NeighborhoodSpecificity(embeddings)
-	for i, result := range results {
-		score := result.Specificity
-		scores[scored[i].name] = &score
-	}
-	return scores
 }
 
 func sortedCatalogTagNames(tags []issues.Tag) []string {

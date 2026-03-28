@@ -1,4 +1,4 @@
-package vectors
+package issuemath
 
 import "testing"
 

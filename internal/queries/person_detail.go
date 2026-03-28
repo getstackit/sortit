@@ -8,8 +8,8 @@ import (
 	"time"
 
 	"splat/internal/issueanalytics"
+	"splat/internal/issuemath"
 	"splat/internal/issues"
-	issuemap "splat/internal/map"
 	"splat/internal/scoring"
 	"splat/internal/services"
 	"splat/internal/vectors"
@@ -84,7 +84,7 @@ func (h GetPersonDetailHandler) Handle(ctx context.Context, person string) (Pers
 	if h.Catalog != nil {
 		storeTags, _ = h.Catalog.StoredTags(ctx)
 	}
-	recommendations, err := h.recommendOpenIssues(ctx, person, profile.TagProfile, meanEmbedding(peopleAnalyticsIssuesFromIssues(assignedIssues)), storeTags)
+	recommendations, err := h.recommendOpenIssues(ctx, person, profile.TagProfile, issuemath.MeanEmbedding(peopleAnalyticsIssuesFromIssues(assignedIssues)), storeTags)
 	if err != nil {
 		return PersonDetail{}, err
 	}
@@ -142,11 +142,11 @@ func (h GetPersonDetailHandler) recommendOpenIssues(
 			issueEmbeddings[issue.ID] = issue.Embedding
 		}
 	}
-	decomp := issuemap.ComputeFactorDecomposition(openIssues, tagNames, issueEmbeddings, tagEmbeddings)
+	decomp := issuemath.ComputeFactorDecomposition(openIssues, tagNames, issueEmbeddings, tagEmbeddings)
 
 	// Decompose person embedding.
-	tagCov := issuemap.BuildTagCovariance(tagNames, tagEmbeddings)
-	personFactor, personResidual := issuemap.DecomposeEmbedding(personEmbedding, profile, tagNames, tagEmbeddings, tagCov)
+	tagCov := issuemath.BuildTagCovariance(tagNames, tagEmbeddings)
+	personFactor, personResidual := issuemath.DecomposeEmbedding(personEmbedding, profile, tagNames, tagEmbeddings, tagCov)
 
 	recommendations := make([]PersonIssueRecommendation, 0, len(openIssues))
 	detailReader, _ := h.Store.(issues.IssueDetailReader)
@@ -161,12 +161,12 @@ func (h GetPersonDetailHandler) recommendOpenIssues(
 
 		var factorScore, semanticScore, combinedScore float64
 		if len(decomp.FactorEmbedding(issue.ID)) > 0 {
-			factorScore, semanticScore, combinedScore = issuemap.BlendFromDecomposition(
+			factorScore, semanticScore, combinedScore = issuemath.BlendFromDecomposition(
 				decomp, personFactor, personResidual,
 				decomp.FactorEmbedding(issue.ID), decomp.ResidualEmbedding(issue.ID),
 			)
 		} else {
-			factorScore = tagProfileSimilarity(profile, issueTags)
+			factorScore = issuemath.TagProfileSimilarity(profile, issueTags)
 			semanticScore = vectors.CosineSimilarity(personEmbedding, issue.Embedding)
 			combinedScore = scoring.PersonRecommendFactor*factorScore + scoring.PersonRecommendSemantic*semanticScore
 		}
