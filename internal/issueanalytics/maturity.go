@@ -35,9 +35,9 @@ func AttachIssueMaturity(raw string, posts []issues.IssuePost, metrics *issues.I
 func CountIssuePostKinds(posts []issues.IssuePost) (refinementCount int, progressCount int) {
 	for _, post := range posts {
 		switch issuePostKind(post) {
-		case "progress":
+		case issuePostKindProgress:
 			progressCount++
-		case "refinement": //nolint:goconst
+		case issuePostKindRefinement:
 			refinementCount++
 		}
 	}

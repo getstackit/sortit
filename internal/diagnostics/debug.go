@@ -17,6 +17,8 @@ import (
 	"splat/internal/vectors"
 )
 
+const debugIssueRawPreviewMaxLen = 120
+
 type DebugAnalyzeIssue struct {
 	Text          string
 	Tags          []string
@@ -270,7 +272,7 @@ func (h DebugFactorWeightsHandler) Handle(ctx context.Context) (DebugFactorWeigh
 			}
 			lowR2 = append(lowR2, DebugLowR2Issue{
 				ID:     id,
-				Raw:    truncateRaw(issue.Raw, 120),
+				Raw:    truncateRaw(issue.Raw),
 				Status: issue.Status,
 				R2:     math.Round(r2*1000) / 1000,
 				Tags:   tags,
@@ -298,11 +300,11 @@ func (h DebugFactorWeightsHandler) Handle(ctx context.Context) (DebugFactorWeigh
 	}, nil
 }
 
-func truncateRaw(s string, maxLen int) string {
-	if len(s) <= maxLen {
+func truncateRaw(s string) string {
+	if len(s) <= debugIssueRawPreviewMaxLen {
 		return s
 	}
-	return s[:maxLen] + "..."
+	return s[:debugIssueRawPreviewMaxLen] + "..."
 }
 
 // DebugIssueR2Result provides a detailed factor decomposition diagnostic
@@ -539,7 +541,7 @@ func (h DebugIssueR2Handler) Handle(ctx context.Context, issueID string) (DebugI
 			neighborR2, _ := decomp.IssueR2(n.id)
 			result.ResidualNeighbors = append(result.ResidualNeighbors, DebugResidualNeighbor{
 				ID:         n.id,
-				Raw:        truncateRaw(issue.Raw, 120),
+				Raw:        truncateRaw(issue.Raw),
 				Similarity: math.Round(n.sim*1000) / 1000,
 				R2:         math.Round(neighborR2*1000) / 1000,
 				Tags:       tags,
@@ -681,7 +683,7 @@ func buildDebugReviewQueue(
 		if roundedR2 < 0.15 {
 			lowR2Issues = append(lowR2Issues, DebugReviewIssue{
 				ID:        issue.ID,
-				Raw:       truncateRaw(issue.Raw, 120),
+				Raw:       truncateRaw(issue.Raw),
 				Status:    issue.Status,
 				R2:        roundedR2,
 				TagScores: copyDebugTagScores(issue.TagScores),
@@ -701,7 +703,7 @@ func buildDebugReviewQueue(
 			if tag.Relevance >= 0.3 && tag.Alignment < 0.1 && i < len(issue.TagScores) {
 				lowAlignment = append(lowAlignment, DebugReviewLowAlignment{
 					IssueID:     issue.ID,
-					IssueRaw:    truncateRaw(issue.Raw, 120),
+					IssueRaw:    truncateRaw(issue.Raw),
 					IssueStatus: issue.Status,
 					IssueR2:     roundedR2,
 					TagScore:    issue.TagScores[i],
@@ -723,7 +725,7 @@ func buildDebugReviewQueue(
 			}
 			residualMisses = append(residualMisses, DebugReviewResidualMiss{
 				IssueID:       issue.ID,
-				IssueRaw:      truncateRaw(issue.Raw, 120),
+				IssueRaw:      truncateRaw(issue.Raw),
 				IssueStatus:   issue.Status,
 				IssueR2:       roundedR2,
 				TagScores:     copyDebugTagScores(issue.TagScores),
@@ -873,7 +875,7 @@ func buildDebugIssueSignals(
 		neighborR2, _ := decomp.IssueR2(n.id)
 		residualNeighbors = append(residualNeighbors, DebugResidualNeighbor{
 			ID:         n.id,
-			Raw:        truncateRaw(other.Raw, 120),
+			Raw:        truncateRaw(other.Raw),
 			Similarity: math.Round(n.sim*1000) / 1000,
 			R2:         math.Round(neighborR2*1000) / 1000,
 			Tags:       tags,

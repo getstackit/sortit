@@ -103,6 +103,8 @@ func TestDebugFactorWeightsIncludesLowR2IssueStatus(t *testing.T) {
 }
 
 func TestDebugFactorWeightsBuildsActionableReviewQueue(t *testing.T) {
+	const openReviewIssueID = "issue-open-review"
+
 	ctx := context.Background()
 	store := issues.NewInMemoryStore([]issues.Issue{
 		{ID: "issue-a", Raw: "a", Status: issues.StatusOpen, TagScores: []issues.TagRelevance{{Tag: "alpha", Relevance: 1}}, Embedding: unitVec64([]float64{1, 0, 0, 0})},
@@ -110,7 +112,7 @@ func TestDebugFactorWeightsBuildsActionableReviewQueue(t *testing.T) {
 		{ID: "issue-c", Raw: "c", Status: issues.StatusOpen, TagScores: []issues.TagRelevance{{Tag: "alpha", Relevance: 1}}, Embedding: unitVec64([]float64{1, 0, 0, 0})},
 		{ID: "issue-d", Raw: "d", Status: issues.StatusOpen, TagScores: []issues.TagRelevance{{Tag: "alpha", Relevance: 1}}, Embedding: unitVec64([]float64{1, 0, 0, 0})},
 		{
-			ID:     "issue-open-review",
+			ID:     openReviewIssueID,
 			Raw:    "beta concept hidden behind alpha tag",
 			Status: issues.StatusOpen,
 			TagScores: []issues.TagRelevance{
@@ -144,8 +146,8 @@ func TestDebugFactorWeightsBuildsActionableReviewQueue(t *testing.T) {
 		t.Fatal("expected low-R2 review issues")
 	}
 	lowR2 := result.ReviewQueue.LowR2Issues[0]
-	if lowR2.ID != "issue-open-review" {
-		t.Fatalf("expected issue-open-review first in low-R2 queue, got %#v", result.ReviewQueue.LowR2Issues)
+	if lowR2.ID != openReviewIssueID {
+		t.Fatalf("expected %s first in low-R2 queue, got %#v", openReviewIssueID, result.ReviewQueue.LowR2Issues)
 	}
 	if len(lowR2.TagScores) != 1 || !lowR2.TagScores[0].Suggested {
 		t.Fatalf("expected suggested tag provenance in low-R2 queue, got %#v", lowR2.TagScores)
@@ -161,8 +163,8 @@ func TestDebugFactorWeightsBuildsActionableReviewQueue(t *testing.T) {
 		t.Fatal("expected low-alignment review tags")
 	}
 	lowAlignment := result.ReviewQueue.LowAlignmentTags[0]
-	if lowAlignment.IssueID != "issue-open-review" {
-		t.Fatalf("expected issue-open-review low-alignment entry, got %#v", result.ReviewQueue.LowAlignmentTags)
+	if lowAlignment.IssueID != openReviewIssueID {
+		t.Fatalf("expected %s low-alignment entry, got %#v", openReviewIssueID, result.ReviewQueue.LowAlignmentTags)
 	}
 	if lowAlignment.TagScore.Tag != "alpha" || !lowAlignment.TagScore.Suggested {
 		t.Fatalf("unexpected low-alignment tag score %#v", lowAlignment.TagScore)
@@ -175,8 +177,8 @@ func TestDebugFactorWeightsBuildsActionableReviewQueue(t *testing.T) {
 		t.Fatal("expected residual-miss review entries")
 	}
 	residualMiss := result.ReviewQueue.ResidualMisses[0]
-	if residualMiss.IssueID != "issue-open-review" {
-		t.Fatalf("expected issue-open-review residual miss, got %#v", result.ReviewQueue.ResidualMisses)
+	if residualMiss.IssueID != openReviewIssueID {
+		t.Fatalf("expected %s residual miss, got %#v", openReviewIssueID, result.ReviewQueue.ResidualMisses)
 	}
 	if len(residualMiss.CandidateTags) == 0 || residualMiss.CandidateTags[0].Tag != "beta" {
 		t.Fatalf("expected beta residual candidate, got %#v", residualMiss.CandidateTags)

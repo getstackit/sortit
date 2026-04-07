@@ -2,6 +2,12 @@ package issueanalytics
 
 import "splat/internal/issues"
 
+const (
+	issuePostKindProgress   = "progress"
+	issuePostKindRefinement = "refinement"
+	issuePostKindReport     = "report"
+)
+
 func clamp01(value float64) float64 {
 	if value < 0 {
 		return 0
@@ -25,7 +31,7 @@ func issuePostKind(post issues.IssuePost) string {
 		return post.Kind
 	}
 	if post.Sequence == 1 {
-		return "report"
+		return issuePostKindReport
 	}
-	return "refinement"
+	return issuePostKindRefinement
 }

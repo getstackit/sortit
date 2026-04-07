@@ -542,6 +542,8 @@ func TestDebugEvalTagsEndpointSupportsVerifierToggle(t *testing.T) {
 }
 
 func TestDebugFactorWeightsEndpointReturnsReviewQueue(t *testing.T) {
+	const reviewIssueID = "issue-review"
+
 	store := newPostgresIssueStore(t, nil)
 	if err := store.Replace(context.Background(), []issues.Issue{
 		{ID: "issue-a", Raw: "a", Status: issues.StatusOpen, TagScores: []issues.TagRelevance{{Tag: "alpha", Relevance: 1}}, Embedding: []float64{1, 0}, CreatedBy: "Casey", CreatedAt: issues.FixtureIssues()[0].CreatedAt},
@@ -549,7 +551,7 @@ func TestDebugFactorWeightsEndpointReturnsReviewQueue(t *testing.T) {
 		{ID: "issue-c", Raw: "c", Status: issues.StatusOpen, TagScores: []issues.TagRelevance{{Tag: "alpha", Relevance: 1}}, Embedding: []float64{1, 0}, CreatedBy: "Casey", CreatedAt: issues.FixtureIssues()[2].CreatedAt},
 		{ID: "issue-d", Raw: "d", Status: issues.StatusOpen, TagScores: []issues.TagRelevance{{Tag: "alpha", Relevance: 1}}, Embedding: []float64{1, 0}, CreatedBy: "Casey", CreatedAt: issues.FixtureIssues()[3].CreatedAt},
 		{
-			ID:        "issue-review",
+			ID:        reviewIssueID,
 			Raw:       "beta concept hidden behind alpha tag",
 			Status:    issues.StatusOpen,
 			CreatedBy: "Casey",
@@ -592,17 +594,17 @@ func TestDebugFactorWeightsEndpointReturnsReviewQueue(t *testing.T) {
 	if len(payload.ReviewQueue.LowR2Issues) == 0 {
 		t.Fatal("expected low-R2 review queue entries")
 	}
-	if payload.ReviewQueue.LowR2Issues[0].ID != "issue-review" {
-		t.Fatalf("expected issue-review low-R2 entry, got %#v", payload.ReviewQueue.LowR2Issues)
+	if payload.ReviewQueue.LowR2Issues[0].ID != reviewIssueID {
+		t.Fatalf("expected %s low-R2 entry, got %#v", reviewIssueID, payload.ReviewQueue.LowR2Issues)
 	}
 	if len(payload.ReviewQueue.LowR2Issues[0].TagScores) != 1 || !payload.ReviewQueue.LowR2Issues[0].TagScores[0].Suggested {
 		t.Fatalf("expected suggested tag score provenance, got %#v", payload.ReviewQueue.LowR2Issues[0].TagScores)
 	}
-	if len(payload.ReviewQueue.LowAlignmentTags) == 0 || payload.ReviewQueue.LowAlignmentTags[0].IssueID != "issue-review" {
-		t.Fatalf("expected low-alignment entry for issue-review, got %#v", payload.ReviewQueue.LowAlignmentTags)
+	if len(payload.ReviewQueue.LowAlignmentTags) == 0 || payload.ReviewQueue.LowAlignmentTags[0].IssueID != reviewIssueID {
+		t.Fatalf("expected low-alignment entry for %s, got %#v", reviewIssueID, payload.ReviewQueue.LowAlignmentTags)
 	}
-	if len(payload.ReviewQueue.ResidualMisses) == 0 || payload.ReviewQueue.ResidualMisses[0].IssueID != "issue-review" {
-		t.Fatalf("expected residual miss entry for issue-review, got %#v", payload.ReviewQueue.ResidualMisses)
+	if len(payload.ReviewQueue.ResidualMisses) == 0 || payload.ReviewQueue.ResidualMisses[0].IssueID != reviewIssueID {
+		t.Fatalf("expected residual miss entry for %s, got %#v", reviewIssueID, payload.ReviewQueue.ResidualMisses)
 	}
 }
 

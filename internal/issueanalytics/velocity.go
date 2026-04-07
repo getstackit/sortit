@@ -65,9 +65,9 @@ func issueVelocityEvents(posts []issues.IssuePost, links []issues.IssueLink) []i
 	events := make([]issueVelocityEvent, 0, len(posts)+len(links))
 	for _, post := range posts {
 		switch issuePostKind(post) {
-		case "refinement":
+		case issuePostKindRefinement:
 			events = append(events, issueVelocityEvent{createdAt: post.CreatedAt, weight: refinementVelocityWeight})
-		case "progress":
+		case issuePostKindProgress:
 			events = append(events, issueVelocityEvent{createdAt: post.CreatedAt, weight: progressVelocityWeight})
 		}
 	}
