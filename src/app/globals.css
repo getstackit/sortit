@@ -48,6 +48,10 @@
 }
 
 :root {
+  --font-geist-sans:
+    "Avenir Next", "Segoe UI", "Helvetica Neue", Helvetica, Arial, sans-serif;
+  --font-geist-mono:
+    "SFMono-Regular", "SF Mono", "Cascadia Code", "JetBrains Mono", Consolas, monospace;
   --glow-color: oklch(0.7 0.12 242);
   --glow-color-current: oklch(0.77 0.16 88);
   --gradient-start: oklch(0.72 0.14 242);

@@ -484,7 +484,7 @@ func writeSection(out *bytes.Buffer, section string) {
 
 func schemaSQLPath() string {
 	_, currentFile, _, _ := runtime.Caller(0)
-	return filepath.Join(filepath.Dir(currentFile), "..", "sqlc", "schema.sql")
+	return filepath.Join(filepath.Dir(currentFile), "..", "issues", "sqlc", "schema.sql")
 }
 
 func adminConnectionString(connString string) (string, error) {
