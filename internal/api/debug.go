@@ -10,9 +10,9 @@ import (
 	"github.com/go-chi/chi/v5"
 
 	"splat/internal/ai"
+	"splat/internal/diagnostics"
 	"splat/internal/issues"
-	"splat/internal/queries"
-	"splat/internal/services"
+	"splat/internal/tags"
 )
 
 type debugIssueAnalyzeRequest struct {
@@ -30,14 +30,14 @@ type debugIssueSimilarity struct {
 }
 
 type debugIssueAnalyzeResponse struct {
-	Tags                   []issues.TagRelevance      `json:"tags"`
-	CandidateSet           services.CandidateTaxonomy `json:"candidateSet"`
-	Embedding              ai.EmbeddingInfo           `json:"embedding"`
-	Tagger                 ai.ModelInfo               `json:"tagger"`
-	Embedder               ai.ModelInfo               `json:"embedder"`
-	ComparedIssueCount     int                        `json:"comparedIssueCount"`
-	AverageIssueSimilarity float64                    `json:"averageIssueSimilarity"`
-	SimilarIssues          []debugIssueSimilarity     `json:"similarIssues"`
+	Tags                   []issues.TagRelevance  `json:"tags"`
+	CandidateSet           tags.CandidateTaxonomy `json:"candidateSet"`
+	Embedding              ai.EmbeddingInfo       `json:"embedding"`
+	Tagger                 ai.ModelInfo           `json:"tagger"`
+	Embedder               ai.ModelInfo           `json:"embedder"`
+	ComparedIssueCount     int                    `json:"comparedIssueCount"`
+	AverageIssueSimilarity float64                `json:"averageIssueSimilarity"`
+	SimilarIssues          []debugIssueSimilarity `json:"similarIssues"`
 }
 
 type debugInvalidateMapProjectionResponse struct {
@@ -55,15 +55,15 @@ func (s *Server) handleDebugIssueAnalyze(w http.ResponseWriter, r *http.Request)
 		return
 	}
 
-	analyzed, err := s.debugAnalyzeIssue.Handle(r.Context(), queries.DebugAnalyzeIssue{
+	analyzed, err := s.debugAnalyzeIssue.Handle(r.Context(), diagnostics.DebugAnalyzeIssue{
 		Text:          request.Text,
 		Tags:          request.Tags,
-		CandidateMode: services.CandidateMode(request.CandidateMode),
+		CandidateMode: tags.CandidateMode(request.CandidateMode),
 		Verify:        request.Verify == nil || *request.Verify,
 	})
 	if err != nil {
 		status := http.StatusInternalServerError
-		if queries.AIUnavailable(err) {
+		if diagnostics.AIUnavailable(err) {
 			status = http.StatusServiceUnavailable
 		}
 		writeError(w, status, err.Error())
@@ -136,19 +136,19 @@ func (s *Server) handleDebugEvalTags(w http.ResponseWriter, r *http.Request) {
 		}
 		runs = parsed
 	}
-	parsedMode, err := services.ParseCandidateMode(mode)
+	parsedMode, err := tags.ParseCandidateMode(mode)
 	if err != nil {
 		writeError(w, http.StatusBadRequest, err.Error())
 		return
 	}
-	if parsedMode == services.CandidateModeExplicitOnly {
+	if parsedMode == tags.CandidateModeExplicitOnly {
 		writeError(w, http.StatusBadRequest, "explicit-only candidate mode is not supported for benchmark evaluation")
 		return
 	}
 	result, err := s.debugEvalTags.HandleFixture(r.Context(), fixture, runs, parsedMode, verify)
 	if err != nil {
 		status := http.StatusInternalServerError
-		if queries.AIUnavailable(err) {
+		if diagnostics.AIUnavailable(err) {
 			status = http.StatusServiceUnavailable
 		}
 		writeError(w, status, err.Error())
@@ -199,17 +199,17 @@ func decodeDebugIssueAnalyzeRequest(r *http.Request) (debugIssueAnalyzeRequest, 
 	if request.Text == "" {
 		return debugIssueAnalyzeRequest{}, errors.New("text is required")
 	}
-	mode, err := services.ParseCandidateMode(request.CandidateMode)
+	mode, err := tags.ParseCandidateMode(request.CandidateMode)
 	if err != nil {
 		return debugIssueAnalyzeRequest{}, err
 	}
-	if mode == services.CandidateModeExplicitOnly && len(request.Tags) == 0 {
+	if mode == tags.CandidateModeExplicitOnly && len(request.Tags) == 0 {
 		return debugIssueAnalyzeRequest{}, errors.New("explicit-only candidate mode requires at least one tag")
 	}
 	return request, nil
 }
 
-func toDebugIssueSimilarities(items []queries.DebugIssueSimilarity) []debugIssueSimilarity {
+func toDebugIssueSimilarities(items []diagnostics.DebugIssueSimilarity) []debugIssueSimilarity {
 	out := make([]debugIssueSimilarity, len(items))
 	for i, item := range items {
 		out[i] = debugIssueSimilarity{

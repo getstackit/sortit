@@ -5,7 +5,7 @@ import (
 
 	"github.com/go-chi/chi/v5"
 
-	"splat/internal/queries"
+	issueviews "splat/internal/issues/views"
 )
 
 func (s *Server) handlePersonDetail(w http.ResponseWriter, r *http.Request) {
@@ -36,7 +36,7 @@ func (s *Server) handlePersonProfileRoute(w http.ResponseWriter, r *http.Request
 		return
 	}
 	if r.URL.Query().Get("status") == "" {
-		filter = queries.IssueStatusFilterAll
+		filter = issueviews.IssueStatusFilterAll
 	}
 
 	profile, err := s.getPersonProfile.Handle(r.Context(), person, filter)
@@ -55,7 +55,7 @@ func (s *Server) handleWorkCorrelations(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 	if r.URL.Query().Get("status") == "" {
-		filter = queries.IssueStatusFilterAll
+		filter = issueviews.IssueStatusFilterAll
 	}
 
 	result, err := s.workCorrelations.Handle(r.Context(), filter)

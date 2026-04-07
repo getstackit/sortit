@@ -5,7 +5,7 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"splat/internal/queries"
+	"splat/internal/diagnostics"
 )
 
 const debugEvalTagsClientTimeout = 2 * time.Minute
@@ -32,7 +32,7 @@ func newDebugEvalTagsCmd(opts *rootOptions) *cobra.Command {
 		Short: "Run the built-in tag benchmark and report tagging diffs",
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			client := opts.clientWithTimeout(debugEvalTagsClientTimeout)
-			var response queries.DebugEvalTagsResult
+			var response diagnostics.DebugEvalTagsResult
 			params := newQueryParams().add("fixture", fixture).add("mode", mode).addBool("verify", verify).addInt("runs", runs)
 			if err := client.Get(cmd.Context(), "/debug/eval-tags"+params.encode(), &response); err != nil {
 				return err
@@ -54,7 +54,7 @@ func newDebugFactorWeightsCmd(opts *rootOptions) *cobra.Command {
 		Short: "Show factor decomposition weights and low-R² issues",
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			client := opts.client()
-			var response queries.DebugFactorWeightsResult
+			var response diagnostics.DebugFactorWeightsResult
 			if err := client.Get(cmd.Context(), "/debug/factor-weights", &response); err != nil {
 				return err
 			}
@@ -70,7 +70,7 @@ func newDebugIssueR2Cmd(opts *rootOptions) *cobra.Command {
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			client := opts.client()
-			var response queries.DebugIssueR2Result
+			var response diagnostics.DebugIssueR2Result
 			if err := client.Get(cmd.Context(), "/debug/issues/"+args[0]+"/r2", &response); err != nil {
 				return err
 			}

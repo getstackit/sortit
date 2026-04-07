@@ -14,13 +14,17 @@ import (
 
 	"splat/internal/ai"
 	"splat/internal/auth"
-	"splat/internal/commands"
+	"splat/internal/diagnostics"
 	issueenrichment "splat/internal/issueenrichment"
 	"splat/internal/issueevents"
 	"splat/internal/issues"
+	issuecmd "splat/internal/issues/commands"
+	issueviews "splat/internal/issues/views"
+	"splat/internal/mapview"
 	mcpserver "splat/internal/mcp"
-	"splat/internal/queries"
-	"splat/internal/services"
+	"splat/internal/people"
+	"splat/internal/search"
+	"splat/internal/tags"
 	"splat/internal/tracing"
 )
 
@@ -40,39 +44,39 @@ type Server struct {
 	httpServer          *http.Server
 	startedAt           time.Time
 	revisions           *issues.RevisionTracker
-	mapProjectionLoader *queries.MapProjectionLoader
+	mapProjectionLoader *mapview.MapProjectionLoader
 	enrichmentWorker    *issueenrichment.IssueEnrichmentWorker
 	enrichmentCancel    context.CancelFunc
 	enrichmentDone      chan struct{}
-	createIssue         commands.CreateIssueHandler
-	refineIssue         commands.RefineIssueHandler
-	progressIssue       commands.ProgressIssueHandler
-	closeIssue          commands.CloseIssueHandler
-	reopenIssue         commands.ReopenIssueHandler
-	assignIssue         commands.AssignIssueHandler
-	reEnrichIssue       commands.ReEnrichIssueHandler
-	splitIssue          commands.SplitIssueHandler
-	combineIssues       commands.CombineIssuesHandler
-	linkIssues          commands.LinkIssuesHandler
-	listIssues          queries.ListIssuesHandler
-	listActivity        queries.ListActivityHandler
-	getIssue            queries.GetIssueHandler
-	compareIssues       queries.CompareIssuesHandler
-	searchIssues        queries.SearchIssuesHandler
-	searchUnified       queries.SearchUnifiedHandler
-	listTags            queries.ListTagsHandler
-	getMap              queries.MapHandler
-	getMapEdges         queries.EdgeHandler
-	debugAnalyzeIssue   queries.DebugAnalyzeIssueHandler
-	debugEvalTags       queries.DebugEvalTagsHandler
-	debugFactorWeights  queries.DebugFactorWeightsHandler
-	debugIssueR2        queries.DebugIssueR2Handler
-	exploreIssue        queries.ExploreIssueHandler
-	getPersonProfile    queries.GetPersonProfileHandler
-	getPersonDetail     queries.GetPersonDetailHandler
-	workCorrelations    queries.WorkCorrelationsHandler
+	createIssue         issuecmd.CreateIssueHandler
+	refineIssue         issuecmd.RefineIssueHandler
+	progressIssue       issuecmd.ProgressIssueHandler
+	closeIssue          issuecmd.CloseIssueHandler
+	reopenIssue         issuecmd.ReopenIssueHandler
+	assignIssue         issuecmd.AssignIssueHandler
+	reEnrichIssue       issuecmd.ReEnrichIssueHandler
+	splitIssue          issuecmd.SplitIssueHandler
+	combineIssues       issuecmd.CombineIssuesHandler
+	linkIssues          issuecmd.LinkIssuesHandler
+	listIssues          issueviews.ListIssuesHandler
+	listActivity        issueviews.ListActivityHandler
+	getIssue            issueviews.GetIssueHandler
+	compareIssues       issueviews.CompareIssuesHandler
+	searchIssues        search.SearchIssuesHandler
+	searchUnified       search.SearchUnifiedHandler
+	listTags            issueviews.ListTagsHandler
+	getMap              mapview.MapHandler
+	getMapEdges         mapview.EdgeHandler
+	debugAnalyzeIssue   diagnostics.DebugAnalyzeIssueHandler
+	debugEvalTags       diagnostics.DebugEvalTagsHandler
+	debugFactorWeights  diagnostics.DebugFactorWeightsHandler
+	debugIssueR2        diagnostics.DebugIssueR2Handler
+	exploreIssue        mapview.ExploreIssueHandler
+	getPersonProfile    people.GetPersonProfileHandler
+	getPersonDetail     people.GetPersonDetailHandler
+	workCorrelations    people.WorkCorrelationsHandler
 	authService         *auth.Service
-	catalog             *services.CatalogService
+	catalog             *tags.CatalogService
 }
 
 type issueTagStore interface {
@@ -454,15 +458,15 @@ func NewServer(cfg ServerConfig) *Server {
 	); listener != nil {
 		eventBus.Subscribe(listener)
 	}
-	runner := &commands.CommandRunner{
+	runner := &issuecmd.CommandRunner{
 		DB:       uowBeginner,
 		OnCommit: func() { revisions.Bump() },
 	}
 
 	tagStore := tagStoreFromIssueStore(store)
-	commandAnalyzer := services.FallbackAnalyzer(cfg.Analyzer)
+	commandAnalyzer := tags.FallbackAnalyzer(cfg.Analyzer)
 	catalogLogger := logger.With("component", "catalog")
-	catalog := services.NewCatalogService(tagStore, commandAnalyzer, catalogLogger)
+	catalog := tags.NewCatalogService(tagStore, commandAnalyzer, catalogLogger)
 	enricherLogger := logger.With("component", "enricher")
 	enricher := issueenrichment.NewIssueEnricher(commandAnalyzer, catalog, enricherLogger)
 	var enrichmentWorker *issueenrichment.IssueEnrichmentWorker
@@ -486,7 +490,7 @@ func NewServer(cfg ServerConfig) *Server {
 			},
 		}
 	}
-	mapProjectionLoader := &queries.MapProjectionLoader{
+	mapProjectionLoader := &mapview.MapProjectionLoader{
 		Store:       store,
 		Catalog:     catalog,
 		Revisions:   revisions,
@@ -500,78 +504,78 @@ func NewServer(cfg ServerConfig) *Server {
 		revisions:           revisions,
 		mapProjectionLoader: mapProjectionLoader,
 		enrichmentWorker:    enrichmentWorker,
-		createIssue: commands.CreateIssueHandler{
+		createIssue: issuecmd.CreateIssueHandler{
 			Logger:   logger.With("command", "create_issue"),
 			Runner:   runner,
 			Enricher: enricher,
 			Events:   eventBus,
 		},
-		refineIssue: commands.RefineIssueHandler{
+		refineIssue: issuecmd.RefineIssueHandler{
 			Runner:   runner,
 			Store:    store,
 			Enricher: enricher,
 			Events:   eventBus,
 		},
-		progressIssue: commands.ProgressIssueHandler{Runner: runner, Events: eventBus},
-		closeIssue:    commands.CloseIssueHandler{Runner: runner, Events: eventBus},
-		reopenIssue: commands.ReopenIssueHandler{
+		progressIssue: issuecmd.ProgressIssueHandler{Runner: runner, Events: eventBus},
+		closeIssue:    issuecmd.CloseIssueHandler{Runner: runner, Events: eventBus},
+		reopenIssue: issuecmd.ReopenIssueHandler{
 			Runner: runner,
 			Events: eventBus,
 		},
-		assignIssue: commands.AssignIssueHandler{
+		assignIssue: issuecmd.AssignIssueHandler{
 			Runner: runner,
 			Events: eventBus,
 		},
-		reEnrichIssue: commands.ReEnrichIssueHandler{
+		reEnrichIssue: issuecmd.ReEnrichIssueHandler{
 			Runner: runner,
 			Store:  store,
 			Events: eventBus,
 		},
-		splitIssue: commands.SplitIssueHandler{
+		splitIssue: issuecmd.SplitIssueHandler{
 			Runner:   runner,
 			Enricher: enricher,
 			Events:   eventBus,
 		},
-		combineIssues: commands.CombineIssuesHandler{
+		combineIssues: issuecmd.CombineIssuesHandler{
 			Runner:   runner,
 			Store:    store,
 			Enricher: enricher,
 			Events:   eventBus,
 		},
-		linkIssues: commands.LinkIssuesHandler{
+		linkIssues: issuecmd.LinkIssuesHandler{
 			Runner: runner,
 			Events: eventBus,
 		},
-		listIssues:    queries.ListIssuesHandler{Store: store},
-		listActivity:  queries.ListActivityHandler{Events: events},
-		getIssue:      queries.GetIssueHandler{Store: store, Logger: logger.With("query", "get_issue")},
-		compareIssues: queries.CompareIssuesHandler{Reader: store},
-		searchIssues: queries.SearchIssuesHandler{
+		listIssues:    issueviews.ListIssuesHandler{Store: store},
+		listActivity:  issueviews.ListActivityHandler{Events: events},
+		getIssue:      issueviews.GetIssueHandler{Store: store, Logger: logger.With("query", "get_issue")},
+		compareIssues: issueviews.CompareIssuesHandler{Reader: store},
+		searchIssues: search.SearchIssuesHandler{
 			Analyzer: commandAnalyzer,
 			Catalog:  catalog,
 			Store:    baseStore,
 		},
-		searchUnified: queries.SearchUnifiedHandler{
+		searchUnified: search.SearchUnifiedHandler{
 			Analyzer: commandAnalyzer,
 			Catalog:  catalog,
 			Store:    baseStore,
 		},
-		exploreIssue: queries.ExploreIssueHandler{
+		exploreIssue: mapview.ExploreIssueHandler{
 			Reader:       store,
 			DetailReader: store,
 			SearchStore:  semanticSearchStoreFromStore(baseStore),
 			Catalog:      catalog,
 		},
-		listTags:           queries.ListTagsHandler{Catalog: catalog},
-		getMap:             queries.MapHandler{IssueStore: store, Catalog: catalog, Projection: mapProjectionLoader},
-		getMapEdges:        queries.EdgeHandler{IssueStore: store, Catalog: catalog, Projection: mapProjectionLoader},
-		debugAnalyzeIssue:  queries.DebugAnalyzeIssueHandler{Analyzer: cfg.Analyzer, Catalog: catalog, Enricher: enricher, Store: store},
-		debugEvalTags:      queries.DebugEvalTagsHandler{Analyzer: cfg.Analyzer, Catalog: catalog, Enricher: enricher},
-		debugFactorWeights: queries.DebugFactorWeightsHandler{Store: store, Catalog: catalog},
-		debugIssueR2:       queries.DebugIssueR2Handler{Store: store, Catalog: catalog},
-		getPersonProfile:   queries.GetPersonProfileHandler{Store: store, Catalog: catalog},
-		getPersonDetail:    queries.GetPersonDetailHandler{Store: store, Catalog: catalog},
-		workCorrelations:   queries.WorkCorrelationsHandler{Store: store, Catalog: catalog},
+		listTags:           issueviews.ListTagsHandler{Catalog: catalog},
+		getMap:             mapview.MapHandler{IssueStore: store, Catalog: catalog, Projection: mapProjectionLoader},
+		getMapEdges:        mapview.EdgeHandler{IssueStore: store, Catalog: catalog, Projection: mapProjectionLoader},
+		debugAnalyzeIssue:  diagnostics.DebugAnalyzeIssueHandler{Analyzer: cfg.Analyzer, Catalog: catalog, Enricher: enricher, Store: store},
+		debugEvalTags:      diagnostics.DebugEvalTagsHandler{Analyzer: cfg.Analyzer, Catalog: catalog, Enricher: enricher},
+		debugFactorWeights: diagnostics.DebugFactorWeightsHandler{Store: store, Catalog: catalog},
+		debugIssueR2:       diagnostics.DebugIssueR2Handler{Store: store, Catalog: catalog},
+		getPersonProfile:   people.GetPersonProfileHandler{Store: store, Catalog: catalog},
+		getPersonDetail:    people.GetPersonDetailHandler{Store: store, Catalog: catalog},
+		workCorrelations:   people.WorkCorrelationsHandler{Store: store, Catalog: catalog},
 		authService:        cfg.Auth,
 		catalog:            catalog,
 	}

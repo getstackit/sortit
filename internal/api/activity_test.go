@@ -7,7 +7,7 @@ import (
 	"net/http/httptest"
 	"testing"
 
-	"splat/internal/queries"
+	issueviews "splat/internal/issues/views"
 )
 
 func TestRevisionEndpointAdvancesAfterMutation(t *testing.T) {
@@ -96,7 +96,7 @@ func TestActivityEndpointIncludesOperationalEvents(t *testing.T) {
 		t.Fatalf("expected 200 for activity, got %d", activityRec.Code)
 	}
 
-	var activity queries.ActivityResponse
+	var activity issueviews.ActivityResponse
 	if err := json.NewDecoder(activityRec.Body).Decode(&activity); err != nil {
 		t.Fatalf("decode activity response: %v", err)
 	}

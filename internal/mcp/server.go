@@ -11,26 +11,29 @@ import (
 	"github.com/mark3labs/mcp-go/server"
 
 	"splat/internal/auth"
-	"splat/internal/commands"
 	"splat/internal/issues"
-	"splat/internal/queries"
+	issuecmd "splat/internal/issues/commands"
+	issueviews "splat/internal/issues/views"
+	"splat/internal/mapview"
+	"splat/internal/people"
+	"splat/internal/search"
 )
 
 type ServerConfig struct {
-	CreateIssue      commands.CreateIssueHandler
-	RefineIssue      commands.RefineIssueHandler
-	ProgressIssue    commands.ProgressIssueHandler
-	CloseIssue       commands.CloseIssueHandler
-	AssignIssue      commands.AssignIssueHandler
-	SplitIssue       commands.SplitIssueHandler
-	CombineIssues    commands.CombineIssuesHandler
-	LinkIssues       commands.LinkIssuesHandler
-	GetIssue         queries.GetIssueHandler
-	ListTags         queries.ListTagsHandler
-	SearchIssues     queries.SearchIssuesHandler
-	ExploreIssue     queries.ExploreIssueHandler
-	GetPersonProfile queries.GetPersonProfileHandler
-	WorkCorrelations queries.WorkCorrelationsHandler
+	CreateIssue      issuecmd.CreateIssueHandler
+	RefineIssue      issuecmd.RefineIssueHandler
+	ProgressIssue    issuecmd.ProgressIssueHandler
+	CloseIssue       issuecmd.CloseIssueHandler
+	AssignIssue      issuecmd.AssignIssueHandler
+	SplitIssue       issuecmd.SplitIssueHandler
+	CombineIssues    issuecmd.CombineIssuesHandler
+	LinkIssues       issuecmd.LinkIssuesHandler
+	GetIssue         issueviews.GetIssueHandler
+	ListTags         issueviews.ListTagsHandler
+	SearchIssues     search.SearchIssuesHandler
+	ExploreIssue     mapview.ExploreIssueHandler
+	GetPersonProfile people.GetPersonProfileHandler
+	WorkCorrelations people.WorkCorrelationsHandler
 }
 
 // NewHandler creates a Streamable HTTP handler for the MCP server,
@@ -44,10 +47,10 @@ func NewHandler(cfg ServerConfig) http.Handler {
 
 	h := &handlers{
 		createIssue:      cfg.CreateIssue,
-		refineIssues:     commands.RefineIssuesHandler{RefineIssue: cfg.RefineIssue},
-		progressIssues:   commands.ProgressIssuesHandler{ProgressIssue: cfg.ProgressIssue},
-		closeIssues:      commands.CloseIssuesHandler{CloseIssue: cfg.CloseIssue},
-		assignIssues:     commands.AssignIssuesHandler{AssignIssue: cfg.AssignIssue},
+		refineIssues:     issuecmd.RefineIssuesHandler{RefineIssue: cfg.RefineIssue},
+		progressIssues:   issuecmd.ProgressIssuesHandler{ProgressIssue: cfg.ProgressIssue},
+		closeIssues:      issuecmd.CloseIssuesHandler{CloseIssue: cfg.CloseIssue},
+		assignIssues:     issuecmd.AssignIssuesHandler{AssignIssue: cfg.AssignIssue},
 		splitIssue:       cfg.SplitIssue,
 		combineIssues:    cfg.CombineIssues,
 		linkIssues:       cfg.LinkIssues,
@@ -299,20 +302,20 @@ func NewHandler(cfg ServerConfig) http.Handler {
 }
 
 type handlers struct {
-	createIssue      commands.CreateIssueHandler
-	refineIssues     commands.RefineIssuesHandler
-	progressIssues   commands.ProgressIssuesHandler
-	closeIssues      commands.CloseIssuesHandler
-	assignIssues     commands.AssignIssuesHandler
-	splitIssue       commands.SplitIssueHandler
-	combineIssues    commands.CombineIssuesHandler
-	linkIssues       commands.LinkIssuesHandler
-	getIssue         queries.GetIssueHandler
-	listTags         queries.ListTagsHandler
-	searchIssues     queries.SearchIssuesHandler
-	exploreIssue     queries.ExploreIssueHandler
-	getPersonProfile queries.GetPersonProfileHandler
-	workCorrelations queries.WorkCorrelationsHandler
+	createIssue      issuecmd.CreateIssueHandler
+	refineIssues     issuecmd.RefineIssuesHandler
+	progressIssues   issuecmd.ProgressIssuesHandler
+	closeIssues      issuecmd.CloseIssuesHandler
+	assignIssues     issuecmd.AssignIssuesHandler
+	splitIssue       issuecmd.SplitIssueHandler
+	combineIssues    issuecmd.CombineIssuesHandler
+	linkIssues       issuecmd.LinkIssuesHandler
+	getIssue         issueviews.GetIssueHandler
+	listTags         issueviews.ListTagsHandler
+	searchIssues     search.SearchIssuesHandler
+	exploreIssue     mapview.ExploreIssueHandler
+	getPersonProfile people.GetPersonProfileHandler
+	workCorrelations people.WorkCorrelationsHandler
 }
 
 func (h *handlers) handleCreateIssue(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
@@ -321,7 +324,7 @@ func (h *handlers) handleCreateIssue(ctx context.Context, req mcp.CallToolReques
 		return mcp.NewToolResultError("raw is required"), nil //nolint:nilerr
 	}
 
-	issue, err := h.createIssue.Handle(ctx, commands.CreateIssue{
+	issue, err := h.createIssue.Handle(ctx, issuecmd.CreateIssue{
 		Raw:       strings.TrimSpace(raw),
 		CreatedBy: actorForContext(ctx, req.GetString("created_by", "Claude")),
 	})
@@ -338,7 +341,7 @@ func (h *handlers) handleGetIssue(ctx context.Context, req mcp.CallToolRequest) 
 		return result, nil
 	}
 
-	issue, err := h.getIssue.Handle(ctx, queries.GetIssue{ID: id})
+	issue, err := h.getIssue.Handle(ctx, issueviews.GetIssue{ID: id})
 	if err != nil {
 		return toolResultError(err), nil
 	}
@@ -398,7 +401,7 @@ func (h *handlers) handleSearchIssues(ctx context.Context, req mcp.CallToolReque
 		return mcp.NewToolResultError("sort_by must be one of: relevance, created_at"), nil
 	}
 
-	response, err := h.searchIssues.Handle(ctx, queries.SearchIssues{
+	response, err := h.searchIssues.Handle(ctx, search.SearchIssues{
 		Query:      query,
 		Limit:      limit,
 		Offset:     offset,
@@ -424,7 +427,7 @@ func (h *handlers) handleRefineIssues(ctx context.Context, req mcp.CallToolReque
 		return result, nil
 	}
 
-	issue, err := h.refineIssues.Handle(ctx, commands.RefineIssues{
+	issue, err := h.refineIssues.Handle(ctx, issuecmd.RefineIssues{
 		IDs:       ids,
 		Raw:       raw,
 		CreatedBy: actorForContext(ctx, req.GetString("created_by", "Claude")),
@@ -446,7 +449,7 @@ func (h *handlers) handleProgressIssues(ctx context.Context, req mcp.CallToolReq
 		return result, nil
 	}
 
-	issue, err := h.progressIssues.Handle(ctx, commands.ProgressIssues{
+	issue, err := h.progressIssues.Handle(ctx, issuecmd.ProgressIssues{
 		IDs:       ids,
 		Raw:       raw,
 		CreatedBy: actorForContext(ctx, req.GetString("created_by", "Claude")),
@@ -464,7 +467,7 @@ func (h *handlers) handleCloseIssues(ctx context.Context, req mcp.CallToolReques
 		return result, nil
 	}
 
-	issue, err := h.closeIssues.Handle(ctx, commands.CloseIssues{
+	issue, err := h.closeIssues.Handle(ctx, issuecmd.CloseIssues{
 		IDs:      ids,
 		ClosedBy: actorForContext(ctx, req.GetString("closed_by", "Claude")),
 	})
@@ -486,7 +489,7 @@ func (h *handlers) handleExploreIssue(ctx context.Context, req mcp.CallToolReque
 		return result, nil
 	}
 
-	response, err := h.exploreIssue.Handle(ctx, queries.ExploreIssue{
+	response, err := h.exploreIssue.Handle(ctx, mapview.ExploreIssue{
 		ID:    id,
 		Limit: limit,
 	})
@@ -507,7 +510,7 @@ func (h *handlers) handleAssignIssues(ctx context.Context, req mcp.CallToolReque
 		return mcp.NewToolResultError("assigned_to is required"), nil //nolint:nilerr
 	}
 
-	issue, err := h.assignIssues.Handle(ctx, commands.AssignIssues{
+	issue, err := h.assignIssues.Handle(ctx, issuecmd.AssignIssues{
 		IDs:        ids,
 		AssignedTo: strings.TrimSpace(assignedTo),
 	})
@@ -533,19 +536,19 @@ func (h *handlers) handleSplitIssue(ctx context.Context, req mcp.CallToolRequest
 		return mcp.NewToolResultError("id is required"), nil
 	}
 
-	normalizedChildren := make([]commands.SplitIssueChild, 0, len(children))
+	normalizedChildren := make([]issuecmd.SplitIssueChild, 0, len(children))
 	for _, child := range children {
 		child = strings.TrimSpace(child)
 		if child == "" {
 			continue
 		}
-		normalizedChildren = append(normalizedChildren, commands.SplitIssueChild{Raw: child})
+		normalizedChildren = append(normalizedChildren, issuecmd.SplitIssueChild{Raw: child})
 	}
 	if len(normalizedChildren) == 0 {
 		return mcp.NewToolResultError("children_raw must include at least one non-empty child"), nil
 	}
 
-	resultPayload, err := h.splitIssue.Handle(ctx, commands.SplitIssue{
+	resultPayload, err := h.splitIssue.Handle(ctx, issuecmd.SplitIssue{
 		SourceID:    id,
 		Children:    normalizedChildren,
 		CloseSource: req.GetBool("close_source", false),
@@ -569,7 +572,7 @@ func (h *handlers) handleCombineIssues(ctx context.Context, req mcp.CallToolRequ
 		return mcp.NewToolResultError("at least two issue ids are required"), nil
 	}
 
-	resultPayload, err := h.combineIssues.Handle(ctx, commands.CombineIssues{
+	resultPayload, err := h.combineIssues.Handle(ctx, issuecmd.CombineIssues{
 		SourceIDs: ids,
 		Note:      strings.TrimSpace(req.GetString("note", "")),
 		CreatedBy: actorForContext(ctx, req.GetString("created_by", "Claude")),
@@ -606,7 +609,7 @@ func (h *handlers) handleLinkIssues(ctx context.Context, req mcp.CallToolRequest
 		return mcp.NewToolResultError("invalid link type"), nil
 	}
 
-	resultPayload, err := h.linkIssues.Handle(ctx, commands.LinkIssues{
+	resultPayload, err := h.linkIssues.Handle(ctx, issuecmd.LinkIssues{
 		SourceID:  sourceID,
 		TargetID:  targetID,
 		Type:      linkType,
@@ -697,19 +700,19 @@ func requireIssueIDs(req mcp.CallToolRequest) ([]string, *mcp.CallToolResult) {
 	return ids, nil
 }
 
-func parseStatusFilter(raw string, defaultOpen bool) (queries.IssueStatusFilter, bool) {
+func parseStatusFilter(raw string, defaultOpen bool) (issueviews.IssueStatusFilter, bool) {
 	switch strings.ToLower(strings.TrimSpace(raw)) {
 	case "":
 		if defaultOpen {
-			return queries.IssueStatusFilterOpen, true
+			return issueviews.IssueStatusFilterOpen, true
 		}
-		return queries.IssueStatusFilterAll, true
+		return issueviews.IssueStatusFilterAll, true
 	case "open":
-		return queries.IssueStatusFilterOpen, true
+		return issueviews.IssueStatusFilterOpen, true
 	case "closed":
-		return queries.IssueStatusFilterClosed, true
+		return issueviews.IssueStatusFilterClosed, true
 	case "all":
-		return queries.IssueStatusFilterAll, true
+		return issueviews.IssueStatusFilterAll, true
 	default:
 		return "", false
 	}

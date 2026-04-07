@@ -9,9 +9,11 @@ import (
 	"github.com/go-chi/chi/v5"
 
 	"splat/internal/auth"
-	"splat/internal/commands"
 	"splat/internal/issues"
-	"splat/internal/queries"
+	issuecmd "splat/internal/issues/commands"
+	issueviews "splat/internal/issues/views"
+	"splat/internal/mapview"
+	"splat/internal/search"
 )
 
 type issuesResponse struct {
@@ -123,9 +125,9 @@ func (s *Server) handleIssueCompare(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	result, err := s.compareIssues.Handle(r.Context(), queries.CompareIssues{IDs: request.IDs})
+	result, err := s.compareIssues.Handle(r.Context(), issueviews.CompareIssues{IDs: request.IDs})
 	if err != nil {
-		if queries.NotFound(err) {
+		if issueviews.NotFound(err) {
 			writeError(w, http.StatusNotFound, "issue not found")
 			return
 		}
@@ -185,7 +187,7 @@ func (s *Server) handleIssueSearch(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	result, err := s.searchIssues.Handle(r.Context(), queries.SearchIssues{
+	result, err := s.searchIssues.Handle(r.Context(), search.SearchIssues{
 		Query:      query,
 		Limit:      searchLimit,
 		Offset:     searchOffset,
@@ -209,7 +211,7 @@ func (s *Server) handleIssueCombine(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	result, err := s.combineIssues.Handle(r.Context(), commands.CombineIssues{
+	result, err := s.combineIssues.Handle(r.Context(), issuecmd.CombineIssues{
 		SourceIDs: request.IDs,
 		CreatedBy: actorForRequest(r, request.CreatedBy),
 		Note:      request.Note,
@@ -233,7 +235,7 @@ func (s *Server) handleIssueLink(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	result, err := s.linkIssues.Handle(r.Context(), commands.LinkIssues{
+	result, err := s.linkIssues.Handle(r.Context(), issuecmd.LinkIssues{
 		SourceID:  request.SourceID,
 		TargetID:  request.TargetID,
 		Type:      issues.IssueLinkType(request.Type),
@@ -267,8 +269,8 @@ func (s *Server) handleIssueRefineBatch(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
-	result, err := commands.RunIssueMutationBatch(request.IDs, func(id string) (issues.Issue, error) {
-		return s.refineIssue.Handle(r.Context(), commands.RefineIssue{
+	result, err := issuecmd.RunIssueMutationBatch(request.IDs, func(id string) (issues.Issue, error) {
+		return s.refineIssue.Handle(r.Context(), issuecmd.RefineIssue{
 			ID:        id,
 			Raw:       request.Raw,
 			CreatedBy: actorForRequest(r, request.CreatedBy),
@@ -289,8 +291,8 @@ func (s *Server) handleIssueProgressBatch(w http.ResponseWriter, r *http.Request
 		return
 	}
 
-	result, err := commands.RunIssueMutationBatch(request.IDs, func(id string) (issues.Issue, error) {
-		return s.progressIssue.Handle(r.Context(), commands.ProgressIssue{
+	result, err := issuecmd.RunIssueMutationBatch(request.IDs, func(id string) (issues.Issue, error) {
+		return s.progressIssue.Handle(r.Context(), issuecmd.ProgressIssue{
 			ID:        id,
 			Raw:       request.Raw,
 			CreatedBy: actorForRequest(r, request.CreatedBy),
@@ -311,8 +313,8 @@ func (s *Server) handleIssueCloseBatch(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	result, err := commands.RunIssueMutationBatch(request.IDs, func(id string) (issues.Issue, error) {
-		return s.closeIssue.Handle(r.Context(), commands.CloseIssue{
+	result, err := issuecmd.RunIssueMutationBatch(request.IDs, func(id string) (issues.Issue, error) {
+		return s.closeIssue.Handle(r.Context(), issuecmd.CloseIssue{
 			ID:         id,
 			ClosedBy:   actorForRequest(r, request.ClosedBy),
 			Reason:     request.Reason,
@@ -334,8 +336,8 @@ func (s *Server) handleIssueAssignBatch(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
-	result, err := commands.RunIssueMutationBatch(request.IDs, func(id string) (issues.Issue, error) {
-		return s.assignIssue.Handle(r.Context(), commands.AssignIssue{
+	result, err := issuecmd.RunIssueMutationBatch(request.IDs, func(id string) (issues.Issue, error) {
+		return s.assignIssue.Handle(r.Context(), issuecmd.AssignIssue{
 			ID:         id,
 			AssignedTo: request.AssignedTo,
 			CreatedBy:  actorForRequest(r, request.CreatedBy),
@@ -352,7 +354,7 @@ func (s *Server) handleIssueAssignBatch(w http.ResponseWriter, r *http.Request) 
 func (s *Server) handleGetIssue(w http.ResponseWriter, r *http.Request) {
 	id := chi.URLParam(r, "id")
 
-	issue, err := s.getIssue.Handle(r.Context(), queries.GetIssue{ID: id})
+	issue, err := s.getIssue.Handle(r.Context(), issueviews.GetIssue{ID: id})
 	if err != nil {
 		if errors.Is(err, issues.ErrNotFound) {
 			writeError(w, http.StatusNotFound, "issue not found")
@@ -374,7 +376,7 @@ func (s *Server) handleCloseIssue(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	closed, err := s.closeIssue.Handle(r.Context(), commands.CloseIssue{
+	closed, err := s.closeIssue.Handle(r.Context(), issuecmd.CloseIssue{
 		ID:         id,
 		ClosedBy:   actorForRequest(r, request.ClosedBy),
 		Reason:     request.Reason,
@@ -401,7 +403,7 @@ func (s *Server) handleRefineIssue(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	refined, err := s.refineIssue.Handle(r.Context(), commands.RefineIssue{
+	refined, err := s.refineIssue.Handle(r.Context(), issuecmd.RefineIssue{
 		ID:        id,
 		Raw:       request.Raw,
 		CreatedBy: actorForRequest(r, request.CreatedBy),
@@ -425,7 +427,7 @@ func (s *Server) handleRefineIssue(w http.ResponseWriter, r *http.Request) {
 func (s *Server) handleReEnrichIssue(w http.ResponseWriter, r *http.Request) {
 	id := chi.URLParam(r, "id")
 
-	reEnriched, err := s.reEnrichIssue.Handle(r.Context(), commands.ReEnrichIssue{
+	reEnriched, err := s.reEnrichIssue.Handle(r.Context(), issuecmd.ReEnrichIssue{
 		ID: id,
 	})
 	if err != nil {
@@ -451,8 +453,8 @@ func (s *Server) handleReEnrichIssueBatch(w http.ResponseWriter, r *http.Request
 		return
 	}
 
-	result, err := commands.RunIssueMutationBatch(request.IDs, func(id string) (issues.Issue, error) {
-		return s.reEnrichIssue.Handle(r.Context(), commands.ReEnrichIssue{
+	result, err := issuecmd.RunIssueMutationBatch(request.IDs, func(id string) (issues.Issue, error) {
+		return s.reEnrichIssue.Handle(r.Context(), issuecmd.ReEnrichIssue{
 			ID: id,
 		})
 	})
@@ -478,7 +480,7 @@ func (s *Server) handleExploreIssue(w http.ResponseWriter, r *http.Request) {
 		exploreLimit = *limit
 	}
 
-	result, err := s.exploreIssue.Handle(r.Context(), queries.ExploreIssue{
+	result, err := s.exploreIssue.Handle(r.Context(), mapview.ExploreIssue{
 		ID:    id,
 		Limit: exploreLimit,
 	})
@@ -503,7 +505,7 @@ func (s *Server) handleProgressIssue(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	progressed, err := s.progressIssue.Handle(r.Context(), commands.ProgressIssue{
+	progressed, err := s.progressIssue.Handle(r.Context(), issuecmd.ProgressIssue{
 		ID:        id,
 		Raw:       request.Raw,
 		CreatedBy: actorForRequest(r, request.CreatedBy),
@@ -527,7 +529,7 @@ func (s *Server) handleProgressIssue(w http.ResponseWriter, r *http.Request) {
 func (s *Server) handleReopenIssue(w http.ResponseWriter, r *http.Request) {
 	id := chi.URLParam(r, "id")
 
-	reopened, err := s.reopenIssue.Handle(r.Context(), commands.ReopenIssue{ID: id})
+	reopened, err := s.reopenIssue.Handle(r.Context(), issuecmd.ReopenIssue{ID: id})
 	if err != nil {
 		if errors.Is(err, issues.ErrNotFound) {
 			writeError(w, http.StatusNotFound, "issue not found")
@@ -549,7 +551,7 @@ func (s *Server) handleAssignIssue(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	assigned, err := s.assignIssue.Handle(r.Context(), commands.AssignIssue{
+	assigned, err := s.assignIssue.Handle(r.Context(), issuecmd.AssignIssue{
 		ID:         id,
 		AssignedTo: request.AssignedTo,
 		CreatedBy:  actorForRequest(r, request.CreatedBy),
@@ -575,15 +577,15 @@ func (s *Server) handleSplitIssue(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	children := make([]commands.SplitIssueChild, 0, len(request.Children))
+	children := make([]issuecmd.SplitIssueChild, 0, len(request.Children))
 	for _, child := range request.Children {
-		children = append(children, commands.SplitIssueChild{
+		children = append(children, issuecmd.SplitIssueChild{
 			Raw:  child.Raw,
 			Tags: child.Tags,
 		})
 	}
 
-	result, err := s.splitIssue.Handle(r.Context(), commands.SplitIssue{
+	result, err := s.splitIssue.Handle(r.Context(), issuecmd.SplitIssue{
 		SourceID:    id,
 		Children:    children,
 		CreatedBy:   actorForRequest(r, request.CreatedBy),
@@ -629,7 +631,7 @@ func (s *Server) handleIssueList(w http.ResponseWriter, r *http.Request) {
 		listOffset = *offset
 	}
 
-	items, err := s.listIssues.Handle(r.Context(), queries.ListIssuesQuery{
+	items, err := s.listIssues.Handle(r.Context(), issueviews.ListIssuesQuery{
 		Status:     filter,
 		AssignedTo: firstQueryValue(r, "assignedTo", "assigned_to"),
 		Tags:       ParseCSV(r.URL.Query().Get("tags")),
@@ -651,7 +653,7 @@ func (s *Server) handleIssueCreate(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	created, err := s.createIssue.Handle(r.Context(), commands.CreateIssue{
+	created, err := s.createIssue.Handle(r.Context(), issuecmd.CreateIssue{
 		Raw:       request.Raw,
 		Tags:      request.Tags,
 		CreatedBy: actorForRequest(r, request.CreatedBy),
@@ -922,7 +924,7 @@ func actorForRequest(r *http.Request, fallback string) string {
 	return fallback
 }
 
-func toPairwiseIssueSimilarityResponse(items []queries.PairwiseIssueSimilarity) []pairwiseIssueSimilarity {
+func toPairwiseIssueSimilarityResponse(items []issueviews.PairwiseIssueSimilarity) []pairwiseIssueSimilarity {
 	out := make([]pairwiseIssueSimilarity, len(items))
 	for i, item := range items {
 		out[i] = pairwiseIssueSimilarity{

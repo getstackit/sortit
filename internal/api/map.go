@@ -3,7 +3,7 @@ package api
 import (
 	"net/http"
 
-	"splat/internal/queries"
+	"splat/internal/mapview"
 )
 
 func (s *Server) handleMap(w http.ResponseWriter, r *http.Request) {
@@ -24,7 +24,7 @@ func (s *Server) handleMap(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	result, err := s.getMap.Handle(r.Context(), queries.MapQuery{
+	result, err := s.getMap.Handle(r.Context(), mapview.MapQuery{
 		Viewport:      viewport,
 		EdgeThreshold: edgeThreshold,
 		StatusFilter:  statusFilter,
@@ -55,7 +55,7 @@ func (s *Server) handleMapEdges(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	result, err := s.getMapEdges.Handle(r.Context(), queries.MapQuery{
+	result, err := s.getMapEdges.Handle(r.Context(), mapview.MapQuery{
 		Viewport:      viewport,
 		EdgeThreshold: edgeThreshold,
 		StatusFilter:  statusFilter,

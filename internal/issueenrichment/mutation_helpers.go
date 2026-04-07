@@ -4,20 +4,20 @@ import (
 	"context"
 
 	"splat/internal/issues"
-	"splat/internal/services"
+	"splat/internal/tags"
 )
 
 func (s *IssueEnricher) analyzeMutationText(ctx context.Context, canonicalRaw string, explicitTags []string) (AnalyzeTextResult, error) {
 	analysis, err := s.AnalyzeText(ctx, canonicalRaw, AnalyzeTextOptions{
 		PreferredTags: explicitTags,
-		CandidateMode: services.CandidateModeRetrievalShortlist,
+		CandidateMode: tags.CandidateModeRetrievalShortlist,
 		Verify:        true,
 	})
 	if err != nil {
 		return AnalyzeTextResult{}, err
 	}
 
-	if err := s.catalog.EnsureStoredTags(ctx, services.CatalogTagsFromAnalysis(analysis.CandidateSet.AITags(), explicitTags, analysis.Analyzed.Tags)); err != nil {
+	if err := s.catalog.EnsureStoredTags(ctx, tags.CatalogTagsFromAnalysis(analysis.CandidateSet.AITags(), explicitTags, analysis.Analyzed.Tags)); err != nil {
 		return AnalyzeTextResult{}, err
 	}
 

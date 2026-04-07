@@ -11,7 +11,7 @@ import (
 
 	"splat/internal/ai"
 	"splat/internal/issues"
-	"splat/internal/queries"
+	"splat/internal/search"
 )
 
 func TestUnifiedSearchEndpointReturnsIssuesAndRelatedTags(t *testing.T) {
@@ -95,7 +95,7 @@ func TestUnifiedSearchEndpointReturnsIssuesAndRelatedTags(t *testing.T) {
 		t.Fatalf("expected 200 for unified search, got %d", rec.Code)
 	}
 
-	var payload queries.SearchUnifiedResponse
+	var payload search.SearchUnifiedResponse
 	if err := json.NewDecoder(rec.Body).Decode(&payload); err != nil {
 		t.Fatalf("decode unified search response: %v", err)
 	}
@@ -180,7 +180,7 @@ func TestUnifiedSearchPrefersHigherContentConfidenceInNearTie(t *testing.T) {
 		t.Fatalf("expected 200 for unified search, got %d", rec.Code)
 	}
 
-	var payload queries.SearchUnifiedResponse
+	var payload search.SearchUnifiedResponse
 	if err := json.NewDecoder(rec.Body).Decode(&payload); err != nil {
 		t.Fatalf("decode unified search response: %v", err)
 	}
@@ -263,7 +263,7 @@ func TestUnifiedSearchBoostsRecentVelocity(t *testing.T) {
 		t.Fatalf("expected 200 for unified search, got %d", rec.Code)
 	}
 
-	var payload queries.SearchUnifiedResponse
+	var payload search.SearchUnifiedResponse
 	if err := json.NewDecoder(rec.Body).Decode(&payload); err != nil {
 		t.Fatalf("decode unified search response: %v", err)
 	}
@@ -328,7 +328,7 @@ func TestUnifiedSearchPrefersFreshIssueWhenBaseMatchIsEqual(t *testing.T) {
 		t.Fatalf("expected 200 for unified search, got %d", rec.Code)
 	}
 
-	var payload queries.SearchUnifiedResponse
+	var payload search.SearchUnifiedResponse
 	if err := json.NewDecoder(rec.Body).Decode(&payload); err != nil {
 		t.Fatalf("decode unified search response: %v", err)
 	}

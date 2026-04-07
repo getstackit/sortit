@@ -6,32 +6,32 @@ import (
 
 	"splat/internal/ai"
 	"splat/internal/issues"
-	"splat/internal/services"
+	"splat/internal/tags"
 )
 
 type IssueEnricher struct {
 	analyzer  *ai.Analyzer
-	catalog   *services.CatalogService
+	catalog   *tags.CatalogService
 	logger    *slog.Logger
 	exemplars *ExemplarPool
 }
 
 type AnalyzeTextOptions struct {
 	PreferredTags []string
-	CandidateMode services.CandidateMode
+	CandidateMode tags.CandidateMode
 	Verify        bool
 }
 
 type AnalyzeTextResult struct {
 	Analyzed     ai.AnalyzedIssue
-	CandidateSet services.CandidateTaxonomy
+	CandidateSet tags.CandidateTaxonomy
 	TagScores    []issues.TagRelevance
 }
 
 const issueEnrichmentTimeout = 20 * time.Second
 const persistedIssueHintLimit = 5
 
-func NewIssueEnricher(analyzer *ai.Analyzer, catalog *services.CatalogService, logger *slog.Logger) *IssueEnricher {
+func NewIssueEnricher(analyzer *ai.Analyzer, catalog *tags.CatalogService, logger *slog.Logger) *IssueEnricher {
 	return &IssueEnricher{
 		analyzer:  analyzer,
 		catalog:   catalog,

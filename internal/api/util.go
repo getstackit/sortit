@@ -10,8 +10,8 @@ import (
 	"strconv"
 	"strings"
 
+	issueviews "splat/internal/issues/views"
 	issuemap "splat/internal/map"
-	"splat/internal/queries"
 )
 
 // decodeJSON reads the JSON body of an HTTP request into a value of type T.
@@ -100,19 +100,19 @@ func ParseEdgeThreshold(values url.Values) (*float64, error) {
 	return &threshold, nil
 }
 
-func ParseIssueStatusFilter(values url.Values) (queries.IssueStatusFilter, error) {
+func ParseIssueStatusFilter(values url.Values) (issueviews.IssueStatusFilter, error) {
 	raw := strings.TrimSpace(values.Get("status"))
 	if raw == "" {
-		return queries.IssueStatusFilterOpen, nil
+		return issueviews.IssueStatusFilterOpen, nil
 	}
 
 	switch strings.ToLower(raw) {
-	case string(queries.IssueStatusFilterOpen):
-		return queries.IssueStatusFilterOpen, nil
-	case string(queries.IssueStatusFilterClosed):
-		return queries.IssueStatusFilterClosed, nil
-	case string(queries.IssueStatusFilterAll):
-		return queries.IssueStatusFilterAll, nil
+	case string(issueviews.IssueStatusFilterOpen):
+		return issueviews.IssueStatusFilterOpen, nil
+	case string(issueviews.IssueStatusFilterClosed):
+		return issueviews.IssueStatusFilterClosed, nil
+	case string(issueviews.IssueStatusFilterAll):
+		return issueviews.IssueStatusFilterAll, nil
 	default:
 		return "", strconv.ErrSyntax
 	}

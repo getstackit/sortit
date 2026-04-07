@@ -9,7 +9,7 @@ import (
 
 	"splat/internal/domain"
 	"splat/internal/issues"
-	"splat/internal/services"
+	"splat/internal/tags"
 	"splat/internal/vectors"
 )
 
@@ -73,7 +73,7 @@ type verifierCandidate struct {
 func (s *IssueEnricher) decorateAndVerifyTagScores(
 	ctx context.Context,
 	issueEmbedding []float64,
-	candidates services.CandidateTaxonomy,
+	candidates tags.CandidateTaxonomy,
 	scores []issues.TagRelevance,
 	tagSpecificity map[string]*float64,
 	verify bool,
@@ -82,7 +82,7 @@ func (s *IssueEnricher) decorateAndVerifyTagScores(
 		return nil
 	}
 
-	candidateByName := make(map[string]services.CandidateTag, len(candidates.Tags))
+	candidateByName := make(map[string]tags.CandidateTag, len(candidates.Tags))
 	for _, candidate := range candidates.Tags {
 		name := normalizeTagName(candidate.Name)
 		if name == "" {
@@ -232,17 +232,17 @@ func bestDominatingCandidate(
 	return &unassigned[bestIndex], roundVerifierMetric(bestGap)
 }
 
-func candidateSourceStrings(sources []services.CandidateSource) []string {
+func candidateSourceStrings(sources []tags.CandidateSource) []string {
 	if len(sources) == 0 {
 		return nil
 	}
 	seen := make(map[string]struct{}, len(sources))
 	out := make([]string, 0, len(sources))
-	for _, source := range []services.CandidateSource{
-		services.CandidateSourceExplicit,
-		services.CandidateSourceRetrieval,
-		services.CandidateSourceAnchor,
-		services.CandidateSourceFullCatalog,
+	for _, source := range []tags.CandidateSource{
+		tags.CandidateSourceExplicit,
+		tags.CandidateSourceRetrieval,
+		tags.CandidateSourceAnchor,
+		tags.CandidateSourceFullCatalog,
 	} {
 		for _, candidate := range sources {
 			if candidate != source {
@@ -268,7 +268,7 @@ func candidateSourceStrings(sources []services.CandidateSource) []string {
 }
 
 func anchorOnlyCandidate(sources []string) bool {
-	return len(sources) == 1 && sources[0] == string(services.CandidateSourceAnchor)
+	return len(sources) == 1 && sources[0] == string(tags.CandidateSourceAnchor)
 }
 
 func issuesDisplayCopyTagScores(scores []issues.TagRelevance) []issues.TagRelevance {

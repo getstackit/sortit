@@ -12,10 +12,10 @@ import (
 	"github.com/spf13/cobra"
 
 	"splat/internal/cli/integrations"
-	"splat/internal/commands"
 	"splat/internal/issues"
+	issuecmd "splat/internal/issues/commands"
 	issuemap "splat/internal/map"
-	"splat/internal/queries"
+	"splat/internal/people"
 )
 
 type rootOptions struct {
@@ -272,7 +272,7 @@ func newIssueRefineCmd(opts *rootOptions) *cobra.Command {
 		Args:  cobra.MinimumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			client := opts.client()
-			var result commands.IssueMutationResult
+			var result issuecmd.IssueMutationResult
 			if err := client.Post(cmd.Context(), "/issues/refine", batchMutationRequest{
 				IDs:       args,
 				Raw:       raw,
@@ -300,7 +300,7 @@ func newIssueProgressCmd(opts *rootOptions) *cobra.Command {
 		Args:  cobra.MinimumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			client := opts.client()
-			var result commands.IssueMutationResult
+			var result issuecmd.IssueMutationResult
 			if err := client.Post(cmd.Context(), "/issues/progress", batchMutationRequest{
 				IDs:       args,
 				Raw:       raw,
@@ -329,7 +329,7 @@ func newIssueCloseCmd(opts *rootOptions) *cobra.Command {
 		Args:  cobra.MinimumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			client := opts.client()
-			var result commands.IssueMutationResult
+			var result issuecmd.IssueMutationResult
 			if err := client.Post(cmd.Context(), "/issues/close", batchMutationRequest{
 				IDs:        args,
 				ClosedBy:   closedBy,
@@ -358,7 +358,7 @@ func newIssueAssignCmd(opts *rootOptions) *cobra.Command {
 		Args:  cobra.MinimumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			client := opts.client()
-			var result commands.IssueMutationResult
+			var result issuecmd.IssueMutationResult
 			if err := client.Post(cmd.Context(), "/issues/assign", batchMutationRequest{
 				IDs:        args,
 				AssignedTo: assignedTo,
@@ -490,7 +490,7 @@ func newIssueReEnrichCmd(opts *rootOptions) *cobra.Command {
 		Args:  cobra.MinimumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			client := opts.client()
-			var result commands.IssueMutationResult
+			var result issuecmd.IssueMutationResult
 			if err := client.Post(cmd.Context(), "/issues/re-enrich", batchMutationRequest{
 				IDs: args,
 			}, &result); err != nil {
@@ -565,7 +565,7 @@ func newPeopleProfileCmd(opts *rootOptions) *cobra.Command {
 		RunE: func(cmd *cobra.Command, args []string) error {
 			client := opts.client()
 			params := newQueryParams().add("status", status)
-			var response queries.PersonTagProfile
+			var response people.PersonTagProfile
 			if err := client.Get(cmd.Context(), "/people/"+args[0]+"/profile"+params.encode(), &response); err != nil {
 				return err
 			}
@@ -586,7 +586,7 @@ func newPeopleCorrelationsCmd(opts *rootOptions) *cobra.Command {
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			client := opts.client()
 			params := newQueryParams().add("status", status)
-			var response queries.WorkCorrelationsResult
+			var response people.WorkCorrelationsResult
 			if err := client.Get(cmd.Context(), "/people/correlations"+params.encode(), &response); err != nil {
 				return err
 			}

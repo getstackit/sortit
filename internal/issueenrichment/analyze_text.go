@@ -7,19 +7,19 @@ import (
 
 	"splat/internal/ai"
 	"splat/internal/issues"
-	"splat/internal/services"
+	"splat/internal/tags"
 )
 
-func (s *IssueEnricher) analyzeWithCandidateTaxonomy(ctx context.Context, raw string, preferred []string, mode services.CandidateMode) (ai.AnalyzedIssue, services.CandidateTaxonomy, error) {
+func (s *IssueEnricher) analyzeWithCandidateTaxonomy(ctx context.Context, raw string, preferred []string, mode tags.CandidateMode) (ai.AnalyzedIssue, tags.CandidateTaxonomy, error) {
 	freshEmbedding, err := s.analyzer.EmbedText(ctx, raw)
 	if err != nil {
-		return ai.AnalyzedIssue{}, services.CandidateTaxonomy{}, fmt.Errorf("embed raw for shortlist: %w", err)
+		return ai.AnalyzedIssue{}, tags.CandidateTaxonomy{}, fmt.Errorf("embed raw for shortlist: %w", err)
 	}
 	freshEmbeddingVector := Float32VectorToFloat64(freshEmbedding.Vector)
 
 	candidates, err := s.catalog.IssueTaxonomyCandidates(ctx, freshEmbeddingVector, preferred, mode, 15)
 	if err != nil {
-		return ai.AnalyzedIssue{}, services.CandidateTaxonomy{}, err
+		return ai.AnalyzedIssue{}, tags.CandidateTaxonomy{}, err
 	}
 	candidates = s.catalog.AnnotateCandidateHints(ctx, candidates, freshEmbeddingVector, persistedIssueHintLimit)
 
@@ -34,7 +34,7 @@ func (s *IssueEnricher) analyzeWithCandidateTaxonomy(ctx context.Context, raw st
 
 	analyzed, err := s.analyzer.AnalyzeIssueData(ctx, raw, candidates.AITags(), examples)
 	if err != nil {
-		return ai.AnalyzedIssue{}, services.CandidateTaxonomy{}, err
+		return ai.AnalyzedIssue{}, tags.CandidateTaxonomy{}, err
 	}
 	return analyzed, candidates, nil
 }

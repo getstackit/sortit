@@ -9,7 +9,7 @@ import (
 	"time"
 
 	"splat/internal/issues"
-	"splat/internal/queries"
+	"splat/internal/people"
 )
 
 const testUser = "Casey"
@@ -114,7 +114,7 @@ func TestPersonDetailReturnsAssignedQueueHeadAndRecommendations(t *testing.T) {
 		t.Fatalf("expected 200 for person detail, got %d", rec.Code)
 	}
 
-	var payload queries.PersonDetail
+	var payload people.PersonDetail
 	if err := json.NewDecoder(rec.Body).Decode(&payload); err != nil {
 		t.Fatalf("decode person detail response: %v", err)
 	}
@@ -265,7 +265,7 @@ func TestPersonDetailRecommendationsPreferMatureIssueWhenBaseMatchIsNearEqual(t 
 		t.Fatalf("expected 200 for person detail, got %d", rec.Code)
 	}
 
-	var payload queries.PersonDetail
+	var payload people.PersonDetail
 	if err := json.NewDecoder(rec.Body).Decode(&payload); err != nil {
 		t.Fatalf("decode person detail response: %v", err)
 	}
@@ -355,7 +355,7 @@ func TestPersonDetailRecommendationsDeprioritizeHighVelocityIssue(t *testing.T) 
 		t.Fatalf("expected 200 for person detail, got %d", rec.Code)
 	}
 
-	var payload queries.PersonDetail
+	var payload people.PersonDetail
 	if err := json.NewDecoder(rec.Body).Decode(&payload); err != nil {
 		t.Fatalf("decode person detail response: %v", err)
 	}
@@ -437,7 +437,7 @@ func TestPersonDetailRecommendationsPreferFreshIssueWhenBaseMatchIsEqual(t *test
 		t.Fatalf("expected 200 for person detail, got %d", rec.Code)
 	}
 
-	var payload queries.PersonDetail
+	var payload people.PersonDetail
 	if err := json.NewDecoder(rec.Body).Decode(&payload); err != nil {
 		t.Fatalf("decode person detail response: %v", err)
 	}

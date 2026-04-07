@@ -9,7 +9,7 @@ import (
 	"splat/internal/ai"
 	"splat/internal/domain"
 	"splat/internal/issues"
-	"splat/internal/services"
+	"splat/internal/tags"
 )
 
 const testProviderName = "test"
@@ -84,7 +84,7 @@ func TestAnalyzePersistedIssueUsesFreshEmbeddingForShortlist(t *testing.T) {
 		},
 	}
 	analyzer := ai.NewAnalyzer(tagger, embedder)
-	catalog := services.NewCatalogService(store, analyzer, slog.Default())
+	catalog := tags.NewCatalogService(store, analyzer, slog.Default())
 	enricher := NewIssueEnricher(analyzer, catalog, slog.Default())
 	enricher.SetExemplarPool(nil)
 
@@ -173,7 +173,7 @@ func TestAnalyzeCreateInputUsesShortlistAndKeepsExplicitTagsAsAnchors(t *testing
 		},
 	}
 	analyzer := ai.NewAnalyzer(tagger, embedder)
-	catalog := services.NewCatalogService(store, analyzer, slog.Default())
+	catalog := tags.NewCatalogService(store, analyzer, slog.Default())
 	enricher := NewIssueEnricher(analyzer, catalog, slog.Default())
 	enricher.SetExemplarPool(nil)
 
@@ -225,11 +225,11 @@ func TestAnalyzeTextFlagsWeakAnchorOnlyTagAgainstStrongerCandidate(t *testing.T)
 		},
 	}
 	analyzer := ai.NewAnalyzer(tagger, embedder)
-	catalog := services.NewCatalogService(store, analyzer, slog.Default())
+	catalog := tags.NewCatalogService(store, analyzer, slog.Default())
 	enricher := NewIssueEnricher(analyzer, catalog, slog.Default())
 
 	result, err := enricher.AnalyzeText(context.Background(), "database issue", AnalyzeTextOptions{
-		CandidateMode: services.CandidateModeRetrievalShortlist,
+		CandidateMode: tags.CandidateModeRetrievalShortlist,
 		Verify:        true,
 	})
 	if err != nil {
@@ -255,7 +255,7 @@ func TestAnalyzeTextFlagsWeakAnchorOnlyTagAgainstStrongerCandidate(t *testing.T)
 	if score.DominatedBy != "database" {
 		t.Fatalf("expected dominating candidate database, got %#v", score)
 	}
-	if len(score.CandidateSources) != 1 || score.CandidateSources[0] != string(services.CandidateSourceAnchor) {
+	if len(score.CandidateSources) != 1 || score.CandidateSources[0] != string(tags.CandidateSourceAnchor) {
 		t.Fatalf("expected anchor-only provenance, got %#v", score.CandidateSources)
 	}
 }
@@ -275,11 +275,11 @@ func TestAnalyzeTextCanDisableVerifier(t *testing.T) {
 		},
 	}
 	analyzer := ai.NewAnalyzer(tagger, embedder)
-	catalog := services.NewCatalogService(store, analyzer, slog.Default())
+	catalog := tags.NewCatalogService(store, analyzer, slog.Default())
 	enricher := NewIssueEnricher(analyzer, catalog, slog.Default())
 
 	result, err := enricher.AnalyzeText(context.Background(), "database issue", AnalyzeTextOptions{
-		CandidateMode: services.CandidateModeRetrievalShortlist,
+		CandidateMode: tags.CandidateModeRetrievalShortlist,
 		Verify:        false,
 	})
 	if err != nil {

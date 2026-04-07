@@ -13,8 +13,8 @@ import (
 	"time"
 
 	"splat/internal/ai"
-	"splat/internal/commands"
 	"splat/internal/issues"
+	issuecmd "splat/internal/issues/commands"
 	issuemap "splat/internal/map"
 )
 
@@ -1254,7 +1254,7 @@ func TestIssuesEndpointBatchMutationRoutes(t *testing.T) {
 		t.Fatalf("expected 200 for batch refine, got %d", refineRec.Code)
 	}
 
-	var refined commands.IssueMutationResult
+	var refined issuecmd.IssueMutationResult
 	if err := json.NewDecoder(refineRec.Body).Decode(&refined); err != nil {
 		t.Fatalf("decode batch refine response: %v", err)
 	}
@@ -1275,7 +1275,7 @@ func TestIssuesEndpointBatchMutationRoutes(t *testing.T) {
 		t.Fatalf("expected 200 for batch assign, got %d", assignRec.Code)
 	}
 
-	var assigned commands.IssueMutationResult
+	var assigned issuecmd.IssueMutationResult
 	if err := json.NewDecoder(assignRec.Body).Decode(&assigned); err != nil {
 		t.Fatalf("decode batch assign response: %v", err)
 	}

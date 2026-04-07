@@ -8,7 +8,7 @@ import (
 	"time"
 
 	"splat/internal/issues"
-	"splat/internal/services"
+	"splat/internal/tags"
 )
 
 const (
@@ -23,7 +23,7 @@ type IssueEnrichmentWorker struct {
 	DB            issues.UnitOfWorkBeginner
 	Jobs          issues.EnrichmentJobClaimer
 	Enricher      *IssueEnricher
-	Catalog       *services.CatalogService
+	Catalog       *tags.CatalogService
 	PollInterval  time.Duration
 	LeaseDuration time.Duration
 	RetryDelay    time.Duration

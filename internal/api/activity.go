@@ -4,7 +4,7 @@ import (
 	"net/http"
 	"strings"
 
-	"splat/internal/queries"
+	issueviews "splat/internal/issues/views"
 )
 
 func (s *Server) handleActivity(w http.ResponseWriter, r *http.Request) {
@@ -14,7 +14,7 @@ func (s *Server) handleActivity(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	input := queries.ListActivity{
+	input := issueviews.ListActivity{
 		Cursor: strings.TrimSpace(r.URL.Query().Get("cursor")),
 		Kind:   strings.TrimSpace(r.URL.Query().Get("kind")),
 	}

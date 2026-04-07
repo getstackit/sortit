@@ -10,13 +10,16 @@ import (
 
 	"splat/internal/ai"
 	"splat/internal/auth"
-	"splat/internal/commands"
 	issueenrichment "splat/internal/issueenrichment"
 	"splat/internal/issueevents"
 	"splat/internal/issues"
+	issuecmd "splat/internal/issues/commands"
+	issueviews "splat/internal/issues/views"
 	issuemap "splat/internal/map"
-	"splat/internal/queries"
-	"splat/internal/services"
+	"splat/internal/mapview"
+	"splat/internal/people"
+	"splat/internal/search"
+	"splat/internal/tags"
 )
 
 func TestHandleCreateIssue(t *testing.T) {
@@ -218,9 +221,9 @@ func TestHandleRefineIssues(t *testing.T) {
 		t.Fatalf("expected success result, got error: %s", firstText(result))
 	}
 
-	response, ok := result.StructuredContent.(commands.IssueMutationResult)
+	response, ok := result.StructuredContent.(issuecmd.IssueMutationResult)
 	if !ok {
-		t.Fatalf("expected commands.IssueMutationResult structured content, got %T", result.StructuredContent)
+		t.Fatalf("expected issuecmd.IssueMutationResult structured content, got %T", result.StructuredContent)
 	}
 	if response.Summary.Succeeded != 1 || response.Summary.Failed != 0 {
 		t.Fatalf("unexpected summary: %#v", response.Summary)
@@ -259,7 +262,7 @@ func TestHandleRefineIssuesUsesAuthenticatedPrincipal(t *testing.T) {
 		t.Fatalf("expected success result, got error: %s", firstText(result))
 	}
 
-	response := result.StructuredContent.(commands.IssueMutationResult)
+	response := result.StructuredContent.(issuecmd.IssueMutationResult)
 	if response.Results[0].Issue.Discussion[1].CreatedBy != "Casey Authenticated" {
 		t.Fatalf("expected authenticated actor, got %q", response.Results[0].Issue.Discussion[1].CreatedBy)
 	}
@@ -283,9 +286,9 @@ func TestHandleProgressIssues(t *testing.T) {
 		t.Fatalf("expected success result, got error: %s", firstText(result))
 	}
 
-	response, ok := result.StructuredContent.(commands.IssueMutationResult)
+	response, ok := result.StructuredContent.(issuecmd.IssueMutationResult)
 	if !ok {
-		t.Fatalf("expected commands.IssueMutationResult structured content, got %T", result.StructuredContent)
+		t.Fatalf("expected issuecmd.IssueMutationResult structured content, got %T", result.StructuredContent)
 	}
 	if len(response.Results) != 1 || response.Results[0].Issue == nil {
 		t.Fatalf("expected per-issue success result, got %#v", response.Results)
@@ -315,9 +318,9 @@ func TestHandleCloseIssues(t *testing.T) {
 		t.Fatalf("expected success result, got error: %s", firstText(result))
 	}
 
-	response, ok := result.StructuredContent.(commands.IssueMutationResult)
+	response, ok := result.StructuredContent.(issuecmd.IssueMutationResult)
 	if !ok {
-		t.Fatalf("expected commands.IssueMutationResult structured content, got %T", result.StructuredContent)
+		t.Fatalf("expected issuecmd.IssueMutationResult structured content, got %T", result.StructuredContent)
 	}
 	if len(response.Results) != 1 || response.Results[0].Issue == nil {
 		t.Fatalf("expected per-issue success result, got %#v", response.Results)
@@ -346,7 +349,7 @@ func TestHandleCloseIssuesSupportsPartialFailure(t *testing.T) {
 		t.Fatalf("expected success result, got error: %s", firstText(result))
 	}
 
-	response := result.StructuredContent.(commands.IssueMutationResult)
+	response := result.StructuredContent.(issuecmd.IssueMutationResult)
 	if got := response.RequestedIDs; len(got) != 2 || got[0] != created.ID || got[1] != "issue-000999" {
 		t.Fatalf("expected sanitized requested ids, got %#v", got)
 	}
@@ -363,7 +366,7 @@ func TestHandleAssignIssuesAllowsUnassign(t *testing.T) {
 
 	handler := newTestHandlers()
 	created := createTestIssue(t, handler, "Safari crashes when exporting a PDF", "Casey")
-	_, err := handler.assignIssues.Handle(context.Background(), commands.AssignIssues{
+	_, err := handler.assignIssues.Handle(context.Background(), issuecmd.AssignIssues{
 		IDs:        []string{created.ID},
 		AssignedTo: "Jordan",
 	})
@@ -382,7 +385,7 @@ func TestHandleAssignIssuesAllowsUnassign(t *testing.T) {
 		t.Fatalf("expected success result, got error: %s", firstText(result))
 	}
 
-	response := result.StructuredContent.(commands.IssueMutationResult)
+	response := result.StructuredContent.(issuecmd.IssueMutationResult)
 	if response.Results[0].Issue.AssignedTo != "" {
 		t.Fatalf("expected issue to be unassigned, got %q", response.Results[0].Issue.AssignedTo)
 	}
@@ -471,38 +474,38 @@ func newTestHandlers() *handlers {
 		ai.NewStubCanonicalizer(),
 	)
 	store := issues.NewInMemoryStore(nil)
-	catalog := services.NewCatalogService(nil, analyzer, slog.Default())
+	catalog := tags.NewCatalogService(nil, analyzer, slog.Default())
 	enricher := issueenrichment.NewIssueEnricher(analyzer, catalog, slog.Default())
-	runner := &commands.CommandRunner{DB: store}
+	runner := &issuecmd.CommandRunner{DB: store}
 	eventBus := issueevents.NewEventBus()
 
 	return &handlers{
-		createIssue: commands.CreateIssueHandler{
+		createIssue: issuecmd.CreateIssueHandler{
 			Logger:   slog.Default(),
 			Runner:   runner,
 			Enricher: enricher,
 			Events:   eventBus,
 		},
-		refineIssues:     commands.RefineIssuesHandler{RefineIssue: commands.RefineIssueHandler{Runner: runner, Store: store, Enricher: enricher, Events: eventBus}},
-		progressIssues:   commands.ProgressIssuesHandler{ProgressIssue: commands.ProgressIssueHandler{Runner: runner, Events: eventBus}},
-		closeIssues:      commands.CloseIssuesHandler{CloseIssue: commands.CloseIssueHandler{Runner: runner, Events: eventBus}},
-		assignIssues:     commands.AssignIssuesHandler{AssignIssue: commands.AssignIssueHandler{Runner: runner, Events: eventBus}},
-		splitIssue:       commands.SplitIssueHandler{Runner: runner, Enricher: enricher, Events: eventBus},
-		combineIssues:    commands.CombineIssuesHandler{Runner: runner, Store: store, Enricher: enricher, Events: eventBus},
-		linkIssues:       commands.LinkIssuesHandler{Runner: runner, Events: eventBus},
-		getIssue:         queries.GetIssueHandler{Store: store},
-		listTags:         queries.ListTagsHandler{Catalog: catalog},
-		searchIssues:     queries.SearchIssuesHandler{Analyzer: analyzer, Catalog: catalog, Store: store},
-		exploreIssue:     queries.ExploreIssueHandler{Reader: store, DetailReader: store, Catalog: catalog},
-		getPersonProfile: queries.GetPersonProfileHandler{Store: store},
-		workCorrelations: queries.WorkCorrelationsHandler{Store: store},
+		refineIssues:     issuecmd.RefineIssuesHandler{RefineIssue: issuecmd.RefineIssueHandler{Runner: runner, Store: store, Enricher: enricher, Events: eventBus}},
+		progressIssues:   issuecmd.ProgressIssuesHandler{ProgressIssue: issuecmd.ProgressIssueHandler{Runner: runner, Events: eventBus}},
+		closeIssues:      issuecmd.CloseIssuesHandler{CloseIssue: issuecmd.CloseIssueHandler{Runner: runner, Events: eventBus}},
+		assignIssues:     issuecmd.AssignIssuesHandler{AssignIssue: issuecmd.AssignIssueHandler{Runner: runner, Events: eventBus}},
+		splitIssue:       issuecmd.SplitIssueHandler{Runner: runner, Enricher: enricher, Events: eventBus},
+		combineIssues:    issuecmd.CombineIssuesHandler{Runner: runner, Store: store, Enricher: enricher, Events: eventBus},
+		linkIssues:       issuecmd.LinkIssuesHandler{Runner: runner, Events: eventBus},
+		getIssue:         issueviews.GetIssueHandler{Store: store},
+		listTags:         issueviews.ListTagsHandler{Catalog: catalog},
+		searchIssues:     search.SearchIssuesHandler{Analyzer: analyzer, Catalog: catalog, Store: store},
+		exploreIssue:     mapview.ExploreIssueHandler{Reader: store, DetailReader: store, Catalog: catalog},
+		getPersonProfile: people.GetPersonProfileHandler{Store: store},
+		workCorrelations: people.WorkCorrelationsHandler{Store: store},
 	}
 }
 
 func createTestIssue(t *testing.T, handler *handlers, raw string, createdBy string) issues.Issue {
 	t.Helper()
 
-	issue, err := handler.createIssue.Handle(context.Background(), commands.CreateIssue{
+	issue, err := handler.createIssue.Handle(context.Background(), issuecmd.CreateIssue{
 		Raw:       raw,
 		CreatedBy: createdBy,
 	})

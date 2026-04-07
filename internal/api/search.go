@@ -4,7 +4,7 @@ import (
 	"net/http"
 	"strings"
 
-	"splat/internal/queries"
+	"splat/internal/search"
 )
 
 func (s *Server) handleUnifiedSearch(w http.ResponseWriter, r *http.Request) {
@@ -28,7 +28,7 @@ func (s *Server) handleUnifiedSearch(w http.ResponseWriter, r *http.Request) {
 		searchLimit = *limit
 	}
 
-	result, err := s.searchUnified.Handle(r.Context(), queries.SearchUnified{
+	result, err := s.searchUnified.Handle(r.Context(), search.SearchUnified{
 		Query: query,
 		Limit: searchLimit,
 	})

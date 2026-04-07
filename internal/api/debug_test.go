@@ -11,10 +11,10 @@ import (
 	"time"
 
 	"splat/internal/ai"
+	"splat/internal/diagnostics"
 	"splat/internal/domain"
 	"splat/internal/issues"
-	"splat/internal/queries"
-	"splat/internal/services"
+	"splat/internal/tags"
 )
 
 type fakeTagger struct {
@@ -151,7 +151,7 @@ func TestDebugIssueAnalyzeEndpoint(t *testing.T) {
 	if len(tagger.capturedTags) == 0 {
 		t.Fatal("expected default taxonomy to be used when no stored tags exist")
 	}
-	if payload.CandidateSet.Mode != services.CandidateModeRetrievalShortlist {
+	if payload.CandidateSet.Mode != tags.CandidateModeRetrievalShortlist {
 		t.Fatalf("expected retrieval-shortlist default mode, got %q", payload.CandidateSet.Mode)
 	}
 	if len(payload.CandidateSet.Tags) == 0 {
@@ -351,10 +351,10 @@ func TestDebugIssueAnalyzeEndpointReturnsCandidateProvenance(t *testing.T) {
 	if err := json.NewDecoder(rec.Body).Decode(&payload); err != nil {
 		t.Fatalf("decode payload: %v", err)
 	}
-	if payload.CandidateSet.Mode != services.CandidateModeRetrievalShortlist {
+	if payload.CandidateSet.Mode != tags.CandidateModeRetrievalShortlist {
 		t.Fatalf("expected retrieval-shortlist candidate mode, got %q", payload.CandidateSet.Mode)
 	}
-	candidateByName := make(map[string]services.CandidateTag, len(payload.CandidateSet.Tags))
+	candidateByName := make(map[string]tags.CandidateTag, len(payload.CandidateSet.Tags))
 	for _, tag := range payload.CandidateSet.Tags {
 		candidateByName[tag.Name] = tag
 	}
@@ -362,7 +362,7 @@ func TestDebugIssueAnalyzeEndpointReturnsCandidateProvenance(t *testing.T) {
 	if !ok {
 		t.Fatalf("expected search in candidate set, got %#v", payload.CandidateSet.Tags)
 	}
-	if !containsCandidateSource(search.Sources, services.CandidateSourceRetrieval) || !containsCandidateSource(search.Sources, services.CandidateSourceAnchor) {
+	if !containsCandidateSource(search.Sources, tags.CandidateSourceRetrieval) || !containsCandidateSource(search.Sources, tags.CandidateSourceAnchor) {
 		t.Fatalf("expected search retrieval+anchor provenance, got %#v", search.Sources)
 	}
 	if _, ok := candidateByName["backend"]; !ok {
@@ -419,11 +419,11 @@ func TestDebugIssueAnalyzeEndpointSupportsFullCatalogMode(t *testing.T) {
 	if err := json.NewDecoder(rec.Body).Decode(&payload); err != nil {
 		t.Fatalf("decode payload: %v", err)
 	}
-	if payload.CandidateSet.Mode != services.CandidateModeFullCatalog {
+	if payload.CandidateSet.Mode != tags.CandidateModeFullCatalog {
 		t.Fatalf("expected full-catalog mode, got %q", payload.CandidateSet.Mode)
 	}
 	for _, tag := range payload.CandidateSet.Tags {
-		if !containsCandidateSource(tag.Sources, services.CandidateSourceFullCatalog) {
+		if !containsCandidateSource(tag.Sources, tags.CandidateSourceFullCatalog) {
 			t.Fatalf("expected full-catalog provenance, got %#v", tag)
 		}
 	}
@@ -455,7 +455,7 @@ func TestDebugEvalTagsEndpoint(t *testing.T) {
 		t.Fatalf("expected 200, got %d", rec.Code)
 	}
 
-	var payload queries.DebugEvalTagsResult
+	var payload diagnostics.DebugEvalTagsResult
 	if err := json.NewDecoder(rec.Body).Decode(&payload); err != nil {
 		t.Fatalf("decode payload: %v", err)
 	}
@@ -465,7 +465,7 @@ func TestDebugEvalTagsEndpoint(t *testing.T) {
 	if payload.CaseCount == 0 {
 		t.Fatal("expected at least one benchmark case")
 	}
-	if payload.CandidateMode != services.CandidateModeRetrievalShortlist {
+	if payload.CandidateMode != tags.CandidateModeRetrievalShortlist {
 		t.Fatalf("expected retrieval-shortlist benchmark mode, got %q", payload.CandidateMode)
 	}
 	if !payload.VerifierEnabled {
@@ -498,11 +498,11 @@ func TestDebugEvalTagsEndpointSupportsFullCatalogMode(t *testing.T) {
 		t.Fatalf("expected 200, got %d", rec.Code)
 	}
 
-	var payload queries.DebugEvalTagsResult
+	var payload diagnostics.DebugEvalTagsResult
 	if err := json.NewDecoder(rec.Body).Decode(&payload); err != nil {
 		t.Fatalf("decode payload: %v", err)
 	}
-	if payload.CandidateMode != services.CandidateModeFullCatalog {
+	if payload.CandidateMode != tags.CandidateModeFullCatalog {
 		t.Fatalf("expected full-catalog benchmark mode, got %q", payload.CandidateMode)
 	}
 }
@@ -532,7 +532,7 @@ func TestDebugEvalTagsEndpointSupportsVerifierToggle(t *testing.T) {
 		t.Fatalf("expected 200, got %d", rec.Code)
 	}
 
-	var payload queries.DebugEvalTagsResult
+	var payload diagnostics.DebugEvalTagsResult
 	if err := json.NewDecoder(rec.Body).Decode(&payload); err != nil {
 		t.Fatalf("decode payload: %v", err)
 	}
@@ -584,7 +584,7 @@ func TestDebugFactorWeightsEndpointReturnsReviewQueue(t *testing.T) {
 		t.Fatalf("expected 200, got %d", rec.Code)
 	}
 
-	var payload queries.DebugFactorWeightsResult
+	var payload diagnostics.DebugFactorWeightsResult
 	if err := json.NewDecoder(rec.Body).Decode(&payload); err != nil {
 		t.Fatalf("decode payload: %v", err)
 	}
@@ -635,7 +635,7 @@ func TestDebugInvalidateMapProjectionEndpoint(t *testing.T) {
 	}
 }
 
-func containsCandidateSource(sources []services.CandidateSource, want services.CandidateSource) bool {
+func containsCandidateSource(sources []tags.CandidateSource, want tags.CandidateSource) bool {
 	for _, source := range sources {
 		if source == want {
 			return true
