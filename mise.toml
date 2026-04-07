@@ -2,8 +2,10 @@
 experimental = true
 
 [env]
+GOBIN = "{{ config_root }}/bin"
 PROJECT_ROOT = "{{ config_root }}"
 _.file = ".env"
+_.path = ["{{ config_root }}/bin", "{{ env.HOME }}/go/bin"]
 NEXT_PUBLIC_API_ORIGIN = "http://localhost:8081"
 SPLAT_WEB_ORIGIN = "http://localhost:3000"
 SPLAT_DATABASE_URL = "postgres://splat:splat@localhost:5432/splat?sslmode=disable"
@@ -12,6 +14,7 @@ SPLAT_TEST_DATABASE_URL = "postgres://splat:splat@localhost:5432/splat_test?sslm
 [tools]
 go = "1.26"
 node = "22"
+"go:golang.org/x/tools/cmd/goimports" = "latest"
 "go:github.com/DarthSim/overmind/v2" = "latest"
 "aqua:watchexec/watchexec" = "latest"
 golangci-lint = "2.10.1"
@@ -19,6 +22,10 @@ golangci-lint = "2.10.1"
 [tasks.install]
 description = "Install app dependencies"
 run = "npm install"
+
+[tasks.fmt]
+description = "Format Go code"
+run = "goimports -w ."
 
 [tasks.compile]
 description = "Check Go compilation"
@@ -43,12 +50,38 @@ run = "go run ./cmd/generate-schema-sql"
 description = "Backup the local PostgreSQL app database"
 run = "sh scripts/db-backup.sh"
 
-[tasks.lint]
-description = "Run ESLint and golangci-lint"
+[tasks."lint:go"]
+description = "Run golangci-lint"
 run = """
   GOCACHE="${GOCACHE:-/tmp/splat-gocache}" GOLANGCI_LINT_CACHE="${GOLANGCI_LINT_CACHE:-/tmp/splat-golangci-lint-cache}" golangci-lint run ./...
-  npm run lint
 """
+
+[tasks."lint:web"]
+description = "Run ESLint"
+run = "npm run lint"
+
+[tasks.lint]
+description = "Run ESLint and golangci-lint"
+depends = ["lint:go", "lint:web"]
+
+[tasks."test:fast"]
+description = "Run backend tests"
+run = "go test ./apps/... ./internal/..."
+
+[tasks."check:web"]
+description = "Run frontend tests and build"
+run = """
+  npm run test
+  npm run build
+"""
+
+[tasks."check:go"]
+description = "Run Go checks (format, lint, compile, backend tests)"
+depends = ["fmt", "lint:go", "compile", "test:fast"]
+
+[tasks.check]
+description = "Run all checks (format, lint, backend tests, frontend tests, build)"
+depends = ["fmt", "lint", "test:fast", "check:web"]
 
 [tasks."web:dev"]
 description = "Run the Next.js app in development mode"
