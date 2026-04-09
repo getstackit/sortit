@@ -4,7 +4,7 @@ import (
 	"net/http"
 	"strings"
 
-	"splat/internal/search"
+	"sortit/internal/search"
 )
 
 func (s *Server) handleUnifiedSearch(w http.ResponseWriter, r *http.Request) {

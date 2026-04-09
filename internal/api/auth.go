@@ -10,7 +10,7 @@ import (
 
 	"github.com/go-chi/chi/v5"
 
-	"splat/internal/auth"
+	"sortit/internal/auth"
 )
 
 type authSessionResponse struct {

@@ -5,8 +5,8 @@ import (
 	"math"
 	"slices"
 
-	"splat/internal/issues"
-	"splat/internal/scoring"
+	"sortit/internal/issues"
+	"sortit/internal/scoring"
 )
 
 func MeanTagProfile(matched []issues.PeopleAnalyticsIssue, tagSpecificity map[string]*float64) []issues.TagRelevance {

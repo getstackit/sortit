@@ -8,9 +8,9 @@ import (
 	"strings"
 	"unicode"
 
-	"splat/internal/issueanalytics"
-	"splat/internal/issuemath"
-	"splat/internal/issues"
+	"sortit/internal/issueanalytics"
+	"sortit/internal/issuemath"
+	"sortit/internal/issues"
 )
 
 func BuildMapFromIssues(storeIssues []issues.Issue, viewport *Viewport) (MapResponse, error) {

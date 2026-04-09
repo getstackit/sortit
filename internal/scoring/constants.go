@@ -1,4 +1,4 @@
-// Package scoring defines shared constants for Splat's scoring and ranking
+// Package scoring defines shared constants for Sortit's scoring and ranking
 // model. All tunable weights, thresholds, and limits used across search,
 // explore, person recommendations, and graph signals live here so they can
 // be reviewed and adjusted in one place.

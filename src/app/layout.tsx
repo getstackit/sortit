@@ -9,7 +9,7 @@ import { themeInitScript } from "@/lib/theme";
 import "./globals.css";
 
 export const metadata: Metadata = {
-  title: "Splat",
+  title: "Sortit",
   description: "An LLM-powered issue tracker",
 };
 

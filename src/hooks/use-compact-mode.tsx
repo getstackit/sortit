@@ -8,7 +8,7 @@ import {
   type ReactNode,
 } from "react";
 
-const STORAGE_KEY = "splat-compact-mode";
+const STORAGE_KEY = "sortit-compact-mode";
 
 function subscribe(callback: () => void) {
   window.addEventListener("storage", callback);

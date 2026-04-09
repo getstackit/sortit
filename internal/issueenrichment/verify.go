@@ -7,10 +7,10 @@ import (
 	"math"
 	"slices"
 
-	"splat/internal/domain"
-	"splat/internal/issues"
-	"splat/internal/tags"
-	"splat/internal/vectors"
+	"sortit/internal/domain"
+	"sortit/internal/issues"
+	"sortit/internal/tags"
+	"sortit/internal/vectors"
 )
 
 const (

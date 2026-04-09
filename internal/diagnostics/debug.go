@@ -9,12 +9,12 @@ import (
 	"slices"
 	"strings"
 
-	"splat/internal/ai"
-	issueenrichment "splat/internal/issueenrichment"
-	"splat/internal/issuemath"
-	"splat/internal/issues"
-	"splat/internal/tags"
-	"splat/internal/vectors"
+	"sortit/internal/ai"
+	issueenrichment "sortit/internal/issueenrichment"
+	"sortit/internal/issuemath"
+	"sortit/internal/issues"
+	"sortit/internal/tags"
+	"sortit/internal/vectors"
 )
 
 const debugIssueRawPreviewMaxLen = 120

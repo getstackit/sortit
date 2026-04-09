@@ -126,7 +126,7 @@ export function AppSidebar({
             s
           </span>
           <span className={cn("text-sm font-medium", collapsed && "hidden")}>
-            splat
+            sortit
           </span>
         </div>
         <div className="app-gradient-rule animate-gradient-shift absolute inset-x-0 bottom-0 h-px opacity-75" />

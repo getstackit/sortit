@@ -15,7 +15,7 @@ issue: issue-000087
 | R3 | Scopes can optionally be associated with a git repository, but many scopes won't be | Must-have |
 | R4 | Unscoped browsing is the default — scope is a lens, not a container or wall | Must-have |
 | R5 | Scope is optional on issues — zero scopes is normal | Must-have |
-| R6 | Scope can be inferred from context (e.g., current repo via .splat.yaml) | Leaning yes |
+| R6 | Scope can be inferred from context (e.g., current repo via .sortit.yaml) | Leaning yes |
 
 ---
 
@@ -23,7 +23,7 @@ issue: issue-000087
 
 ### A: Scopes are just tags
 
-No new concept. Use tag conventions (e.g., `repo:splat`, `team:platform`) and filtering syntax.
+No new concept. Use tag conventions (e.g., `repo:sortit`, `team:platform`) and filtering syntax.
 
 | Part | Mechanism |
 |------|-----------|
@@ -42,7 +42,7 @@ New `scopes` table with many-to-many join to issues. Tags remain separate.
 | **B2** | `issue_scopes` join table: issue_id, scope_id |
 | **B3** | CLI `--scope` flag filters by scope entity |
 | **B4** | CLI detects current repo → matches against known scopes with repo_url |
-| **B5** | Scope management commands (`splat scopes create/list/delete`) |
+| **B5** | Scope management commands (`sortit scopes create/list/delete`) |
 
 ### C: Typed tags ← Selected
 
@@ -50,10 +50,10 @@ Extend the existing tag system with a `dimension` field. Scope-dimension tags ge
 
 | Part | Mechanism | Flag |
 |------|-----------|:----:|
-| **C1** | Add `dimension` column to `tags` table: `scope` or `content` (default). Scope tags created explicitly via `splat tags create --dimension scope`. | |
+| **C1** | Add `dimension` column to `tags` table: `scope` or `content` (default). Scope tags created explicitly via `sortit tags create --dimension scope`. | |
 | **C2** | Scope tags always get relevance 1.0 on issues — binary, not continuous. | |
 | **C3** | `--scope` flag on list/search filters by scope-dimension tags only, with AND semantics. | |
-| **C4** | `.splat.yaml` in repo root (searched upward). Default scopes auto-applied on issue creation. For search/explore, default scopes act as a **boost** (not filter) — issues matching your scope rank higher, but out-of-scope issues still appear. Explore surfaces when related issues have incompatible scopes. | |
+| **C4** | `.sortit.yaml` in repo root (searched upward). Default scopes auto-applied on issue creation. For search/explore, default scopes act as a **boost** (not filter) — issues matching your scope rank higher, but out-of-scope issues still appear. Explore surfaces when related issues have incompatible scopes. | |
 | **C5** | Enrichment can suggest scope tags the same as content tags. Scope tags get 1.0 loading when applied. Nuance to be resolved during build. | |
 
 ---
@@ -68,7 +68,7 @@ Extend the existing tag system with a `dimension` field. Scope-dimension tags ge
 | R3 | Scopes can optionally be associated with a git repository | Must-have | ✅ |
 | R4 | Unscoped browsing is the default — scope is a lens, not a container | Must-have | ✅ |
 | R5 | Scope is optional on issues — zero scopes is normal | Must-have | ✅ |
-| R6 | Scope can be inferred from context (e.g., current repo via .splat.yaml) | Leaning yes | ✅ |
+| R6 | Scope can be inferred from context (e.g., current repo via .sortit.yaml) | Leaning yes | ✅ |
 
 ---
 

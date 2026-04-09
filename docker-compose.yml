@@ -4,14 +4,14 @@ services:
     ports:
       - "${POSTGRES_PORT:-5432}:5432"
     environment:
-      POSTGRES_USER: splat
-      POSTGRES_PASSWORD: splat
-      POSTGRES_DB: splat
+      POSTGRES_USER: sortit
+      POSTGRES_PASSWORD: sortit
+      POSTGRES_DB: sortit
     volumes:
       - pgdata_paradedb18:/var/lib/postgresql
       - ./docker/initdb:/docker-entrypoint-initdb.d:ro
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U splat"]
+      test: ["CMD-SHELL", "pg_isready -U sortit"]
       interval: 2s
       timeout: 5s
       retries: 10

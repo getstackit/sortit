@@ -21,7 +21,7 @@ export function LoginScreen({ returnTo }: { returnTo?: string } = {}) {
           s
         </div>
         <p className="mt-6 text-[11px] font-medium uppercase tracking-[0.22em] text-muted-foreground">
-          Splat
+          Sortit
         </p>
         <h1 className="mt-3 text-3xl font-semibold tracking-tight text-foreground">
           Sign in with GitHub

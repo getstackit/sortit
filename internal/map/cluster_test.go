@@ -3,7 +3,7 @@ package issuemap
 import (
 	"testing"
 
-	"splat/internal/issues"
+	"sortit/internal/issues"
 )
 
 func TestClusterTopTagUsesHighestAggregateRelevance(t *testing.T) {

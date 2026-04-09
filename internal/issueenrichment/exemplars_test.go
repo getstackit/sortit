@@ -4,7 +4,7 @@ import (
 	"context"
 	"testing"
 
-	"splat/internal/ai"
+	"sortit/internal/ai"
 )
 
 func TestExemplarPoolSelectReturnsMostSimilar(t *testing.T) {

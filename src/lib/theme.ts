@@ -1,4 +1,4 @@
-export const THEME_STORAGE_KEY = "splat-theme";
+export const THEME_STORAGE_KEY = "sortit-theme";
 
 export type ThemePreference = "light" | "dark" | "system";
 

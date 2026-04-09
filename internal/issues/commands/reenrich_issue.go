@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"time"
 
-	"splat/internal/issues"
+	"sortit/internal/issues"
 )
 
 type ReEnrichIssue struct {

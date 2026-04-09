@@ -101,7 +101,7 @@ func (s *Store) UpsertOAuthUser(ctx context.Context, oauthUser OAuthUser) (User,
 }
 
 func (s *Store) CreateSession(ctx context.Context, userID string, expiresAt time.Time) (string, error) {
-	rawToken, tokenHash, err := newSecretToken("sst")
+	rawToken, tokenHash, err := newSecretToken("sortitsession")
 	if err != nil {
 		return "", err
 	}
@@ -143,7 +143,7 @@ func (s *Store) LookupSession(ctx context.Context, rawToken string) (Principal, 
 }
 
 func (s *Store) CreateAPIToken(ctx context.Context, userID, name string) (APIToken, string, error) {
-	rawToken, tokenHash, err := newSecretToken("spt")
+	rawToken, tokenHash, err := newSecretToken("sortit")
 	if err != nil {
 		return APIToken{}, "", err
 	}

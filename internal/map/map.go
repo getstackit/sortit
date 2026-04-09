@@ -5,7 +5,7 @@ import (
 	"math"
 	"slices"
 
-	"splat/internal/issues"
+	"sortit/internal/issues"
 )
 
 const (

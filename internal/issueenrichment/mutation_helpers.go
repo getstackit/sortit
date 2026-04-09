@@ -3,8 +3,8 @@ package enrichment
 import (
 	"context"
 
-	"splat/internal/issues"
-	"splat/internal/tags"
+	"sortit/internal/issues"
+	"sortit/internal/tags"
 )
 
 func (s *IssueEnricher) analyzeMutationText(ctx context.Context, canonicalRaw string, explicitTags []string) (AnalyzeTextResult, error) {

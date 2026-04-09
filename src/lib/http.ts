@@ -1,4 +1,4 @@
-export const AUTH_UNAUTHORIZED_EVENT = "splat:unauthorized";
+export const AUTH_UNAUTHORIZED_EVENT = "sortit:unauthorized";
 
 type ErrorPayload = {
   error?: string;

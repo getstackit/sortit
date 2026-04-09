@@ -1,8 +1,8 @@
 package issueanalytics
 
 import (
-	"splat/internal/issues"
-	"splat/internal/scoring"
+	"sortit/internal/issues"
+	"sortit/internal/scoring"
 )
 
 // IssueAuthority computes how canonical an issue is based on inbound

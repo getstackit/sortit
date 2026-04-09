@@ -6,7 +6,7 @@ import (
 	"testing"
 	"time"
 
-	"splat/internal/issues"
+	"sortit/internal/issues"
 )
 
 func TestEnrichmentBackfillRebuildsProjectionFromLegacyState(t *testing.T) {

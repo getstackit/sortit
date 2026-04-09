@@ -1,5 +1,5 @@
 package issuemap
 
-import "splat/internal/issuemath"
+import "sortit/internal/issuemath"
 
 type Position = issuemath.Position

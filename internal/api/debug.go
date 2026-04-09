@@ -9,10 +9,10 @@ import (
 
 	"github.com/go-chi/chi/v5"
 
-	"splat/internal/ai"
-	"splat/internal/diagnostics"
-	"splat/internal/issues"
-	"splat/internal/tags"
+	"sortit/internal/ai"
+	"sortit/internal/diagnostics"
+	"sortit/internal/issues"
+	"sortit/internal/tags"
 )
 
 type debugIssueAnalyzeRequest struct {

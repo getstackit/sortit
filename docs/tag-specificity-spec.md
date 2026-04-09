@@ -21,7 +21,7 @@ This spec updates the target design accordingly.
 
 ### Decision Summary
 
-For the next implementation, Splat should treat `specificity` as a deterministic, persisted score computed from tag embeddings and stable catalog-relative rules.
+For the next implementation, Sortit should treat `specificity` as a deterministic, persisted score computed from tag embeddings and stable catalog-relative rules.
 
 The preferred v1 design is:
 

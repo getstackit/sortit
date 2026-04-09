@@ -10,11 +10,11 @@ import (
 	"testing"
 	"time"
 
-	"splat/internal/ai"
-	"splat/internal/diagnostics"
-	"splat/internal/domain"
-	"splat/internal/issues"
-	"splat/internal/tags"
+	"sortit/internal/ai"
+	"sortit/internal/diagnostics"
+	"sortit/internal/domain"
+	"sortit/internal/issues"
+	"sortit/internal/tags"
 )
 
 type fakeTagger struct {

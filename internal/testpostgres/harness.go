@@ -36,8 +36,8 @@ func Start(ctx context.Context, database string) (*Harness, error) {
 		image,
 		postgres.BasicWaitStrategies(),
 		postgres.WithDatabase(database),
-		postgres.WithUsername("splat"),
-		postgres.WithPassword("splat"),
+		postgres.WithUsername("sortit"),
+		postgres.WithPassword("sortit"),
 		postgres.WithSQLDriver("pgx"),
 	)
 	if err != nil {

@@ -7,7 +7,7 @@ import (
 	"strings"
 	"time"
 
-	"splat/internal/issues/issuesdb"
+	"sortit/internal/issues/issuesdb"
 )
 
 func (s *PostgresStore) EnqueueIssueEnrichment(ctx context.Context, issueID string, targetSequence int) error {

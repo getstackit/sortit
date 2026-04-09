@@ -5,7 +5,7 @@ import (
 	"math"
 	"slices"
 
-	"splat/internal/vectors"
+	"sortit/internal/vectors"
 )
 
 const lifecycleRecencyDecay = 0.25

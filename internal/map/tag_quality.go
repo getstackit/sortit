@@ -1,6 +1,6 @@
 package issuemap
 
-import "splat/internal/scoring"
+import "sortit/internal/scoring"
 
 // specificityPenalty returns a penalty based on how generic a tag is.
 // Lower specificity → higher penalty. When specificity is nil (unscored),

@@ -4,8 +4,8 @@ import (
 	"cmp"
 	"slices"
 
-	"splat/internal/domain"
-	"splat/internal/issues"
+	"sortit/internal/domain"
+	"sortit/internal/issues"
 )
 
 const minSpecificityCatalogSize = 4

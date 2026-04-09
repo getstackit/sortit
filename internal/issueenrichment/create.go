@@ -4,7 +4,7 @@ import (
 	"context"
 	"time"
 
-	"splat/internal/issues"
+	"sortit/internal/issues"
 )
 
 func (s *IssueEnricher) AnalyzeCreateInput(ctx context.Context, input issues.CreateInput) (issues.CreateInput, error) {

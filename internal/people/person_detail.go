@@ -7,13 +7,13 @@ import (
 	"strings"
 	"time"
 
-	"splat/internal/issueanalytics"
-	"splat/internal/issuemath"
-	"splat/internal/issues"
-	issueviews "splat/internal/issues/views"
-	"splat/internal/scoring"
-	"splat/internal/tags"
-	"splat/internal/vectors"
+	"sortit/internal/issueanalytics"
+	"sortit/internal/issuemath"
+	"sortit/internal/issues"
+	issueviews "sortit/internal/issues/views"
+	"sortit/internal/scoring"
+	"sortit/internal/tags"
+	"sortit/internal/vectors"
 )
 
 type PersonIssueRecommendation struct {

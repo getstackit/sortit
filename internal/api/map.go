@@ -3,7 +3,7 @@ package api
 import (
 	"net/http"
 
-	"splat/internal/mapview"
+	"sortit/internal/mapview"
 )
 
 func (s *Server) handleMap(w http.ResponseWriter, r *http.Request) {

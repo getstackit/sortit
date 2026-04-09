@@ -18,8 +18,8 @@ find_pg_dump() {
 	return 1
 }
 
-if [ -z "${SPLAT_DATABASE_URL:-}" ]; then
-	echo "SPLAT_DATABASE_URL is required" >&2
+if [ -z "${SORTIT_DATABASE_URL:-}" ]; then
+	echo "SORTIT_DATABASE_URL is required" >&2
 	exit 1
 fi
 
@@ -29,15 +29,15 @@ if [ -z "$pg_dump_bin" ]; then
 	exit 1
 fi
 
-backup_dir="${SPLAT_DB_BACKUP_DIR:-backups/postgres}"
+backup_dir="${SORTIT_DB_BACKUP_DIR:-backups/postgres}"
 mkdir -p "$backup_dir"
 
 timestamp=$(date -u +"%Y%m%dT%H%M%SZ")
-filename="$backup_dir/splat-$timestamp.dump"
+filename="$backup_dir/sortit-$timestamp.dump"
 
 "$pg_dump_bin" \
 	--format=custom \
 	--file="$filename" \
-	"$SPLAT_DATABASE_URL"
+	"$SORTIT_DATABASE_URL"
 
 printf 'Wrote %s\n' "$filename"

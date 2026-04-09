@@ -10,8 +10,8 @@ import (
 	"strconv"
 	"strings"
 
-	issueviews "splat/internal/issues/views"
-	issuemap "splat/internal/map"
+	issueviews "sortit/internal/issues/views"
+	issuemap "sortit/internal/map"
 )
 
 // decodeJSON reads the JSON body of an HTTP request into a value of type T.

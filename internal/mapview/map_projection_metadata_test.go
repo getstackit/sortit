@@ -3,9 +3,9 @@ package mapview
 import (
 	"testing"
 
-	"splat/internal/issues"
-	issueviews "splat/internal/issues/views"
-	issuemap "splat/internal/map"
+	"sortit/internal/issues"
+	issueviews "sortit/internal/issues/views"
+	issuemap "sortit/internal/map"
 )
 
 func TestOverlayProjectionIssueMetadataRefreshesMutableFields(t *testing.T) {

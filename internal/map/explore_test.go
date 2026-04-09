@@ -4,7 +4,7 @@ import (
 	"testing"
 	"time"
 
-	"splat/internal/issues"
+	"sortit/internal/issues"
 )
 
 func TestExploreOpportunitiesPreferMatureIssueGroups(t *testing.T) {

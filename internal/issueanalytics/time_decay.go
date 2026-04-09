@@ -4,8 +4,8 @@ import (
 	"math"
 	"time"
 
-	"splat/internal/issues"
-	"splat/internal/scoring"
+	"sortit/internal/issues"
+	"sortit/internal/scoring"
 )
 
 func IssueFreshnessWeight(issue issues.Issue, now time.Time) float64 {

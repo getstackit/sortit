@@ -3,7 +3,7 @@ package issuemath
 import (
 	"testing"
 
-	"splat/internal/issues"
+	"sortit/internal/issues"
 )
 
 func TestMeanTagProfileWeightsSpecificTagsMoreHighly(t *testing.T) {

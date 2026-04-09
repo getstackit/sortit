@@ -6,9 +6,9 @@ import (
 	"strings"
 	"time"
 
-	"splat/internal/issueanalytics"
-	"splat/internal/issuemath"
-	"splat/internal/issues"
+	"sortit/internal/issueanalytics"
+	"sortit/internal/issuemath"
+	"sortit/internal/issues"
 )
 
 type BuildMapProjectionStep struct {

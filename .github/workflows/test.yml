@@ -18,13 +18,13 @@ jobs:
       postgres:
         image: paradedb/paradedb:latest
         env:
-          POSTGRES_USER: splat
-          POSTGRES_PASSWORD: splat
-          POSTGRES_DB: splat_test
+          POSTGRES_USER: sortit
+          POSTGRES_PASSWORD: sortit
+          POSTGRES_DB: sortit_test
         ports:
           - 5432:5432
         options: >-
-          --health-cmd "pg_isready -U splat"
+          --health-cmd "pg_isready -U sortit"
           --health-interval 10s
           --health-timeout 5s
           --health-retries 5
@@ -55,12 +55,12 @@ jobs:
 
       - name: Check schema drift
         env:
-          SPLAT_TEST_DATABASE_URL: postgres://splat:splat@localhost:5432/splat_test?sslmode=disable
+          SORTIT_TEST_DATABASE_URL: postgres://sortit:sortit@localhost:5432/sortit_test?sslmode=disable
         run: go run ./cmd/check-schema-drift
 
       - name: Run tests
         env:
-          SPLAT_TEST_DATABASE_URL: postgres://splat:splat@localhost:5432/splat_test?sslmode=disable
+          SORTIT_TEST_DATABASE_URL: postgres://sortit:sortit@localhost:5432/sortit_test?sslmode=disable
         run: |
           if [ "${{ github.event_name }}" = "push" ] && [ "${{ github.ref }}" = "refs/heads/main" ]; then
             go test -v -race -coverprofile=coverage.out ./...
@@ -115,8 +115,8 @@ jobs:
       - name: Build
         run: |
           mkdir -p bin
-          go build -v -o bin/splat ./apps/cli
-          go build -v -o bin/splat-server ./apps/server
+          go build -v -o bin/sortit ./apps/cli
+          go build -v -o bin/sortit-server ./apps/server
 
   web:
     name: Web

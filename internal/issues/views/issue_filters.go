@@ -5,8 +5,8 @@ import (
 	"errors"
 	"strings"
 
-	"splat/internal/issues"
-	issuemap "splat/internal/map"
+	"sortit/internal/issues"
+	issuemap "sortit/internal/map"
 )
 
 type IssueStatusFilter string

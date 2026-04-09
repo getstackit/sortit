@@ -3,7 +3,7 @@ package issuemap
 import (
 	"math"
 
-	"splat/internal/issues"
+	"sortit/internal/issues"
 )
 
 const embeddingDimensions = 64

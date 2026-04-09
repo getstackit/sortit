@@ -3,7 +3,7 @@ package search
 import (
 	"context"
 
-	"splat/internal/issues"
+	"sortit/internal/issues"
 )
 
 type semanticIssueSearcher interface {

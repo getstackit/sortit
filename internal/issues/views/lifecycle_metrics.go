@@ -4,8 +4,8 @@ import (
 	"context"
 	"time"
 
-	"splat/internal/issueanalytics"
-	"splat/internal/issues"
+	"sortit/internal/issueanalytics"
+	"sortit/internal/issues"
 )
 
 func HydrateIssueWithVelocity(

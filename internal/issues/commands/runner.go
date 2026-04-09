@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"strings"
 
-	"splat/internal/issues"
+	"sortit/internal/issues"
 )
 
 // CommandRunner manages the database transaction lifecycle for command execution.

@@ -5,7 +5,7 @@ import (
 
 	"github.com/go-chi/chi/v5"
 
-	issueviews "splat/internal/issues/views"
+	issueviews "sortit/internal/issues/views"
 )
 
 func (s *Server) handlePersonDetail(w http.ResponseWriter, r *http.Request) {

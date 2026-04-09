@@ -15,7 +15,7 @@ formatters:
       simplify: true
     goimports:
       local-prefixes:
-        - splat
+        - sortit
 
 linters:
   default: none

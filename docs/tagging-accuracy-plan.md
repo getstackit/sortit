@@ -2,7 +2,7 @@
 
 ## Goal
 
-Improve Splat's tag assignment so tags are more accurate, more specific, and
+Improve Sortit's tag assignment so tags are more accurate, more specific, and
 more reusable across issues, without regressing the current "dump text in and
 the system figures out the rest" workflow.
 
@@ -107,7 +107,7 @@ Implementation status uses checkboxes below:
 
 - [x] Re-enrichment now uses the full catalog taxonomy instead of restricting
   to the issue's current tags.
-- [x] `POST /issues/{id}/re-enrich` and `splat issues re-enrich` allow
+- [x] `POST /issues/{id}/re-enrich` and `sortit issues re-enrich` allow
   triggering re-classification without a fake refinement post.
 - [x] Embedding-based hint tags are annotated on the taxonomy during
   enrichment.
@@ -234,11 +234,11 @@ Before changing the classifier, make quality visible.
   - [x] high-relevance / low-alignment tags (AI confident but wrong direction)
   - [x] residual-near unassigned tags (good tag exists but was missed)
   - [ ] well-tagged high-R² issues (positive examples)
-- [x] A repeatable evaluation command (`splat debug eval-tags` or test fixture)
+- [x] A repeatable evaluation command (`sortit debug eval-tags` or test fixture)
   that runs the tagger against the benchmark and reports precision, recall, and
   per-issue diffs
 - [ ] A review queue surfacing actionable issues from existing diagnostics,
-  with `splat issues re-enrich` as the action mechanism
+  with `sortit issues re-enrich` as the action mechanism
 - [x] Reuse the existing R²/debug infrastructure as the starting point rather
   than rebuilding it from scratch:
   - [x] low-R² issue listing
@@ -644,7 +644,7 @@ Use the existing diagnostics as an operating system for taxonomy quality.
 ### Deliverables
 
 - [ ] A periodic review flow for:
-  - [ ] lowest-R² issues, with `splat issues re-enrich` as the action
+  - [ ] lowest-R² issues, with `sortit issues re-enrich` as the action
   - [ ] recurring residual clusters (Phase 5 proposals)
   - [ ] proposed tags awaiting promotion or merge (Phase 4)
   - [ ] high-relevance / low-alignment tags flagged by verification (Phase 3)

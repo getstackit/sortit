@@ -3,7 +3,7 @@ package issueviews
 import (
 	"context"
 
-	"splat/internal/issues"
+	"sortit/internal/issues"
 )
 
 type ListIssuesHandler struct {

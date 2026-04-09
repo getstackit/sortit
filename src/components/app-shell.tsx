@@ -27,7 +27,7 @@ import {
 import { cn } from "@/lib/utils";
 import { useIsMobile } from "@/hooks/use-mobile";
 
-const DESKTOP_SIDEBAR_STORAGE_KEY = "splat-sidebar-collapsed";
+const DESKTOP_SIDEBAR_STORAGE_KEY = "sortit-sidebar-collapsed";
 
 export type AppShortcutRegistration = {
   key: string;

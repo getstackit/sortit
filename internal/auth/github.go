@@ -73,7 +73,7 @@ func (p *GitHubProvider) Exchange(ctx context.Context, code, redirectURL string)
 	}
 	tokenReq.Header.Set("Accept", "application/json")
 	tokenReq.Header.Set("Content-Type", "application/x-www-form-urlencoded")
-	tokenReq.Header.Set("User-Agent", "splat")
+	tokenReq.Header.Set("User-Agent", "sortit")
 
 	tokenResp, err := p.httpClient.Do(tokenReq)
 	if err != nil {
@@ -101,7 +101,7 @@ func (p *GitHubProvider) Exchange(ctx context.Context, code, redirectURL string)
 	}
 	userReq.Header.Set("Accept", "application/vnd.github+json")
 	userReq.Header.Set("Authorization", "Bearer "+tokenPayload.AccessToken)
-	userReq.Header.Set("User-Agent", "splat")
+	userReq.Header.Set("User-Agent", "sortit")
 
 	userResp, err := p.httpClient.Do(userReq)
 	if err != nil {
@@ -149,7 +149,7 @@ func (p *GitHubProvider) lookupPrimaryEmail(ctx context.Context, accessToken str
 	}
 	req.Header.Set("Accept", "application/vnd.github+json")
 	req.Header.Set("Authorization", "Bearer "+accessToken)
-	req.Header.Set("User-Agent", "splat")
+	req.Header.Set("User-Agent", "sortit")
 
 	resp, err := p.httpClient.Do(req)
 	if err != nil {

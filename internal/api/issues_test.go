@@ -12,10 +12,10 @@ import (
 	"testing"
 	"time"
 
-	"splat/internal/ai"
-	"splat/internal/issues"
-	issuecmd "splat/internal/issues/commands"
-	issuemap "splat/internal/map"
+	"sortit/internal/ai"
+	"sortit/internal/issues"
+	issuecmd "sortit/internal/issues/commands"
+	issuemap "sortit/internal/map"
 )
 
 type failingIssueStore struct {

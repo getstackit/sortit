@@ -7,8 +7,8 @@ import (
 	"slices"
 	"strings"
 
-	"splat/internal/issueanalytics"
-	"splat/internal/issues"
+	"sortit/internal/issueanalytics"
+	"sortit/internal/issues"
 )
 
 type Cluster struct {

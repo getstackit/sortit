@@ -1,6 +1,6 @@
 package enrichment
 
-import "splat/internal/domain"
+import "sortit/internal/domain"
 
 func Float32VectorToFloat64(values []float32) []float64 {
 	if len(values) == 0 {

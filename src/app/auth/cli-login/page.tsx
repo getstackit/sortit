@@ -15,7 +15,7 @@ function CLILoginPageFallback() {
   return (
     <div className="flex min-h-svh items-center justify-center bg-background px-4">
       <div className="rounded-full border border-border/70 bg-card px-4 py-2 text-sm text-muted-foreground">
-        Loading Splat session...
+        Loading Sortit session...
       </div>
     </div>
   );
@@ -78,7 +78,7 @@ function CLILoginPageContent() {
     return (
       <div className="flex min-h-svh items-center justify-center bg-background px-4">
         <div className="rounded-full border border-border/70 bg-card px-4 py-2 text-sm text-muted-foreground">
-          Loading Splat session...
+          Loading Sortit session...
         </div>
       </div>
     );
@@ -92,18 +92,18 @@ function CLILoginPageContent() {
     <div className="flex min-h-svh items-center justify-center bg-background px-4 py-12">
       <div className="w-full max-w-lg rounded-[2rem] border border-border/60 bg-card/92 p-8 shadow-[0_24px_80px_rgba(15,23,42,0.10)]">
         <p className="text-[11px] font-medium uppercase tracking-[0.22em] text-muted-foreground">
-          Splat CLI
+          Sortit CLI
         </p>
         <h1 className="mt-3 text-3xl font-semibold tracking-tight text-foreground">
           {state.status === "done" ? "CLI authorized" : "Authorizing CLI access"}
         </h1>
         <p className="mt-3 text-sm leading-6 text-muted-foreground">
-          Signed in as {user.displayName}. This page will mint a personal Splat API token for the CLI.
+          Signed in as {user.displayName}. This page will mint a personal Sortit API token for the CLI.
         </p>
 
         {state.status === "idle" && (
           <p className="mt-6 text-sm text-muted-foreground">
-            Waiting for Splat to issue the access token...
+            Waiting for Sortit to issue the access token...
           </p>
         )}
 
@@ -113,7 +113,7 @@ function CLILoginPageContent() {
               The CLI is now authenticated. Token prefix: <span className="font-mono">{state.tokenPrefix}</span>
             </div>
             <p className="mt-4 text-sm text-muted-foreground">
-              You can return to the terminal and continue using <span className="font-mono">splat</span>.
+              You can return to the terminal and continue using <span className="font-mono">sortit</span>.
             </p>
           </>
         )}

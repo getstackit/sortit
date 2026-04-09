@@ -9,11 +9,11 @@ import (
 	"slices"
 	"strings"
 
-	"splat/internal/ai"
-	"splat/internal/domain"
-	issueenrichment "splat/internal/issueenrichment"
-	"splat/internal/issues"
-	"splat/internal/tags"
+	"sortit/internal/ai"
+	"sortit/internal/domain"
+	issueenrichment "sortit/internal/issueenrichment"
+	"sortit/internal/issues"
+	"sortit/internal/tags"
 )
 
 //go:embed testdata/tag_eval_fixture.json

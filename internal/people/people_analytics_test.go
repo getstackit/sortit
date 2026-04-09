@@ -4,8 +4,8 @@ import (
 	"context"
 	"testing"
 
-	"splat/internal/issues"
-	issueviews "splat/internal/issues/views"
+	"sortit/internal/issues"
+	issueviews "sortit/internal/issues/views"
 )
 
 type peopleAnalyticsOnlyStore struct {

@@ -24,7 +24,7 @@ export function Markdown({ children, className, compact }: MarkdownProps) {
 
   return (
     <div
-      className={cn("prose-splat", compact && "prose-splat-compact", className)}
+      className={cn("prose-sortit", compact && "prose-sortit-compact", className)}
       dangerouslySetInnerHTML={{ __html: html }}
     />
   );

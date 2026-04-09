@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"strings"
 
-	"splat/internal/issues"
+	"sortit/internal/issues"
 )
 
 func (s *IssueEnricher) AnalyzeRefineInput(ctx context.Context, issue issues.Issue, postRaw string, createdBy string) (issues.RefineInput, error) {

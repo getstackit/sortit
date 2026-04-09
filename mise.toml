@@ -7,9 +7,9 @@ PROJECT_ROOT = "{{ config_root }}"
 _.file = ".env"
 _.path = ["{{ config_root }}/bin", "{{ env.HOME }}/go/bin"]
 NEXT_PUBLIC_API_ORIGIN = "http://localhost:8081"
-SPLAT_WEB_ORIGIN = "http://localhost:3000"
-SPLAT_DATABASE_URL = "postgres://splat:splat@localhost:5432/splat?sslmode=disable"
-SPLAT_TEST_DATABASE_URL = "postgres://splat:splat@localhost:5432/splat_test?sslmode=disable"
+SORTIT_WEB_ORIGIN = "http://localhost:3000"
+SORTIT_DATABASE_URL = "postgres://sortit:sortit@localhost:5432/sortit?sslmode=disable"
+SORTIT_TEST_DATABASE_URL = "postgres://sortit:sortit@localhost:5432/sortit_test?sslmode=disable"
 
 [tools]
 go = "1.26"
@@ -53,7 +53,7 @@ run = "sh scripts/db-backup.sh"
 [tasks."lint:go"]
 description = "Run golangci-lint"
 run = """
-  GOCACHE="${GOCACHE:-/tmp/splat-gocache}" GOLANGCI_LINT_CACHE="${GOLANGCI_LINT_CACHE:-/tmp/splat-golangci-lint-cache}" golangci-lint run ./...
+  GOCACHE="${GOCACHE:-/tmp/sortit-gocache}" GOLANGCI_LINT_CACHE="${GOLANGCI_LINT_CACHE:-/tmp/sortit-golangci-lint-cache}" golangci-lint run ./...
 """
 
 [tasks."lint:web"]
@@ -89,7 +89,7 @@ run = "npm run dev -- --hostname 0.0.0.0 --port ${APP_PORT:-3000}"
 
 [tasks."dev:server"]
 description = "Run the Go API server in development mode"
-run = "watchexec -r -e go -w apps/server -w internal -- go run ./apps/server --port ${API_PORT:-8081} --cors ${SPLAT_SERVER_CORS:-http://localhost:3000,http://127.0.0.1:3000}"
+run = "watchexec -r -e go -w apps/server -w internal -- go run ./apps/server --port ${API_PORT:-8081} --cors ${SORTIT_SERVER_CORS:-http://localhost:3000,http://127.0.0.1:3000}"
 
 [tasks."dev:stop"]
 description = "Stop local dev processes bound to the app and API ports"
@@ -106,29 +106,29 @@ run = """
     fi
   done
   docker compose down 2>/dev/null || true
-  rm -f /tmp/splat-overmind.sock
+  rm -f /tmp/sortit-overmind.sock
 """
 
 [tasks."server:build"]
 description = "Build the Go API server"
 run = """
   mkdir -p bin
-  go build -o bin/splat-server ./apps/server
+  go build -o bin/sortit-server ./apps/server
 """
 
 [tasks."cli:build"]
-description = "Build the Splat CLI"
+description = "Build the Sortit CLI"
 run = """
   mkdir -p bin
-  go build -o bin/splat ./apps/cli
+  go build -o bin/sortit ./apps/cli
 """
 
 [tasks.shims]
 description = "Install shims to repo root for local development"
 depends = ["cli:build"]
 run = """
-  cp scripts/splat-shim.sh ./splat
-  chmod +x ./splat
+  cp scripts/sortit-shim.sh ./sortit
+  chmod +x ./sortit
   echo "Dev shim installed to repo root"
 """
 
@@ -140,4 +140,4 @@ run = "npm run build"
 [tasks.dev]
 description = "Run the frontend and backend using overmind"
 depends = ["dev:stop"]
-run = "overmind start --no-port --socket /tmp/splat-overmind.sock -f Procfile.dev"
+run = "overmind start --no-port --socket /tmp/sortit-overmind.sock -f Procfile.dev"

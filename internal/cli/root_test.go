@@ -8,7 +8,7 @@ import (
 	"testing"
 	"time"
 
-	"splat/internal/issues"
+	"sortit/internal/issues"
 )
 
 func TestMineCommandListsIssuesAssignedToCurrentUser(t *testing.T) {

@@ -4,8 +4,8 @@ import (
 	"math"
 	"testing"
 
-	"splat/internal/issues"
-	"splat/internal/vectors"
+	"sortit/internal/issues"
+	"sortit/internal/vectors"
 )
 
 func TestComputePositionsSingleIssueFallsBackToCenter(t *testing.T) {

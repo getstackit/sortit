@@ -10,11 +10,11 @@ import (
 
 	"gonum.org/v1/gonum/mat"
 
-	"splat/internal/issueanalytics"
-	"splat/internal/issuemath"
-	"splat/internal/issues"
-	"splat/internal/scoring"
-	"splat/internal/vectors"
+	"sortit/internal/issueanalytics"
+	"sortit/internal/issuemath"
+	"sortit/internal/issues"
+	"sortit/internal/scoring"
+	"sortit/internal/vectors"
 )
 
 // ReasonSemanticSimilar is the explanation text used when two issues are

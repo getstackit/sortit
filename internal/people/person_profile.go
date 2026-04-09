@@ -4,11 +4,11 @@ import (
 	"context"
 	"strings"
 
-	"splat/internal/domain"
-	"splat/internal/issuemath"
-	"splat/internal/issues"
-	issueviews "splat/internal/issues/views"
-	"splat/internal/tags"
+	"sortit/internal/domain"
+	"sortit/internal/issuemath"
+	"sortit/internal/issues"
+	issueviews "sortit/internal/issues/views"
+	"sortit/internal/tags"
 )
 
 // TagRelevance is an alias for domain.TagRelevance.

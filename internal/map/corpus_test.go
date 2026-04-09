@@ -3,7 +3,7 @@ package issuemap
 import (
 	"testing"
 
-	"splat/internal/issues"
+	"sortit/internal/issues"
 )
 
 func TestSubsetMapProjectionFiltersWithoutRebuildingPositions(t *testing.T) {

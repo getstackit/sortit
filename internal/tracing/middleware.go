@@ -9,7 +9,7 @@ import (
 	"go.opentelemetry.io/otel/trace"
 )
 
-var tracer = otel.Tracer("splat/http")
+var tracer = otel.Tracer("sortit/http")
 
 // Middleware starts an OTEL span for every inbound HTTP request.
 // Downstream code that logs with slog.*Context(ctx, ...) will

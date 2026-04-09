@@ -4,7 +4,7 @@ import (
 	"math"
 	"time"
 
-	"splat/internal/issues"
+	"sortit/internal/issues"
 )
 
 const (

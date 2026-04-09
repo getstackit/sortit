@@ -6,15 +6,15 @@ import (
 	"testing"
 	"time"
 
-	"splat/internal/issues"
-	"splat/internal/testpostgres"
+	"sortit/internal/issues"
+	"sortit/internal/testpostgres"
 )
 
 func TestFrameworkStoreCheckpointAndParityRunCRUD(t *testing.T) {
 	t.Parallel()
 
 	ctx := context.Background()
-	harness, err := testpostgres.Start(ctx, "splat_appendonly_framework_test")
+	harness, err := testpostgres.Start(ctx, "sortit_appendonly_framework_test")
 	if err != nil {
 		t.Fatalf("start postgres harness: %v", err)
 	}

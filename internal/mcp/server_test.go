@@ -8,18 +8,18 @@ import (
 
 	mcptypes "github.com/mark3labs/mcp-go/mcp"
 
-	"splat/internal/ai"
-	"splat/internal/auth"
-	issueenrichment "splat/internal/issueenrichment"
-	"splat/internal/issueevents"
-	"splat/internal/issues"
-	issuecmd "splat/internal/issues/commands"
-	issueviews "splat/internal/issues/views"
-	issuemap "splat/internal/map"
-	"splat/internal/mapview"
-	"splat/internal/people"
-	"splat/internal/search"
-	"splat/internal/tags"
+	"sortit/internal/ai"
+	"sortit/internal/auth"
+	issueenrichment "sortit/internal/issueenrichment"
+	"sortit/internal/issueevents"
+	"sortit/internal/issues"
+	issuecmd "sortit/internal/issues/commands"
+	issueviews "sortit/internal/issues/views"
+	issuemap "sortit/internal/map"
+	"sortit/internal/mapview"
+	"sortit/internal/people"
+	"sortit/internal/search"
+	"sortit/internal/tags"
 )
 
 func TestHandleCreateIssue(t *testing.T) {

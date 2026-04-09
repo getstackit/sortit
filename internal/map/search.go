@@ -7,12 +7,12 @@ import (
 	"strings"
 	"time"
 
-	"splat/internal/domain"
-	"splat/internal/issueanalytics"
-	"splat/internal/issuemath"
-	"splat/internal/issues"
-	"splat/internal/scoring"
-	"splat/internal/vectors"
+	"sortit/internal/domain"
+	"sortit/internal/issueanalytics"
+	"sortit/internal/issuemath"
+	"sortit/internal/issues"
+	"sortit/internal/scoring"
+	"sortit/internal/vectors"
 )
 
 // SearchOptions holds optional search parameters.

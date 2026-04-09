@@ -4,8 +4,8 @@ import (
 	"testing"
 	"time"
 
-	"splat/internal/domain"
-	"splat/internal/issues"
+	"sortit/internal/domain"
+	"sortit/internal/issues"
 )
 
 func TestSearchExcludesMergedAndDuplicateIssues(t *testing.T) {

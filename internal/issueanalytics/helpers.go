@@ -1,6 +1,6 @@
 package issueanalytics
 
-import "splat/internal/issues"
+import "sortit/internal/issues"
 
 const (
 	issuePostKindProgress   = "progress"

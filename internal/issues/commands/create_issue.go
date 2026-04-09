@@ -5,8 +5,8 @@ import (
 	"fmt"
 	"log/slog"
 
-	issueenrichment "splat/internal/issueenrichment"
-	"splat/internal/issues"
+	issueenrichment "sortit/internal/issueenrichment"
+	"sortit/internal/issues"
 )
 
 type CreateIssue struct {

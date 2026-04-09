@@ -5,9 +5,9 @@ import (
 
 	"gonum.org/v1/gonum/mat"
 
-	"splat/internal/issues"
-	"splat/internal/scoring"
-	"splat/internal/vectors"
+	"sortit/internal/issues"
+	"sortit/internal/scoring"
+	"sortit/internal/vectors"
 )
 
 // FactorDecomposition holds the results of decomposing issue embeddings into

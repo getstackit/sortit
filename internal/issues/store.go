@@ -9,7 +9,7 @@ import (
 	"sync"
 	"time"
 
-	"splat/internal/domain"
+	"sortit/internal/domain"
 )
 
 var ErrNotFound = errors.New("issue not found")

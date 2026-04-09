@@ -3,7 +3,7 @@ package issueanalytics
 import (
 	"testing"
 
-	"splat/internal/issues"
+	"sortit/internal/issues"
 )
 
 func TestCanonicalLinkAuthority(t *testing.T) {

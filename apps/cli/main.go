@@ -3,7 +3,7 @@ package main
 import (
 	"os"
 
-	"splat/internal/cli"
+	"sortit/internal/cli"
 )
 
 var (

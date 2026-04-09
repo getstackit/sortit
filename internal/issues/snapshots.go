@@ -6,7 +6,7 @@ import (
 	"strings"
 	"time"
 
-	"splat/internal/issues/issuesdb"
+	"sortit/internal/issues/issuesdb"
 )
 
 func issueSnapshotFromFieldUpdate(id string, fields IssueFieldUpdate) (IssueSnapshot, bool) {

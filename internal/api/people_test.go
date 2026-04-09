@@ -8,8 +8,8 @@ import (
 	"testing"
 	"time"
 
-	"splat/internal/issues"
-	"splat/internal/people"
+	"sortit/internal/issues"
+	"sortit/internal/people"
 )
 
 const testUser = "Casey"

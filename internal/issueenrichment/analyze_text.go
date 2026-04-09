@@ -5,9 +5,9 @@ import (
 	"fmt"
 	"strings"
 
-	"splat/internal/ai"
-	"splat/internal/issues"
-	"splat/internal/tags"
+	"sortit/internal/ai"
+	"sortit/internal/issues"
+	"sortit/internal/tags"
 )
 
 func (s *IssueEnricher) analyzeWithCandidateTaxonomy(ctx context.Context, raw string, preferred []string, mode tags.CandidateMode) (ai.AnalyzedIssue, tags.CandidateTaxonomy, error) {

@@ -2,9 +2,9 @@
 
 ## Purpose
 
-Define Splat's scoring model as a set of explicit, reusable signals instead of a handful of opaque blended scores.
+Define Sortit's scoring model as a set of explicit, reusable signals instead of a handful of opaque blended scores.
 
-This document is architectural. It defines what kinds of scores Splat should have, what they mean, how they should behave, and which product surfaces should consume them. It does not lock in every formula.
+This document is architectural. It defines what kinds of scores Sortit should have, what they mean, how they should behave, and which product surfaces should consume them. It does not lock in every formula.
 
 ## Status
 
@@ -31,7 +31,7 @@ This document is architectural. It defines what kinds of scores Splat should hav
 
 ## Model Layers
 
-Splat scoring should be organized into three layers:
+Sortit scoring should be organized into three layers:
 
 1. Primitive signals
    Stable measurements such as specificity, confidence, maturity, or authority.

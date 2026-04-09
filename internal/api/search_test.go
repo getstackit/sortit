@@ -9,9 +9,9 @@ import (
 	"testing"
 	"time"
 
-	"splat/internal/ai"
-	"splat/internal/issues"
-	"splat/internal/search"
+	"sortit/internal/ai"
+	"sortit/internal/issues"
+	"sortit/internal/search"
 )
 
 func TestUnifiedSearchEndpointReturnsIssuesAndRelatedTags(t *testing.T) {

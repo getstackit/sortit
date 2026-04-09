@@ -9,9 +9,9 @@ import (
 )
 
 const (
-	sessionCookieName   = "splat_session"
-	oauthStateCookie    = "splat_oauth_state"
-	oauthReturnToCookie = "splat_oauth_return_to"
+	sessionCookieName   = "sortit_session"
+	oauthStateCookie    = "sortit_oauth_state"
+	oauthReturnToCookie = "sortit_oauth_return_to"
 )
 
 type ServiceConfig struct {

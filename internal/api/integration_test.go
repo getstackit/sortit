@@ -11,9 +11,9 @@ import (
 	"strings"
 	"testing"
 
-	"splat/internal/ai"
-	"splat/internal/issues"
-	issuemap "splat/internal/map"
+	"sortit/internal/ai"
+	"sortit/internal/issues"
+	issuemap "sortit/internal/map"
 )
 
 type integrationMockTagger struct{}

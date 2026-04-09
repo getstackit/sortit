@@ -5,7 +5,7 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"splat/internal/diagnostics"
+	"sortit/internal/diagnostics"
 )
 
 const debugEvalTagsClientTimeout = 2 * time.Minute

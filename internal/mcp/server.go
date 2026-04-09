@@ -10,13 +10,13 @@ import (
 	"github.com/mark3labs/mcp-go/mcp"
 	"github.com/mark3labs/mcp-go/server"
 
-	"splat/internal/auth"
-	"splat/internal/issues"
-	issuecmd "splat/internal/issues/commands"
-	issueviews "splat/internal/issues/views"
-	"splat/internal/mapview"
-	"splat/internal/people"
-	"splat/internal/search"
+	"sortit/internal/auth"
+	"sortit/internal/issues"
+	issuecmd "sortit/internal/issues/commands"
+	issueviews "sortit/internal/issues/views"
+	"sortit/internal/mapview"
+	"sortit/internal/people"
+	"sortit/internal/search"
 )
 
 type ServerConfig struct {
@@ -40,7 +40,7 @@ type ServerConfig struct {
 // suitable for mounting on an existing HTTP mux at a path like "/mcp".
 func NewHandler(cfg ServerConfig) http.Handler {
 	s := server.NewMCPServer(
-		"splat",
+		"sortit",
 		"1.0.0",
 		server.WithToolCapabilities(false),
 	)
@@ -64,7 +64,7 @@ func NewHandler(cfg ServerConfig) http.Handler {
 
 	s.AddTool(
 		mcp.NewTool("create_issue",
-			mcp.WithDescription("Create a new issue in Splat. Submit raw text (bug report, feature idea, stack trace, customer quote, etc.) and Splat will automatically tag and categorize it using AI."),
+			mcp.WithDescription("Create a new issue in Sortit. Submit raw text (bug report, feature idea, stack trace, customer quote, etc.) and Sortit will automatically tag and categorize it using AI."),
 			mcp.WithString("raw",
 				mcp.Required(),
 				mcp.Description("The raw issue text. Can be a bug report, feature request, idea, stack trace, customer quote, or any freeform text."),
@@ -78,7 +78,7 @@ func NewHandler(cfg ServerConfig) http.Handler {
 
 	s.AddTool(
 		mcp.NewTool("search_issues",
-			mcp.WithDescription("Search stored Splat issues from arbitrary text. Returns the most related issues using a blend of semantic similarity, tag-factor relevance, and text matching."),
+			mcp.WithDescription("Search stored Sortit issues from arbitrary text. Returns the most related issues using a blend of semantic similarity, tag-factor relevance, and text matching."),
 			mcp.WithString("query",
 				mcp.Required(),
 				mcp.Description("The search text, page description, or other freeform query to match against stored issues."),
@@ -107,7 +107,7 @@ func NewHandler(cfg ServerConfig) http.Handler {
 
 	s.AddTool(
 		mcp.NewTool("get_issue",
-			mcp.WithDescription("Get a Splat issue by ID."),
+			mcp.WithDescription("Get a Sortit issue by ID."),
 			mcp.WithString("id",
 				mcp.Required(),
 				mcp.Description("The issue ID, for example issue-000003."),
@@ -118,14 +118,14 @@ func NewHandler(cfg ServerConfig) http.Handler {
 
 	s.AddTool(
 		mcp.NewTool("list_tags",
-			mcp.WithDescription("List stored Splat tags with descriptions, creation timestamps, and embeddings when available."),
+			mcp.WithDescription("List stored Sortit tags with descriptions, creation timestamps, and embeddings when available."),
 		),
 		h.handleListTags,
 	)
 
 	s.AddTool(
 		mcp.NewTool("refine_issues",
-			mcp.WithDescription("Refine one or more existing Splat issues by appending shared discussion context or feedback. This updates each issue's canonical description, tags, and semantic similarity."),
+			mcp.WithDescription("Refine one or more existing Sortit issues by appending shared discussion context or feedback. This updates each issue's canonical description, tags, and semantic similarity."),
 			mcp.WithArray("ids",
 				mcp.Required(),
 				mcp.Description("The issue IDs to refine."),
@@ -144,7 +144,7 @@ func NewHandler(cfg ServerConfig) http.Handler {
 
 	s.AddTool(
 		mcp.NewTool("progress_issues",
-			mcp.WithDescription("Post the same progress update on one or more existing Splat issues. Progress updates report work done toward resolving an issue without changing the canonical summary, tags, or semantic similarity."),
+			mcp.WithDescription("Post the same progress update on one or more existing Sortit issues. Progress updates report work done toward resolving an issue without changing the canonical summary, tags, or semantic similarity."),
 			mcp.WithArray("ids",
 				mcp.Required(),
 				mcp.Description("The issue IDs to post progress on."),
@@ -163,7 +163,7 @@ func NewHandler(cfg ServerConfig) http.Handler {
 
 	s.AddTool(
 		mcp.NewTool("close_issues",
-			mcp.WithDescription("Close one or more Splat issues."),
+			mcp.WithDescription("Close one or more Sortit issues."),
 			mcp.WithArray("ids",
 				mcp.Required(),
 				mcp.Description("The issue IDs to close."),
@@ -178,7 +178,7 @@ func NewHandler(cfg ServerConfig) http.Handler {
 
 	s.AddTool(
 		mcp.NewTool("assign_issues",
-			mcp.WithDescription("Assign one or more Splat issues to a person, or unassign by passing an empty string."),
+			mcp.WithDescription("Assign one or more Sortit issues to a person, or unassign by passing an empty string."),
 			mcp.WithArray("ids",
 				mcp.Required(),
 				mcp.Description("The issue IDs to assign."),
@@ -262,7 +262,7 @@ func NewHandler(cfg ServerConfig) http.Handler {
 
 	s.AddTool(
 		mcp.NewTool("explore_issue",
-			mcp.WithDescription("Explore a stored Splat issue by ID. Returns related open issues using semantic similarity and factor relevance, plus structured opportunities to solve multiple issues together."),
+			mcp.WithDescription("Explore a stored Sortit issue by ID. Returns related open issues using semantic similarity and factor relevance, plus structured opportunities to solve multiple issues together."),
 			mcp.WithString("id",
 				mcp.Required(),
 				mcp.Description("The issue ID to explore, for example issue-000003."),

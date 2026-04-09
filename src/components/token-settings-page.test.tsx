@@ -55,7 +55,7 @@ const mockedRevokeToken = vi.mocked(revokeAPIToken);
 
 const testToken: APITokenRecord = {
   id: "tok-1",
-  tokenPrefix: "splat_abc",
+  tokenPrefix: "sortit_abc",
   createdAt: "2026-03-01T00:00:00Z",
 };
 
@@ -73,7 +73,7 @@ describe("TokenSettingsPage", () => {
       expect(screen.getByText("Jon")).toBeInTheDocument();
     });
     expect(screen.getByText("@jonnii • jon@test.com")).toBeInTheDocument();
-    expect(screen.getByText("splat_abc...")).toBeInTheDocument();
+    expect(screen.getByText("sortit_abc...")).toBeInTheDocument();
   });
 
   it("shows empty state when no tokens exist", async () => {
@@ -99,10 +99,10 @@ describe("TokenSettingsPage", () => {
   it("creates a token and shows it", async () => {
     mockedListTokens.mockResolvedValue([]);
     mockedCreateToken.mockResolvedValue({
-      token: "splat_full_secret_value",
+      token: "sortit_full_secret_value",
       metadata: {
         id: "tok-2",
-        tokenPrefix: "splat_ful",
+        tokenPrefix: "sortit_ful",
         createdAt: "2026-03-15T00:00:00Z",
       },
     });
@@ -117,10 +117,10 @@ describe("TokenSettingsPage", () => {
     await user.click(screen.getByText("Create token"));
 
     await waitFor(() => {
-      expect(screen.getByText("splat_full_secret_value")).toBeInTheDocument();
+      expect(screen.getByText("sortit_full_secret_value")).toBeInTheDocument();
     });
     expect(screen.getByText("Copy this now")).toBeInTheDocument();
-    expect(screen.getByText("splat_ful...")).toBeInTheDocument();
+    expect(screen.getByText("sortit_ful...")).toBeInTheDocument();
   });
 
   it("revokes a token", async () => {
@@ -131,7 +131,7 @@ describe("TokenSettingsPage", () => {
     render(<TokenSettingsPage />);
 
     await waitFor(() => {
-      expect(screen.getByText("splat_abc...")).toBeInTheDocument();
+      expect(screen.getByText("sortit_abc...")).toBeInTheDocument();
     });
 
     // Click Revoke on the token row to open confirmation dialog
@@ -174,7 +174,7 @@ describe("TokenSettingsPage", () => {
     render(<TokenSettingsPage />);
 
     await waitFor(() => {
-      expect(screen.getByText("splat_abc...")).toBeInTheDocument();
+      expect(screen.getByText("sortit_abc...")).toBeInTheDocument();
     });
 
     // Click Revoke on the token row to open confirmation dialog

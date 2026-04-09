@@ -9,8 +9,8 @@ import (
 	"strings"
 	"testing"
 
-	"splat/internal/auth"
-	"splat/internal/issues"
+	"sortit/internal/auth"
+	"sortit/internal/issues"
 )
 
 type fakeOAuthProvider struct {
@@ -74,7 +74,7 @@ func authenticateSessionCookie(t *testing.T, handler http.Handler) *http.Cookie 
 
 	var stateCookie *http.Cookie
 	for _, cookie := range startRec.Result().Cookies() {
-		if cookie.Name == "splat_oauth_state" {
+		if cookie.Name == "sortit_oauth_state" {
 			stateCookie = cookie
 			break
 		}
@@ -105,7 +105,7 @@ func authenticateSessionCookie(t *testing.T, handler http.Handler) *http.Cookie 
 	}
 
 	for _, cookie := range callbackRec.Result().Cookies() {
-		if cookie.Name == "splat_session" {
+		if cookie.Name == "sortit_session" {
 			return cookie
 		}
 	}
@@ -160,10 +160,10 @@ func TestGitHubCallbackHonorsReturnTo(t *testing.T) {
 	var stateCookie *http.Cookie
 	var returnToCookie *http.Cookie
 	for _, cookie := range startRec.Result().Cookies() {
-		if cookie.Name == "splat_oauth_state" {
+		if cookie.Name == "sortit_oauth_state" {
 			stateCookie = cookie
 		}
-		if cookie.Name == "splat_oauth_return_to" {
+		if cookie.Name == "sortit_oauth_return_to" {
 			returnToCookie = cookie
 		}
 	}

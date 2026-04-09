@@ -6,10 +6,10 @@ import (
 	"strings"
 	"time"
 
-	"splat/internal/issues"
-	issueviews "splat/internal/issues/views"
-	issuemap "splat/internal/map"
-	"splat/internal/tags"
+	"sortit/internal/issues"
+	issueviews "sortit/internal/issues/views"
+	issuemap "sortit/internal/map"
+	"sortit/internal/tags"
 )
 
 type ExploreIssue struct {

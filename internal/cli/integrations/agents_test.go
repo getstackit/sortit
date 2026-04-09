@@ -19,7 +19,7 @@ func TestInstallSkillTargets(t *testing.T) {
 		t.Fatalf("installSkillTargets() error = %v", err)
 	}
 
-	claudeSkillPath := filepath.Join(baseDir, claudeSkillsDir, "splat-search", "SKILL.md")
+	claudeSkillPath := filepath.Join(baseDir, claudeSkillsDir, "sortit-search", "SKILL.md")
 	claudeContent, err := os.ReadFile(claudeSkillPath)
 	if err != nil {
 		t.Fatalf("read installed claude skill: %v", err)
@@ -28,7 +28,7 @@ func TestInstallSkillTargets(t *testing.T) {
 		t.Fatalf("installed claude skill missing version replacement: %s", string(claudeContent))
 	}
 
-	codexSkillPath := filepath.Join(baseDir, codexSkillsDir, "splat-search", "SKILL.md")
+	codexSkillPath := filepath.Join(baseDir, codexSkillsDir, "sortit-search", "SKILL.md")
 	codexContent, err := os.ReadFile(codexSkillPath)
 	if err != nil {
 		t.Fatalf("read installed codex skill: %v", err)
@@ -37,19 +37,19 @@ func TestInstallSkillTargets(t *testing.T) {
 		t.Fatalf("installed codex skill missing version replacement: %s", string(codexContent))
 	}
 
-	if _, err := os.Stat(filepath.Join(baseDir, claudeSkillsDir, "splat-create", "SKILL.md")); err != nil {
+	if _, err := os.Stat(filepath.Join(baseDir, claudeSkillsDir, "sortit-create", "SKILL.md")); err != nil {
 		t.Fatalf("stat claude create skill: %v", err)
 	}
-	if _, err := os.Stat(filepath.Join(baseDir, codexSkillsDir, "splat-explore", "SKILL.md")); err != nil {
+	if _, err := os.Stat(filepath.Join(baseDir, codexSkillsDir, "sortit-explore", "SKILL.md")); err != nil {
 		t.Fatalf("stat codex explore skill: %v", err)
 	}
-	if _, err := os.Stat(filepath.Join(baseDir, codexSkillsDir, "splat-next", "SKILL.md")); err != nil {
+	if _, err := os.Stat(filepath.Join(baseDir, codexSkillsDir, "sortit-next", "SKILL.md")); err != nil {
 		t.Fatalf("stat codex next skill: %v", err)
 	}
-	if _, err := os.Stat(filepath.Join(baseDir, codexSkillsDir, "splat-search", "agents", "openai.yaml")); !os.IsNotExist(err) {
+	if _, err := os.Stat(filepath.Join(baseDir, codexSkillsDir, "sortit-search", "agents", "openai.yaml")); !os.IsNotExist(err) {
 		t.Fatalf("codex install should not include openai metadata, err=%v", err)
 	}
-	if _, err := os.Stat(filepath.Join(baseDir, claudeSkillsDir, "splat-search", "agents", "openai.yaml")); !os.IsNotExist(err) {
+	if _, err := os.Stat(filepath.Join(baseDir, claudeSkillsDir, "sortit-search", "agents", "openai.yaml")); !os.IsNotExist(err) {
 		t.Fatalf("claude install should not include openai metadata, err=%v", err)
 	}
 }
@@ -82,7 +82,7 @@ func TestInstallSkillTargetsClearsManagedSkillDirectories(t *testing.T) {
 	var out bytes.Buffer
 	targets := targetsForFormats([]agentSkillFormat{agentSkillFormatCodex})
 
-	staleDir := filepath.Join(baseDir, codexSkillsDir, "splat-search", "agents")
+	staleDir := filepath.Join(baseDir, codexSkillsDir, "sortit-search", "agents")
 	if err := os.MkdirAll(staleDir, 0o755); err != nil {
 		t.Fatalf("mkdir stale dir: %v", err)
 	}

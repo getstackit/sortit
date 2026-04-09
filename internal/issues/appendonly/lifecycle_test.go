@@ -6,8 +6,8 @@ import (
 	"encoding/json"
 	"testing"
 
-	"splat/internal/issues"
-	"splat/internal/testpostgres"
+	"sortit/internal/issues"
+	"sortit/internal/testpostgres"
 )
 
 func TestLifecycleBackfillRebuildsProjectionFromLegacyPosts(t *testing.T) {
@@ -207,7 +207,7 @@ type lifecycleFactRow struct {
 func newLifecycleTestStore(t *testing.T, ctx context.Context) *issues.PostgresStore {
 	t.Helper()
 
-	harness, err := testpostgres.Start(ctx, "splat_appendonly_lifecycle_test")
+	harness, err := testpostgres.Start(ctx, "sortit_appendonly_lifecycle_test")
 	if err != nil {
 		t.Fatalf("start postgres harness: %v", err)
 	}

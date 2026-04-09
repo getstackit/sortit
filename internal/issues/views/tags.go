@@ -3,8 +3,8 @@ package issueviews
 import (
 	"context"
 
-	"splat/internal/issues"
-	"splat/internal/tags"
+	"sortit/internal/issues"
+	"sortit/internal/tags"
 )
 
 type ListTagsHandler struct {

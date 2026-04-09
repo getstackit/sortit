@@ -2,7 +2,7 @@
 
 ## Goal
 
-Move Splat toward append-only persistence without losing historical data or
+Move Sortit toward append-only persistence without losing historical data or
 breaking current reads and writes during the transition.
 
 This document is the migration-safety plan for `01KKTCR4F3FZ0BE03G509K72HJ`.

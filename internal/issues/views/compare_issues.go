@@ -6,8 +6,8 @@ import (
 	"math"
 	"slices"
 
-	"splat/internal/issues"
-	"splat/internal/vectors"
+	"sortit/internal/issues"
+	"sortit/internal/vectors"
 )
 
 type CompareIssues struct {

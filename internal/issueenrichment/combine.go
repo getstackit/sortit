@@ -4,7 +4,7 @@ import (
 	"context"
 	"fmt"
 
-	"splat/internal/issues"
+	"sortit/internal/issues"
 )
 
 func (s *IssueEnricher) AnalyzeCombineInput(

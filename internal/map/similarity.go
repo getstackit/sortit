@@ -3,8 +3,8 @@ package issuemap
 import (
 	"math"
 
-	"splat/internal/issues"
-	"splat/internal/vectors"
+	"sortit/internal/issues"
+	"sortit/internal/vectors"
 )
 
 type Edge struct {

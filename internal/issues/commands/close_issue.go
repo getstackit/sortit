@@ -5,7 +5,7 @@ import (
 	"strings"
 	"time"
 
-	"splat/internal/issues"
+	"sortit/internal/issues"
 )
 
 type CloseIssue struct {

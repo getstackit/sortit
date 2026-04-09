@@ -8,12 +8,12 @@ import (
 
 	"github.com/go-chi/chi/v5"
 
-	"splat/internal/auth"
-	"splat/internal/issues"
-	issuecmd "splat/internal/issues/commands"
-	issueviews "splat/internal/issues/views"
-	"splat/internal/mapview"
-	"splat/internal/search"
+	"sortit/internal/auth"
+	"sortit/internal/issues"
+	issuecmd "sortit/internal/issues/commands"
+	issueviews "sortit/internal/issues/views"
+	"sortit/internal/mapview"
+	"sortit/internal/search"
 )
 
 type issuesResponse struct {

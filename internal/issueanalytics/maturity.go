@@ -4,7 +4,7 @@ import (
 	"math"
 	"time"
 
-	"splat/internal/issues"
+	"sortit/internal/issues"
 )
 
 func DeriveIssueLifecycleMetrics(raw string, posts []issues.IssuePost, snapshots []issues.IssueSnapshot) *issues.IssueLifecycleMetrics {

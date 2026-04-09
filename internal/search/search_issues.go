@@ -6,12 +6,12 @@ import (
 	"strings"
 	"time"
 
-	"splat/internal/ai"
-	issueenrichment "splat/internal/issueenrichment"
-	"splat/internal/issues"
-	issueviews "splat/internal/issues/views"
-	issuemap "splat/internal/map"
-	"splat/internal/tags"
+	"sortit/internal/ai"
+	issueenrichment "sortit/internal/issueenrichment"
+	"sortit/internal/issues"
+	issueviews "sortit/internal/issues/views"
+	issuemap "sortit/internal/map"
+	"sortit/internal/tags"
 )
 
 type SearchIssues struct {

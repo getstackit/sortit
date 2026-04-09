@@ -3,7 +3,7 @@ package commands
 import (
 	"context"
 
-	"splat/internal/issues"
+	"sortit/internal/issues"
 )
 
 type ProgressIssue struct {

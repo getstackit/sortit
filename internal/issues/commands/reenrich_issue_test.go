@@ -5,7 +5,7 @@ import (
 	"errors"
 	"testing"
 
-	"splat/internal/issues"
+	"sortit/internal/issues"
 )
 
 func TestReEnrichIssuePublishesReEnrichEventAfterCommit(t *testing.T) {

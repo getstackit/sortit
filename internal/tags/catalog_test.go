@@ -7,9 +7,9 @@ import (
 	"testing"
 	"time"
 
-	"splat/internal/ai"
-	"splat/internal/issuemath"
-	"splat/internal/issues"
+	"sortit/internal/ai"
+	"sortit/internal/issuemath"
+	"sortit/internal/issues"
 )
 
 const testProviderName = "test"

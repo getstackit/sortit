@@ -11,11 +11,11 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"splat/internal/cli/integrations"
-	"splat/internal/issues"
-	issuecmd "splat/internal/issues/commands"
-	issuemap "splat/internal/map"
-	"splat/internal/people"
+	"sortit/internal/cli/integrations"
+	"sortit/internal/issues"
+	issuecmd "sortit/internal/issues/commands"
+	issuemap "sortit/internal/map"
+	"sortit/internal/people"
 )
 
 type rootOptions struct {
@@ -83,16 +83,16 @@ type linkIssuesRequest struct {
 
 func NewRootCmd(version, commit, date string) *cobra.Command {
 	opts := rootOptions{
-		apiURL:     strings.TrimSpace(os.Getenv("SPLAT_API_URL")),
-		token:      strings.TrimSpace(os.Getenv("SPLAT_API_TOKEN")),
+		apiURL:     strings.TrimSpace(os.Getenv("SORTIT_API_URL")),
+		token:      strings.TrimSpace(os.Getenv("SORTIT_API_TOKEN")),
 		configPath: defaultConfigPath(),
 	}
 
 	rootCmd := &cobra.Command{
-		Use:          "splat",
-		Short:        "CLI for the Splat dedicated API",
+		Use:          "sortit",
+		Short:        "CLI for the Sortit dedicated API",
 		SilenceUsage: true,
-		Long: `Splat CLI talks to the dedicated HTTP API.
+		Long: `Sortit CLI talks to the dedicated HTTP API.
 
 Version: ` + version + `
 Commit:  ` + commit + `

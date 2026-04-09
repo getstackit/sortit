@@ -55,7 +55,7 @@ type cliLoginExchangeRequest struct {
 func newAuthCmd(opts *rootOptions) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "auth",
-		Short: "Authenticate the CLI against Splat",
+		Short: "Authenticate the CLI against Sortit",
 	}
 	cmd.AddCommand(newAuthLoginCmd(opts))
 	cmd.AddCommand(newAuthStatusCmd(opts))
@@ -69,7 +69,7 @@ func newAuthLoginCmd(opts *rootOptions) *cobra.Command {
 
 	cmd := &cobra.Command{
 		Use:   "login",
-		Short: "Authenticate with Splat and store an API token locally",
+		Short: "Authenticate with Sortit and store an API token locally",
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			if withToken {
 				return loginWithToken(cmd, opts)
@@ -81,15 +81,15 @@ func newAuthLoginCmd(opts *rootOptions) *cobra.Command {
 		},
 	}
 
-	cmd.Flags().BoolVar(&withToken, "with-token", false, "Read a Splat API token from standard input")
-	cmd.Flags().BoolVar(&web, "web", true, "Open the Splat UI in a browser to authorize this CLI")
+	cmd.Flags().BoolVar(&withToken, "with-token", false, "Read a Sortit API token from standard input")
+	cmd.Flags().BoolVar(&web, "web", true, "Open the Sortit UI in a browser to authorize this CLI")
 	return cmd
 }
 
 func newAuthStatusCmd(opts *rootOptions) *cobra.Command {
 	return &cobra.Command{
 		Use:   "status",
-		Short: "Show the current authenticated Splat user",
+		Short: "Show the current authenticated Sortit user",
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			client := opts.client()
 			var response authSessionResponse
@@ -104,7 +104,7 @@ func newAuthStatusCmd(opts *rootOptions) *cobra.Command {
 func newAuthLogoutCmd(opts *rootOptions) *cobra.Command {
 	return &cobra.Command{
 		Use:   "logout",
-		Short: "Remove the locally stored Splat API token",
+		Short: "Remove the locally stored Sortit API token",
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			cfg, err := loadCLIConfig(opts.configPath)
 			if err != nil {
@@ -114,7 +114,7 @@ func newAuthLogoutCmd(opts *rootOptions) *cobra.Command {
 			if err := saveCLIConfig(opts.configPath, cfg); err != nil {
 				return err
 			}
-			_, _ = fmt.Fprintln(cmd.OutOrStdout(), "Logged out of Splat CLI.")
+			_, _ = fmt.Fprintln(cmd.OutOrStdout(), "Logged out of Sortit CLI.")
 			return nil
 		},
 	}
@@ -140,7 +140,7 @@ func loginWithToken(cmd *cobra.Command, opts *rootOptions) error {
 	if err := opts.saveConfig(token); err != nil {
 		return err
 	}
-	_, _ = fmt.Fprintf(cmd.OutOrStdout(), "Logged in to Splat as %s.\n", response.User.DisplayName)
+	_, _ = fmt.Fprintf(cmd.OutOrStdout(), "Logged in to Sortit as %s.\n", response.User.DisplayName)
 	return nil
 }
 
@@ -175,7 +175,7 @@ func loginWithBrowser(cmd *cobra.Command, opts *rootOptions) error {
 			if err := opts.saveConfig(response.Token); err != nil {
 				return err
 			}
-			_, _ = fmt.Fprintf(cmd.OutOrStdout(), "Logged in to Splat as %s.\n", response.User.DisplayName)
+			_, _ = fmt.Fprintf(cmd.OutOrStdout(), "Logged in to Sortit as %s.\n", response.User.DisplayName)
 			return nil
 		}
 		if err == nil {

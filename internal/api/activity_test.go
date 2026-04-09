@@ -7,7 +7,7 @@ import (
 	"net/http/httptest"
 	"testing"
 
-	issueviews "splat/internal/issues/views"
+	issueviews "sortit/internal/issues/views"
 )
 
 func TestRevisionEndpointAdvancesAfterMutation(t *testing.T) {

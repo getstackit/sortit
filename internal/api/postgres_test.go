@@ -5,8 +5,8 @@ import (
 	"sync"
 	"testing"
 
-	"splat/internal/issues"
-	"splat/internal/testpostgres"
+	"sortit/internal/issues"
+	"sortit/internal/testpostgres"
 )
 
 var apiPostgresHarness struct {
@@ -49,7 +49,7 @@ func apiHarness(t *testing.T) *testpostgres.Harness {
 	t.Helper()
 
 	apiPostgresHarness.once.Do(func() {
-		apiPostgresHarness.harness, apiPostgresHarness.err = testpostgres.Start(context.Background(), "splat_api_test")
+		apiPostgresHarness.harness, apiPostgresHarness.err = testpostgres.Start(context.Background(), "sortit_api_test")
 	})
 	if apiPostgresHarness.err != nil {
 		t.Fatalf("start postgres test harness: %v", apiPostgresHarness.err)

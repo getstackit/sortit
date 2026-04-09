@@ -9,11 +9,11 @@ import (
 	"strings"
 	"time"
 
-	"splat/internal/ai"
-	"splat/internal/domain"
-	"splat/internal/issuemath"
-	"splat/internal/issues"
-	"splat/internal/vectors"
+	"sortit/internal/ai"
+	"sortit/internal/domain"
+	"sortit/internal/issuemath"
+	"sortit/internal/issues"
+	"sortit/internal/vectors"
 )
 
 var retrievalAnchorTagNames = []string{

@@ -4,7 +4,7 @@ import (
 	"context"
 	"fmt"
 
-	"splat/internal/issues"
+	"sortit/internal/issues"
 )
 
 type IssueMutationFailure struct {

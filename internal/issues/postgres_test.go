@@ -9,7 +9,7 @@ import (
 	"testing"
 	"time"
 
-	"splat/internal/testpostgres"
+	"sortit/internal/testpostgres"
 )
 
 var issuesPostgresHarness struct {
@@ -1952,7 +1952,7 @@ func issuesHarness(t *testing.T) *testpostgres.Harness {
 	t.Helper()
 
 	issuesPostgresHarness.once.Do(func() {
-		issuesPostgresHarness.harness, issuesPostgresHarness.err = testpostgres.Start(context.Background(), "splat_issues_test")
+		issuesPostgresHarness.harness, issuesPostgresHarness.err = testpostgres.Start(context.Background(), "sortit_issues_test")
 	})
 	if issuesPostgresHarness.err != nil {
 		t.Fatalf("start postgres test harness: %v", issuesPostgresHarness.err)

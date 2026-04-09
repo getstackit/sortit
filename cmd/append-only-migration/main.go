@@ -12,8 +12,8 @@ import (
 	"strings"
 	"time"
 
-	"splat/internal/issues"
-	"splat/internal/issues/appendonly"
+	"sortit/internal/issues"
+	"sortit/internal/issues/appendonly"
 )
 
 const (
@@ -34,11 +34,11 @@ func run(ctx context.Context, args []string) error {
 	}
 
 	baseURL := strings.TrimSpace(firstNonEmpty(
-		os.Getenv("SPLAT_DATABASE_URL"),
-		os.Getenv("SPLAT_TEST_DATABASE_URL"),
+		os.Getenv("SORTIT_DATABASE_URL"),
+		os.Getenv("SORTIT_TEST_DATABASE_URL"),
 	))
 	if baseURL == "" {
-		return fmt.Errorf("set SPLAT_DATABASE_URL or SPLAT_TEST_DATABASE_URL")
+		return fmt.Errorf("set SORTIT_DATABASE_URL or SORTIT_TEST_DATABASE_URL")
 	}
 
 	store, err := issues.OpenPostgresStore(ctx, baseURL)

@@ -12,20 +12,20 @@ import (
 	"github.com/go-chi/chi/v5"
 	"github.com/go-chi/chi/v5/middleware"
 
-	"splat/internal/ai"
-	"splat/internal/auth"
-	"splat/internal/diagnostics"
-	issueenrichment "splat/internal/issueenrichment"
-	"splat/internal/issueevents"
-	"splat/internal/issues"
-	issuecmd "splat/internal/issues/commands"
-	issueviews "splat/internal/issues/views"
-	"splat/internal/mapview"
-	mcpserver "splat/internal/mcp"
-	"splat/internal/people"
-	"splat/internal/search"
-	"splat/internal/tags"
-	"splat/internal/tracing"
+	"sortit/internal/ai"
+	"sortit/internal/auth"
+	"sortit/internal/diagnostics"
+	issueenrichment "sortit/internal/issueenrichment"
+	"sortit/internal/issueevents"
+	"sortit/internal/issues"
+	issuecmd "sortit/internal/issues/commands"
+	issueviews "sortit/internal/issues/views"
+	"sortit/internal/mapview"
+	mcpserver "sortit/internal/mcp"
+	"sortit/internal/people"
+	"sortit/internal/search"
+	"sortit/internal/tags"
+	"sortit/internal/tracing"
 )
 
 type ServerConfig struct {
@@ -187,7 +187,7 @@ func (s *Server) Handler() http.Handler {
 
 	r.Get("/", func(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusOK, map[string]string{
-			"name":   "splat-server",
+			"name":   "sortit-server",
 			"status": "ok",
 		})
 	})
@@ -394,7 +394,7 @@ func (s *Server) ProcessPendingEnrichment(ctx context.Context) error {
 
 func (s *Server) handleHealth(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, healthResponse{
-		Name:      "splat-server",
+		Name:      "sortit-server",
 		Status:    "ok",
 		Timestamp: time.Now().UTC().Format(time.RFC3339),
 		Uptime:    time.Since(s.startedAt).Round(time.Second).String(),

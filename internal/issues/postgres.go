@@ -20,7 +20,7 @@ import (
 	"github.com/jackc/pgx/v5/pgconn"
 	_ "github.com/jackc/pgx/v5/stdlib"
 
-	"splat/internal/issues/issuesdb"
+	"sortit/internal/issues/issuesdb"
 )
 
 const (

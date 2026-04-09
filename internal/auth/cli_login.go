@@ -49,11 +49,11 @@ func newCLILoginManager() *cliLoginManager {
 }
 
 func (m *cliLoginManager) Begin() (CLILoginStart, error) {
-	id, _, err := newSecretToken("scli")
+	id, _, err := newSecretToken("sortitcli")
 	if err != nil {
 		return CLILoginStart{}, err
 	}
-	exchangeToken, exchangeTokenHash, err := newSecretToken("sclix")
+	exchangeToken, exchangeTokenHash, err := newSecretToken("sortitclix")
 	if err != nil {
 		return CLILoginStart{}, err
 	}

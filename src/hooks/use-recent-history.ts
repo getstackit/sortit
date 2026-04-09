@@ -4,7 +4,7 @@ import { useSyncExternalStore } from "react";
 import type { IssueRecord, IssueStatus } from "@/lib/issues";
 import type { TagRecord } from "@/lib/tags";
 
-export const RECENT_HISTORY_STORAGE_KEY = "splat-recent-history";
+export const RECENT_HISTORY_STORAGE_KEY = "sortit-recent-history";
 export const MAX_RECENT_HISTORY_ITEMS = 8;
 
 export type RecentIssueItem = {

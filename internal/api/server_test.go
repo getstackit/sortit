@@ -7,8 +7,8 @@ import (
 	"strconv"
 	"testing"
 
-	"splat/internal/issues"
-	issuemap "splat/internal/map"
+	"sortit/internal/issues"
+	issuemap "sortit/internal/map"
 )
 
 func TestHandlerReturnsNotFoundForUnknownPaths(t *testing.T) {

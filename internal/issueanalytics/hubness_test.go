@@ -3,7 +3,7 @@ package issueanalytics
 import (
 	"testing"
 
-	"splat/internal/issues"
+	"sortit/internal/issues"
 )
 
 func TestLinkCountHubness(t *testing.T) {

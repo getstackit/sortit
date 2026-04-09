@@ -8,7 +8,7 @@ import (
 	"strings"
 	"time"
 
-	"splat/internal/issues/issuesdb"
+	"sortit/internal/issues/issuesdb"
 )
 
 func (s *PostgresStore) RecordEvent(ctx context.Context, event Event) error {

@@ -5,7 +5,7 @@ import (
 	"testing"
 	"time"
 
-	"splat/internal/issues"
+	"sortit/internal/issues"
 )
 
 func TestTimeDecayWeightUsesTrueHalfLife(t *testing.T) {

@@ -4,7 +4,7 @@ import (
 	"context"
 	"time"
 
-	"splat/internal/issues"
+	"sortit/internal/issues"
 )
 
 func (s *IssueEnricher) AnalyzePersistedIssue(

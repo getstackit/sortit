@@ -5,7 +5,7 @@ import (
 	"testing"
 	"time"
 
-	"splat/internal/issues"
+	"sortit/internal/issues"
 )
 
 func TestGetIssueHandlerIncludesLifecycleMetricsFromSnapshots(t *testing.T) {

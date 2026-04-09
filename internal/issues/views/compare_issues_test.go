@@ -4,7 +4,7 @@ import (
 	"context"
 	"testing"
 
-	"splat/internal/issues"
+	"sortit/internal/issues"
 )
 
 type compareOnlyStore struct {

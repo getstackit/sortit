@@ -6,7 +6,7 @@ import (
 	"fmt"
 	"strings"
 
-	"splat/internal/issues/issuesdb"
+	"sortit/internal/issues/issuesdb"
 )
 
 type PostgresUnitOfWork struct {

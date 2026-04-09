@@ -10,7 +10,7 @@ import (
 	"strings"
 	"time"
 
-	"splat/internal/issues/issuesdb"
+	"sortit/internal/issues/issuesdb"
 )
 
 func (s *PostgresStore) SaveIssue(ctx context.Context, issue Issue) error {

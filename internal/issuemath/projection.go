@@ -7,10 +7,10 @@ import (
 
 	"gonum.org/v1/gonum/mat"
 
-	"splat/internal/issueanalytics"
-	"splat/internal/issues"
-	"splat/internal/scoring"
-	"splat/internal/vectors"
+	"sortit/internal/issueanalytics"
+	"sortit/internal/issues"
+	"sortit/internal/scoring"
+	"sortit/internal/vectors"
 )
 
 type Position struct {

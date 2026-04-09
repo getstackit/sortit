@@ -15,7 +15,7 @@ import (
 
 	_ "github.com/jackc/pgx/v5/stdlib"
 
-	"splat/internal/issues"
+	"sortit/internal/issues"
 )
 
 const pgDriverName = "pgx"
@@ -73,7 +73,7 @@ func Generate(ctx context.Context, baseURL string) (string, error) {
 	}
 	defer adminDB.Close() //nolint:errcheck
 
-	dbName := randomDatabaseName("splat_schema_export")
+	dbName := randomDatabaseName("sortit_schema_export")
 	if err := createDatabase(ctx, adminDB, dbName); err != nil {
 		return "", err
 	}

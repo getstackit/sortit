@@ -8,9 +8,9 @@ import (
 	"sync"
 	"time"
 
-	"splat/internal/issues"
-	issuemap "splat/internal/map"
-	"splat/internal/tags"
+	"sortit/internal/issues"
+	issuemap "sortit/internal/map"
+	"sortit/internal/tags"
 )
 
 type revisionSource interface {

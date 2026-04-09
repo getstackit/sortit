@@ -6,8 +6,8 @@ import (
 	"slices"
 	"sync"
 
-	"splat/internal/ai"
-	"splat/internal/vectors"
+	"sortit/internal/ai"
+	"sortit/internal/vectors"
 )
 
 // ExemplarPool holds curated tagging examples and lazily computes their

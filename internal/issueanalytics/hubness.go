@@ -1,8 +1,8 @@
 package issueanalytics
 
 import (
-	"splat/internal/issues"
-	"splat/internal/scoring"
+	"sortit/internal/issues"
+	"sortit/internal/scoring"
 )
 
 // IssueHubness computes a graph-connectedness score for an issue based on its

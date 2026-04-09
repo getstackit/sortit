@@ -4,7 +4,7 @@ import (
 	"cmp"
 	"slices"
 
-	"splat/internal/vectors"
+	"sortit/internal/vectors"
 )
 
 // NeighborhoodSpecificityResult holds the intermediate local-density value and

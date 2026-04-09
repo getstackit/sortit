@@ -4,9 +4,9 @@ import (
 	"log/slog"
 	"time"
 
-	"splat/internal/ai"
-	"splat/internal/issues"
-	"splat/internal/tags"
+	"sortit/internal/ai"
+	"sortit/internal/issues"
+	"sortit/internal/tags"
 )
 
 type IssueEnricher struct {

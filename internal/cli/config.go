@@ -17,9 +17,9 @@ type cliConfig struct {
 func defaultConfigPath() string {
 	configDir, err := os.UserConfigDir()
 	if err != nil {
-		return ".splat-cli.json"
+		return ".sortit-cli.json"
 	}
-	return filepath.Join(configDir, "splat", "config.json")
+	return filepath.Join(configDir, "sortit", "config.json")
 }
 
 func loadCLIConfig(path string) (cliConfig, error) {

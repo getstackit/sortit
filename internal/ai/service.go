@@ -9,7 +9,7 @@ import (
 	"slices"
 	"strings"
 
-	"splat/internal/domain"
+	"sortit/internal/domain"
 )
 
 var ErrNotConfigured = errors.New("ai analyzer not configured")

@@ -7,10 +7,10 @@ import (
 	"testing"
 	"time"
 
-	"splat/internal/ai"
-	issueenrichment "splat/internal/issueenrichment"
-	"splat/internal/issues"
-	"splat/internal/tags"
+	"sortit/internal/ai"
+	issueenrichment "sortit/internal/issueenrichment"
+	"sortit/internal/issues"
+	"sortit/internal/tags"
 )
 
 const testFakeProvider = "fake"

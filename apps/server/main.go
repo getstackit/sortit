@@ -11,11 +11,11 @@ import (
 	"syscall"
 	"time"
 
-	"splat/internal/ai"
-	"splat/internal/api"
-	"splat/internal/auth"
-	"splat/internal/issues"
-	"splat/internal/tracing"
+	"sortit/internal/ai"
+	"sortit/internal/api"
+	"sortit/internal/auth"
+	"sortit/internal/issues"
+	"sortit/internal/tracing"
 )
 
 func main() {
@@ -29,12 +29,12 @@ func run() error {
 	var (
 		port          = flag.Int("port", 8081, "Port to listen on")
 		corsOrigins   = flag.String("cors", "http://localhost:3000,http://127.0.0.1:3000", "Comma-separated allowed CORS origins")
-		databaseURL   = flag.String("database-url", envOrDefault("SPLAT_DATABASE_URL", ""), "PostgreSQL connection string")
+		databaseURL   = flag.String("database-url", envOrDefault("SORTIT_DATABASE_URL", ""), "PostgreSQL connection string")
 		shutdownGrace = flag.Duration("shutdown-timeout", 10*time.Second, "Graceful shutdown timeout")
 	)
 	flag.Parse()
 
-	shutdownTracing, err := tracing.Init(context.Background(), "splat-server")
+	shutdownTracing, err := tracing.Init(context.Background(), "sortit-server")
 	if err != nil {
 		return err
 	}
@@ -62,7 +62,7 @@ func run() error {
 		return err
 	}
 
-	webOrigin := envOrDefault("SPLAT_WEB_ORIGIN", firstNonEmpty(api.ParseCSV(*corsOrigins)))
+	webOrigin := envOrDefault("SORTIT_WEB_ORIGIN", firstNonEmpty(api.ParseCSV(*corsOrigins)))
 	authService, err := auth.NewService(auth.ServiceConfig{
 		Store:      auth.NewStore(issueStore.DB()),
 		Provider:   githubProvider,

@@ -7,7 +7,7 @@ import (
 	"strings"
 	"time"
 
-	"splat/internal/issues/issuesdb"
+	"sortit/internal/issues/issuesdb"
 )
 
 type issueContentState struct {

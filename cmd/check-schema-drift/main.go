@@ -7,7 +7,7 @@ import (
 	"os"
 	"strings"
 
-	"splat/internal/schemaexport"
+	"sortit/internal/schemaexport"
 )
 
 func main() {
@@ -19,11 +19,11 @@ func main() {
 
 func run(ctx context.Context) error {
 	baseURL := strings.TrimSpace(firstNonEmpty(
-		os.Getenv("SPLAT_TEST_DATABASE_URL"),
-		os.Getenv("SPLAT_DATABASE_URL"),
+		os.Getenv("SORTIT_TEST_DATABASE_URL"),
+		os.Getenv("SORTIT_DATABASE_URL"),
 	))
 	if baseURL == "" {
-		return fmt.Errorf("set SPLAT_TEST_DATABASE_URL or SPLAT_DATABASE_URL")
+		return fmt.Errorf("set SORTIT_TEST_DATABASE_URL or SORTIT_DATABASE_URL")
 	}
 
 	generated, err := schemaexport.Generate(ctx, baseURL)

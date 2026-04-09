@@ -42,7 +42,7 @@ type agentInstallTarget struct {
 func NewAgentsCmd(version string) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:          "agent",
-		Short:        "Manage Claude Code and Codex skill files for Splat",
+		Short:        "Manage Claude Code and Codex skill files for Sortit",
 		SilenceUsage: true,
 	}
 
@@ -57,14 +57,14 @@ func newAgentInstallCmd(version string) *cobra.Command {
 
 	cmd := &cobra.Command{
 		Use:   "install",
-		Short: "Install Splat skill files",
-		Long: `Install Splat skill files into your home directory.
+		Short: "Install Sortit skill files",
+		Long: `Install Sortit skill files into your home directory.
 
 This creates one or both skill sets under:
   - ~/.claude/skills
   - ~/.codex/skills
 
-The installed skill teaches agents to use the Splat CLI, starting with issue
+The installed skill teaches agents to use the Sortit CLI, starting with issue
 search, create, and explore workflows plus the rest of the issue operations.`,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			baseDir, err := os.UserHomeDir()
@@ -108,7 +108,7 @@ func installSkillTargets(baseDir string, targets []agentInstallTarget, force boo
 		}
 	}
 
-	_, _ = fmt.Fprintf(out, "Installed %d Splat skills:\n", len(skillDefinitions))
+	_, _ = fmt.Fprintf(out, "Installed %d Sortit skills:\n", len(skillDefinitions))
 	for _, target := range targets {
 		_, _ = fmt.Fprintf(out, "  %s (%d skills)\n", target.displayPath, len(skillDefinitions))
 	}
@@ -173,7 +173,7 @@ func checkExistingInstallation(baseDir string, target agentInstallTarget, force 
 			continue
 		}
 
-		_, _ = fmt.Fprintf(out, "Found existing Splat skill at %s/%s", target.displayPath, skill.name)
+		_, _ = fmt.Fprintf(out, "Found existing Sortit skill at %s/%s", target.displayPath, skill.name)
 		if existingVersion != "" {
 			_, _ = fmt.Fprintf(out, " (version %s)", existingVersion)
 		}
@@ -205,8 +205,8 @@ func selectInstallTargets(baseDir string, rawFormats []string, in io.Reader, out
 		out,
 		"Which skill format(s) would you like to install?",
 		[]string{
-			"Claude Code - Claude Code CLI skill format (~/.claude/skills/splat-*)",
-			"Codex - Codex skill format (~/.codex/skills/splat-*)",
+			"Claude Code - Claude Code CLI skill format (~/.claude/skills/sortit-*)",
+			"Codex - Codex skill format (~/.codex/skills/sortit-*)",
 		},
 		preSelected,
 	)

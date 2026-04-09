@@ -7,8 +7,8 @@ import (
 	"strings"
 	"time"
 
-	"splat/internal/issues"
-	"splat/internal/tags"
+	"sortit/internal/issues"
+	"sortit/internal/tags"
 )
 
 const (

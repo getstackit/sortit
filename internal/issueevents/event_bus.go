@@ -4,7 +4,7 @@ import (
 	"context"
 	"sync"
 
-	"splat/internal/issues"
+	"sortit/internal/issues"
 )
 
 type EventListener = issues.EventListener

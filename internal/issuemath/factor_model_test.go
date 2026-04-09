@@ -4,8 +4,8 @@ import (
 	"math"
 	"testing"
 
-	"splat/internal/issues"
-	"splat/internal/scoring"
+	"sortit/internal/issues"
+	"sortit/internal/scoring"
 )
 
 func TestComputeFactorDecomposition_PureFactorIssues(t *testing.T) {
