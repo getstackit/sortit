@@ -124,6 +124,24 @@ func TestBuildOpenAITaggingSystemPromptAllowsConstrainedSuggestions(t *testing.T
 	}
 }
 
+func TestBuildOpenAITaggingPromptsRequireEvidenceCitations(t *testing.T) {
+	systemPrompt := buildOpenAITaggingSystemPrompt()
+	for _, expected := range []string{
+		"Each object must include tag, relevance, and evidence.",
+		"verbatim quotes copied character-for-character from the issue text",
+		"If no verbatim quote in the issue text supports a tag, do not include that tag.",
+	} {
+		if !strings.Contains(systemPrompt, expected) {
+			t.Fatalf("expected system prompt to contain %q", expected)
+		}
+	}
+
+	userPrompt := buildOpenAITaggingPrompt("an issue", []Tag{{Name: "bug"}}, nil)
+	if !strings.Contains(userPrompt, "include an evidence array") {
+		t.Fatalf("expected user prompt to instruct evidence citations, got:\n%s", userPrompt)
+	}
+}
+
 func TestOpenAIModelDefaults(t *testing.T) {
 	cfg := OpenAIConfig{
 		APIKey:     "test-key",

@@ -15,6 +15,10 @@ type TagScore struct {
 	Relevance   float64 `json:"relevance"`
 	Suggested   bool    `json:"suggested,omitempty"`
 	Description string  `json:"description,omitempty"`
+	// Evidence holds short verbatim quotes from the source text that justify
+	// this tag. The model is instructed to copy fragments rather than
+	// paraphrase so the verifier can confirm grounding.
+	Evidence []string `json:"evidence,omitempty"`
 }
 
 type ModelInfo struct {

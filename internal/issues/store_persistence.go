@@ -234,7 +234,16 @@ func equalTagScore(left, right TagRelevance) bool {
 		left.VerificationVerdict == right.VerificationVerdict &&
 		left.VerificationReason == right.VerificationReason &&
 		left.DominatedBy == right.DominatedBy &&
-		equalFloat64Ptr(left.DominanceGap, right.DominanceGap)
+		equalFloat64Ptr(left.DominanceGap, right.DominanceGap) &&
+		slices.Equal(left.Evidence, right.Evidence) &&
+		equalIntPtr(left.EvidenceMatched, right.EvidenceMatched)
+}
+
+func equalIntPtr(left, right *int) bool {
+	if left == nil || right == nil {
+		return left == nil && right == nil
+	}
+	return *left == *right
 }
 
 func equalFloat64Ptr(left, right *float64) bool {

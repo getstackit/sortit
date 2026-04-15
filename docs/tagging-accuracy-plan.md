@@ -455,11 +455,19 @@ on a full second LLM pass.
   - [x] tag specificity
   - [x] whether the tag came from retrieval, anchor set, or explicit user input
   - [x] whether a nearby unassigned tag strongly dominates a weak assigned tag
+  - [x] verbatim source-text evidence quotes the model attached to the tag,
+    plus a count of how many of those quotes were confirmed to appear in the
+    issue text after lightweight normalization (case, whitespace, smart
+    punctuation)
 - [ ] Use these features to produce a verification verdict:
   - [x] keep
-  - [x] down-rank
+  - [x] down-rank (now also fires when a confidently-assigned tag has no
+    matched evidence quote, or when the model returned no quotes for a
+    high-relevance tag)
   - [ ] ask targeted follow-up
-  - [x] flag for debug/review
+  - [x] flag for debug/review (also fires when the model fabricates evidence
+    quotes for a high-relevance tag, or when a *suggested* tag arrives without
+    any supporting source-text evidence)
 - [ ] After verification, check whether a high-alignment unassigned catalog tag
   exists (residual-near tag). If so, add it as a candidate and optionally
   re-score with a targeted LLM check for that single tag.
@@ -777,6 +785,12 @@ Mitigation:
 - What alignment threshold should the embedding verifier use for dropping tags?
   Hard-drop thresholds should be conservative and probably tag-class-specific.
 - Which benchmark set should be treated as the release gate for tagging changes?
+- What relevance thresholds should evidence-grounding rules use? Initial
+  picks: downrank a tag whose evidence quotes are absent from the source text
+  when its claimed relevance is ≥ 0.30, and flag it when ≥ 0.60. Tune against
+  the benchmark.
+- Should evidence-flagged tags be displayed in the UI with their failed quote
+  for human triage, or hidden entirely until reviewed?
 
 ## Recommended First Implementation Slice
 

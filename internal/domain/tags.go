@@ -23,6 +23,13 @@ type TagRelevance struct {
 	VerificationReason  string                 `json:"verificationReason,omitempty"`
 	DominatedBy         string                 `json:"dominatedBy,omitempty"`
 	DominanceGap        *float64               `json:"dominanceGap,omitempty"`
+	// Evidence holds verbatim quotes from the source text that the tagger
+	// claims justify this tag. Quotes are preserved as-returned by the model.
+	Evidence []string `json:"evidence,omitempty"`
+	// EvidenceMatched counts how many entries in Evidence were confirmed to
+	// appear (case- and whitespace-insensitively) in the source text.
+	// nil means the evidence check did not run for this tag.
+	EvidenceMatched *int `json:"evidenceMatched,omitempty"`
 }
 
 // NormalizeTagName lowercases and collapses whitespace in a tag name.

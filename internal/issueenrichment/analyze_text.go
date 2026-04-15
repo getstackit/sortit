@@ -65,6 +65,7 @@ func (s *IssueEnricher) AnalyzeText(ctx context.Context, raw string, opts Analyz
 
 	tagScores = s.decorateAndVerifyTagScores(
 		ctx,
+		raw,
 		Float32VectorToFloat64(analyzed.Embedding.Vector),
 		candidates,
 		tagScores,
@@ -97,7 +98,28 @@ func IssueTagScoresFromAnalysis(scores []ai.TagScore) []issues.TagRelevance {
 			Relevance:   score.Relevance,
 			Suggested:   score.Suggested,
 			Description: strings.TrimSpace(score.Description),
+			Evidence:    cleanEvidenceQuotes(score.Evidence),
 		})
 	}
 	return tagScores
+}
+
+// cleanEvidenceQuotes trims whitespace from each quote and drops empties,
+// preserving order. Returns nil for an empty result so the JSON marshals away.
+func cleanEvidenceQuotes(quotes []string) []string {
+	if len(quotes) == 0 {
+		return nil
+	}
+	out := make([]string, 0, len(quotes))
+	for _, quote := range quotes {
+		trimmed := strings.TrimSpace(quote)
+		if trimmed == "" {
+			continue
+		}
+		out = append(out, trimmed)
+	}
+	if len(out) == 0 {
+		return nil
+	}
+	return out
 }

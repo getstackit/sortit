@@ -90,8 +90,8 @@ func (s *debugAnalyzeStore) UpdateTagSpecificity(context.Context, string, *float
 func TestDebugIssueAnalyzeEndpoint(t *testing.T) {
 	tagger := &fakeTagger{
 		scores: []ai.TagScore{
-			{Tag: "export", Relevance: 0.92},
-			{Tag: "safari", Relevance: 0.88},
+			{Tag: "export", Relevance: 0.92, Evidence: []string{"Safari export crashes"}},
+			{Tag: "safari", Relevance: 0.88, Evidence: []string{"Safari export"}},
 		},
 	}
 	server := NewServer(ServerConfig{
