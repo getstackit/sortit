@@ -12,38 +12,61 @@ import (
 	"sortit/internal/tags"
 )
 
-func TestNormalizeForEvidenceMatchCollapsesWhitespaceAndCase(t *testing.T) {
-	got := normalizeForEvidenceMatch("  Foo\tBAR\n  baz  ")
+func TestNormalizeWithOffsetsCollapsesWhitespaceAndCase(t *testing.T) {
+	nm := normalizeWithOffsets("  Foo\tBAR\n  baz  ")
 	want := "foo bar baz"
-	if got != want {
-		t.Fatalf("expected %q, got %q", want, got)
+	if nm.text != want {
+		t.Fatalf("expected %q, got %q", want, nm.text)
 	}
 }
 
-func TestNormalizeForEvidenceMatchNormalizesSmartPunctuation(t *testing.T) {
-	got := normalizeForEvidenceMatch("\u201CCan\u2019t open\u201D \u2014 export")
+func TestNormalizeWithOffsetsHandlesSmartPunctuation(t *testing.T) {
+	nm := normalizeWithOffsets("\u201CCan\u2019t open\u201D \u2014 export")
 	want := "\"can't open\" - export"
-	if got != want {
-		t.Fatalf("expected %q, got %q", want, got)
+	if nm.text != want {
+		t.Fatalf("expected %q, got %q", want, nm.text)
 	}
 }
 
-func TestCountMatchedEvidenceCountsOnlyVerbatimQuotes(t *testing.T) {
-	raw := normalizeForEvidenceMatch("Search box clears after typing the second character on the open issues page.")
-	matched := countMatchedEvidence([]string{
-		"Search box clears",                  // verbatim
-		"clears after typing the SECOND",     // verbatim modulo case
-		"completely fabricated phrase",       // hallucinated
-		"  ",                                 // empty after trim
-	}, raw)
-	if matched != 2 {
-		t.Fatalf("expected 2 matches, got %d", matched)
+func TestResolveEvidenceRangesFindsVerbatimQuotes(t *testing.T) {
+	raw := "Search box clears after typing the second character."
+	ranges := resolveEvidenceRanges(raw, []string{
+		"Search box clears",
+		"typing the second character",
+		"completely fabricated phrase",
+		"  ",
+	})
+	if len(ranges) != 2 {
+		t.Fatalf("expected 2 resolved ranges, got %d: %#v", len(ranges), ranges)
+	}
+	if got := raw[ranges[0].Start:ranges[0].End]; got != "Search box clears" {
+		t.Fatalf("first range expected %q, got %q", "Search box clears", got)
+	}
+	if got := raw[ranges[1].Start:ranges[1].End]; got != "typing the second character" {
+		t.Fatalf("second range expected %q, got %q", "typing the second character", got)
 	}
 }
 
-func TestCountMatchedEvidenceReturnsZeroForEmptyRaw(t *testing.T) {
-	if got := countMatchedEvidence([]string{"anything"}, ""); got != 0 {
-		t.Fatalf("expected 0 matches for empty raw, got %d", got)
+func TestResolveEvidenceRangesIsCaseInsensitive(t *testing.T) {
+	raw := "Safari Export Crashes on iPad"
+	ranges := resolveEvidenceRanges(raw, []string{"safari export crashes"})
+	if len(ranges) != 1 {
+		t.Fatalf("expected 1 range, got %d", len(ranges))
+	}
+	if got := raw[ranges[0].Start:ranges[0].End]; got != "Safari Export Crashes" {
+		t.Fatalf("expected %q, got %q", "Safari Export Crashes", got)
+	}
+}
+
+func TestResolveEvidenceRangesReturnsNilForEmptyRaw(t *testing.T) {
+	if got := resolveEvidenceRanges("", []string{"anything"}); got != nil {
+		t.Fatalf("expected nil for empty raw, got %#v", got)
+	}
+}
+
+func TestResolveEvidenceRangesReturnsNilForNoMatch(t *testing.T) {
+	if got := resolveEvidenceRanges("hello world", []string{"not here"}); got != nil {
+		t.Fatalf("expected nil for unmatched quotes, got %#v", got)
 	}
 }
 
@@ -63,7 +86,7 @@ func newEvidenceEnricher(t *testing.T, tagger ai.Tagger, storeTags []issues.Tag)
 	store := &catalogTestStore{tags: storeTags}
 	embedder := &enricherTestEmbedder{
 		vectors: map[string][]float32{
-			"raw text": {1, 0},
+			"raw text with search box clears": {1, 0},
 		},
 	}
 	analyzer := ai.NewAnalyzer(tagger, embedder)
@@ -73,7 +96,6 @@ func newEvidenceEnricher(t *testing.T, tagger ai.Tagger, storeTags []issues.Tag)
 	return enricher
 }
 
-// findScore returns the score for the named tag or t.Fatals if not found.
 func findScore(t *testing.T, scores []issues.TagRelevance, name string) issues.TagRelevance {
 	t.Helper()
 	for _, score := range scores {
@@ -85,39 +107,7 @@ func findScore(t *testing.T, scores []issues.TagRelevance, name string) issues.T
 	return issues.TagRelevance{}
 }
 
-func TestAnalyzeTextDownranksHighRelevanceTagWithUnmatchedEvidence(t *testing.T) {
-	tagger := &evidenceTagger{
-		scores: []ai.TagScore{{
-			Tag:       "database",
-			Relevance: 0.9,
-			Evidence:  []string{"hallucinated phrase that is not in the source"},
-		}},
-	}
-	enricher := newEvidenceEnricher(t, tagger, []issues.Tag{
-		{Name: "database", Embedding: []float64{1, 0}},
-	})
-
-	result, err := enricher.AnalyzeText(context.Background(), "raw text", AnalyzeTextOptions{
-		CandidateMode: tags.CandidateModeRetrievalShortlist,
-		Verify:        true,
-	})
-	if err != nil {
-		t.Fatalf("AnalyzeText: %v", err)
-	}
-
-	score := findScore(t, result.TagScores, "database")
-	if score.VerificationVerdict != domain.TagVerificationVerdictFlagged {
-		t.Fatalf("expected flagged verdict for unmatched evidence at high relevance, got %#v", score)
-	}
-	if score.EvidenceMatched == nil || *score.EvidenceMatched != 0 {
-		t.Fatalf("expected EvidenceMatched=0, got %#v", score.EvidenceMatched)
-	}
-	if !strings.Contains(score.VerificationReason, "evidence") {
-		t.Fatalf("expected verification reason to mention evidence, got %q", score.VerificationReason)
-	}
-}
-
-func TestAnalyzeTextKeepsTagWithMatchedEvidence(t *testing.T) {
+func TestAnalyzeTextKeepsTagWithMatchedEvidenceRanges(t *testing.T) {
 	tagger := &evidenceTagger{
 		scores: []ai.TagScore{{
 			Tag:       "database",
@@ -129,7 +119,7 @@ func TestAnalyzeTextKeepsTagWithMatchedEvidence(t *testing.T) {
 		{Name: "database", Embedding: []float64{1, 0}},
 	})
 
-	result, err := enricher.AnalyzeText(context.Background(), "raw text", AnalyzeTextOptions{
+	result, err := enricher.AnalyzeText(context.Background(), "raw text with search box clears", AnalyzeTextOptions{
 		CandidateMode: tags.CandidateModeRetrievalShortlist,
 		Verify:        true,
 	})
@@ -141,52 +131,29 @@ func TestAnalyzeTextKeepsTagWithMatchedEvidence(t *testing.T) {
 	if score.VerificationVerdict != domain.TagVerificationVerdictKeep {
 		t.Fatalf("expected keep verdict for matched evidence, got %#v", score)
 	}
-	if score.EvidenceMatched == nil || *score.EvidenceMatched != 1 {
-		t.Fatalf("expected EvidenceMatched=1, got %#v", score.EvidenceMatched)
+	if len(score.Evidence) != 1 {
+		t.Fatalf("expected 1 evidence range, got %d", len(score.Evidence))
+	}
+	if score.Evidence[0].Start != 0 || score.Evidence[0].End != 8 {
+		t.Fatalf("expected evidence range [0,8), got %#v", score.Evidence[0])
+	}
+	if !strings.Contains(score.VerificationReason, "evidence") {
+		t.Fatalf("expected reason to mention evidence, got %q", score.VerificationReason)
 	}
 }
 
-func TestAnalyzeTextFlagsSuggestedTagWithoutEvidence(t *testing.T) {
-	tagger := &evidenceTagger{
-		scores: []ai.TagScore{{
-			Tag:         "novel-tag",
-			Relevance:   0.5,
-			Suggested:   true,
-			Description: "made-up new concept",
-		}},
-	}
-	enricher := newEvidenceEnricher(t, tagger, nil)
-
-	result, err := enricher.AnalyzeText(context.Background(), "raw text", AnalyzeTextOptions{
-		CandidateMode: tags.CandidateModeRetrievalShortlist,
-		Verify:        true,
-	})
-	if err != nil {
-		t.Fatalf("AnalyzeText: %v", err)
-	}
-
-	score := findScore(t, result.TagScores, "novel-tag")
-	if score.VerificationVerdict != domain.TagVerificationVerdictFlagged {
-		t.Fatalf("expected flagged verdict for suggested tag without evidence, got %#v", score)
-	}
-	if !strings.Contains(score.VerificationReason, "suggested tag") {
-		t.Fatalf("expected verification reason to mention suggested tag, got %q", score.VerificationReason)
-	}
-}
-
-func TestAnalyzeTextLeavesLowRelevanceUnverifiedEvidenceAlone(t *testing.T) {
+func TestAnalyzeTextKeepsTagWithoutEvidenceNoDownrank(t *testing.T) {
 	tagger := &evidenceTagger{
 		scores: []ai.TagScore{{
 			Tag:       "database",
-			Relevance: 0.2,
-			Evidence:  []string{"not present in source"},
+			Relevance: 0.9,
 		}},
 	}
 	enricher := newEvidenceEnricher(t, tagger, []issues.Tag{
 		{Name: "database", Embedding: []float64{1, 0}},
 	})
 
-	result, err := enricher.AnalyzeText(context.Background(), "raw text", AnalyzeTextOptions{
+	result, err := enricher.AnalyzeText(context.Background(), "raw text with search box clears", AnalyzeTextOptions{
 		CandidateMode: tags.CandidateModeRetrievalShortlist,
 		Verify:        true,
 	})
@@ -196,31 +163,53 @@ func TestAnalyzeTextLeavesLowRelevanceUnverifiedEvidenceAlone(t *testing.T) {
 
 	score := findScore(t, result.TagScores, "database")
 	if score.VerificationVerdict != domain.TagVerificationVerdictKeep {
-		t.Fatalf("expected keep verdict for low-relevance unmatched evidence, got %#v", score)
+		t.Fatalf("expected keep for tag without evidence (no penalty), got %#v", score)
+	}
+	if len(score.Evidence) != 0 {
+		t.Fatalf("expected no evidence ranges when no quotes provided, got %#v", score.Evidence)
 	}
 }
 
-func TestIssueTagScoresFromAnalysisCarriesEvidenceQuotes(t *testing.T) {
-	scores := IssueTagScoresFromAnalysis([]ai.TagScore{
-		{Tag: "bug", Relevance: 0.8, Evidence: []string{"  something broke  ", "", "another quote"}},
+func TestAnalyzeTextEvidenceRescuesWeakAlignment(t *testing.T) {
+	tagger := &evidenceTagger{
+		scores: []ai.TagScore{{
+			Tag:       "cleanup",
+			Relevance: 0.9,
+			Evidence:  []string{"search box clears"},
+		}},
+	}
+	cleanupSpecificity := 0.2
+	databaseSpecificity := 0.8
+	enricher := newEvidenceEnricher(t, tagger, []issues.Tag{
+		{Name: "cleanup", Embedding: []float64{0, 1}, Specificity: &cleanupSpecificity},
+		{Name: "database", Embedding: []float64{1, 0}, Specificity: &databaseSpecificity},
 	})
 
+	result, err := enricher.AnalyzeText(context.Background(), "raw text with search box clears", AnalyzeTextOptions{
+		CandidateMode: tags.CandidateModeRetrievalShortlist,
+		Verify:        true,
+	})
+	if err != nil {
+		t.Fatalf("AnalyzeText: %v", err)
+	}
+
+	score := findScore(t, result.TagScores, "cleanup")
+	if score.VerificationVerdict != domain.TagVerificationVerdictKeep {
+		t.Fatalf("expected evidence to rescue weak alignment, got %#v", score)
+	}
+	if !strings.Contains(score.VerificationReason, "rescued") {
+		t.Fatalf("expected reason to mention rescue, got %q", score.VerificationReason)
+	}
+}
+
+func TestIssueTagScoresFromAnalysisDoesNotCopyEvidence(t *testing.T) {
+	scores := IssueTagScoresFromAnalysis([]ai.TagScore{
+		{Tag: "bug", Relevance: 0.8, Evidence: []string{"something broke"}},
+	})
 	if len(scores) != 1 {
 		t.Fatalf("expected 1 score, got %d", len(scores))
 	}
-	if got, want := scores[0].Evidence, []string{"something broke", "another quote"}; !equalStringSlices(got, want) {
-		t.Fatalf("expected trimmed evidence %#v, got %#v", want, got)
+	if len(scores[0].Evidence) != 0 {
+		t.Fatalf("expected no evidence on TagRelevance (resolved later), got %#v", scores[0].Evidence)
 	}
-}
-
-func equalStringSlices(a, b []string) bool {
-	if len(a) != len(b) {
-		return false
-	}
-	for i := range a {
-		if a[i] != b[i] {
-			return false
-		}
-	}
-	return true
 }

@@ -124,21 +124,27 @@ func TestBuildOpenAITaggingSystemPromptAllowsConstrainedSuggestions(t *testing.T
 	}
 }
 
-func TestBuildOpenAITaggingPromptsRequireEvidenceCitations(t *testing.T) {
+func TestBuildOpenAITaggingPromptsRequestOptionalEvidence(t *testing.T) {
 	systemPrompt := buildOpenAITaggingSystemPrompt()
 	for _, expected := range []string{
-		"Each object must include tag, relevance, and evidence.",
+		"may also include an evidence array",
 		"verbatim quotes copied character-for-character from the issue text",
-		"If no verbatim quote in the issue text supports a tag, do not include that tag.",
+		"Tags with evidence citations are treated as higher confidence.",
 	} {
 		if !strings.Contains(systemPrompt, expected) {
 			t.Fatalf("expected system prompt to contain %q", expected)
 		}
 	}
+	if strings.Contains(systemPrompt, "do not include that tag") {
+		t.Fatal("system prompt should not reject tags without evidence")
+	}
 
 	userPrompt := buildOpenAITaggingPrompt("an issue", []Tag{{Name: "bug"}}, nil)
 	if !strings.Contains(userPrompt, "include an evidence array") {
-		t.Fatalf("expected user prompt to instruct evidence citations, got:\n%s", userPrompt)
+		t.Fatalf("expected user prompt to mention evidence citations")
+	}
+	if strings.Contains(userPrompt, "do not assign the tag") {
+		t.Fatal("user prompt should not reject tags without evidence")
 	}
 }
 

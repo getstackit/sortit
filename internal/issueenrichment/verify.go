@@ -7,7 +7,10 @@ import (
 	"math"
 	"slices"
 	"strings"
+	"unicode"
+	"unicode/utf8"
 
+	"sortit/internal/ai"
 	"sortit/internal/domain"
 	"sortit/internal/issues"
 	"sortit/internal/tags"
@@ -25,14 +28,6 @@ const (
 	verifierDominanceMargin     = 0.18
 	verifierSpecificityMargin   = 0.10
 	verifierDownrankMultiplier  = 0.75
-	// evidenceDownrankRelevance is the minimum relevance at which a tag with
-	// no matching source-text evidence is downranked. Below this threshold
-	// the model is plausibly hedging and we leave the score alone.
-	evidenceDownrankRelevance = 0.30
-	// evidenceFlagRelevance is the minimum relevance at which a tag with no
-	// matching source-text evidence is flagged outright. High confidence with
-	// no grounding is the strongest hallucination signal.
-	evidenceFlagRelevance = 0.60
 )
 
 func attenuateGenericScores(scores []issues.TagRelevance, tagSpecificity map[string]*float64) []issues.TagRelevance {
@@ -85,11 +80,20 @@ func (s *IssueEnricher) decorateAndVerifyTagScores(
 	issueEmbedding []float64,
 	candidates tags.CandidateTaxonomy,
 	scores []issues.TagRelevance,
+	aiScores []ai.TagScore,
 	tagSpecificity map[string]*float64,
 	verify bool,
 ) []issues.TagRelevance {
 	if len(scores) == 0 {
 		return nil
+	}
+
+	evidenceByTag := make(map[string][]string, len(aiScores))
+	for _, score := range aiScores {
+		name := normalizeTagName(score.Tag)
+		if name != "" && len(score.Evidence) > 0 {
+			evidenceByTag[name] = score.Evidence
+		}
 	}
 
 	candidateByName := make(map[string]tags.CandidateTag, len(candidates.Tags))
@@ -152,8 +156,6 @@ func (s *IssueEnricher) decorateAndVerifyTagScores(
 		})
 	}
 
-	normalizedRaw := normalizeForEvidenceMatch(rawText)
-
 	out := issuesDisplayCopyTagScores(scores)
 	for i := range out {
 		name := normalizeTagName(out[i].Tag)
@@ -169,11 +171,10 @@ func (s *IssueEnricher) decorateAndVerifyTagScores(
 			}
 		}
 
-		matchedQuotes := countMatchedEvidence(out[i].Evidence, normalizedRaw)
-		if rawText != "" && len(out[i].Evidence) > 0 {
-			matched := matchedQuotes
-			out[i].EvidenceMatched = &matched
+		if quotes, ok := evidenceByTag[name]; ok && rawText != "" {
+			out[i].Evidence = resolveEvidenceRanges(rawText, quotes)
 		}
+		hasGroundedEvidence := len(out[i].Evidence) > 0
 
 		if !verify {
 			continue
@@ -186,10 +187,10 @@ func (s *IssueEnricher) decorateAndVerifyTagScores(
 			out[i].DominanceGap = cloneMetricPointer(gap)
 		}
 
-		hasEvidence := len(out[i].Evidence) > 0
-		evidenceVerifiable := rawText != ""
-
 		switch {
+		case hasGroundedEvidence && out[i].Alignment != nil && *out[i].Alignment < verifierFlaggedAlignment && out[i].Relevance >= 0.4:
+			out[i].VerificationVerdict = domain.TagVerificationVerdictKeep
+			out[i].VerificationReason = "weak alignment rescued by grounded source-text evidence"
 		case out[i].Alignment != nil && *out[i].Alignment < verifierFlaggedAlignment && out[i].Relevance >= 0.4:
 			out[i].VerificationVerdict = domain.TagVerificationVerdictFlagged
 			if dominating != nil {
@@ -197,6 +198,9 @@ func (s *IssueEnricher) decorateAndVerifyTagScores(
 			} else {
 				out[i].VerificationReason = "high relevance but very weak embedding alignment"
 			}
+		case hasGroundedEvidence && dominating != nil && out[i].Alignment != nil && *out[i].Alignment < verifierWeakAlignment:
+			out[i].VerificationVerdict = domain.TagVerificationVerdictKeep
+			out[i].VerificationReason = fmt.Sprintf("weak alignment rescued by grounded evidence despite stronger nearby %s", dominating.Name)
 		case dominating != nil && out[i].Alignment != nil && *out[i].Alignment < verifierWeakAlignment:
 			out[i].VerificationVerdict = domain.TagVerificationVerdictDownRank
 			out[i].VerificationReason = fmt.Sprintf("dominated by nearby unassigned %s", dominating.Name)
@@ -204,23 +208,11 @@ func (s *IssueEnricher) decorateAndVerifyTagScores(
 		case anchorOnlyCandidate(out[i].CandidateSources) && out[i].Alignment != nil && *out[i].Alignment < verifierWeakAlignment && out[i].Relevance >= 0.35:
 			out[i].VerificationVerdict = domain.TagVerificationVerdictFlagged
 			out[i].VerificationReason = "anchor-only candidate with weak embedding alignment"
-		case evidenceVerifiable && hasEvidence && matchedQuotes == 0 && out[i].Relevance >= evidenceFlagRelevance:
-			out[i].VerificationVerdict = domain.TagVerificationVerdictFlagged
-			out[i].VerificationReason = "claimed evidence quotes are not present in the source text"
-		case evidenceVerifiable && hasEvidence && matchedQuotes == 0 && out[i].Relevance >= evidenceDownrankRelevance:
-			out[i].VerificationVerdict = domain.TagVerificationVerdictDownRank
-			out[i].VerificationReason = "no claimed evidence quote was found verbatim in the source text"
-			out[i].Relevance = roundRelevance(max(issueTagRelevanceFloor, out[i].Relevance*verifierDownrankMultiplier))
-		case evidenceVerifiable && !hasEvidence && out[i].Suggested && out[i].Relevance >= evidenceDownrankRelevance:
-			out[i].VerificationVerdict = domain.TagVerificationVerdictFlagged
-			out[i].VerificationReason = "suggested tag without supporting source-text evidence"
-		case evidenceVerifiable && !hasEvidence && out[i].Relevance >= evidenceFlagRelevance:
-			out[i].VerificationVerdict = domain.TagVerificationVerdictDownRank
-			out[i].VerificationReason = "high relevance asserted without source-text evidence"
-			out[i].Relevance = roundRelevance(max(issueTagRelevanceFloor, out[i].Relevance*verifierDownrankMultiplier))
 		default:
 			out[i].VerificationVerdict = domain.TagVerificationVerdictKeep
-			if dominating != nil {
+			if hasGroundedEvidence {
+				out[i].VerificationReason = "grounded by source-text evidence"
+			} else if dominating != nil {
 				out[i].VerificationReason = fmt.Sprintf("kept despite stronger nearby %s", dominating.Name)
 			}
 		}
@@ -318,28 +310,22 @@ func issuesDisplayCopyTagScores(scores []issues.TagRelevance) []issues.TagReleva
 		out[i].Alignment = copyMetricPointer(score.Alignment)
 		out[i].Specificity = copyMetricPointer(score.Specificity)
 		out[i].DominanceGap = copyMetricPointer(score.DominanceGap)
-		out[i].Evidence = append([]string(nil), score.Evidence...)
-		if score.EvidenceMatched != nil {
-			matched := *score.EvidenceMatched
-			out[i].EvidenceMatched = &matched
-		}
+		out[i].Evidence = append([]domain.EvidenceRange(nil), score.Evidence...)
 	}
 	return out
 }
 
-// normalizeForEvidenceMatch lowercases, collapses runs of whitespace into a
-// single space, and trims. This makes substring matching tolerant of the
-// reformatting LLMs tend to introduce inside quotes (newlines turned into
-// spaces, double spaces, smart quotes, etc.).
-func normalizeForEvidenceMatch(text string) string {
-	if text == "" {
-		return ""
-	}
-	lower := strings.ToLower(text)
+type normMapping struct {
+	text    string
+	offsets []int
+}
+
+func normalizeWithOffsets(raw string) normMapping {
 	var b strings.Builder
-	b.Grow(len(lower))
+	b.Grow(len(raw))
+	offsets := make([]int, 0, len(raw))
 	prevSpace := false
-	for _, r := range lower {
+	for i, r := range raw {
 		switch r {
 		case '\u2018', '\u2019', '\u201A', '\u201B':
 			r = '\''
@@ -349,37 +335,61 @@ func normalizeForEvidenceMatch(text string) string {
 			r = '-'
 		}
 		if r == ' ' || r == '\t' || r == '\n' || r == '\r' || r == '\v' || r == '\f' {
-			if !prevSpace {
+			if !prevSpace && b.Len() > 0 {
 				b.WriteByte(' ')
-				prevSpace = true
+				offsets = append(offsets, i)
 			}
+			prevSpace = true
 			continue
 		}
-		b.WriteRune(r)
 		prevSpace = false
+		lower := unicode.ToLower(r)
+		var buf [utf8.UTFMax]byte
+		n := utf8.EncodeRune(buf[:], lower)
+		for j := 0; j < n; j++ {
+			b.WriteByte(buf[j])
+			offsets = append(offsets, i)
+		}
 	}
-	return strings.TrimSpace(b.String())
+	s := strings.TrimRight(b.String(), " ")
+	if len(s) < b.Len() {
+		offsets = offsets[:len(s)]
+	}
+	trimmed := strings.TrimLeft(s, " ")
+	if delta := len(s) - len(trimmed); delta > 0 {
+		offsets = offsets[delta:]
+		s = trimmed
+	}
+	return normMapping{text: s, offsets: offsets}
 }
 
-// countMatchedEvidence returns the number of quotes that appear (after
-// normalization) in normalizedRaw. Empty quotes are skipped. If normalizedRaw
-// is empty (e.g. raw text was unavailable), returns 0 — the caller is
-// responsible for distinguishing "unverifiable" from "verified zero".
-func countMatchedEvidence(quotes []string, normalizedRaw string) int {
-	if len(quotes) == 0 || normalizedRaw == "" {
-		return 0
+func normalizeQuote(quote string) string {
+	return normalizeWithOffsets(quote).text
+}
+
+func resolveEvidenceRanges(rawText string, quotes []string) []domain.EvidenceRange {
+	if rawText == "" || len(quotes) == 0 {
+		return nil
 	}
-	matches := 0
+	nm := normalizeWithOffsets(rawText)
+	var out []domain.EvidenceRange
 	for _, quote := range quotes {
-		normalized := normalizeForEvidenceMatch(quote)
-		if normalized == "" {
+		normQuote := normalizeQuote(strings.TrimSpace(quote))
+		if normQuote == "" {
 			continue
 		}
-		if strings.Contains(normalizedRaw, normalized) {
-			matches++
+		idx := strings.Index(nm.text, normQuote)
+		if idx < 0 {
+			continue
 		}
+		start := nm.offsets[idx]
+		endNorm := idx + len(normQuote) - 1
+		lastOrigPos := nm.offsets[endNorm]
+		_, runeSize := utf8.DecodeRuneInString(rawText[lastOrigPos:])
+		end := lastOrigPos + runeSize
+		out = append(out, domain.EvidenceRange{Start: start, End: end})
 	}
-	return matches
+	return out
 }
 
 func cloneMetricPointer(value float64) *float64 {

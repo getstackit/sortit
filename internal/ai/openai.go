@@ -307,7 +307,7 @@ func buildOpenAITaggingPrompt(text string, tags []Tag, examples []FewShotExample
 	builder.WriteString("Do not suggest a tag that is already implied by a combination of existing tags.\n")
 	builder.WriteString("Examples are reference patterns, not templates. Do not copy example-only tags unless the same surface, subsystem, workflow, or artifact is clearly supported by the current issue text.\n")
 	builder.WriteString("Prefer a compact tag set. Add another tag only when it contributes distinct evidence-backed information rather than a near-synonym or predictable co-occurrence.\n")
-	builder.WriteString("For every tag you assign, include an evidence array of 1 to 3 short verbatim quotes copied from the issue text that justify the tag. Quotes must appear character-for-character in the issue text — do not paraphrase, translate, summarize, or normalize. Each quote should be 3 to 15 words. If you cannot find a verbatim quote that supports the tag, do not assign the tag.\n")
+	builder.WriteString("When you can identify supporting text, include an evidence array of 1 to 3 short verbatim quotes copied from the issue text that justify the tag. Quotes must appear character-for-character in the issue text — do not paraphrase, translate, summarize, or normalize. Each quote should be 3 to 15 words. Tags with evidence citations are treated as higher confidence. It is acceptable to assign a tag without evidence when the issue clearly warrants it, but grounded tags are preferred.\n")
 
 	if len(examples) > 0 {
 		builder.WriteString("\nHere are examples of well-tagged issues for reference:\n")
@@ -378,11 +378,11 @@ func truncateExampleText(text string, maxWords int) string {
 func buildOpenAITaggingSystemPrompt() string {
 	return "Classify issue text against the supplied taxonomy and return a JSON object with a single key named tags. " +
 		"tags must be an array of objects sorted by descending relevance. " +
-		"Each object must include tag, relevance, and evidence. " +
-		"evidence must be an array of 1 to 3 short verbatim quotes copied character-for-character from the issue text that justify the tag. " +
-		"Do not paraphrase, translate, summarize, fix typos, or normalize whitespace inside quotes. " +
-		"Each quote should be 3 to 15 words. " +
-		"If no verbatim quote in the issue text supports a tag, do not include that tag. " +
+		"Each object must include tag and relevance. " +
+		"Each object may also include an evidence array of 1 to 3 short verbatim quotes copied character-for-character from the issue text that justify the tag. " +
+		"Do not paraphrase, translate, summarize, fix typos, or normalize whitespace inside evidence quotes. " +
+		"Each evidence quote should be 3 to 15 words. " +
+		"Tags with evidence citations are treated as higher confidence. It is acceptable to omit evidence when the issue clearly warrants the tag. " +
 		"Suggested tags may also include suggested=true and description. " +
 		"Relevance must be between 0 and 1 inclusive, using up to 2 decimal places. " +
 		"Omit tags below 0.08 relevance. " +
