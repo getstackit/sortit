@@ -975,6 +975,7 @@ func copyTagScores(input []TagRelevance) []TagRelevance {
 		out[i].Alignment = copyFloat64Ptr(score.Alignment)
 		out[i].Specificity = copyFloat64Ptr(score.Specificity)
 		out[i].DominanceGap = copyFloat64Ptr(score.DominanceGap)
+		out[i].Evidence = append([]domain.EvidenceRange(nil), score.Evidence...)
 	}
 	return out
 }

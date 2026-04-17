@@ -123,6 +123,7 @@ func normalizeScores(scores []TagScore, taxonomy []Tag) []TagScore {
 			Relevance:   math.Round(relevance*100) / 100,
 			Suggested:   score.Suggested,
 			Description: strings.TrimSpace(score.Description),
+			Evidence:    append([]string(nil), score.Evidence...),
 		}
 
 		if exactName, ok := taxonomyNames[tagName]; ok {
@@ -140,6 +141,9 @@ func normalizeScores(scores []TagScore, taxonomy []Tag) []TagScore {
 			existing.Description = normalized.Description
 		}
 		existing.Suggested = existing.Suggested || normalized.Suggested
+		if len(existing.Evidence) == 0 && len(normalized.Evidence) > 0 {
+			existing.Evidence = normalized.Evidence
+		}
 		merged[strings.ToLower(normalized.Tag)] = existing
 	}
 

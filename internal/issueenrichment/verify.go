@@ -6,7 +6,11 @@ import (
 	"fmt"
 	"math"
 	"slices"
+	"strings"
+	"unicode"
+	"unicode/utf8"
 
+	"sortit/internal/ai"
 	"sortit/internal/domain"
 	"sortit/internal/issues"
 	"sortit/internal/tags"
@@ -72,14 +76,24 @@ type verifierCandidate struct {
 
 func (s *IssueEnricher) decorateAndVerifyTagScores(
 	ctx context.Context,
+	rawText string,
 	issueEmbedding []float64,
 	candidates tags.CandidateTaxonomy,
 	scores []issues.TagRelevance,
+	aiScores []ai.TagScore,
 	tagSpecificity map[string]*float64,
 	verify bool,
 ) []issues.TagRelevance {
 	if len(scores) == 0 {
 		return nil
+	}
+
+	evidenceByTag := make(map[string][]string, len(aiScores))
+	for _, score := range aiScores {
+		name := normalizeTagName(score.Tag)
+		if name != "" && len(score.Evidence) > 0 {
+			evidenceByTag[name] = score.Evidence
+		}
 	}
 
 	candidateByName := make(map[string]tags.CandidateTag, len(candidates.Tags))
@@ -156,6 +170,12 @@ func (s *IssueEnricher) decorateAndVerifyTagScores(
 				out[i].Alignment = cloneMetricPointer(vectors.CosineSimilarity(issueEmbedding, embedding))
 			}
 		}
+
+		if quotes, ok := evidenceByTag[name]; ok && rawText != "" {
+			out[i].Evidence = resolveEvidenceRanges(rawText, quotes)
+		}
+		hasGroundedEvidence := len(out[i].Evidence) > 0
+
 		if !verify {
 			continue
 		}
@@ -168,6 +188,9 @@ func (s *IssueEnricher) decorateAndVerifyTagScores(
 		}
 
 		switch {
+		case hasGroundedEvidence && out[i].Alignment != nil && *out[i].Alignment < verifierFlaggedAlignment && out[i].Relevance >= 0.4:
+			out[i].VerificationVerdict = domain.TagVerificationVerdictKeep
+			out[i].VerificationReason = "weak alignment rescued by grounded source-text evidence"
 		case out[i].Alignment != nil && *out[i].Alignment < verifierFlaggedAlignment && out[i].Relevance >= 0.4:
 			out[i].VerificationVerdict = domain.TagVerificationVerdictFlagged
 			if dominating != nil {
@@ -175,6 +198,9 @@ func (s *IssueEnricher) decorateAndVerifyTagScores(
 			} else {
 				out[i].VerificationReason = "high relevance but very weak embedding alignment"
 			}
+		case hasGroundedEvidence && dominating != nil && out[i].Alignment != nil && *out[i].Alignment < verifierWeakAlignment:
+			out[i].VerificationVerdict = domain.TagVerificationVerdictKeep
+			out[i].VerificationReason = fmt.Sprintf("weak alignment rescued by grounded evidence despite stronger nearby %s", dominating.Name)
 		case dominating != nil && out[i].Alignment != nil && *out[i].Alignment < verifierWeakAlignment:
 			out[i].VerificationVerdict = domain.TagVerificationVerdictDownRank
 			out[i].VerificationReason = fmt.Sprintf("dominated by nearby unassigned %s", dominating.Name)
@@ -184,7 +210,9 @@ func (s *IssueEnricher) decorateAndVerifyTagScores(
 			out[i].VerificationReason = "anchor-only candidate with weak embedding alignment"
 		default:
 			out[i].VerificationVerdict = domain.TagVerificationVerdictKeep
-			if dominating != nil {
+			if hasGroundedEvidence {
+				out[i].VerificationReason = "grounded by source-text evidence"
+			} else if dominating != nil {
 				out[i].VerificationReason = fmt.Sprintf("kept despite stronger nearby %s", dominating.Name)
 			}
 		}
@@ -282,6 +310,84 @@ func issuesDisplayCopyTagScores(scores []issues.TagRelevance) []issues.TagReleva
 		out[i].Alignment = copyMetricPointer(score.Alignment)
 		out[i].Specificity = copyMetricPointer(score.Specificity)
 		out[i].DominanceGap = copyMetricPointer(score.DominanceGap)
+		out[i].Evidence = append([]domain.EvidenceRange(nil), score.Evidence...)
+	}
+	return out
+}
+
+type normMapping struct {
+	text    string
+	offsets []int
+}
+
+func normalizeWithOffsets(raw string) normMapping {
+	var b strings.Builder
+	b.Grow(len(raw))
+	offsets := make([]int, 0, len(raw))
+	prevSpace := false
+	for i, r := range raw {
+		switch r {
+		case '\u2018', '\u2019', '\u201A', '\u201B':
+			r = '\''
+		case '\u201C', '\u201D', '\u201E', '\u201F':
+			r = '"'
+		case '\u2013', '\u2014':
+			r = '-'
+		}
+		if r == ' ' || r == '\t' || r == '\n' || r == '\r' || r == '\v' || r == '\f' {
+			if !prevSpace && b.Len() > 0 {
+				b.WriteByte(' ')
+				offsets = append(offsets, i)
+			}
+			prevSpace = true
+			continue
+		}
+		prevSpace = false
+		lower := unicode.ToLower(r)
+		var buf [utf8.UTFMax]byte
+		n := utf8.EncodeRune(buf[:], lower)
+		for j := 0; j < n; j++ {
+			b.WriteByte(buf[j])
+			offsets = append(offsets, i)
+		}
+	}
+	s := strings.TrimRight(b.String(), " ")
+	if len(s) < b.Len() {
+		offsets = offsets[:len(s)]
+	}
+	trimmed := strings.TrimLeft(s, " ")
+	if delta := len(s) - len(trimmed); delta > 0 {
+		offsets = offsets[delta:]
+		s = trimmed
+	}
+	return normMapping{text: s, offsets: offsets}
+}
+
+func normalizeQuote(quote string) string {
+	return normalizeWithOffsets(quote).text
+}
+
+func resolveEvidenceRanges(rawText string, quotes []string) []domain.EvidenceRange {
+	if rawText == "" || len(quotes) == 0 {
+		return nil
+	}
+	nm := normalizeWithOffsets(rawText)
+	var out []domain.EvidenceRange
+	for _, quote := range quotes {
+		normQuote := normalizeQuote(strings.TrimSpace(quote))
+		if normQuote == "" {
+			continue
+		}
+		idx := strings.Index(nm.text, normQuote)
+		if idx < 0 {
+			continue
+		}
+		start := nm.offsets[idx]
+		endNorm := idx + len(normQuote) - 1
+		lastOrigPos := nm.offsets[endNorm]
+		_, runeSize := utf8.DecodeRuneInString(rawText[lastOrigPos:])
+		end := lastOrigPos + runeSize
+		out = append(out, domain.EvidenceRange{Start: start, End: end})
 	}
 	return out
 }

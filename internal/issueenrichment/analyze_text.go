@@ -65,9 +65,11 @@ func (s *IssueEnricher) AnalyzeText(ctx context.Context, raw string, opts Analyz
 
 	tagScores = s.decorateAndVerifyTagScores(
 		ctx,
+		raw,
 		Float32VectorToFloat64(analyzed.Embedding.Vector),
 		candidates,
 		tagScores,
+		analyzed.Tags,
 		tagSpecificity,
 		opts.Verify,
 	)

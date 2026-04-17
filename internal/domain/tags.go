@@ -23,6 +23,22 @@ type TagRelevance struct {
 	VerificationReason  string                 `json:"verificationReason,omitempty"`
 	DominatedBy         string                 `json:"dominatedBy,omitempty"`
 	DominanceGap        *float64               `json:"dominanceGap,omitempty"`
+	// Evidence holds byte-offset ranges into the source text that were cited
+	// by the tagger to justify this tag. Each range is resolved from a
+	// verbatim quote the model returned, confirmed to appear in the source.
+	// Empty means no grounded evidence was found (the model may still have
+	// returned quotes that could not be matched).
+	Evidence []EvidenceRange `json:"evidence,omitempty"`
+}
+
+// EvidenceRange is a half-open byte-offset range [Start, End) in the source
+// text that the tagger cited to justify a tag assignment. Ranges are resolved
+// from verbatim LLM-returned quotes via case- and whitespace-insensitive
+// matching, so Start/End refer to positions in the original (un-normalized)
+// text.
+type EvidenceRange struct {
+	Start int `json:"start"`
+	End   int `json:"end"`
 }
 
 // NormalizeTagName lowercases and collapses whitespace in a tag name.

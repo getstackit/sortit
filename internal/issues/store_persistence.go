@@ -5,6 +5,8 @@ import (
 	"slices"
 	"strings"
 	"time"
+
+	"sortit/internal/domain"
 )
 
 func (s *InMemoryStore) SaveIssue(_ context.Context, issue Issue) error {
@@ -234,7 +236,20 @@ func equalTagScore(left, right TagRelevance) bool {
 		left.VerificationVerdict == right.VerificationVerdict &&
 		left.VerificationReason == right.VerificationReason &&
 		left.DominatedBy == right.DominatedBy &&
-		equalFloat64Ptr(left.DominanceGap, right.DominanceGap)
+		equalFloat64Ptr(left.DominanceGap, right.DominanceGap) &&
+		equalEvidenceRanges(left.Evidence, right.Evidence)
+}
+
+func equalEvidenceRanges(left, right []domain.EvidenceRange) bool {
+	if len(left) != len(right) {
+		return false
+	}
+	for i := range left {
+		if left[i] != right[i] {
+			return false
+		}
+	}
+	return true
 }
 
 func equalFloat64Ptr(left, right *float64) bool {
