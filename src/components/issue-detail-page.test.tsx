@@ -203,6 +203,45 @@ describe("IssueDetailPage", () => {
     expect(screen.getByText("Refinement 1")).toBeInTheDocument();
   });
 
+  it("shows cited summary text before hovering classification confidence", async () => {
+    vi.mocked(fetchIssue).mockResolvedValue(
+      makeIssue({
+        tagScores: [
+          {
+            tag: "safari",
+            relevance: 0.9,
+            evidence: [
+              {
+                start: 16,
+                end: 22,
+                text: "Safari",
+                source: "source_text",
+                kind: "direct_quote",
+              },
+            ],
+          },
+        ],
+      })
+    );
+
+    renderIssueDetail("issue-123");
+
+    const citedText = await screen.findByText("Safari");
+    const citation = citedText.closest("mark");
+
+    expect(citation).toHaveClass("underline");
+    expect(citation).toHaveAttribute("title", "Cited by safari");
+    expect(screen.getByText("Evidence citations")).toBeInTheDocument();
+    expect(screen.getAllByText("1 cite").length).toBeGreaterThan(0);
+    expect(screen.getAllByText("Direct quote · Canonical summary").length).toBeGreaterThan(0);
+
+    await userEvent.hover(citation!);
+
+    expect(screen.getAllByText("safari")[0].closest("div")).toHaveClass(
+      "bg-amber-200/40"
+    );
+  });
+
   it("shows lifecycle stability when metrics are present", async () => {
     vi.mocked(fetchIssue).mockResolvedValue(makeIssue({
       lifecycleMetrics: {

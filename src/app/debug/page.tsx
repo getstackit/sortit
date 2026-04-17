@@ -10,6 +10,8 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Switch } from "@/components/ui/switch";
+import { convertEvidenceRanges } from "@/lib/evidence";
+import type { EvidenceRange } from "@/lib/issues";
 
 type TagScore = {
   tag: string;
@@ -23,6 +25,7 @@ type TagScore = {
   verificationReason?: string;
   dominatedBy?: string;
   dominanceGap?: number | null;
+  evidence?: EvidenceRange[];
 };
 
 type ModelInfo = {
@@ -156,7 +159,40 @@ function formatCandidateMode(value: string) {
   }
 }
 
-function TagScoreList({ scores }: { scores: TagScore[] }) {
+function TagEvidenceQuotes({
+  score,
+  sourceText,
+}: {
+  score: TagScore;
+  sourceText?: string;
+}) {
+  if (!sourceText || !score.evidence?.length) return null;
+  const ranges = convertEvidenceRanges(sourceText, score.evidence);
+  if (ranges.length === 0) return null;
+  return (
+    <div className="mt-2 space-y-1">
+      <p className="text-[10px] font-medium uppercase tracking-[0.14em] text-muted-foreground">
+        Citations
+      </p>
+      {ranges.map((range, idx) => (
+        <blockquote
+          key={`${score.tag}-cite-${idx}`}
+          className="border-l-2 border-amber-300 pl-2 text-xs italic leading-5 text-muted-foreground"
+        >
+          &ldquo;{sourceText.slice(range.start, range.end)}&rdquo;
+        </blockquote>
+      ))}
+    </div>
+  );
+}
+
+function TagScoreList({
+  scores,
+  sourceText,
+}: {
+  scores: TagScore[];
+  sourceText?: string;
+}) {
   if (scores.length === 0) {
     return (
       <p className="text-xs text-muted-foreground">No persisted tag scores.</p>
@@ -239,6 +275,7 @@ function TagScoreList({ scores }: { scores: TagScore[] }) {
                 : ""}
             </p>
           )}
+          <TagEvidenceQuotes score={score} sourceText={sourceText} />
         </div>
       ))}
     </div>
@@ -906,7 +943,10 @@ export default function DebugPage() {
                                     Current tag scores
                                   </p>
                                   <div className="mt-2">
-                                    <TagScoreList scores={issue.tagScores} />
+                                    <TagScoreList
+                                      scores={issue.tagScores}
+                                      sourceText={issue.raw}
+                                    />
                                   </div>
                                 </div>
                                 {issue.diagnosis.length > 0 && (
@@ -967,7 +1007,10 @@ export default function DebugPage() {
                                     Flagged tag
                                   </p>
                                   <div className="mt-2">
-                                    <TagScoreList scores={[item.tagScore]} />
+                                    <TagScoreList
+                                      scores={[item.tagScore]}
+                                      sourceText={item.issueRaw}
+                                    />
                                   </div>
                                 </div>
                               </div>
@@ -1018,7 +1061,10 @@ export default function DebugPage() {
                                     Current tag scores
                                   </p>
                                   <div className="mt-2">
-                                    <TagScoreList scores={item.tagScores} />
+                                    <TagScoreList
+                                      scores={item.tagScores}
+                                      sourceText={item.issueRaw}
+                                    />
                                   </div>
                                 </div>
                                 <div className="mt-3">
@@ -1160,7 +1206,7 @@ export default function DebugPage() {
 
             {result && (
               <div className="mt-4">
-                <TagScoreList scores={topTags} />
+                <TagScoreList scores={topTags} sourceText={text} />
               </div>
             )}
           </section>

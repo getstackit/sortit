@@ -42,6 +42,9 @@ func TestResolveEvidenceRangesFindsVerbatimQuotes(t *testing.T) {
 	if got := raw[ranges[0].Start:ranges[0].End]; got != "Search box clears" {
 		t.Fatalf("first range expected %q, got %q", "Search box clears", got)
 	}
+	if ranges[0].Text != "Search box clears" || ranges[0].Kind != "direct_quote" || ranges[0].Source != "source_text" {
+		t.Fatalf("first range missing citation metadata: %#v", ranges[0])
+	}
 	if got := raw[ranges[1].Start:ranges[1].End]; got != "typing the second character" {
 		t.Fatalf("second range expected %q, got %q", "typing the second character", got)
 	}

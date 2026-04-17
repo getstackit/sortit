@@ -188,7 +188,7 @@ concepts:
 The plan progressively adds content to the tagging prompt: few-shot examples
 (Phase 1.5), retrieval shortlists with descriptions (Phase 2), and optional
 verification re-checks (Phase 3). The current prompt (`buildOpenAITaggingPrompt`
-in `openai.go`) has no token budget awareness. With `gpt-5-mini` as the default
+in `openai.go`) has no token budget awareness. With `gpt-5.4-nano` as the default
 model, cumulative prompt growth across phases could approach context limits for
 issues with long canonical text.
 

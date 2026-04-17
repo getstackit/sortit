@@ -387,7 +387,13 @@ func resolveEvidenceRanges(rawText string, quotes []string) []domain.EvidenceRan
 		lastOrigPos := nm.offsets[endNorm]
 		_, runeSize := utf8.DecodeRuneInString(rawText[lastOrigPos:])
 		end := lastOrigPos + runeSize
-		out = append(out, domain.EvidenceRange{Start: start, End: end})
+		out = append(out, domain.EvidenceRange{
+			Start:  start,
+			End:    end,
+			Text:   rawText[start:end],
+			Source: "source_text",
+			Kind:   "direct_quote",
+		})
 	}
 	return out
 }

@@ -54,11 +54,14 @@ import {
 import { rememberRecentIssue } from "@/hooks/use-recent-history";
 import { cn } from "@/lib/utils";
 import { formatRelativeTime } from "@/lib/format";
+import { tagHref } from "@/lib/tags";
 import { Badge } from "@/components/ui/badge";
 import { CloseIssueModal } from "@/components/close-issue-modal";
 import { Markdown } from "@/components/markdown";
+import { HighlightedText, type CitationRange } from "@/components/highlighted-text";
+import { convertEvidenceRanges } from "@/lib/evidence";
 
-import { TagRelevanceBars } from "@/components/tag-relevance-bars";
+import { TagRelevanceBars, defaultTagColor } from "@/components/tag-relevance-bars";
 
 type SemanticNeighbor = {
   issue: MapIssue;
@@ -241,8 +244,122 @@ async function copyText(value: string) {
   }
 }
 
-function DiscussionBody({ text }: { text: string }) {
+function DiscussionBody({
+  text,
+  citationRanges,
+  onCitationHover,
+}: {
+  text: string;
+  citationRanges?: CitationRange[];
+  onCitationHover?: (labels: string[] | null) => void;
+}) {
+  if (citationRanges && citationRanges.length > 0) {
+    return (
+      <HighlightedText
+        text={text}
+        ranges={citationRanges}
+        onCitationHover={onCitationHover}
+      />
+    );
+  }
   return <Markdown>{text}</Markdown>;
+}
+
+function citationKindLabel(kind?: string) {
+  switch (kind) {
+    case "direct_quote":
+      return "Direct quote";
+    default:
+      return "Evidence";
+  }
+}
+
+function citationSourceLabel(source?: string) {
+  switch (source) {
+    case "source_text":
+      return "Canonical summary";
+    default:
+      return "Canonical summary";
+  }
+}
+
+function CitationInspector({
+  raw,
+  tagScores,
+}: {
+  raw: string;
+  tagScores: NonNullable<IssueRecord["tagScores"]>;
+}) {
+  const citedScores = tagScores
+    .map((score) => {
+      const evidence = score.evidence ?? [];
+      const ranges = convertEvidenceRanges(raw, evidence).map((range) => ({
+        ...range,
+        quote: range.text || raw.slice(range.start, range.end),
+      }));
+      return { score, ranges };
+    })
+    .filter(({ ranges }) => ranges.length > 0);
+
+  if (citedScores.length === 0) {
+    return null;
+  }
+
+  const citationCount = citedScores.reduce(
+    (total, item) => total + item.ranges.length,
+    0
+  );
+
+  return (
+    <div className="mt-4 border-t border-border/70 pt-4">
+      <div className="flex items-center justify-between gap-3">
+        <p className="text-[11px] font-medium uppercase tracking-[0.14em] text-muted-foreground">
+          Evidence citations
+        </p>
+        <Badge variant="outline">
+          {citationCount} cite{citationCount === 1 ? "" : "s"}
+        </Badge>
+      </div>
+      <div className="mt-3 space-y-3">
+        {citedScores.map(({ score, ranges }) => (
+          <div key={score.tag} className="space-y-2">
+            <div className="flex flex-wrap items-center gap-2">
+              <span
+                className="size-2 rounded-full"
+                style={{ backgroundColor: defaultTagColor(score.tag) }}
+              />
+              <Link
+                href={tagHref(score.tag)}
+                className="text-xs font-medium text-foreground hover:underline"
+              >
+                {score.tag}
+              </Link>
+              <span className="text-[11px] tabular-nums text-muted-foreground">
+                {score.relevance.toFixed(1)}
+              </span>
+              {score.verificationVerdict && (
+                <Badge variant="outline">{score.verificationVerdict}</Badge>
+              )}
+            </div>
+            <div className="space-y-1.5 pl-4">
+              {ranges.map((range, index) => (
+                <blockquote
+                  key={`${score.tag}-${range.start}-${range.end}-${index}`}
+                  className="border-l-2 pl-2 text-xs leading-5 text-muted-foreground"
+                  style={{ borderColor: defaultTagColor(score.tag) }}
+                >
+                  <span className="text-foreground">&ldquo;{range.quote}&rdquo;</span>
+                  <span className="ml-2 text-[10px] uppercase tracking-[0.12em]">
+                    {citationKindLabel(range.kind)} · {citationSourceLabel(range.source)}
+                  </span>
+                </blockquote>
+              ))}
+            </div>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
 }
 
 export function IssueDetailPage({ issueID }: { issueID: string }) {
@@ -276,6 +393,45 @@ export function IssueDetailPage({ issueID }: { issueID: string }) {
   const [assignInput, setAssignInput] = useState("");
   const [assignPending, setAssignPending] = useState(false);
   const [reEnrichPending, setReEnrichPending] = useState(false);
+  const [activeCitationTags, setActiveCitationTags] = useState<string[]>([]);
+
+  const setActiveTag = useCallback((tag: string | null) => {
+    setActiveCitationTags(tag ? [tag] : []);
+  }, []);
+
+  const setActiveCitationLabels = useCallback((labels: string[] | null) => {
+    setActiveCitationTags(labels ?? []);
+  }, []);
+
+  const citationRanges = useMemo<CitationRange[] | undefined>(() => {
+    if (!issue?.tagScores || !issue.raw) return undefined;
+    const ranges = issue.tagScores.flatMap((score) => {
+      if (!score.evidence?.length) return [];
+      return convertEvidenceRanges(issue.raw, score.evidence).map((range) => ({
+        ...range,
+        color: defaultTagColor(score.tag),
+        label: score.tag,
+        active: activeCitationTags.includes(score.tag),
+      }));
+    });
+    return ranges.length > 0 ? ranges : undefined;
+  }, [activeCitationTags, issue?.tagScores, issue?.raw]);
+
+  const tagHasEvidence = useCallback(
+    (tag: string) => {
+      const score = issue?.tagScores?.find((t) => t.tag === tag);
+      return Boolean(score?.evidence?.length);
+    },
+    [issue?.tagScores]
+  );
+
+  const tagEvidenceCount = useCallback(
+    (tag: string) => {
+      const score = issue?.tagScores?.find((t) => t.tag === tag);
+      return score?.evidence?.length ?? 0;
+    },
+    [issue?.tagScores]
+  );
 
   useEffect(() => {
     if (copyState === "idle") {
@@ -903,7 +1059,11 @@ export function IssueDetailPage({ issueID }: { issueID: string }) {
                     <h2 className="sr-only">{issue.raw}</h2>
                   </div>
                   <div className="mt-4">
-                    <DiscussionBody text={issue.raw} />
+                    <DiscussionBody
+                      text={issue.raw}
+                      citationRanges={citationRanges}
+                      onCitationHover={setActiveCitationLabels}
+                    />
                   </div>
                 </section>
 
@@ -1426,8 +1586,15 @@ export function IssueDetailPage({ issueID }: { issueID: string }) {
                   <section className="app-surface rounded-[1.5rem] p-5">
                     <h3 className="text-sm font-semibold">Classification confidence</h3>
                     <div className="mt-3">
-                      <TagRelevanceBars tags={issue.tagScores} />
+                      <TagRelevanceBars
+                        tags={issue.tagScores}
+                        hasEvidence={tagHasEvidence}
+                        evidenceCount={tagEvidenceCount}
+                        activeTags={activeCitationTags}
+                        onHover={setActiveTag}
+                      />
                     </div>
+                    <CitationInspector raw={issue.raw} tagScores={issue.tagScores} />
                   </section>
                 )}
 

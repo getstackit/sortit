@@ -1,12 +1,12 @@
 "use client";
 
 import { LogInIcon } from "lucide-react";
-import { uiAPIURL } from "@/lib/api";
+import { versionedAPIURL } from "@/lib/api";
 
 export function LoginScreen({ returnTo }: { returnTo?: string } = {}) {
   const href = returnTo
-    ? `${uiAPIURL("/auth/github/start")}?return_to=${encodeURIComponent(returnTo)}`
-    : uiAPIURL("/auth/github/start");
+    ? `${versionedAPIURL("/auth/github/start")}?return_to=${encodeURIComponent(returnTo)}`
+    : versionedAPIURL("/auth/github/start");
 
   return (
     <div className="relative isolate flex min-h-svh items-center justify-center overflow-hidden px-4 py-12">

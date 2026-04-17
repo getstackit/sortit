@@ -15,7 +15,7 @@ import (
 
 const (
 	defaultOpenAIBaseURL        = "https://api.openai.com/v1"
-	defaultOpenAITagModel       = "gpt-5.4-mini"
+	defaultOpenAITagModel       = "gpt-5.4-nano"
 	defaultOpenAICanonicalModel = "gpt-5.4-mini"
 	defaultOpenAIEmbeddingModel = "text-embedding-3-small"
 )

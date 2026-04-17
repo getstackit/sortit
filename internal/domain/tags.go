@@ -39,6 +39,13 @@ type TagRelevance struct {
 type EvidenceRange struct {
 	Start int `json:"start"`
 	End   int `json:"end"`
+	// Text preserves the matched source-text quote so callers can display
+	// citations even if only a compact preview is needed.
+	Text string `json:"text,omitempty"`
+	// Source identifies the text surface the offset applies to.
+	Source string `json:"source,omitempty"`
+	// Kind describes how the citation was grounded.
+	Kind string `json:"kind,omitempty"`
 }
 
 // NormalizeTagName lowercases and collapses whitespace in a tag name.

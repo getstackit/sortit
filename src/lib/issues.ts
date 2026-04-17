@@ -30,6 +30,14 @@ export type IssuePostRecord = {
   kind?: IssuePostKind;
 };
 
+export type EvidenceRange = {
+  start: number;
+  end: number;
+  text?: string;
+  source?: string;
+  kind?: string;
+};
+
 export type IssueTagScore = {
   tag: string;
   relevance: number;
@@ -42,6 +50,7 @@ export type IssueTagScore = {
   verificationReason?: string;
   dominatedBy?: string;
   dominanceGap?: number | null;
+  evidence?: EvidenceRange[];
 };
 
 export type IssueReferenceRecord = {
