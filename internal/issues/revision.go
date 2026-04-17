@@ -3,16 +3,26 @@ package issues
 import (
 	"context"
 	"errors"
+	"sync"
 	"sync/atomic"
 	"time"
 )
 
+// RevisionTracker is the in-process implementation of RevisionBus. It holds an
+// atomic revision counter and a set of subscriber channels that receive
+// notifications after each Bump.
 type RevisionTracker struct {
 	revision atomic.Uint64
+
+	mu          sync.Mutex
+	nextSubID   uint64
+	subscribers map[uint64]chan uint64
 }
 
 func NewRevisionTracker() *RevisionTracker {
-	tracker := &RevisionTracker{}
+	tracker := &RevisionTracker{
+		subscribers: make(map[uint64]chan uint64),
+	}
 	tracker.revision.Store(1)
 	return tracker
 }
@@ -28,7 +38,64 @@ func (t *RevisionTracker) Bump() uint64 {
 	if t == nil {
 		return 0
 	}
-	return t.revision.Add(1)
+	next := t.revision.Add(1)
+	t.fanout(next)
+	return next
+}
+
+// Subscribe registers a subscriber. Delivery is drop-latest on a cap-1 channel:
+// slow subscribers miss intermediate revisions but always converge to the
+// newest value, which matches the semantics the UI previously got from
+// polling. Callers MUST invoke cancel to release resources.
+func (t *RevisionTracker) Subscribe() (<-chan uint64, func()) {
+	if t == nil {
+		ch := make(chan uint64)
+		close(ch)
+		return ch, func() {}
+	}
+
+	ch := make(chan uint64, 1)
+	t.mu.Lock()
+	id := t.nextSubID
+	t.nextSubID++
+	if t.subscribers == nil {
+		t.subscribers = make(map[uint64]chan uint64)
+	}
+	t.subscribers[id] = ch
+	t.mu.Unlock()
+
+	var once sync.Once
+	cancel := func() {
+		once.Do(func() {
+			t.mu.Lock()
+			if sub, ok := t.subscribers[id]; ok {
+				delete(t.subscribers, id)
+				close(sub)
+			}
+			t.mu.Unlock()
+		})
+	}
+	return ch, cancel
+}
+
+func (t *RevisionTracker) fanout(revision uint64) {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	for _, ch := range t.subscribers {
+		// Drop-latest: replace any pending value with the newest.
+		select {
+		case ch <- revision:
+		default:
+			select {
+			case <-ch:
+			default:
+			}
+			select {
+			case ch <- revision:
+			default:
+			}
+		}
+	}
 }
 
 type ObservedStore struct {

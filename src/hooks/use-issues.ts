@@ -1,3 +1,4 @@
+import { useSyncExternalStore } from "react";
 import useSWR from "swr";
 import {
   fetchRevision,
@@ -7,14 +8,88 @@ import {
   searchIssues,
   type IssueListStatus,
 } from "@/lib/issues";
+import { uiAPIURL } from "@/lib/api";
 import { fetchMapData as fetchSharedMapData } from "@/features/map/api";
 
+// Module-scoped revision store backed by a single EventSource connection
+// (with a polling fallback for environments without EventSource, e.g. jsdom
+// without a mock). All callers of useBackendRevision share this state.
+let revisionState: number | undefined;
+const revisionListeners = new Set<() => void>();
+let revisionSource: EventSource | null = null;
+let revisionPollTimer: ReturnType<typeof setInterval> | null = null;
+let revisionStarted = false;
+
+function setRevision(next: number) {
+  if (next === revisionState) return;
+  revisionState = next;
+  for (const listener of revisionListeners) listener();
+}
+
+function startRevisionTransport() {
+  if (revisionStarted) return;
+  if (typeof window === "undefined") return;
+  revisionStarted = true;
+
+  if (typeof window.EventSource !== "undefined") {
+    const source = new EventSource(uiAPIURL("/revision/stream"));
+    source.onmessage = (event) => {
+      const parsed = Number(event.data);
+      if (Number.isFinite(parsed)) setRevision(parsed);
+    };
+    // EventSource auto-reconnects on transient errors; no extra handling.
+    revisionSource = source;
+    return;
+  }
+
+  const poll = async () => {
+    try {
+      setRevision(await fetchRevision());
+    } catch {
+      // Ignore; next tick retries.
+    }
+  };
+  void poll();
+  revisionPollTimer = setInterval(poll, 2000);
+}
+
+function subscribeRevision(listener: () => void) {
+  revisionListeners.add(listener);
+  startRevisionTransport();
+  return () => {
+    revisionListeners.delete(listener);
+  };
+}
+
+function getRevisionSnapshot() {
+  return revisionState;
+}
+
+function getRevisionServerSnapshot(): number | undefined {
+  return undefined;
+}
+
 export function useBackendRevision() {
-  return useSWR("backend-revision", () => fetchRevision(), {
-    refreshInterval: 2000,
-    revalidateOnFocus: true,
-    revalidateOnReconnect: true,
-  });
+  const data = useSyncExternalStore(
+    subscribeRevision,
+    getRevisionSnapshot,
+    getRevisionServerSnapshot
+  );
+  return { data };
+}
+
+// Test-only reset hook; not exported from a public barrel. Clears module state
+// between tests that install different EventSource / fetchRevision mocks.
+export function __resetBackendRevisionForTests() {
+  revisionSource?.close();
+  revisionSource = null;
+  if (revisionPollTimer !== null) {
+    clearInterval(revisionPollTimer);
+    revisionPollTimer = null;
+  }
+  revisionState = undefined;
+  revisionStarted = false;
+  revisionListeners.clear();
 }
 
 export function useIssues(status: IssueListStatus = "open", enabled = true) {

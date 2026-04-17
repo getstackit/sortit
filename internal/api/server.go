@@ -275,6 +275,7 @@ func (s *Server) registerUIRoutes(r chi.Router) {
 		r.Get("/search", s.handleUnifiedSearch)
 		s.registerTagRoutes(r)
 		r.Get("/revision", s.handleRevision)
+		r.Get("/revision/stream", s.handleRevisionStream)
 		r.Get("/map", s.handleMap)
 		r.Get("/map/edges", s.handleMapEdges)
 		r.Get("/people/correlations", s.handleWorkCorrelations)
@@ -405,6 +406,59 @@ func (s *Server) handleRevision(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, revisionResponse{
 		Revision: s.revisions.Revision(),
 	})
+}
+
+const revisionStreamKeepalive = 25 * time.Second
+
+func (s *Server) handleRevisionStream(w http.ResponseWriter, r *http.Request) {
+	flusher, ok := w.(http.Flusher)
+	if !ok {
+		writeInternalError(w, r, "streaming unsupported", nil)
+		return
+	}
+
+	h := w.Header()
+	h.Set("Content-Type", "text/event-stream")
+	h.Set("Cache-Control", "no-cache")
+	h.Set("Connection", "keep-alive")
+	// Defeat buffering by intermediaries (e.g. nginx) if they are ever
+	// introduced; harmless when no proxy is present.
+	h.Set("X-Accel-Buffering", "no")
+	w.WriteHeader(http.StatusOK)
+
+	ch, cancel := s.revisions.Subscribe()
+	defer cancel()
+
+	// Send the current revision immediately so clients get a deterministic
+	// first value without waiting for the next Bump.
+	if _, err := fmt.Fprintf(w, "data: %d\n\n", s.revisions.Revision()); err != nil {
+		return
+	}
+	flusher.Flush()
+
+	keepalive := time.NewTicker(revisionStreamKeepalive)
+	defer keepalive.Stop()
+
+	ctx := r.Context()
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case revision, ok := <-ch:
+			if !ok {
+				return
+			}
+			if _, err := fmt.Fprintf(w, "data: %d\n\n", revision); err != nil {
+				return
+			}
+			flusher.Flush()
+		case <-keepalive.C:
+			if _, err := fmt.Fprint(w, ":keepalive\n\n"); err != nil {
+				return
+			}
+			flusher.Flush()
+		}
+	}
 }
 
 func writeJSON(w http.ResponseWriter, status int, payload any) {

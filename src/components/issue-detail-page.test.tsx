@@ -8,6 +8,7 @@ import {
   clearRecentHistory,
   readRecentHistory,
 } from "@/hooks/use-recent-history";
+import { __resetBackendRevisionForTests } from "@/hooks/use-issues";
 import {
   closeIssue,
   fetchIssue,
@@ -18,6 +19,38 @@ import {
   type IssueRecord,
 } from "@/lib/issues";
 import { fetchMapData } from "@/features/map/api";
+
+// Minimal EventSource mock: useBackendRevision prefers window.EventSource over
+// the polling fallback, so the hook's production code path runs in tests too.
+// The mock emits a synthetic `data: 1` frame on the next microtask so any
+// consumer keyed off the revision resolves promptly.
+class MockEventSource {
+  static instances: MockEventSource[] = [];
+  readonly url: string;
+  onmessage: ((event: MessageEvent) => void) | null = null;
+  onerror: ((event: Event) => void) | null = null;
+  onopen: ((event: Event) => void) | null = null;
+  readyState = 1;
+
+  constructor(url: string) {
+    this.url = url;
+    MockEventSource.instances.push(this);
+    queueMicrotask(() => this.emit("1"));
+  }
+
+  emit(data: string) {
+    this.onmessage?.({ data } as MessageEvent);
+  }
+
+  close() {
+    this.readyState = 2;
+  }
+}
+Object.defineProperty(globalThis, "EventSource", {
+  configurable: true,
+  writable: true,
+  value: MockEventSource,
+});
 
 vi.mock("next/link", () => ({
   default: ({
@@ -143,6 +176,8 @@ describe("IssueDetailPage", () => {
   const writeTextMock = vi.fn<() => Promise<void>>();
 
   beforeEach(() => {
+    __resetBackendRevisionForTests();
+    MockEventSource.instances.length = 0;
     vi.mocked(useParams).mockReturnValue({});
     vi.mocked(fetchIssue).mockReset();
     vi.mocked(fetchRevision).mockReset();
