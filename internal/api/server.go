@@ -159,7 +159,8 @@ func (s *Server) Handler() http.Handler {
 
 	// Global middleware stack (outermost → innermost).
 	r.Use(middleware.Recoverer)
-	r.Use(middleware.RealIP)
+	// Deployed behind a trusted reverse proxy that sets X-Forwarded-For; safe here.
+	r.Use(middleware.RealIP) //nolint:staticcheck // SA1019: see GHSA-3fxj-6jh8-hvhx
 	r.Use(middleware.RequestID)
 	r.Use(tracing.Middleware)
 	r.Use(middleware.RequestLogger(&slogLogFormatter{}))

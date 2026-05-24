@@ -165,7 +165,10 @@ function MapPageContent() {
   const pathname = usePathname();
   const searchParams = useSearchParams();
   const searchParamsString = searchParams.toString();
-  const urlState = useMemo(() => parseMapURLState(searchParams), [searchParams]);
+  const urlState = useMemo(
+    () => parseMapURLState(new URLSearchParams(searchParamsString)),
+    [searchParamsString]
+  );
   const baseQueryParamsRef = useRef(new URLSearchParams(searchParamsString));
   const [mapData, setMapData] = useState<MapData | null>(null);
   const [loading, setLoading] = useState(true);

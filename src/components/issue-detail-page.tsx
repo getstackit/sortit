@@ -415,7 +415,7 @@ export function IssueDetailPage({ issueID }: { issueID: string }) {
       }));
     });
     return ranges.length > 0 ? ranges : undefined;
-  }, [activeCitationTags, issue?.tagScores, issue?.raw]);
+  }, [activeCitationTags, issue]);
 
   const tagHasEvidence = useCallback(
     (tag: string) => {
