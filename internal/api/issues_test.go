@@ -1,0 +1,1434 @@
+package api
+
+import (
+	"bytes"
+	"context"
+	"encoding/json"
+	"errors"
+	"log/slog"
+	"net/http"
+	"net/http/httptest"
+	"strings"
+	"testing"
+	"time"
+
+	"sortit/internal/ai"
+	"sortit/internal/issues"
+	issuecmd "sortit/internal/issues/commands"
+	issuemap "sortit/internal/map"
+)
+
+type failingIssueStore struct {
+	listErr error
+}
+
+func (s failingIssueStore) List(context.Context) ([]issues.Issue, error) {
+	return nil, s.listErr
+}
+
+func (s failingIssueStore) Get(context.Context, string) (issues.Issue, error) {
+	return issues.Issue{}, issues.ErrNotFound
+}
+
+func (s failingIssueStore) GetIssueDetail(context.Context, string) (issues.Issue, error) {
+	return issues.Issue{}, issues.ErrNotFound
+}
+
+func (s failingIssueStore) GetIssueDetailBase(context.Context, string) (issues.Issue, error) {
+	return issues.Issue{}, issues.ErrNotFound
+}
+
+func (s failingIssueStore) ListIssueDetailPosts(context.Context, string) ([]issues.IssuePost, error) {
+	return nil, issues.ErrNotFound
+}
+
+func (s failingIssueStore) ListIssueDetailLinks(context.Context, string) ([]issues.IssueLink, error) {
+	return nil, issues.ErrNotFound
+}
+
+func (s failingIssueStore) ListIssueDetailOperations(context.Context, string) ([]issues.IssueOperation, error) {
+	return nil, issues.ErrNotFound
+}
+
+func (s failingIssueStore) ListIssueDetailReferences(context.Context, []string) ([]issues.IssueReference, error) {
+	return nil, issues.ErrNotFound
+}
+
+func (s failingIssueStore) SaveIssue(context.Context, issues.Issue) error         { return nil }
+func (s failingIssueStore) SaveIssuePost(context.Context, issues.IssuePost) error { return nil }
+func (s failingIssueStore) UpdateIssueFields(context.Context, string, issues.IssueFieldUpdate) error {
+	return nil
+}
+func (s failingIssueStore) SaveOperation(context.Context, issues.IssueOperation) error { return nil }
+func (s failingIssueStore) SaveLink(context.Context, issues.IssueLink) error           { return nil }
+
+func TestIssuesEndpointListsSeededIssues(t *testing.T) {
+	server := NewServer(ServerConfig{
+		CORSOrigins: []string{"http://localhost:3000"},
+		APIPrefixes: []string{"/api"},
+		IssueStore:  newPostgresIssueStore(t, issues.FixtureIssues()),
+	})
+
+	req := httptest.NewRequest(http.MethodGet, "/api/issues", nil)
+	rec := httptest.NewRecorder()
+
+	server.Handler().ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200 for issue list, got %d", rec.Code)
+	}
+	if got := rec.Header().Get("Content-Type"); got != "application/json; charset=utf-8" { //nolint:goconst
+		t.Fatalf("expected JSON content type, got %q", got)
+	}
+
+	var payload issuesResponse
+	if err := json.NewDecoder(rec.Body).Decode(&payload); err != nil {
+		t.Fatalf("failed to decode issue list response: %v", err)
+	}
+
+	if len(payload.Issues) != len(issues.FixtureIssues()) {
+		t.Fatalf("expected %d seeded issues, got %d", len(issues.FixtureIssues()), len(payload.Issues))
+	}
+	if payload.Issues[0].ID != "sample-1" {
+		t.Fatalf("expected newest seeded issue first, got %q", payload.Issues[0].ID)
+	}
+}
+
+func TestIssuesEndpointStartsEmptyByDefault(t *testing.T) {
+	server := NewServer(ServerConfig{
+		CORSOrigins: []string{"http://localhost:3000"},
+		APIPrefixes: []string{"/api"},
+	})
+
+	req := httptest.NewRequest(http.MethodGet, "/api/issues", nil)
+	rec := httptest.NewRecorder()
+
+	server.Handler().ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200 for issue list, got %d", rec.Code)
+	}
+
+	var payload issuesResponse
+	if err := json.NewDecoder(rec.Body).Decode(&payload); err != nil {
+		t.Fatalf("failed to decode issue list response: %v", err)
+	}
+
+	if len(payload.Issues) != 0 {
+		t.Fatalf("expected no issues by default, got %d", len(payload.Issues))
+	}
+}
+
+func TestIssuesEndpointGetsIssueByID(t *testing.T) {
+	server := NewServer(ServerConfig{
+		CORSOrigins: []string{"http://localhost:3000"},
+		APIPrefixes: []string{"/api"},
+		IssueStore:  newPostgresIssueStore(t, issues.FixtureIssues()),
+	})
+
+	req := httptest.NewRequest(http.MethodGet, "/api/issues/sample-3", nil)
+	rec := httptest.NewRecorder()
+
+	server.Handler().ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200 for issue lookup, got %d", rec.Code)
+	}
+
+	var payload issues.Issue
+	if err := json.NewDecoder(rec.Body).Decode(&payload); err != nil {
+		t.Fatalf("failed to decode issue response: %v", err)
+	}
+
+	if payload.ID != "sample-3" {
+		t.Fatalf("expected sample-3, got %q", payload.ID)
+	}
+	if payload.Raw == "" {
+		t.Fatal("expected issue body in response")
+	}
+	if len(payload.Discussion) != 1 {
+		t.Fatalf("expected initial discussion history, got %#v", payload.Discussion)
+	}
+}
+
+func TestIssuesEndpointLogsNamedQueryTimingForGetByID(t *testing.T) {
+	var logOutput bytes.Buffer
+	logger := slog.New(slog.NewTextHandler(&logOutput, nil))
+	originalHandler := slog.Default().Handler()
+	slog.SetDefault(logger)
+	t.Cleanup(func() {
+		slog.SetDefault(slog.New(originalHandler))
+	})
+
+	store := newPostgresIssueStore(t, nil)
+	ctx := context.Background()
+	target := issues.BuildNewIssue("issue-target", issues.CreateInput{
+		Raw:       "Target issue",
+		CreatedBy: "Casey",
+	})
+	related := issues.BuildNewIssue("issue-related", issues.CreateInput{
+		Raw:       "Related issue",
+		CreatedBy: "Jordan",
+	})
+	result := issues.BuildNewIssue("issue-result", issues.CreateInput{
+		Raw:       "Result issue",
+		CreatedBy: "Taylor",
+	})
+	for _, issue := range []issues.Issue{target, related, result} {
+		if err := store.SaveIssue(ctx, issue); err != nil {
+			t.Fatalf("save issue %q: %v", issue.ID, err)
+		}
+	}
+
+	opID := issues.NewOperationID()
+	if err := store.SaveOperation(ctx, issues.IssueOperation{
+		ID:        opID,
+		Kind:      issues.IssueOperationKindSplit,
+		CreatedBy: "Casey",
+		CreatedAt: time.Now().UTC(),
+		Participants: []issues.IssueOperationParticipant{
+			{IssueID: target.ID, Role: "source"},
+			{IssueID: related.ID, Role: "child"},
+			{IssueID: result.ID, Role: "child"},
+		},
+	}); err != nil {
+		t.Fatalf("save operation: %v", err)
+	}
+	if err := store.SaveLink(ctx, issues.IssueLink{
+		ID:            "issue-target-issue-related-parent",
+		Type:          issues.IssueLinkTypeParentOf,
+		SourceIssueID: target.ID,
+		TargetIssueID: related.ID,
+		CreatedBy:     "Casey",
+		CreatedAt:     time.Now().UTC(),
+		OperationID:   opID,
+	}); err != nil {
+		t.Fatalf("save link: %v", err)
+	}
+
+	server := NewServer(ServerConfig{
+		CORSOrigins: []string{"http://localhost:3000"},
+		APIPrefixes: []string{"/api"},
+		IssueStore:  store,
+		Logger:      logger,
+	})
+
+	req := httptest.NewRequest(http.MethodGet, "/api/issues/issue-target", nil)
+	rec := httptest.NewRecorder()
+
+	server.Handler().ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200 for issue lookup, got %d", rec.Code)
+	}
+
+	logged := logOutput.String()
+	for _, want := range []string{
+		"service=GetIssueHandler.Handle",
+		"query_name=GetIssue",
+		"query_name=ListIssuePosts",
+		"query_name=ListIssueLinksForIssue",
+		"query_name=ListIssueOperationsForIssue",
+		"query_name=ListIssueOperationParticipantsForOperations",
+		"query_name=ListIssueReferencesByIDs",
+	} {
+		if !strings.Contains(logged, want) {
+			t.Fatalf("expected log output to contain %q, got %q", want, logged)
+		}
+	}
+	for _, unwanted := range []string{
+		"query_name=ListIssues",
+		"query_name=ListIssueOperationParticipants ",
+		"query_name=LoadIssueEnrichmentStates",
+	} {
+		if strings.Contains(logged, unwanted) {
+			t.Fatalf("expected log output to omit %q, got %q", unwanted, logged)
+		}
+	}
+	if strings.Contains(logged, "SELECT id, raw") {
+		t.Fatalf("expected logs to omit raw SQL text, got %q", logged)
+	}
+}
+
+func TestIssueLinkRejectsSelfLinks(t *testing.T) {
+	store := newPostgresIssueStore(t, nil)
+	source := issues.BuildNewIssue(issues.NewIssueID(), issues.CreateInput{
+		Raw:       "Search ranking regressed",
+		CreatedBy: "Casey",
+	})
+	if err := store.SaveIssue(context.Background(), source); err != nil {
+		t.Fatalf("save source issue: %v", err)
+	}
+
+	server := NewServer(ServerConfig{
+		CORSOrigins: []string{"http://localhost:3000"},
+		APIPrefixes: []string{"/api"},
+		IssueStore:  store,
+	})
+
+	req := httptest.NewRequest(
+		http.MethodPost,
+		"/api/issues/link",
+		strings.NewReader(`{"sourceId":"`+source.ID+`","targetId":"`+source.ID+`","type":"related_to"}`),
+	)
+	req.Header.Set("Content-Type", "application/json")
+	rec := httptest.NewRecorder()
+
+	server.Handler().ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("expected 400 for self link, got %d", rec.Code)
+	}
+}
+
+func TestIssueLinkRejectsDuplicateLogicalLinks(t *testing.T) {
+	store := newPostgresIssueStore(t, nil)
+	source := issues.BuildNewIssue(issues.NewIssueID(), issues.CreateInput{
+		Raw:       "Search ranking regressed",
+		CreatedBy: "Casey",
+	})
+	target := issues.BuildNewIssue(issues.NewIssueID(), issues.CreateInput{
+		Raw:       "Map viewport edges missing",
+		CreatedBy: "Jordan",
+	})
+	if err := store.SaveIssue(context.Background(), source); err != nil {
+		t.Fatalf("save source issue: %v", err)
+	}
+	if err := store.SaveIssue(context.Background(), target); err != nil {
+		t.Fatalf("save target issue: %v", err)
+	}
+
+	server := NewServer(ServerConfig{
+		CORSOrigins: []string{"http://localhost:3000"},
+		APIPrefixes: []string{"/api"},
+		IssueStore:  store,
+	})
+
+	body := `{"sourceId":"` + source.ID + `","targetId":"` + target.ID + `","type":"related_to"}`
+	for i := 0; i < 2; i++ {
+		req := httptest.NewRequest(http.MethodPost, "/api/issues/link", strings.NewReader(body))
+		req.Header.Set("Content-Type", "application/json")
+		rec := httptest.NewRecorder()
+		server.Handler().ServeHTTP(rec, req)
+
+		if i == 0 && rec.Code != http.StatusCreated {
+			t.Fatalf("expected 201 for first link, got %d", rec.Code)
+		}
+		if i == 1 && rec.Code != http.StatusConflict {
+			t.Fatalf("expected 409 for duplicate link, got %d", rec.Code)
+		}
+	}
+}
+
+func TestIssuesEndpointReturnsNotFoundForMissingIssue(t *testing.T) {
+	server := NewServer(ServerConfig{
+		CORSOrigins: []string{"http://localhost:3000"},
+		APIPrefixes: []string{"/api"},
+		IssueStore:  newPostgresIssueStore(t, issues.FixtureIssues()),
+	})
+
+	req := httptest.NewRequest(http.MethodGet, "/api/issues/missing-issue", nil)
+	rec := httptest.NewRecorder()
+
+	server.Handler().ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusNotFound {
+		t.Fatalf("expected 404 for missing issue, got %d", rec.Code)
+	}
+
+	var payload errorResponse
+	if err := json.NewDecoder(rec.Body).Decode(&payload); err != nil {
+		t.Fatalf("failed to decode error response: %v", err)
+	}
+	if payload.Error != "issue not found" {
+		t.Fatalf("expected issue not found error, got %q", payload.Error)
+	}
+}
+
+func TestIssuesEndpointCreatesIssue(t *testing.T) {
+	store := newPostgresIssueStore(t, nil)
+	server := NewServer(ServerConfig{
+		CORSOrigins: []string{"http://localhost:3000"},
+		APIPrefixes: []string{"/api"},
+		IssueStore:  store,
+	})
+	handler := server.Handler()
+
+	body := bytes.NewBufferString(`{"raw":"  new issue  ","tags":["bug"," bug ",""],"createdBy":"  Casey "}`)
+	req := httptest.NewRequest(http.MethodPost, "/api/issues", body)
+	rec := httptest.NewRecorder()
+
+	handler.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusCreated {
+		t.Fatalf("expected 201 for issue create, got %d", rec.Code)
+	}
+
+	var created issues.Issue
+	if err := json.NewDecoder(rec.Body).Decode(&created); err != nil {
+		t.Fatalf("failed to decode created issue: %v", err)
+	}
+
+	if created.Raw != "new issue" {
+		t.Fatalf("expected trimmed raw value, got %q", created.Raw)
+	}
+	if created.CreatedBy != "Casey" { //nolint:goconst
+		t.Fatalf("expected trimmed createdBy, got %q", created.CreatedBy)
+	}
+	if created.Status != issues.StatusOpen {
+		t.Fatalf("expected created issue to be open, got %q", created.Status)
+	}
+	if len(created.Tags) != 1 || created.Tags[0] != "bug" {
+		t.Fatalf("expected sanitized tags, got %#v", created.Tags)
+	}
+	if created.EnrichmentStatus != issues.EnrichmentStatusPending {
+		t.Fatalf("expected pending enrichment status, got %q", created.EnrichmentStatus)
+	}
+	if len(created.Discussion) != 1 {
+		t.Fatalf("expected initial discussion post, got %#v", created.Discussion)
+	}
+	if created.Discussion[0].Raw != created.Raw {
+		t.Fatalf("expected discussion to preserve original raw, got %q", created.Discussion[0].Raw)
+	}
+
+	listReq := httptest.NewRequest(http.MethodGet, "/api/issues", nil)
+	listRec := httptest.NewRecorder()
+	handler.ServeHTTP(listRec, listReq)
+
+	var payload issuesResponse
+	if err := json.NewDecoder(listRec.Body).Decode(&payload); err != nil {
+		t.Fatalf("failed to decode issue list response: %v", err)
+	}
+
+	if payload.Issues[0].ID != created.ID {
+		t.Fatalf("expected created issue at top of list, got %q", payload.Issues[0].ID)
+	}
+
+	stored, err := store.List(context.Background())
+	if err != nil {
+		t.Fatalf("failed to list stored issues: %v", err)
+	}
+	if len(stored) != 1 {
+		t.Fatalf("expected 1 stored issue, got %d", len(stored))
+	}
+	if stored[0].EnrichmentStatus != issues.EnrichmentStatusPending {
+		t.Fatalf("expected stored issue to remain pending before worker runs, got %q", stored[0].EnrichmentStatus)
+	}
+	processPendingEnrichment(t, server)
+
+	stored, err = store.List(context.Background())
+	if err != nil {
+		t.Fatalf("failed to list stored issues after enrichment: %v", err)
+	}
+	if len(stored[0].TagScores) == 0 {
+		t.Fatal("expected stored issue to include analyzed tag scores")
+	}
+	if len(stored[0].Embedding) == 0 {
+		t.Fatal("expected stored issue to include embedding vector")
+	}
+
+	tags, err := store.ListTags(context.Background())
+	if err != nil {
+		t.Fatalf("failed to list stored tags: %v", err)
+	}
+	if len(tags) == 0 {
+		t.Fatal("expected stored tags to include analyzed taxonomy")
+	}
+	if len(tags[0].Embedding) == 0 {
+		t.Fatal("expected stored tags to include embeddings")
+	}
+}
+
+func TestIssuesEndpointRefinesIssue(t *testing.T) {
+	store := newPostgresIssueStore(t, nil)
+	server := NewServer(ServerConfig{
+		CORSOrigins: []string{"http://localhost:3000"},
+		APIPrefixes: []string{"/api"},
+		IssueStore:  store,
+	})
+	handler := server.Handler()
+
+	createReq := httptest.NewRequest(
+		http.MethodPost,
+		"/api/issues",
+		bytes.NewBufferString(`{"raw":"Export fails on iPad"}`),
+	)
+	createReq.Header.Set("Content-Type", "application/json")
+	createRec := httptest.NewRecorder()
+	handler.ServeHTTP(createRec, createReq)
+
+	if createRec.Code != http.StatusCreated {
+		t.Fatalf("expected 201 for issue create, got %d", createRec.Code)
+	}
+
+	var created issues.Issue
+	if err := json.NewDecoder(createRec.Body).Decode(&created); err != nil {
+		t.Fatalf("decode created issue: %v", err)
+	}
+
+	refineReq := httptest.NewRequest(
+		http.MethodPost,
+		"/api/issues/"+created.ID+"/refine",
+		bytes.NewBufferString(`{"raw":"Customer says it only happens in Safari after tapping share twice","createdBy":"Jordan"}`),
+	)
+	refineReq.Header.Set("Content-Type", "application/json")
+	refineRec := httptest.NewRecorder()
+	handler.ServeHTTP(refineRec, refineReq)
+
+	if refineRec.Code != http.StatusOK {
+		t.Fatalf("expected 200 for issue refine, got %d", refineRec.Code)
+	}
+
+	var refined issues.Issue
+	if err := json.NewDecoder(refineRec.Body).Decode(&refined); err != nil {
+		t.Fatalf("decode refined issue: %v", err)
+	}
+
+	if len(refined.Discussion) != 2 {
+		t.Fatalf("expected 2 discussion posts, got %#v", refined.Discussion)
+	}
+	if refined.Discussion[1].CreatedBy != "Jordan" { //nolint:goconst
+		t.Fatalf("expected refinement author Jordan, got %q", refined.Discussion[1].CreatedBy)
+	}
+	if refined.Discussion[1].Raw != "Customer says it only happens in Safari after tapping share twice" {
+		t.Fatalf("unexpected refinement raw: %q", refined.Discussion[1].Raw)
+	}
+	if refined.Raw != created.Raw {
+		t.Fatalf("expected canonical raw to remain unchanged while enrichment is pending, got %q", refined.Raw)
+	}
+	if refined.EnrichmentStatus != issues.EnrichmentStatusPending {
+		t.Fatalf("expected pending refinement enrichment, got %q", refined.EnrichmentStatus)
+	}
+
+	getReq := httptest.NewRequest(http.MethodGet, "/api/issues/"+created.ID, nil)
+	getRec := httptest.NewRecorder()
+	handler.ServeHTTP(getRec, getReq)
+
+	if getRec.Code != http.StatusOK {
+		t.Fatalf("expected 200 for issue lookup, got %d", getRec.Code)
+	}
+
+	var loaded issues.Issue
+	if err := json.NewDecoder(getRec.Body).Decode(&loaded); err != nil {
+		t.Fatalf("decode loaded issue: %v", err)
+	}
+	if len(loaded.Discussion) != 2 {
+		t.Fatalf("expected persisted discussion posts, got %#v", loaded.Discussion)
+	}
+	if loaded.EnrichmentStatus != issues.EnrichmentStatusPending {
+		t.Fatalf("expected loaded issue to remain pending before worker runs, got %q", loaded.EnrichmentStatus)
+	}
+
+	processPendingEnrichment(t, server)
+
+	getRec = httptest.NewRecorder()
+	handler.ServeHTTP(getRec, getReq)
+	if getRec.Code != http.StatusOK {
+		t.Fatalf("expected 200 for issue lookup after enrichment, got %d", getRec.Code)
+	}
+	if err := json.NewDecoder(getRec.Body).Decode(&loaded); err != nil {
+		t.Fatalf("decode loaded issue after enrichment: %v", err)
+	}
+	if loaded.Raw == created.Raw {
+		t.Fatalf("expected canonical raw to update after enrichment, got %q", loaded.Raw)
+	}
+	if loaded.EnrichmentStatus != issues.EnrichmentStatusComplete {
+		t.Fatalf("expected completed enrichment status after worker runs, got %q", loaded.EnrichmentStatus)
+	}
+}
+
+func TestIssuesEndpointFiltersByStatusAndClosesIssue(t *testing.T) {
+	store := newPostgresIssueStore(t, nil)
+	server := NewServer(ServerConfig{
+		CORSOrigins: []string{"http://localhost:3000"},
+		APIPrefixes: []string{"/api"},
+		IssueStore:  store,
+	})
+	handler := server.Handler()
+
+	createReq := httptest.NewRequest(
+		http.MethodPost,
+		"/api/issues",
+		bytes.NewBufferString(`{"raw":"close me"}`),
+	)
+	createReq.Header.Set("Content-Type", "application/json")
+	createRec := httptest.NewRecorder()
+	handler.ServeHTTP(createRec, createReq)
+
+	if createRec.Code != http.StatusCreated {
+		t.Fatalf("expected 201 for issue create, got %d", createRec.Code)
+	}
+
+	var created issues.Issue
+	if err := json.NewDecoder(createRec.Body).Decode(&created); err != nil {
+		t.Fatalf("decode created issue: %v", err)
+	}
+
+	closeReq := httptest.NewRequest(
+		http.MethodPost,
+		"/api/issues/"+created.ID+"/close",
+		bytes.NewBufferString(`{"closedBy":"Casey"}`),
+	)
+	closeReq.Header.Set("Content-Type", "application/json")
+	closeRec := httptest.NewRecorder()
+	handler.ServeHTTP(closeRec, closeReq)
+
+	if closeRec.Code != http.StatusOK {
+		t.Fatalf("expected 200 for issue close, got %d", closeRec.Code)
+	}
+
+	var closed issues.Issue
+	if err := json.NewDecoder(closeRec.Body).Decode(&closed); err != nil {
+		t.Fatalf("decode closed issue: %v", err)
+	}
+	if closed.Status != issues.StatusClosed {
+		t.Fatalf("expected closed status, got %q", closed.Status)
+	}
+	if closed.ClosedAt == nil {
+		t.Fatal("expected closedAt to be set")
+	}
+	if closed.ClosedBy != "Casey" {
+		t.Fatalf("expected closedBy Casey, got %q", closed.ClosedBy)
+	}
+
+	openReq := httptest.NewRequest(http.MethodGet, "/api/issues?status=open", nil)
+	openRec := httptest.NewRecorder()
+	handler.ServeHTTP(openRec, openReq)
+
+	var openPayload issuesResponse
+	if err := json.NewDecoder(openRec.Body).Decode(&openPayload); err != nil {
+		t.Fatalf("decode open issues response: %v", err)
+	}
+	if len(openPayload.Issues) != 0 {
+		t.Fatalf("expected no open issues, got %d", len(openPayload.Issues))
+	}
+
+	closedReq := httptest.NewRequest(http.MethodGet, "/api/issues?status=closed", nil)
+	closedListRec := httptest.NewRecorder()
+	handler.ServeHTTP(closedListRec, closedReq)
+
+	var closedPayload issuesResponse
+	if err := json.NewDecoder(closedListRec.Body).Decode(&closedPayload); err != nil {
+		t.Fatalf("decode closed issues response: %v", err)
+	}
+	if len(closedPayload.Issues) != 1 || closedPayload.Issues[0].ID != created.ID {
+		t.Fatalf("expected closed issue in filtered list, got %#v", closedPayload.Issues)
+	}
+}
+
+func TestIssuesEndpointReopensIssue(t *testing.T) {
+	store := newPostgresIssueStore(t, []issues.Issue{
+		{
+			ID:        "issue-closed",
+			Raw:       "closed",
+			CreatedBy: "Casey",
+			CreatedAt: issues.FixtureIssues()[0].CreatedAt,
+			Status:    issues.StatusClosed,
+			ClosedAt:  new(issues.FixtureIssues()[0].CreatedAt.Add(time.Hour)),
+			ClosedBy:  "Casey",
+		},
+	})
+	server := NewServer(ServerConfig{
+		CORSOrigins: []string{"http://localhost:3000"},
+		APIPrefixes: []string{"/api"},
+		IssueStore:  store,
+	})
+
+	req := httptest.NewRequest(http.MethodPost, "/api/issues/issue-closed/reopen", nil)
+	rec := httptest.NewRecorder()
+	server.Handler().ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200 for issue reopen, got %d", rec.Code)
+	}
+
+	var reopened issues.Issue
+	if err := json.NewDecoder(rec.Body).Decode(&reopened); err != nil {
+		t.Fatalf("decode reopened issue: %v", err)
+	}
+	if reopened.Status != issues.StatusOpen {
+		t.Fatalf("expected open status, got %q", reopened.Status)
+	}
+	if reopened.ClosedAt != nil {
+		t.Fatalf("expected closedAt cleared, got %v", reopened.ClosedAt)
+	}
+	if reopened.ClosedBy != "" {
+		t.Fatalf("expected closedBy cleared, got %q", reopened.ClosedBy)
+	}
+}
+
+func TestIssuesEndpointListSupportsAdditionalFilters(t *testing.T) {
+	store := newPostgresIssueStore(t, []issues.Issue{
+		{
+			ID:         "issue-001",
+			Raw:        "onboarding checklist",
+			CreatedBy:  "Casey",
+			CreatedAt:  issues.FixtureIssues()[0].CreatedAt,
+			Status:     issues.StatusOpen,
+			AssignedTo: "Casey",
+			Tags:       []string{"onboarding"},
+			TagScores:  []issues.TagRelevance{{Tag: "onboarding", Relevance: 0.8}},
+			Embedding:  []float64{0.1, 0.2},
+		},
+		{
+			ID:         "issue-002",
+			Raw:        "export regression",
+			CreatedBy:  "Jordan",
+			CreatedAt:  issues.FixtureIssues()[0].CreatedAt.Add(time.Minute),
+			Status:     issues.StatusOpen,
+			AssignedTo: "Jordan",
+			Tags:       []string{"export"},
+			TagScores:  []issues.TagRelevance{{Tag: "export", Relevance: 0.9}},
+			Embedding:  []float64{0.2, 0.3},
+		},
+		{
+			ID:         "issue-003",
+			Raw:        "search ranking drift",
+			CreatedBy:  "Casey",
+			CreatedAt:  issues.FixtureIssues()[0].CreatedAt.Add(2 * time.Minute),
+			Status:     issues.StatusClosed,
+			AssignedTo: "Casey",
+			Tags:       []string{"backend"},
+			TagScores:  []issues.TagRelevance{{Tag: "search", Relevance: 0.7}},
+			Embedding:  []float64{0.3, 0.4},
+		},
+	})
+	server := NewServer(ServerConfig{
+		CORSOrigins: []string{"http://localhost:3000"},
+		APIPrefixes: []string{"/api"},
+		IssueStore:  store,
+	})
+
+	req := httptest.NewRequest(http.MethodGet, "/api/issues?status=all&assignedTo=casey&tags=search&limit=1&offset=0", nil)
+	rec := httptest.NewRecorder()
+	server.Handler().ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200 for filtered issue list, got %d", rec.Code)
+	}
+
+	var payload issuesResponse
+	if err := json.NewDecoder(rec.Body).Decode(&payload); err != nil {
+		t.Fatalf("decode filtered issues response: %v", err)
+	}
+	if len(payload.Issues) != 1 || payload.Issues[0].ID != "issue-003" {
+		t.Fatalf("expected only issue-003, got %#v", payload.Issues)
+	}
+}
+
+func TestIssuesEndpointExploresIssue(t *testing.T) {
+	store := newPostgresIssueStore(t, nil)
+	if err := store.UpsertTags(context.Background(), []issues.Tag{
+		{Name: "export", Embedding: []float64{1, 0, 0}},
+		{Name: "safari", Embedding: []float64{0.9, 0.1, 0}},
+		{Name: "bug", Embedding: []float64{0.8, 0.2, 0}},
+		{Name: "feature", Embedding: []float64{0, 1, 0}},
+	}); err != nil {
+		t.Fatalf("seed tags: %v", err)
+	}
+
+	if err := store.Replace(context.Background(), []issues.Issue{
+		{
+			ID:        "issue-target",
+			Raw:       "Safari export crashes on PDF download",
+			CreatedBy: "Casey",
+			CreatedAt: issues.FixtureIssues()[0].CreatedAt,
+			Status:    issues.StatusOpen,
+			TagScores: []issues.TagRelevance{
+				{Tag: "export", Relevance: 0.95},
+				{Tag: "safari", Relevance: 0.92},
+				{Tag: "bug", Relevance: 0.9},
+			},
+			Embedding: []float64{1, 0, 0},
+		},
+		{
+			ID:        "issue-related",
+			Raw:       "PDF export fails in Safari for some users",
+			CreatedBy: "Casey",
+			CreatedAt: issues.FixtureIssues()[1].CreatedAt,
+			Status:    issues.StatusOpen,
+			TagScores: []issues.TagRelevance{
+				{Tag: "export", Relevance: 0.91},
+				{Tag: "safari", Relevance: 0.88},
+				{Tag: "bug", Relevance: 0.67},
+			},
+			Embedding: []float64{0.99, 0.1, 0},
+		},
+		{
+			ID:        "issue-other",
+			Raw:       "Feature request for dashboard filters",
+			CreatedBy: "Casey",
+			CreatedAt: issues.FixtureIssues()[2].CreatedAt,
+			Status:    issues.StatusOpen,
+			TagScores: []issues.TagRelevance{
+				{Tag: "feature", Relevance: 0.95},
+			},
+			Embedding: []float64{0, 1, 0},
+		},
+		{
+			ID:        "issue-closed",
+			Raw:       "Closed Safari export bug",
+			CreatedBy: "Casey",
+			CreatedAt: issues.FixtureIssues()[3].CreatedAt,
+			Status:    issues.StatusClosed,
+			TagScores: []issues.TagRelevance{
+				{Tag: "export", Relevance: 0.96},
+				{Tag: "safari", Relevance: 0.94},
+			},
+			Embedding: []float64{1, 0, 0},
+		},
+	}); err != nil {
+		t.Fatalf("seed store: %v", err)
+	}
+
+	server := NewServer(ServerConfig{
+		CORSOrigins: []string{"http://localhost:3000"},
+		APIPrefixes: []string{"/api"},
+		IssueStore:  store,
+	})
+
+	req := httptest.NewRequest(http.MethodGet, "/api/issues/issue-target/explore?limit=2", nil)
+	rec := httptest.NewRecorder()
+	server.Handler().ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200 for issue explore, got %d", rec.Code)
+	}
+
+	var payload issuemap.ExploreResponse
+	if err := json.NewDecoder(rec.Body).Decode(&payload); err != nil {
+		t.Fatalf("decode explore response: %v", err)
+	}
+
+	if payload.Issue.ID != "issue-target" { //nolint:goconst
+		t.Fatalf("expected target issue in response, got %q", payload.Issue.ID)
+	}
+	if len(payload.RelatedIssues) != 2 {
+		t.Fatalf("expected 2 related issues, got %d", len(payload.RelatedIssues))
+	}
+	if payload.RelatedIssues[0].ID != "issue-related" {
+		t.Fatalf("expected most related issue first, got %q", payload.RelatedIssues[0].ID)
+	}
+	if payload.RelatedIssues[0].CombinedSimilarity < payload.RelatedIssues[1].CombinedSimilarity {
+		t.Fatalf("expected related issues sorted by combined similarity: %+v", payload.RelatedIssues)
+	}
+	for _, item := range payload.RelatedIssues {
+		if item.ID == "issue-target" || item.ID == "issue-closed" {
+			t.Fatalf("expected target and closed issues excluded from related results, got %+v", payload.RelatedIssues)
+		}
+	}
+	if payload.RelatedIssues[0].SemanticSimilarity == 0 {
+		t.Fatal("expected semantic similarity to be populated")
+	}
+	if payload.RelatedIssues[0].FactorSimilarity == 0 {
+		t.Fatal("expected factor similarity to be populated")
+	}
+	if len(payload.Opportunities) == 0 {
+		t.Fatal("expected at least one structured opportunity")
+	}
+	if payload.Opportunities[0].IssueIDs[0] != "issue-target" {
+		t.Fatalf("expected opportunity to include target issue first, got %+v", payload.Opportunities[0].IssueIDs)
+	}
+	if len(payload.Opportunities[0].Issues) == 0 {
+		t.Fatalf("expected opportunity issues with descriptions, got %+v", payload.Opportunities[0])
+	}
+	if payload.Opportunities[0].Issues[0].Description != "Safari export crashes on PDF download" {
+		t.Fatalf("expected target issue description in opportunity, got %+v", payload.Opportunities[0].Issues)
+	}
+	if len(payload.Opportunities[0].SharedTags) == 0 {
+		t.Fatalf("expected opportunity shared tags, got %+v", payload.Opportunities[0])
+	}
+}
+
+func TestIssuesEndpointExploreUsesDBRelationshipSemantics(t *testing.T) {
+	store := newPostgresIssueStore(t, nil)
+	if err := store.Replace(context.Background(), []issues.Issue{
+		{
+			ID:        "issue-target",
+			Raw:       "Safari export crashes on PDF download",
+			CreatedBy: "Casey",
+			CreatedAt: issues.FixtureIssues()[0].CreatedAt,
+			Status:    issues.StatusOpen,
+			TagScores: []issues.TagRelevance{
+				{Tag: "export", Relevance: 0.95},
+				{Tag: "safari", Relevance: 0.92},
+			},
+			Embedding: []float64{1, 0, 0},
+		},
+		{
+			ID:        "issue-semantic",
+			Raw:       "PDF export fails in Safari after tapping share twice",
+			CreatedBy: "Jordan",
+			CreatedAt: issues.FixtureIssues()[1].CreatedAt,
+			Status:    issues.StatusOpen,
+			TagScores: []issues.TagRelevance{
+				{Tag: "export", Relevance: 0.9},
+				{Tag: "safari", Relevance: 0.84},
+			},
+			Embedding: []float64{0.98, 0.02, 0},
+		},
+		{
+			ID:        "issue-hidden-source",
+			Raw:       "Duplicate Safari export crash report",
+			CreatedBy: "Jordan",
+			CreatedAt: issues.FixtureIssues()[2].CreatedAt,
+			Status:    issues.StatusOpen,
+			TagScores: []issues.TagRelevance{
+				{Tag: "export", Relevance: 0.88},
+				{Tag: "safari", Relevance: 0.81},
+			},
+			Embedding: []float64{0.97, 0.03, 0},
+		},
+		{
+			ID:        "issue-canonical",
+			Raw:       "Track export reliability for the next Safari release",
+			CreatedBy: "Riley",
+			CreatedAt: issues.FixtureIssues()[3].CreatedAt,
+			Status:    issues.StatusOpen,
+			TagScores: []issues.TagRelevance{
+				{Tag: "backend", Relevance: 0.91},
+			},
+			Embedding: []float64{0, 1, 0},
+		},
+		{
+			ID:        "issue-linked",
+			Raw:       "Share-sheet handoff breaks after export retries",
+			CreatedBy: "Taylor",
+			CreatedAt: issues.FixtureIssues()[0].CreatedAt,
+			Status:    issues.StatusOpen,
+			TagScores: []issues.TagRelevance{
+				{Tag: "feature", Relevance: 0.9},
+			},
+			Embedding: []float64{0, 0.8, 0.2},
+		},
+	}); err != nil {
+		t.Fatalf("seed issues: %v", err)
+	}
+	if err := store.UpsertTags(context.Background(), []issues.Tag{
+		{Name: "export", Embedding: []float64{1, 0, 0}},
+		{Name: "safari", Embedding: []float64{0.9, 0.1, 0}},
+		{Name: "backend", Embedding: []float64{0, 1, 0}},
+		{Name: "feature", Embedding: []float64{0, 0.8, 0.2}},
+	}); err != nil {
+		t.Fatalf("seed tags: %v", err)
+	}
+	if err := store.SaveLink(context.Background(), issues.IssueLink{
+		ID:            "issue-target-issue-linked-related",
+		Type:          issues.IssueLinkTypeRelatedTo,
+		SourceIssueID: "issue-target",
+		TargetIssueID: "issue-linked",
+		CreatedBy:     "Casey",
+		CreatedAt:     issues.FixtureIssues()[0].CreatedAt,
+	}); err != nil {
+		t.Fatalf("save related link: %v", err)
+	}
+	if err := store.SaveLink(context.Background(), issues.IssueLink{
+		ID:            "issue-hidden-source-issue-canonical-merged",
+		Type:          issues.IssueLinkTypeMergedInto,
+		SourceIssueID: "issue-hidden-source",
+		TargetIssueID: "issue-canonical",
+		CreatedBy:     "Casey",
+		CreatedAt:     issues.FixtureIssues()[0].CreatedAt,
+	}); err != nil {
+		t.Fatalf("save merged link: %v", err)
+	}
+
+	server := NewServer(ServerConfig{
+		CORSOrigins: []string{"http://localhost:3000"},
+		APIPrefixes: []string{"/api"},
+		IssueStore:  store,
+	})
+
+	req := httptest.NewRequest(http.MethodGet, "/api/issues/issue-target/explore?limit=4", nil)
+	rec := httptest.NewRecorder()
+	server.Handler().ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200 for issue explore, got %d", rec.Code)
+	}
+
+	var payload issuemap.ExploreResponse
+	if err := json.NewDecoder(rec.Body).Decode(&payload); err != nil {
+		t.Fatalf("decode explore response: %v", err)
+	}
+
+	var (
+		linkedIndex    = -1
+		canonicalIndex = -1
+	)
+	for i, item := range payload.RelatedIssues {
+		if item.ID == "issue-hidden-source" {
+			t.Fatalf("expected merged source to be hidden, got %+v", payload.RelatedIssues)
+		}
+		if item.ID == "issue-linked" {
+			linkedIndex = i
+			if !strings.Contains(strings.ToLower(item.Reason), "relationship") {
+				t.Fatalf("expected relationship-aware reason for linked issue, got %+v", item)
+			}
+		}
+		if item.ID == "issue-canonical" {
+			canonicalIndex = i
+		}
+	}
+	if linkedIndex == -1 {
+		t.Fatalf("expected directly linked issue in explore results, got %+v", payload.RelatedIssues)
+	}
+	if canonicalIndex == -1 {
+		t.Fatalf("expected canonical merged target in explore results, got %+v", payload.RelatedIssues)
+	}
+	if linkedIndex > canonicalIndex {
+		t.Fatalf("expected relationship boost to rank linked issue ahead of canonical fallback, got %+v", payload.RelatedIssues)
+	}
+}
+
+func TestIssuesEndpointSearchesIssues(t *testing.T) {
+	store := newPostgresIssueStore(t, nil)
+	if err := store.UpsertTags(context.Background(), []issues.Tag{
+		{Name: "frontend", Embedding: []float64{1, 0, 0}},
+		{Name: "improvement", Embedding: []float64{0.8, 0.2, 0}},
+		{Name: "backend", Embedding: []float64{0, 1, 0}},
+	}); err != nil {
+		t.Fatalf("seed tags: %v", err)
+	}
+
+	if err := store.Replace(context.Background(), []issues.Issue{
+		{
+			ID:        "issue-frontend",
+			Raw:       "Frontend polish for the issue detail page",
+			CreatedBy: "Casey",
+			CreatedAt: issues.FixtureIssues()[0].CreatedAt,
+			Status:    issues.StatusOpen,
+			TagScores: []issues.TagRelevance{
+				{Tag: "frontend", Relevance: 0.95},
+				{Tag: "improvement", Relevance: 0.86},
+			},
+			Embedding: []float64{1, 0, 0},
+		},
+		{
+			ID:        "issue-ui",
+			Raw:       "UI cleanup for issue cards and spacing",
+			CreatedBy: "Casey",
+			CreatedAt: issues.FixtureIssues()[1].CreatedAt,
+			Status:    issues.StatusOpen,
+			TagScores: []issues.TagRelevance{
+				{Tag: "frontend", Relevance: 0.74},
+				{Tag: "improvement", Relevance: 0.71},
+			},
+			Embedding: []float64{0.86, 0.14, 0},
+		},
+		{
+			ID:        "issue-backend",
+			Raw:       "Backend queue for async enrichment",
+			CreatedBy: "Casey",
+			CreatedAt: issues.FixtureIssues()[2].CreatedAt,
+			Status:    issues.StatusOpen,
+			TagScores: []issues.TagRelevance{
+				{Tag: "backend", Relevance: 0.93},
+			},
+			Embedding: []float64{0, 1, 0},
+		},
+		{
+			ID:        "issue-closed",
+			Raw:       "Closed frontend cleanup follow-up",
+			CreatedBy: "Casey",
+			CreatedAt: issues.FixtureIssues()[3].CreatedAt,
+			Status:    issues.StatusClosed,
+			TagScores: []issues.TagRelevance{
+				{Tag: "frontend", Relevance: 0.97},
+			},
+			Embedding: []float64{1, 0, 0},
+		},
+	}); err != nil {
+		t.Fatalf("seed store: %v", err)
+	}
+
+	server := NewServer(ServerConfig{
+		CORSOrigins: []string{"http://localhost:3000"},
+		APIPrefixes: []string{"/api"},
+		Analyzer: ai.NewAnalyzer(&fakeTagger{
+			scores: []ai.TagScore{
+				{Tag: "frontend", Relevance: 0.96},
+				{Tag: "improvement", Relevance: 0.79},
+			},
+		}, &fakeEmbedder{
+			result: ai.EmbeddingResult{
+				Vector: []float32{1, 0, 0},
+				Info: ai.EmbeddingInfo{
+					Dimensions:          3,
+					Preview:             []float32{1, 0, 0},
+					ChunkCount:          1,
+					EstimatedTokenCount: 3,
+					PooledFromChunks:    false,
+				},
+			},
+		}),
+		IssueStore: store,
+	})
+
+	req := httptest.NewRequest(http.MethodGet, "/api/issues/search?q=front%20end%20changes&limit=2", nil)
+	rec := httptest.NewRecorder()
+	server.Handler().ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200 for issue search, got %d", rec.Code)
+	}
+
+	var payload issuemap.SearchResponse
+	if err := json.NewDecoder(rec.Body).Decode(&payload); err != nil {
+		t.Fatalf("decode search response: %v", err)
+	}
+
+	if payload.Query.Raw != "front end changes" {
+		t.Fatalf("expected query echo, got %q", payload.Query.Raw)
+	}
+	if len(payload.Query.Tags) < 2 || payload.Query.Tags[0].Tag != "frontend" {
+		t.Fatalf("expected query tags in response, got %+v", payload.Query.Tags)
+	}
+	if len(payload.RelatedIssues) != 2 {
+		t.Fatalf("expected 2 related issues, got %d", len(payload.RelatedIssues))
+	}
+	if payload.RelatedIssues[0].ID != "issue-frontend" {
+		t.Fatalf("expected issue-frontend first, got %q", payload.RelatedIssues[0].ID)
+	}
+	if payload.RelatedIssues[1].ID != "issue-ui" {
+		t.Fatalf("expected issue-ui second, got %q", payload.RelatedIssues[1].ID)
+	}
+	for _, item := range payload.RelatedIssues {
+		if item.Status != issues.StatusOpen {
+			t.Fatalf("expected only open issues in search results, got %+v", payload.RelatedIssues)
+		}
+	}
+}
+
+func TestIssuesEndpointSearchRequiresQuery(t *testing.T) {
+	server := NewServer(ServerConfig{
+		CORSOrigins: []string{"http://localhost:3000"},
+		APIPrefixes: []string{"/api"},
+	})
+
+	req := httptest.NewRequest(http.MethodGet, "/api/issues/search?limit=2", nil)
+	rec := httptest.NewRecorder()
+	server.Handler().ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("expected 400 for missing query, got %d", rec.Code)
+	}
+
+	var payload errorResponse
+	if err := json.NewDecoder(rec.Body).Decode(&payload); err != nil {
+		t.Fatalf("decode error response: %v", err)
+	}
+	if payload.Error != "query is required" {
+		t.Fatalf("expected query error, got %q", payload.Error)
+	}
+}
+
+func TestIssuesEndpointSearchSupportsMCPParityFilters(t *testing.T) {
+	seed := []issues.Issue{
+		{
+			ID:         "issue-old",
+			Raw:        "Older frontend issue for Casey",
+			CreatedBy:  "Casey",
+			CreatedAt:  issues.FixtureIssues()[4].CreatedAt,
+			Status:     issues.StatusOpen,
+			AssignedTo: "Casey",
+			TagScores: []issues.TagRelevance{
+				{Tag: "frontend", Relevance: 0.92},
+			},
+			Embedding: []float64{1, 0, 0},
+		},
+		{
+			ID:         "issue-new",
+			Raw:        "Newer frontend issue for Casey",
+			CreatedBy:  "Jordan",
+			CreatedAt:  issues.FixtureIssues()[0].CreatedAt,
+			Status:     issues.StatusOpen,
+			AssignedTo: "Casey",
+			TagScores: []issues.TagRelevance{
+				{Tag: "frontend", Relevance: 0.95},
+			},
+			Embedding: []float64{1, 0, 0},
+		},
+		{
+			ID:         "issue-backend",
+			Raw:        "Backend issue assigned elsewhere",
+			CreatedBy:  "Jordan",
+			CreatedAt:  issues.FixtureIssues()[1].CreatedAt,
+			Status:     issues.StatusOpen,
+			AssignedTo: "Riley",
+			TagScores: []issues.TagRelevance{
+				{Tag: "backend", Relevance: 0.98},
+			},
+			Embedding: []float64{0, 1, 0},
+		},
+	}
+	store := issues.NewInMemoryStore(seed)
+
+	server := NewServer(ServerConfig{
+		CORSOrigins: []string{"http://localhost:3000"},
+		APIPrefixes: []string{"/api"},
+		Analyzer: ai.NewAnalyzer(&fakeTagger{
+			scores: []ai.TagScore{
+				{Tag: "frontend", Relevance: 0.97},
+			},
+		}, &fakeEmbedder{
+			result: ai.EmbeddingResult{
+				Vector: []float32{1, 0, 0},
+				Info: ai.EmbeddingInfo{
+					Dimensions:          3,
+					Preview:             []float32{1, 0, 0},
+					ChunkCount:          1,
+					EstimatedTokenCount: 2,
+					PooledFromChunks:    false,
+				},
+			},
+		}),
+		IssueStore: store,
+	})
+
+	req := httptest.NewRequest(
+		http.MethodGet,
+		"/api/issues/search?q=frontend&status=all&assigned_to=Casey&tags=frontend&sort_by=created_at&limit=1",
+		nil,
+	)
+	rec := httptest.NewRecorder()
+	server.Handler().ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200 for filtered search, got %d", rec.Code)
+	}
+
+	var payload issuemap.SearchResponse
+	if err := json.NewDecoder(rec.Body).Decode(&payload); err != nil {
+		t.Fatalf("decode filtered search response: %v", err)
+	}
+
+	if len(payload.RelatedIssues) != 1 {
+		t.Fatalf("expected one filtered result, got %+v", payload.RelatedIssues)
+	}
+	if payload.RelatedIssues[0].ID != "issue-new" {
+		t.Fatalf("expected newest filtered issue first, got %+v", payload.RelatedIssues)
+	}
+}
+
+func TestIssuesEndpointBatchMutationRoutes(t *testing.T) {
+	store := newPostgresIssueStore(t, nil)
+	server := NewServer(ServerConfig{
+		CORSOrigins: []string{"http://localhost:3000"},
+		APIPrefixes: []string{"/api"},
+		IssueStore:  store,
+	})
+	handler := server.Handler()
+
+	create := func(raw string) issues.Issue {
+		t.Helper()
+
+		req := httptest.NewRequest(http.MethodPost, "/api/issues", strings.NewReader(`{"raw":"`+raw+`"}`))
+		req.Header.Set("Content-Type", "application/json")
+		rec := httptest.NewRecorder()
+		handler.ServeHTTP(rec, req)
+		if rec.Code != http.StatusCreated {
+			t.Fatalf("expected 201 for issue create, got %d", rec.Code)
+		}
+
+		var created issues.Issue
+		if err := json.NewDecoder(rec.Body).Decode(&created); err != nil {
+			t.Fatalf("decode create response: %v", err)
+		}
+		return created
+	}
+
+	first := create("first batch issue")
+	second := create("second batch issue")
+
+	refineReq := httptest.NewRequest(
+		http.MethodPost,
+		"/api/issues/refine",
+		strings.NewReader(`{"ids":["`+first.ID+`","`+second.ID+`"],"raw":"Shared refinement","createdBy":"Jordan"}`),
+	)
+	refineReq.Header.Set("Content-Type", "application/json")
+	refineRec := httptest.NewRecorder()
+	handler.ServeHTTP(refineRec, refineReq)
+
+	if refineRec.Code != http.StatusOK {
+		t.Fatalf("expected 200 for batch refine, got %d", refineRec.Code)
+	}
+
+	var refined issuecmd.IssueMutationResult
+	if err := json.NewDecoder(refineRec.Body).Decode(&refined); err != nil {
+		t.Fatalf("decode batch refine response: %v", err)
+	}
+	if refined.Summary.Requested != 2 || refined.Summary.Succeeded != 2 || refined.Summary.Failed != 0 {
+		t.Fatalf("unexpected batch refine summary: %+v", refined.Summary)
+	}
+
+	assignReq := httptest.NewRequest(
+		http.MethodPost,
+		"/api/issues/assign",
+		strings.NewReader(`{"ids":["`+first.ID+`","missing-issue"],"assignedTo":"Casey","createdBy":"Jordan"}`),
+	)
+	assignReq.Header.Set("Content-Type", "application/json")
+	assignRec := httptest.NewRecorder()
+	handler.ServeHTTP(assignRec, assignReq)
+
+	if assignRec.Code != http.StatusOK {
+		t.Fatalf("expected 200 for batch assign, got %d", assignRec.Code)
+	}
+
+	var assigned issuecmd.IssueMutationResult
+	if err := json.NewDecoder(assignRec.Body).Decode(&assigned); err != nil {
+		t.Fatalf("decode batch assign response: %v", err)
+	}
+	if assigned.Summary.Requested != 2 || assigned.Summary.Succeeded != 1 || assigned.Summary.Failed != 1 {
+		t.Fatalf("unexpected batch assign summary: %+v", assigned.Summary)
+	}
+	if len(assigned.Succeeded) != 1 || assigned.Succeeded[0].AssignedTo != "Casey" {
+		t.Fatalf("expected successful assignment result, got %+v", assigned.Succeeded)
+	}
+}
+
+func TestIssuesEndpointExploreRejectsInvalidLimit(t *testing.T) {
+	server := NewServer(ServerConfig{
+		CORSOrigins: []string{"http://localhost:3000"},
+		APIPrefixes: []string{"/api"},
+		IssueStore:  newPostgresIssueStore(t, issues.FixtureIssues()),
+	})
+
+	req := httptest.NewRequest(http.MethodGet, "/api/issues/sample-1/explore?limit=0", nil)
+	rec := httptest.NewRecorder()
+	server.Handler().ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("expected 400 for invalid limit query, got %d", rec.Code)
+	}
+
+	var payload errorResponse
+	if err := json.NewDecoder(rec.Body).Decode(&payload); err != nil {
+		t.Fatalf("decode error response: %v", err)
+	}
+	if payload.Error != "invalid limit query" {
+		t.Fatalf("expected invalid limit error, got %q", payload.Error)
+	}
+}
+func TestIssuesEndpointRejectsInvalidBody(t *testing.T) {
+	server := NewServer(ServerConfig{
+		CORSOrigins: []string{"http://localhost:3000"},
+		APIPrefixes: []string{"/api"},
+	})
+
+	req := httptest.NewRequest(http.MethodPost, "/api/issues", bytes.NewBufferString(`{"text":"missing raw"}`))
+	rec := httptest.NewRecorder()
+
+	server.Handler().ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("expected 400 for invalid issue create body, got %d", rec.Code)
+	}
+
+	var payload errorResponse
+	if err := json.NewDecoder(rec.Body).Decode(&payload); err != nil {
+		t.Fatalf("failed to decode error response: %v", err)
+	}
+	if payload.Error == "" {
+		t.Fatal("expected error message in response")
+	}
+}
+
+func TestIssuesEndpointLogsInternalServerErrors(t *testing.T) {
+	var logOutput bytes.Buffer
+	originalHandler := slog.Default().Handler()
+	slog.SetDefault(slog.New(slog.NewTextHandler(&logOutput, nil)))
+	t.Cleanup(func() {
+		slog.SetDefault(slog.New(originalHandler))
+	})
+
+	server := NewServer(ServerConfig{
+		CORSOrigins: []string{"http://localhost:3000"},
+		APIPrefixes: []string{"/api"},
+		IssueStore: failingIssueStore{
+			listErr: errors.New("database offline"),
+		},
+	})
+
+	req := httptest.NewRequest(http.MethodGet, "/api/issues", nil)
+	rec := httptest.NewRecorder()
+
+	server.Handler().ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusInternalServerError {
+		t.Fatalf("expected 500, got %d", rec.Code)
+	}
+
+	var payload errorResponse
+	if err := json.NewDecoder(rec.Body).Decode(&payload); err != nil {
+		t.Fatalf("failed to decode error response: %v", err)
+	}
+	if payload.Error != "failed to list issues" {
+		t.Fatalf("expected stable client error message, got %q", payload.Error)
+	}
+
+	logged := logOutput.String()
+	if !strings.Contains(logged, "failed to list issues") || !strings.Contains(logged, "database offline") {
+		t.Fatalf("expected internal error log, got %q", logged)
+	}
+}
+
+func TestIssuesCompareEndpointReturnsEmbeddingSimilarity(t *testing.T) {
+	store := newPostgresIssueStore(t, nil)
+	if err := store.Replace(context.Background(), []issues.Issue{
+		{
+			ID:        "issue-a",
+			Raw:       "first",
+			CreatedBy: "Casey",
+			CreatedAt: issues.FixtureIssues()[0].CreatedAt,
+			Embedding: []float64{1, 0},
+		},
+		{
+			ID:        "issue-b",
+			Raw:       "second",
+			CreatedBy: "Casey",
+			CreatedAt: issues.FixtureIssues()[1].CreatedAt,
+			Embedding: []float64{0.6, 0.8},
+		},
+	}); err != nil {
+		t.Fatalf("seed store: %v", err)
+	}
+
+	server := NewServer(ServerConfig{
+		CORSOrigins: []string{"http://localhost:3000"},
+		APIPrefixes: []string{"/api"},
+		IssueStore:  store,
+	})
+
+	req := httptest.NewRequest(
+		http.MethodPost,
+		"/api/ui/issues/compare",
+		bytes.NewBufferString(`{"ids":["issue-a","issue-b"]}`),
+	)
+	req.Header.Set("Content-Type", "application/json")
+	rec := httptest.NewRecorder()
+
+	server.Handler().ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d", rec.Code)
+	}
+
+	var payload compareIssuesResponse
+	if err := json.NewDecoder(rec.Body).Decode(&payload); err != nil {
+		t.Fatalf("decode compare payload: %v", err)
+	}
+
+	if payload.ComparedIssueCount != 2 {
+		t.Fatalf("expected 2 compared issues, got %d", payload.ComparedIssueCount)
+	}
+	if payload.AverageEmbeddingSimilarity != 0.6 {
+		t.Fatalf("expected average embedding similarity 0.6, got %v", payload.AverageEmbeddingSimilarity)
+	}
+	if len(payload.PairwiseEmbeddingSimilarity) != 1 {
+		t.Fatalf("expected 1 pair, got %d", len(payload.PairwiseEmbeddingSimilarity))
+	}
+	if payload.PairwiseEmbeddingSimilarity[0].Similarity != 0.6 {
+		t.Fatalf("expected pair similarity 0.6, got %v", payload.PairwiseEmbeddingSimilarity[0].Similarity)
+	}
+}

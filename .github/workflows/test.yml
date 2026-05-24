@@ -1,0 +1,170 @@
+name: Tests
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+
+jobs:
+  test:
+    name: Test
+    runs-on: ${{ matrix.os }}
+    strategy:
+      matrix:
+        os: [ubuntu-latest]
+        go-version: ['stable']
+
+    services:
+      postgres:
+        image: paradedb/paradedb:0.23.1-pg18
+        env:
+          POSTGRES_USER: sortit
+          POSTGRES_PASSWORD: sortit
+          POSTGRES_DB: sortit_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U sortit"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: ${{ matrix.go-version }}
+          cache: true
+          check-latest: true
+
+      - name: Configure Git
+        run: |
+          git config --global user.name "GitHub Actions"
+          git config --global user.email "actions@github.com"
+
+      - name: Download dependencies
+        run: go mod download
+
+      - name: Verify dependencies
+        run: go mod verify
+
+      - name: Check schema drift
+        env:
+          SORTIT_TEST_DATABASE_URL: postgres://sortit:sortit@localhost:5432/sortit_test?sslmode=disable
+        run: go run ./cmd/check-schema-drift
+
+      - name: Run tests
+        env:
+          SORTIT_TEST_DATABASE_URL: postgres://sortit:sortit@localhost:5432/sortit_test?sslmode=disable
+        run: |
+          if [ "${{ github.event_name }}" = "push" ] && [ "${{ github.ref }}" = "refs/heads/main" ]; then
+            go test -v -race -coverprofile=coverage.out ./apps/... ./cmd/... ./internal/...
+          else
+            go test -v -coverprofile=coverage.out ./apps/... ./cmd/... ./internal/...
+          fi
+
+  lint:
+    name: Lint
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: 'stable'
+          cache: true
+          check-latest: true
+
+      - name: golangci-lint
+        uses: golangci/golangci-lint-action@v7
+        with:
+          version: v2.10.1
+          args: --timeout=5m
+
+  build:
+    name: Build
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: 'stable'
+          cache: true
+          check-latest: true
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      - name: Install web dependencies
+        run: npm ci
+
+      - name: Build
+        run: |
+          mkdir -p bin
+          go build -v -o bin/sortit ./apps/cli
+          go build -v -o bin/sortit-server ./apps/server
+
+  web:
+    name: Web
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Run tests
+        run: npm run test
+
+      - name: Lint
+        run: npm run lint
+
+      - name: Audit production dependencies
+        run: npm audit --omit=dev --audit-level=low
+
+      - name: Build web app
+        run: npm run build
+
+  vuln-go:
+    name: Govulncheck
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: 'stable'
+          cache: true
+          check-latest: true
+
+      - name: Install govulncheck
+        run: go install golang.org/x/vuln/cmd/govulncheck@latest
+
+      - name: Run govulncheck
+        # Scan from binary roots so the call graph reflects shipped code; library
+        # packages like internal/testpostgres pull test-only deps that would
+        # otherwise produce false positives.
+        run: govulncheck ./apps/cli/... ./apps/server/... ./cmd/...

@@ -1,0 +1,159 @@
+[settings]
+experimental = true
+
+[env]
+GOBIN = "{{ config_root }}/bin"
+PROJECT_ROOT = "{{ config_root }}"
+_.file = ".env"
+_.path = ["{{ config_root }}/bin", "{{ env.HOME }}/go/bin"]
+NEXT_PUBLIC_API_ORIGIN = "http://localhost:8081"
+SORTIT_WEB_ORIGIN = "http://localhost:3000"
+SORTIT_DATABASE_URL = "postgres://sortit:sortit@localhost:5432/sortit?sslmode=disable"
+SORTIT_TEST_DATABASE_URL = "postgres://sortit:sortit@localhost:5432/sortit_test?sslmode=disable"
+
+[tools]
+go = "1.26.2"
+node = "22"
+"go:golang.org/x/tools/cmd/goimports" = "latest"
+"go:github.com/DarthSim/overmind/v2" = "latest"
+"go:golang.org/x/vuln/cmd/govulncheck" = "latest"
+"aqua:watchexec/watchexec" = "latest"
+golangci-lint = "2.10.1"
+
+[tasks.install]
+description = "Install app dependencies"
+run = "npm install"
+
+[tasks.fmt]
+description = "Format Go code"
+run = "goimports -w ."
+
+[tasks.compile]
+description = "Check Go compilation"
+run = "go build ./apps/... ./cmd/... ./internal/..."
+
+[tasks.test]
+description = "Run backend and frontend tests"
+run = """
+  go test ./apps/... ./cmd/... ./internal/...
+  npm run test
+"""
+
+[tasks."check:schema-drift"]
+description = "Verify internal/issues/sqlc/schema.sql matches a fresh migrated PostgreSQL schema"
+run = "go run ./cmd/check-schema-drift"
+
+[tasks."generate:schema"]
+description = "Regenerate internal/issues/sqlc/schema.sql from a fresh migrated PostgreSQL schema"
+run = "go run ./cmd/generate-schema-sql"
+
+[tasks."db:backup"]
+description = "Backup the local PostgreSQL app database"
+run = "sh scripts/db-backup.sh"
+
+[tasks."lint:go"]
+description = "Run golangci-lint"
+run = """
+  GOCACHE="${GOCACHE:-/tmp/sortit-gocache}" GOLANGCI_LINT_CACHE="${GOLANGCI_LINT_CACHE:-/tmp/sortit-golangci-lint-cache}" golangci-lint run ./apps/... ./cmd/... ./internal/...
+"""
+
+[tasks."lint:web"]
+description = "Run ESLint"
+run = "npm run lint"
+
+[tasks."vuln:go"]
+description = "Run govulncheck against shipped Go binaries"
+# Scan from binary roots (apps + cmd) so the call graph reflects what actually ships.
+# Library-only packages such as internal/testpostgres pull test-only dependencies that
+# would otherwise produce false positives.
+run = "govulncheck ./apps/cli/... ./apps/server/... ./cmd/..."
+
+[tasks."vuln:web"]
+description = "Audit production npm dependencies"
+run = "npm audit --omit=dev"
+
+[tasks.vuln]
+description = "Run all vulnerability checks (Go + npm)"
+depends = ["vuln:go", "vuln:web"]
+
+[tasks.lint]
+description = "Run ESLint and golangci-lint"
+depends = ["lint:go", "lint:web"]
+
+[tasks."test:fast"]
+description = "Run backend tests"
+run = "go test ./apps/... ./cmd/... ./internal/..."
+
+[tasks."check:web"]
+description = "Run frontend tests and build"
+run = """
+  npm run test
+  npm run build
+"""
+
+[tasks."check:go"]
+description = "Run Go checks (format, lint, compile, backend tests)"
+depends = ["fmt", "lint:go", "compile", "test:fast"]
+
+[tasks.check]
+description = "Run all checks (format, lint, backend tests, frontend tests, build)"
+depends = ["fmt", "lint", "test:fast", "check:web"]
+
+[tasks."web:dev"]
+description = "Run the Next.js app in development mode"
+run = "npm run dev -- --hostname 0.0.0.0 --port ${APP_PORT:-3000}"
+
+[tasks."dev:server"]
+description = "Run the Go API server in development mode"
+run = "watchexec -r -e go -w apps/server -w internal -- go run ./apps/server --port ${API_PORT:-8081} --cors ${SORTIT_SERVER_CORS:-http://localhost:3000,http://127.0.0.1:3000}"
+
+[tasks."dev:stop"]
+description = "Stop local dev processes bound to the app and API ports"
+run = """
+  for port in ${APP_PORT:-3000} ${API_PORT:-8081}; do
+    pids=$(lsof -ti tcp:$port || true)
+    if [ -n "$pids" ]; then
+      kill $pids 2>/dev/null || true
+      sleep 1
+      remaining=$(lsof -ti tcp:$port || true)
+      if [ -n "$remaining" ]; then
+        kill -9 $remaining 2>/dev/null || true
+      fi
+    fi
+  done
+  docker compose down 2>/dev/null || true
+  rm -f /tmp/sortit-overmind.sock
+"""
+
+[tasks."server:build"]
+description = "Build the Go API server"
+run = """
+  mkdir -p bin
+  go build -o bin/sortit-server ./apps/server
+"""
+
+[tasks."cli:build"]
+description = "Build the Sortit CLI"
+run = """
+  mkdir -p bin
+  go build -o bin/sortit ./apps/cli
+"""
+
+[tasks.shims]
+description = "Install shims to repo root for local development"
+depends = ["cli:build"]
+run = """
+  cp scripts/sortit-shim.sh ./sortit
+  chmod +x ./sortit
+  echo "Dev shim installed to repo root"
+"""
+
+[tasks.build]
+description = "Build the frontend and backend"
+depends = ["server:build", "cli:build"]
+run = "npm run build"
+
+[tasks.dev]
+description = "Run the frontend and backend using overmind"
+depends = ["dev:stop"]
+run = "overmind start --no-port --socket /tmp/sortit-overmind.sock -f Procfile.dev"

@@ -1,0 +1,72 @@
+[
+  {
+    "sourceIssueId": "issue-000024",
+    "category": "low-r2",
+    "id": "issue-000024",
+    "text": "when searching for open issues on the open issues page i can only type in one letter into the search box, the second character i type clears the search box and the search.",
+    "expectedTags": ["bug", "frontend", "search"]
+  },
+  {
+    "sourceIssueId": "issue-000021",
+    "category": "low-r2",
+    "id": "issue-000021",
+    "text": "## Error Type\nConsole Error\n\n## Error Message\nEach child in a list should have a unique \"key\" prop.\n\nCheck the render method of `div`. It was passed a child from TagsPage. See https://react.dev/link/warning-keys for more information.\n\n\n    at <unknown> (src/app/tags/page.tsx:370:21)\n    at Array.map (<anonymous>:null:null)\n    at TagsPage (src/app/tags/page.tsx:369:43)\n\n## Code Frame\n  368 |\n  369 |                   {similarityMatrix.names.map((rowName, rowIndex) => (\n> 370 |                     <>\n      |                     ^\n  371 |                       <div\n  372 |                         key={`row-${rowName}`}\n  373 |                         className=\"truncate px-2 py-2 text-sm font-medium\"\n\nNext.js version: 16.1.6 (Turbopack)",
+    "expectedTags": ["bug", "frontend", "ui"]
+  },
+  {
+    "sourceIssueId": "issue-000005",
+    "category": "positive-control",
+    "id": "issue-000005",
+    "text": "lets add a copy to clipboard feature on the single issue page",
+    "expectedTags": ["feature", "frontend", "ui"]
+  },
+  {
+    "sourceIssueId": "issue-000023",
+    "category": "positive-control",
+    "id": "issue-000023",
+    "text": "the site header should align with the header on the left side bar. we should check this on all pages. \n\n@<SiteHeader>",
+    "expectedTags": ["frontend", "improvement", "ui"]
+  },
+  {
+    "sourceIssueId": "issue-000047",
+    "category": "residual-near",
+    "id": "issue-000047",
+    "text": "CosineSimilarity is implemented 3 times across the codebase. internal/queries/vectors.go has a full cosine similarity, internal/map/similarity.go has an identical cosineSimilarity plus a unitCosineSimilarity variant. Extract to a shared internal/vectors or internal/math package with both the general and unit-optimized versions.",
+    "expectedTags": ["backend", "code-duplication", "improvement"]
+  },
+  {
+    "sourceIssueId": "issue-000050",
+    "category": "positive-control",
+    "id": "issue-000050",
+    "text": "normalizeCatalogTagName in internal/services/catalog.go:233 and sanitizeTagName in internal/issues/store.go:510 are identical implementations: strings.ToLower(strings.Join(strings.Fields(strings.TrimSpace(name)), \" \")). Deduplicate into one exported function in a shared location.",
+    "expectedTags": ["backend", "code-duplication", "improvement"]
+  },
+  {
+    "sourceIssueId": "issue-000067",
+    "category": "broad-overassignment",
+    "id": "issue-000067",
+    "text": "Error wrapping is inconsistent across the backend. Some errors use fmt.Errorf with %w (wrapping), others use %v or errors.New, losing the error chain. MCP handlers use %v everywhere. Standardize on %w for all wrapped errors so callers can inspect error causes.",
+    "expectedTags": ["backend", "bug", "improvement"]
+  },
+  {
+    "sourceIssueId": "01KKT2BZ0P2P1NFNKNAPTWSHYE",
+    "category": "positive-control",
+    "id": "01KKT2BZ0P2P1NFNKNAPTWSHYE",
+    "text": "Schema drift: api_tokens table in schema.sql is missing the name column that was added in migration 000013",
+    "expectedTags": ["bug", "database"]
+  },
+  {
+    "sourceIssueId": "01KKTA1E6KB97DA39V606AT1JA",
+    "category": "broad-overassignment",
+    "id": "01KKTA1E6KB97DA39V606AT1JA",
+    "text": "Convert issue_snapshots.embedding_json from JSONB to embedding_vector (pgvector) for consistency — it is now the only table still using JSONB for embeddings after the embedding_json removal migration",
+    "expectedTags": ["cleanup", "database"]
+  },
+  {
+    "sourceIssueId": "01KKQBE861682XZPCXCJVFMYGJ",
+    "category": "positive-control",
+    "id": "01KKQBE861682XZPCXCJVFMYGJ",
+    "text": "Tag map: encode specificity as node size in SVG projection",
+    "expectedTags": ["frontend", "map-page", "tagging-specificity"]
+  }
+]

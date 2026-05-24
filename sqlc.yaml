@@ -1,0 +1,10 @@
+version: "2"
+sql:
+  - engine: "postgresql"
+    schema: "internal/issues/pgmigrations"
+    queries: "internal/issues/sqlc/queries/"
+    gen:
+      go:
+        package: "issuesdb"
+        out: "internal/issues/issuesdb"
+        sql_package: "database/sql"

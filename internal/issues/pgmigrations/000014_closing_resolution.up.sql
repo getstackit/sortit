@@ -1,0 +1,3 @@
+ALTER TABLE issues
+    ADD COLUMN IF NOT EXISTS closed_reason TEXT NOT NULL DEFAULT '',
+    ADD COLUMN IF NOT EXISTS closed_reason_note TEXT NOT NULL DEFAULT '';

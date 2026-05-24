@@ -1,0 +1,791 @@
+import type { ReactNode } from "react";
+import { act, render, screen, waitFor } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
+import MapPage from "@/app/map/page";
+import type { MapData } from "@/features/map/types";
+import * as urlStateModule from "@/features/map/url-state";
+
+let mockSearchParams = new URLSearchParams();
+
+vi.mock("next/link", () => ({
+  default: ({
+    children,
+    href,
+    ...props
+  }: {
+    children: ReactNode;
+    href: string;
+  }) => (
+    <a href={href} {...props}>
+      {children}
+    </a>
+  ),
+}));
+
+vi.mock("next/navigation", () => ({
+  usePathname: () => "/map",
+  useSearchParams: () => mockSearchParams,
+}));
+
+vi.mock("@/components/app-shell", () => ({
+  AppShell: ({ children }: { children: ReactNode }) => <div>{children}</div>,
+}));
+
+vi.mock("@/components/app-sidebar", () => ({
+  AppSidebar: () => <div>Sidebar</div>,
+}));
+
+vi.mock("@/components/site-header", () => ({
+  SiteHeader: ({
+    title,
+    actions,
+  }: {
+    title: string;
+    actions?: ReactNode;
+  }) => (
+    <header>
+      <h1>{title}</h1>
+      {actions}
+    </header>
+  ),
+}));
+
+vi.mock("@/components/tag-relevance-bars", () => ({
+  TagRelevanceBars: () => <div>TagBars</div>,
+}));
+
+vi.mock("@/components/ui/switch", () => ({
+  Switch: (props: {
+    checked: boolean;
+    onCheckedChange: (v: boolean) => void;
+    "aria-label"?: string;
+  }) => (
+    <input
+      aria-label={props["aria-label"]}
+      type="checkbox"
+      checked={props.checked}
+      onChange={(e) => props.onCheckedChange(e.target.checked)}
+    />
+  ),
+}));
+
+const mockFetchMapData = vi.fn<() => Promise<MapData>>();
+const mockFetchViewportEdges = vi.fn();
+const mockCompareIssueEmbeddings = vi.fn();
+
+vi.mock("@/features/map/api", () => ({
+  fetchMapData: (...args: unknown[]) => mockFetchMapData(...args as []),
+  fetchViewportEdges: (...args: unknown[]) => mockFetchViewportEdges(...args as []),
+  compareIssueEmbeddings: (...args: unknown[]) => mockCompareIssueEmbeddings(...args as []),
+}));
+
+function makeMapData(overrides?: Partial<MapData>): MapData {
+  return {
+    available: true,
+    issueCount: 11,
+    minimumIssueCount: 5,
+    issues: [
+      { id: "issue-001", raw: "First issue", status: "open", assignedTo: "Avery", x: 0.1, y: 0.1, hubness: 0, tags: [{ tag: "bug", relevance: 0.9 }] },
+      { id: "issue-002", raw: "Second issue", status: "open", x: 0.2, y: 0.2, hubness: 0, tags: [{ tag: "feature", relevance: 0.8 }] },
+      { id: "issue-003", raw: "Third issue", status: "open", x: 0.3, y: 0.3, hubness: 0, tags: [{ tag: "bug", relevance: 0.7 }] },
+      { id: "issue-004", raw: "Fourth issue", status: "open", x: 0.15, y: 0.15, hubness: 0, tags: [{ tag: "bug", relevance: 0.6 }] },
+      { id: "issue-005", raw: "Fifth issue", status: "open", x: 0.12, y: 0.12, hubness: 0, tags: [{ tag: "bug", relevance: 0.5 }] },
+      { id: "issue-006", raw: "Sixth issue", status: "open", x: 0.25, y: 0.25, hubness: 0, tags: [{ tag: "feature", relevance: 0.7 }] },
+      { id: "issue-007", raw: "Seventh issue", status: "open", x: 0.8, y: 0.8, hubness: 0, tags: [{ tag: "ui", relevance: 0.9 }] },
+      { id: "issue-008", raw: "Eighth issue", status: "open", x: 0.82, y: 0.82, hubness: 0, tags: [{ tag: "ui", relevance: 0.8 }] },
+      { id: "issue-009", raw: "Ninth issue", status: "open", x: 0.85, y: 0.85, hubness: 0, tags: [{ tag: "ui", relevance: 0.7 }] },
+      { id: "issue-010", raw: "Tenth issue", status: "open", x: 0.83, y: 0.81, hubness: 0, tags: [{ tag: "ui", relevance: 0.6 }] },
+      { id: "issue-011", raw: "Eleventh issue", status: "open", x: 0.84, y: 0.86, hubness: 0, tags: [{ tag: "ui", relevance: 0.5 }] },
+    ],
+    edges: [],
+    clusters: [
+      {
+        label: "Bug / Feature",
+        centerX: 0.2,
+        centerY: 0.2,
+        radius: 0.1,
+        color: "#ef4444",
+        issueIds: ["issue-001", "issue-002", "issue-003", "issue-004", "issue-005", "issue-006"],
+        topTag: "bug",
+      },
+      {
+        label: "Ui",
+        centerX: 0.83,
+        centerY: 0.83,
+        radius: 0.05,
+        color: "#3b82f6",
+        issueIds: ["issue-007", "issue-008", "issue-009", "issue-010", "issue-011"],
+        topTag: "ui",
+      },
+    ],
+    ...overrides,
+  };
+}
+
+beforeEach(() => {
+  vi.clearAllMocks();
+  vi.useRealTimers();
+  mockSearchParams = new URLSearchParams();
+  mockFetchMapData.mockResolvedValue(makeMapData());
+  mockFetchViewportEdges.mockResolvedValue({ edges: [] });
+
+  Object.defineProperty(HTMLElement.prototype, "getBoundingClientRect", {
+    configurable: true,
+    value: () => ({
+      width: 800,
+      height: 600,
+      top: 0,
+      left: 0,
+      bottom: 600,
+      right: 800,
+      x: 0,
+      y: 0,
+      toJSON: () => {},
+    }),
+  });
+
+  global.ResizeObserver = class {
+    observe() {}
+    unobserve() {}
+    disconnect() {}
+  } as unknown as typeof ResizeObserver;
+});
+
+describe("MapPage", () => {
+  it("does not refetch edges when the viewport changes but visible issues stay the same", async () => {
+    mockSearchParams = new URLSearchParams(
+      "xMin=0.05&xMax=0.35&yMin=0.05&yMax=0.35"
+    );
+
+    const { rerender } = render(<MapPage />);
+
+    await waitFor(() => {
+      expect(screen.getByText("Map")).toBeInTheDocument();
+    });
+
+    expect(mockFetchViewportEdges).not.toHaveBeenCalled();
+
+    mockSearchParams = new URLSearchParams(
+      "xMin=0.06&xMax=0.34&yMin=0.06&yMax=0.34"
+    );
+    await act(async () => {
+      rerender(<MapPage />);
+      await new Promise((resolve) => setTimeout(resolve, 250));
+    });
+
+    expect(mockFetchViewportEdges).not.toHaveBeenCalled();
+  });
+
+  it("refetches edges when panning changes which issues are visible", async () => {
+    mockSearchParams = new URLSearchParams(
+      "xMin=0.05&xMax=0.35&yMin=0.05&yMax=0.35"
+    );
+
+    const { rerender } = render(<MapPage />);
+
+    await waitFor(() => {
+      expect(screen.getByText("Map")).toBeInTheDocument();
+    });
+
+    mockSearchParams = new URLSearchParams(
+      "xMin=0.75&xMax=0.88&yMin=0.75&yMax=0.88"
+    );
+    await act(async () => {
+      rerender(<MapPage />);
+    });
+
+    await waitFor(() => {
+      expect(mockFetchViewportEdges).toHaveBeenCalledTimes(1);
+    });
+    expect(mockFetchViewportEdges.mock.calls[0]?.[0]).toBe(
+      "xMin=0.7500&xMax=0.8800&yMin=0.7500&yMax=0.8800&edgeThreshold=0.40&status=open"
+    );
+    expect(mockFetchViewportEdges.mock.calls[0]?.[1]).toBeInstanceOf(AbortSignal);
+  });
+
+  it("renders without crashing after data loads", async () => {
+    const { container } = render(<MapPage />);
+    await waitFor(() => {
+      expect(container.querySelector("svg")).toBeInTheDocument();
+    });
+  });
+
+  it("shows an empty state instead of rendering the map when unavailable", async () => {
+    mockFetchMapData.mockResolvedValue(
+      makeMapData({
+        available: false,
+        unavailableReason: "insufficient_issue_count",
+        issueCount: 3,
+        issues: [],
+        edges: [],
+        clusters: [],
+      })
+    );
+
+    const { container } = render(<MapPage />);
+
+    await waitFor(() => {
+      expect(screen.getByText("Map unavailable")).toBeInTheDocument();
+    });
+    expect(
+      screen.getByText("Need at least 5 issues before rendering the map.")
+    ).toBeInTheDocument();
+    expect(container.querySelector("svg")).not.toBeInTheDocument();
+  });
+
+  it("renders the SVG canvas with blob paths", async () => {
+    const { container } = render(<MapPage />);
+    await waitFor(() => {
+      expect(container.querySelector("svg")).toBeInTheDocument();
+    });
+
+    const blobPaths = container.querySelectorAll("path[stroke-linejoin='round']");
+    expect(blobPaths.length).toBeGreaterThan(0);
+  });
+
+  it("renders blob paths for clusters with 5+ items", async () => {
+    const { container } = render(<MapPage />);
+    await waitFor(() => {
+      expect(container.querySelector("svg")).toBeInTheDocument();
+    });
+
+    const paths = container.querySelectorAll("path[stroke-linejoin='round']");
+    expect(paths.length).toBe(2);
+  });
+
+  it("renders each blob with a distinct fill color", async () => {
+    const { container } = render(<MapPage />);
+    await waitFor(() => {
+      expect(container.querySelector("svg")).toBeInTheDocument();
+    });
+
+    const fills = Array.from(
+      container.querySelectorAll("path[stroke-linejoin='round']")
+    ).map((path) => path.getAttribute("fill"));
+
+    expect(new Set(fills).size).toBe(fills.length);
+  });
+
+  it("renders blob labels", async () => {
+    const { container } = render(<MapPage />);
+    await waitFor(() => {
+      expect(container.querySelector("svg")).toBeInTheDocument();
+    });
+
+    const svg = container.querySelector("svg")!;
+    const texts = svg.querySelectorAll("text");
+    const labels = Array.from(texts).map((t) => t.textContent);
+    expect(labels).toContain("Bug / Feature");
+    expect(labels).toContain("Ui");
+  });
+
+  it("does not render blobs for clusters with fewer than 5 items", async () => {
+    const data = makeMapData({
+      clusters: [
+        {
+          label: "Small",
+          centerX: 0.5,
+          centerY: 0.5,
+          radius: 0.1,
+          color: "#ef4444",
+          issueIds: ["issue-001", "issue-002", "issue-003"],
+          topTag: "bug",
+        },
+      ],
+    });
+    mockFetchMapData.mockResolvedValue(data);
+
+    const { container } = render(<MapPage />);
+    await waitFor(() => {
+      expect(container.querySelector("svg")).toBeInTheDocument();
+    });
+
+    const paths = container.querySelectorAll("path[stroke-linejoin='round']");
+    expect(paths.length).toBe(0);
+  });
+
+  it("handles clusters with null issueIds without crashing", async () => {
+    const data = makeMapData({
+      clusters: [
+        {
+          label: "Null IDs",
+          centerX: 0.5,
+          centerY: 0.5,
+          radius: 0.1,
+          color: "#ef4444",
+          issueIds: null as unknown as string[],
+          topTag: "bug",
+        },
+      ],
+    });
+    mockFetchMapData.mockResolvedValue(data);
+
+    const { container } = render(<MapPage />);
+    await waitFor(() => {
+      expect(container.querySelector("svg")).toBeInTheDocument();
+    });
+
+    // Should render without crashing, no blobs since issueIds is null
+    const paths = container.querySelectorAll("path[stroke-linejoin='round']");
+    expect(paths.length).toBe(0);
+  });
+
+  it("handles clusters with undefined issueIds without crashing", async () => {
+    const data = makeMapData({
+      clusters: [
+        {
+          label: "Missing IDs",
+          centerX: 0.5,
+          centerY: 0.5,
+          radius: 0.1,
+          color: "#ef4444",
+          topTag: "bug",
+        } as MapData["clusters"][0],
+      ],
+    });
+    mockFetchMapData.mockResolvedValue(data);
+
+    const { container } = render(<MapPage />);
+    await waitFor(() => {
+      expect(container.querySelector("svg")).toBeInTheDocument();
+    });
+
+    const paths = container.querySelectorAll("path[stroke-linejoin='round']");
+    expect(paths.length).toBe(0);
+  });
+
+  it("handles legacy clusters without new fields (backward compat)", async () => {
+    const data = makeMapData({
+      clusters: [
+        {
+          label: "Legacy",
+          centerX: 0.5,
+          centerY: 0.5,
+          radius: 0.1,
+          color: "#ef4444",
+        } as MapData["clusters"][0],
+      ],
+    });
+    mockFetchMapData.mockResolvedValue(data);
+
+    const { container } = render(<MapPage />);
+    await waitFor(() => {
+      expect(container.querySelector("svg")).toBeInTheDocument();
+    });
+
+    // Should not crash — legacy clusters simply won't produce blobs
+    const paths = container.querySelectorAll("path[stroke-linejoin='round']");
+    expect(paths.length).toBe(0);
+  });
+
+  it("shows clear filter button when a blob is clicked", async () => {
+    const user = userEvent.setup();
+    const { container } = render(<MapPage />);
+
+    await waitFor(() => {
+      expect(container.querySelector("svg")).toBeInTheDocument();
+    });
+
+    const blobGroup = container.querySelector("path[stroke-linejoin='round']")?.parentElement;
+    expect(blobGroup).toBeInTheDocument();
+
+    await user.click(blobGroup!);
+
+    await waitFor(() => {
+      expect(screen.getByText("Cluster members")).toBeInTheDocument();
+    });
+  });
+
+  it("clears the blob selection when the canvas is clicked", async () => {
+    const user = userEvent.setup();
+    const { container } = render(<MapPage />);
+
+    await waitFor(() => {
+      expect(container.querySelector("svg")).toBeInTheDocument();
+    });
+
+    const blobGroup = container.querySelector("path[stroke-linejoin='round']")?.parentElement;
+    expect(blobGroup).toBeInTheDocument();
+
+    await user.click(blobGroup!);
+
+    await waitFor(() => {
+      expect(screen.getByText("Cluster members")).toBeInTheDocument();
+      expect(screen.getByRole("button", { name: /Bug \/ Feature/i })).toBeInTheDocument();
+    });
+
+    const canvas = container.querySelector("svg");
+    expect(canvas).toBeInTheDocument();
+
+    await user.click(canvas!);
+
+    await waitFor(() => {
+      expect(screen.queryByText("Cluster members")).not.toBeInTheDocument();
+      expect(
+        screen.queryByRole("button", { name: /Bug \/ Feature/i })
+      ).not.toBeInTheDocument();
+    });
+  });
+
+  it("shows cluster sidebar details and top-tag drilldown when a blob is clicked", async () => {
+    const user = userEvent.setup();
+    const { container } = render(<MapPage />);
+
+    await waitFor(() => {
+      expect(container.querySelector("svg")).toBeInTheDocument();
+    });
+
+    const blobGroup = container.querySelector("path[stroke-linejoin='round']")?.parentElement;
+    expect(blobGroup).toBeInTheDocument();
+
+    await user.click(blobGroup!);
+
+    await waitFor(() => {
+      expect(screen.getByText("Cluster")).toBeInTheDocument();
+      expect(screen.getByText("Cluster members")).toBeInTheDocument();
+      expect(screen.getByRole("link", { name: "View top tag" })).toHaveAttribute(
+        "href",
+        "/tags/bug"
+      );
+      expect(screen.getByText("First issue")).toBeInTheDocument();
+    });
+  });
+
+  it("opens the issue sidebar when a cluster member is chosen from the blob sidebar", async () => {
+    const user = userEvent.setup();
+    const { container } = render(<MapPage />);
+
+    await waitFor(() => {
+      expect(container.querySelector("svg")).toBeInTheDocument();
+    });
+
+    const firstIssue = container.querySelector("[data-issue='issue-001']");
+    expect(firstIssue).toBeInTheDocument();
+
+    await user.click(firstIssue!);
+
+    await waitFor(() => {
+      expect(screen.getByRole("link", { name: "View issue" })).toHaveAttribute(
+        "href",
+        "/issues/issue-001"
+      );
+    });
+  });
+
+  it("shows assignment state in the issue sidebar", async () => {
+    const user = userEvent.setup();
+    const { container } = render(<MapPage />);
+
+    await waitFor(() => {
+      expect(container.querySelector("svg")).toBeInTheDocument();
+    });
+
+    const firstIssue = container.querySelector("[data-issue='issue-001']");
+    expect(firstIssue).toBeInTheDocument();
+
+    await user.click(firstIssue!);
+
+    await waitFor(() => {
+      expect(screen.getByText("Avery")).toBeInTheDocument();
+    });
+  });
+
+  it("does not let sidebar wheel events fall through to the map", async () => {
+    const user = userEvent.setup();
+    const { container } = render(<MapPage />);
+
+    await waitFor(() => {
+      expect(container.querySelector("svg")).toBeInTheDocument();
+    });
+
+    const firstIssue = container.querySelector("[data-issue='issue-001']");
+    expect(firstIssue).toBeInTheDocument();
+
+    await user.click(firstIssue!);
+
+    const issueLink = await screen.findByRole("link", { name: "View issue" });
+    const sidebar = issueLink.closest("[data-map-sidebar-scroll]");
+
+    expect(sidebar).toBeInTheDocument();
+
+    const wheelEvent = new WheelEvent("wheel", {
+      bubbles: true,
+      cancelable: true,
+      clientX: 700,
+      clientY: 240,
+      deltaY: 120,
+    });
+
+    sidebar!.dispatchEvent(wheelEvent);
+
+    expect(wheelEvent.defaultPrevented).toBe(false);
+    expect(mockFetchViewportEdges).not.toHaveBeenCalled();
+  });
+
+  it("shows assigned counts and unassigned labels in the cluster sidebar", async () => {
+    const user = userEvent.setup();
+    const { container } = render(<MapPage />);
+
+    await waitFor(() => {
+      expect(container.querySelector("svg")).toBeInTheDocument();
+    });
+
+    const blobGroup = container.querySelector("path[stroke-linejoin='round']")?.parentElement;
+    expect(blobGroup).toBeInTheDocument();
+
+    await user.click(blobGroup!);
+
+    await waitFor(() => {
+      expect(screen.getByText("1 assigned")).toBeInTheDocument();
+    });
+
+    expect(screen.getAllByText("Unassigned").length).toBeGreaterThan(0);
+  });
+
+  it("renders issue nodes inside the SVG", async () => {
+    const { container } = render(<MapPage />);
+    await waitFor(() => {
+      expect(container.querySelector("svg")).toBeInTheDocument();
+    });
+
+    const issueNodes = container.querySelectorAll("[data-issue]");
+    expect(issueNodes.length).toBe(11);
+  });
+
+  it("handles empty clusters array", async () => {
+    mockFetchMapData.mockResolvedValue(makeMapData({ clusters: [] }));
+
+    const { container } = render(<MapPage />);
+    await waitFor(() => {
+      expect(container.querySelector("svg")).toBeInTheDocument();
+    });
+
+    const paths = container.querySelectorAll("path[stroke-linejoin='round']");
+    expect(paths.length).toBe(0);
+  });
+
+  it("handles empty issues array", async () => {
+    mockFetchMapData.mockResolvedValue(makeMapData({ issues: [], clusters: [] }));
+
+    const { container } = render(<MapPage />);
+    await waitFor(() => {
+      expect(container.querySelector("svg")).toBeInTheDocument();
+    });
+
+    const issueNodes = container.querySelectorAll("[data-issue]");
+    expect(issueNodes.length).toBe(0);
+  });
+
+  it("renders blobs via proximity fallback when issueIds is missing", async () => {
+    // Simulate old backend format: clusters have center/radius but no issueIds
+    // Issues at (0.1-0.2, 0.1-0.2) should fall within cluster radius 0.15 of center (0.15, 0.15)
+    const data = makeMapData({
+      clusters: [
+        {
+          label: "Proximity Cluster",
+          centerX: 0.15,
+          centerY: 0.15,
+          radius: 0.15,
+          color: "#ef4444",
+        } as MapData["clusters"][0],
+      ],
+    });
+    mockFetchMapData.mockResolvedValue(data);
+
+    const { container } = render(<MapPage />);
+    await waitFor(() => {
+      expect(container.querySelector("svg")).toBeInTheDocument();
+    });
+
+    // 6 issues are near (0.15, 0.15): issue-001 through issue-006
+    // That's >= 5, so a blob should render
+    const paths = container.querySelectorAll("path[stroke-linejoin='round']");
+    expect(paths.length).toBe(1);
+  });
+
+  it("uses proximity fallback for filtering when issueIds is missing", async () => {
+    const user = userEvent.setup();
+    const data = makeMapData({
+      clusters: [
+        {
+          label: "Proximity Cluster",
+          centerX: 0.15,
+          centerY: 0.15,
+          radius: 0.15,
+          color: "#ef4444",
+        } as MapData["clusters"][0],
+      ],
+    });
+    mockFetchMapData.mockResolvedValue(data);
+
+    const { container } = render(<MapPage />);
+    await waitFor(() => {
+      expect(container.querySelector("svg")).toBeInTheDocument();
+    });
+
+    const blobGroup = container.querySelector("path[stroke-linejoin='round']")?.parentElement;
+    expect(blobGroup).toBeInTheDocument();
+
+    await user.click(blobGroup!);
+
+    await waitFor(() => {
+      expect(screen.getByText("Cluster members")).toBeInTheDocument();
+    });
+  });
+
+  it("rehydrates map controls when the URL search params change after mount", async () => {
+    const { rerender } = render(<MapPage />);
+
+    const showClosedToggle = await screen.findByLabelText("Show closed issues");
+    const edgeThresholdSlider = screen.getByLabelText("Similarity edge threshold");
+    const bubbleSizeSelect = screen.getByLabelText("Bubble size tag");
+
+    expect(showClosedToggle).not.toBeChecked();
+    expect(edgeThresholdSlider).toHaveValue("0.4");
+    expect(bubbleSizeSelect).toHaveValue("");
+
+    mockSearchParams = new URLSearchParams(
+      "status=all&edgeThreshold=0.75&sizeTag=feature&xMin=0.1&xMax=0.6&yMin=0.2&yMax=0.7"
+    );
+    rerender(<MapPage />);
+
+    await waitFor(() => {
+      expect(screen.getByLabelText("Show closed issues")).toBeChecked();
+    });
+
+    expect(screen.getByLabelText("Similarity edge threshold")).toHaveValue("0.75");
+    expect(screen.getByLabelText("Bubble size tag")).toHaveValue("feature");
+  });
+
+  it("sorts bubble size tags by popularity", async () => {
+    render(<MapPage />);
+
+    const bubbleSizeSelect = await screen.findByLabelText("Bubble size tag");
+    const optionLabels = Array.from(
+      bubbleSizeSelect.querySelectorAll("option")
+    ).map((option) => option.textContent);
+
+    expect(optionLabels).toEqual(["Strongest tag", "ui", "bug", "feature"]);
+  });
+
+  it("memoizes parseMapURLState — does not re-parse when searchParams is unchanged", async () => {
+    // Without useMemo, parseMapURLState runs every render, producing new
+    // urlState.viewport/batchIds object references that cause the URL-read
+    // effect to fire spuriously, resetting interactive state (selectedId,
+    // viewport) before the URL has been updated via replaceState.
+    const spy = vi.spyOn(urlStateModule, "parseMapURLState");
+
+    const user = userEvent.setup();
+    const { container, rerender } = render(<MapPage />);
+
+    await waitFor(() => {
+      expect(container.querySelector("svg")).toBeInTheDocument();
+    });
+
+    // parseMapURLState called during render(s) while loading
+    const countAfterLoad = spy.mock.calls.length;
+
+    // Click an issue — triggers state changes and re-renders, but
+    // searchParams has NOT changed, so parseMapURLState must not be called again
+    const firstIssue = container.querySelector("[data-issue='issue-001']");
+    await user.click(firstIssue!);
+
+    await waitFor(() => {
+      expect(screen.getByRole("link", { name: "View issue" })).toBeInTheDocument();
+    });
+
+    const countAfterClick = spy.mock.calls.length;
+    expect(countAfterClick).toBe(countAfterLoad);
+
+    // Force multiple re-renders — parseMapURLState should still not be re-called
+    rerender(<MapPage />);
+    rerender(<MapPage />);
+    rerender(<MapPage />);
+
+    expect(spy.mock.calls.length).toBe(countAfterLoad);
+
+    spy.mockRestore();
+  });
+
+  it("re-parses URL state only when searchParams changes", async () => {
+    const spy = vi.spyOn(urlStateModule, "parseMapURLState");
+
+    const { container, rerender } = render(<MapPage />);
+
+    await waitFor(() => {
+      expect(container.querySelector("svg")).toBeInTheDocument();
+    });
+
+    const countAfterLoad = spy.mock.calls.length;
+
+    // Re-render with same searchParams reference — no new parse
+    rerender(<MapPage />);
+    expect(spy.mock.calls.length).toBe(countAfterLoad);
+
+    // Change searchParams — should trigger exactly one new parse
+    mockSearchParams = new URLSearchParams("issue=issue-001");
+    rerender(<MapPage />);
+    expect(spy.mock.calls.length).toBe(countAfterLoad + 1);
+
+    spy.mockRestore();
+  });
+
+  it("preserves issue selection when searchParams updates to match current state", async () => {
+    const user = userEvent.setup();
+    const { container, rerender } = render(<MapPage />);
+
+    await waitFor(() => {
+      expect(container.querySelector("svg")).toBeInTheDocument();
+    });
+
+    const firstIssue = container.querySelector("[data-issue='issue-001']");
+    await user.click(firstIssue!);
+
+    await waitFor(() => {
+      expect(screen.getByRole("link", { name: "View issue" })).toBeInTheDocument();
+    });
+
+    // Simulate Next.js picking up the replaceState with the selected issue in the URL
+    mockSearchParams = new URLSearchParams("issue=issue-001");
+    await act(async () => {
+      rerender(<MapPage />);
+    });
+
+    // Sidebar should still show the selected issue
+    expect(screen.queryByRole("link", { name: "View issue" })).toHaveAttribute(
+      "href",
+      "/issues/issue-001"
+    );
+  });
+
+  it("sizes issue nodes by the selected tag loading", async () => {
+    const { container, rerender } = render(<MapPage />);
+
+    await waitFor(() => {
+      expect(container.querySelector("svg")).toBeInTheDocument();
+    });
+
+    const issueOneCircle = container.querySelector(
+      "[data-issue='issue-001'] circle:last-of-type"
+    );
+    const issueTwoCircle = container.querySelector(
+      "[data-issue='issue-002'] circle:last-of-type"
+    );
+
+    expect(issueOneCircle).toHaveAttribute("r", "18.6");
+    expect(issueTwoCircle).toHaveAttribute("r", "17.200000000000003");
+
+    mockSearchParams = new URLSearchParams("sizeTag=feature");
+    rerender(<MapPage />);
+
+    await waitFor(() => {
+      expect(
+        container.querySelector("[data-issue='issue-001'] circle:last-of-type")
+      ).toHaveAttribute("r", "6");
+    });
+
+    expect(
+      container.querySelector("[data-issue='issue-002'] circle:last-of-type")
+    ).toHaveAttribute("r", "17.200000000000003");
+  });
+});
