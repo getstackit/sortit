@@ -77,7 +77,8 @@ type openAIChatCompletionResponse struct {
 }
 
 type openAITagScoresResponse struct {
-	Tags []TagScore `json:"tags"`
+	Tags        []TagScore   `json:"tags"`
+	NegatedTags []NegatedTag `json:"negated_tags,omitempty"`
 }
 
 type openAISpecificityResponse struct {
@@ -169,7 +170,7 @@ func (t *OpenAITagger) Score(ctx context.Context, text string, tags []Tag, examp
 	if err := json.Unmarshal([]byte(response.Choices[0].Message.Content), &payload); err != nil {
 		return ScoreResult{}, fmt.Errorf("decode tag response: %w", err)
 	}
-	return ScoreResult{Tags: payload.Tags}, nil
+	return ScoreResult{Tags: payload.Tags, Negated: payload.NegatedTags}, nil
 }
 
 func (t *OpenAITagger) Provider() string {
@@ -308,6 +309,7 @@ func buildOpenAITaggingPrompt(text string, tags []Tag, examples []FewShotExample
 	builder.WriteString("Examples are reference patterns, not templates. Do not copy example-only tags unless the same surface, subsystem, workflow, or artifact is clearly supported by the current issue text.\n")
 	builder.WriteString("Prefer a compact tag set. Add another tag only when it contributes distinct evidence-backed information rather than a near-synonym or predictable co-occurrence.\n")
 	builder.WriteString("When you can identify supporting text, include an evidence array of 1 to 3 short verbatim quotes copied from the issue text that justify the tag. Quotes must appear character-for-character in the issue text — do not paraphrase, translate, summarize, or normalize. Each quote should be 3 to 15 words. Tags with evidence citations are treated as higher confidence. It is acceptable to assign a tag without evidence when the issue clearly warrants it, but grounded tags are preferred.\n")
+	builder.WriteString("Also identify tags from the supplied taxonomy that the issue text EXPLICITLY REFUTES, and return them in a negated_tags array. The taxonomy below is the candidate set for negation as well; never invent a negated tag name.\n")
 
 	if len(examples) > 0 {
 		builder.WriteString("\nHere are examples of well-tagged issues for reference:\n")
@@ -376,7 +378,7 @@ func truncateExampleText(text string, maxWords int) string {
 }
 
 func buildOpenAITaggingSystemPrompt() string {
-	return "Classify issue text against the supplied taxonomy and return a JSON object with a single key named tags. " +
+	return "Classify issue text against the supplied taxonomy and return a JSON object with two keys: tags and negated_tags. " +
 		"tags must be an array of objects sorted by descending relevance. " +
 		"Each object must include tag and relevance. " +
 		"Each object may also include an evidence array of 1 to 3 short verbatim quotes copied character-for-character from the issue text that justify the tag. " +
@@ -401,7 +403,13 @@ func buildOpenAITaggingSystemPrompt() string {
 		"Prefer one strong suggested tag over two weak ones. " +
 		"Suggested tags must be short, lowercase, reusable, and corpus-shaping. " +
 		"Every suggested tag must include a description that states what it captures and what it excludes. " +
-		"Return at most 1 suggested tag unless 2 independent missing concepts are both central."
+		"Return at most 1 suggested tag unless 2 independent missing concepts are both central. " +
+		"negated_tags must be an array (use [] when nothing is refuted) of objects describing tags from the supplied taxonomy that the issue text EXPLICITLY REFUTES. " +
+		"Each object must include tag (verbatim taxonomy label), confidence in [0, 1], and an evidence array of 1 to 3 short verbatim quotes from the issue text containing the refutation. " +
+		"A tag is refuted only when the text contains direct negation: phrases like \"not a regression\", \"doesn't affect Safari\", \"working as designed, not a bug\", or \"customer confirmed this is intentional\". " +
+		"Do not mark a tag as negated merely because the text doesn't mention it, because you suspect it might not apply, or because another tag fits better. Negation requires textual evidence. " +
+		"Never invent tag names in negated_tags; only refute tags that appear in the supplied taxonomy verbatim. " +
+		"Evidence for negated tags is required, not optional, and will be cross-verified against the source text; entries without evidence are discarded."
 }
 
 func (t *OpenAITagger) ScoreSpecificity(ctx context.Context, tag Tag, catalog []Tag) (float64, error) {
