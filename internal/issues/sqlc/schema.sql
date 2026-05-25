@@ -199,6 +199,14 @@ CREATE TABLE "public"."sessions" (
     "expires_at_unix_nano" bigint NOT NULL,
     "created_at_unix_nano" bigint NOT NULL
 );
+CREATE TABLE "public"."tag_cooccurrence_projections" (
+    "id" text NOT NULL,
+    "revision" bigint NOT NULL,
+    "issue_count" bigint NOT NULL,
+    "tag_count" integer NOT NULL,
+    "body_json" jsonb NOT NULL,
+    "computed_at_unix_nano" bigint NOT NULL
+);
 CREATE TABLE "public"."tag_events" (
     "id" text NOT NULL,
     "tag_name" text NOT NULL,
@@ -319,6 +327,11 @@ ALTER TABLE ONLY "public"."issues" ALTER COLUMN "enrichment_error" SET DEFAULT '
 ALTER TABLE ONLY "public"."issues" ALTER COLUMN "enrichment_target_sequence" SET DEFAULT 1;
 ALTER TABLE ONLY "public"."issues" ALTER COLUMN "closed_reason" SET DEFAULT ''::text;
 ALTER TABLE ONLY "public"."issues" ALTER COLUMN "closed_reason_note" SET DEFAULT ''::text;
+ALTER TABLE ONLY "public"."tag_cooccurrence_projections" ALTER COLUMN "revision" SET DEFAULT 0;
+ALTER TABLE ONLY "public"."tag_cooccurrence_projections" ALTER COLUMN "issue_count" SET DEFAULT 0;
+ALTER TABLE ONLY "public"."tag_cooccurrence_projections" ALTER COLUMN "tag_count" SET DEFAULT 0;
+ALTER TABLE ONLY "public"."tag_cooccurrence_projections" ALTER COLUMN "body_json" SET DEFAULT '{}'::jsonb;
+ALTER TABLE ONLY "public"."tag_cooccurrence_projections" ALTER COLUMN "computed_at_unix_nano" SET DEFAULT 0;
 ALTER TABLE ONLY "public"."tag_events" ALTER COLUMN "created_by" SET DEFAULT ''::text;
 ALTER TABLE ONLY "public"."tag_events" ALTER COLUMN "payload_json" SET DEFAULT '{}'::jsonb;
 ALTER TABLE ONLY "public"."tag_events" ALTER COLUMN "source" SET DEFAULT ''::text;
@@ -377,6 +390,7 @@ ALTER TABLE ONLY "public"."map_projections" ADD CONSTRAINT "derived_corpus_proje
 ALTER TABLE ONLY "public"."sessions" ADD CONSTRAINT "sessions_pkey" PRIMARY KEY (id);
 ALTER TABLE ONLY "public"."sessions" ADD CONSTRAINT "sessions_token_hash_key" UNIQUE (token_hash);
 ALTER TABLE ONLY "public"."sessions" ADD CONSTRAINT "sessions_user_id_fkey" FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE;
+ALTER TABLE ONLY "public"."tag_cooccurrence_projections" ADD CONSTRAINT "tag_cooccurrence_projections_pkey" PRIMARY KEY (id);
 ALTER TABLE ONLY "public"."tag_events" ADD CONSTRAINT "tag_events_pkey" PRIMARY KEY (id);
 ALTER TABLE ONLY "public"."tag_merge_history" ADD CONSTRAINT "tag_merge_history_pkey" PRIMARY KEY (id);
 ALTER TABLE ONLY "public"."tag_projections" ADD CONSTRAINT "tag_projections_pkey" PRIMARY KEY (name);
