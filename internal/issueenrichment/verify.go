@@ -28,6 +28,13 @@ const (
 	verifierDominanceMargin     = 0.18
 	verifierSpecificityMargin   = 0.10
 	verifierDownrankMultiplier  = 0.75
+	// analyzerNegationMinConfidence is the floor below which an analyzer-emitted
+	// negation is discarded even if it has resolvable evidence. Negative signal
+	// requires both textual grounding and meaningful confidence.
+	analyzerNegationMinConfidence = 0.1
+	// negationConfidenceCap mirrors the analyzer-side cap so the verifier never
+	// persists negation values above 0.7.
+	negationConfidenceCap = 0.7
 )
 
 func attenuateGenericScores(scores []issues.TagRelevance, tagSpecificity map[string]*float64) []issues.TagRelevance {
@@ -81,6 +88,7 @@ func (s *IssueEnricher) decorateAndVerifyTagScores(
 	candidates tags.CandidateTaxonomy,
 	scores []issues.TagRelevance,
 	aiScores []ai.TagScore,
+	aiNegated []ai.NegatedTag,
 	tagSpecificity map[string]*float64,
 	verify bool,
 ) []issues.TagRelevance {
@@ -218,12 +226,93 @@ func (s *IssueEnricher) decorateAndVerifyTagScores(
 		}
 	}
 
+	out = applyAnalyzerNegations(out, aiNegated, rawText, candidateByName, tagSpecificity, tagEmbeddingByName, issueEmbedding)
+
 	slices.SortStableFunc(out, func(a, b issues.TagRelevance) int {
 		if c := cmp.Compare(b.Relevance, a.Relevance); c != 0 {
 			return c
 		}
 		return cmp.Compare(a.Tag, b.Tag)
 	})
+	return out
+}
+
+// applyAnalyzerNegations cross-checks each analyzer-emitted negation against
+// the source text. Negations whose evidence quotes cannot be located in the
+// raw text are discarded silently — the bar for negative signal is higher
+// than for positive. Surviving negations are written onto the matching tag
+// row, or appended as synthetic Relevance:0 rows when the analyzer negates a
+// tag it did not positively assign. Synthetic rows still receive the same
+// decoration (candidate sources, specificity, alignment) that other rows do
+// so downstream consumers can reason about them uniformly.
+func applyAnalyzerNegations(
+	out []issues.TagRelevance,
+	aiNegated []ai.NegatedTag,
+	rawText string,
+	candidateByName map[string]tags.CandidateTag,
+	tagSpecificity map[string]*float64,
+	tagEmbeddingByName map[string][]float64,
+	issueEmbedding []float64,
+) []issues.TagRelevance {
+	if len(aiNegated) == 0 || rawText == "" {
+		return out
+	}
+
+	indexByTag := make(map[string]int, len(out))
+	for i, row := range out {
+		indexByTag[normalizeTagName(row.Tag)] = i
+	}
+
+	for _, negation := range aiNegated {
+		if negation.Confidence < analyzerNegationMinConfidence {
+			continue
+		}
+		ranges := resolveEvidenceRanges(rawText, negation.Evidence)
+		if len(ranges) == 0 {
+			continue
+		}
+		name := normalizeTagName(negation.Tag)
+		if name == "" {
+			continue
+		}
+		confidence := min(negationConfidenceCap, negation.Confidence)
+		confidence = roundVerifierMetric(confidence)
+		reason := "explicitly refuted by source text"
+
+		if idx, ok := indexByTag[name]; ok {
+			// Analyzer evidence overrides any prior negation source (e.g. a
+			// future verifier-dominance negation in PR 5) when both target
+			// the same tag.
+			out[idx].Negation = cloneMetricPointer(confidence)
+			out[idx].NegationProvenance = domain.NegationProvenanceAnalyzer
+			out[idx].NegationEvidence = append([]domain.EvidenceRange(nil), ranges...)
+			out[idx].NegationReason = reason
+			continue
+		}
+
+		synthetic := issues.TagRelevance{
+			Tag:                negation.Tag,
+			Relevance:          0,
+			Negation:           cloneMetricPointer(confidence),
+			NegationProvenance: domain.NegationProvenanceAnalyzer,
+			NegationEvidence:   append([]domain.EvidenceRange(nil), ranges...),
+			NegationReason:     reason,
+		}
+		if candidate, ok := candidateByName[name]; ok {
+			synthetic.CandidateSources = candidateSourceStrings(candidate.Sources)
+		}
+		if specificity, ok := tagSpecificity[name]; ok && specificity != nil {
+			synthetic.Specificity = cloneMetricPointer(*specificity)
+		}
+		if len(issueEmbedding) > 0 {
+			if embedding := tagEmbeddingByName[name]; len(embedding) > 0 {
+				synthetic.Alignment = cloneMetricPointer(vectors.CosineSimilarity(issueEmbedding, embedding))
+			}
+		}
+		out = append(out, synthetic)
+		indexByTag[name] = len(out) - 1
+	}
+
 	return out
 }
 

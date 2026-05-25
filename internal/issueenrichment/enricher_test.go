@@ -12,7 +12,10 @@ import (
 	"sortit/internal/tags"
 )
 
-const testProviderName = "test"
+const (
+	testProviderName = "test"
+	cleanupTag       = "cleanup"
+)
 
 type catalogTestStore struct {
 	tags []issues.Tag
@@ -74,7 +77,7 @@ func TestAnalyzePersistedIssueUsesFreshEmbeddingForShortlist(t *testing.T) {
 	store := &catalogTestStore{
 		tags: []issues.Tag{
 			{Name: "database", Embedding: []float64{1, 0}},
-			{Name: "cleanup", Embedding: []float64{0, 1}},
+			{Name: cleanupTag, Embedding: []float64{0, 1}},
 		},
 	}
 	tagger := &enricherTestTagger{}
@@ -116,13 +119,13 @@ func TestAnalyzePersistedIssueUsesFreshEmbeddingForShortlist(t *testing.T) {
 	if !names["database"] {
 		t.Fatal("expected database to be shortlisted from fresh canonical embedding")
 	}
-	if !names["cleanup"] {
+	if !names[cleanupTag] {
 		t.Fatal("expected cleanup anchor to remain available in the shortlist")
 	}
 	if !hints["database"] {
 		t.Fatal("expected nearest shortlisted tag to be marked as a high-affinity hint")
 	}
-	if hints["cleanup"] {
+	if hints[cleanupTag] {
 		t.Fatal("expected stale-embedding candidate cleanup not to be marked as a high-affinity hint")
 	}
 }
@@ -202,7 +205,7 @@ func TestAnalyzeCreateInputUsesShortlistAndKeepsExplicitTagsAsAnchors(t *testing
 		t.Fatalf("expected distant tag billing to be excluded, got %#v", tagger.capturedTags)
 	}
 
-	if len(input.Tags) != 1 || input.Tags[0] != "cleanup" {
+	if len(input.Tags) != 1 || input.Tags[0] != cleanupTag {
 		t.Fatalf("expected explicit tags to be preserved, got %#v", input.Tags)
 	}
 }
@@ -212,12 +215,12 @@ func TestAnalyzeTextFlagsWeakAnchorOnlyTagAgainstStrongerCandidate(t *testing.T)
 	databaseSpecificity := 0.8
 	store := &catalogTestStore{
 		tags: []issues.Tag{
-			{Name: "cleanup", Embedding: []float64{0, 1}, Specificity: &cleanupSpecificity},
+			{Name: cleanupTag, Embedding: []float64{0, 1}, Specificity: &cleanupSpecificity},
 			{Name: "database", Embedding: []float64{1, 0}, Specificity: &databaseSpecificity},
 		},
 	}
 	tagger := &enricherStaticTagger{
-		scores: []ai.TagScore{{Tag: "cleanup", Relevance: 0.9}},
+		scores: []ai.TagScore{{Tag: cleanupTag, Relevance: 0.9}},
 	}
 	embedder := &enricherTestEmbedder{
 		vectors: map[string][]float32{
@@ -240,7 +243,7 @@ func TestAnalyzeTextFlagsWeakAnchorOnlyTagAgainstStrongerCandidate(t *testing.T)
 	}
 
 	score := result.TagScores[0]
-	if score.Tag != "cleanup" {
+	if score.Tag != cleanupTag {
 		t.Fatalf("expected cleanup score, got %#v", score)
 	}
 	if score.VerificationVerdict != domain.TagVerificationVerdictFlagged {
