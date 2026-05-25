@@ -77,8 +77,8 @@ type evidenceTagger struct {
 	scores []ai.TagScore
 }
 
-func (t *evidenceTagger) Score(_ context.Context, _ string, _ []ai.Tag, _ []ai.FewShotExample) ([]ai.TagScore, error) {
-	return append([]ai.TagScore(nil), t.scores...), nil
+func (t *evidenceTagger) Score(_ context.Context, _ string, _ []ai.Tag, _ []ai.FewShotExample) (ai.ScoreResult, error) {
+	return ai.ScoreResult{Tags: append([]ai.TagScore(nil), t.scores...)}, nil
 }
 
 func (t *evidenceTagger) Provider() string { return "test" }

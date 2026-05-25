@@ -21,6 +21,25 @@ type TagScore struct {
 	Evidence []string `json:"evidence,omitempty"`
 }
 
+// NegatedTag is a tag from the supplied taxonomy that the issue text
+// explicitly refutes. Confidence is the tagger's strength of the negation
+// claim in [0, 1]; the verifier later caps it at 0.7 when persisting.
+// Evidence is required: a negated tag without evidence is dropped during
+// normalization.
+type NegatedTag struct {
+	Tag        string   `json:"tag"`
+	Confidence float64  `json:"confidence"`
+	Evidence   []string `json:"evidence,omitempty"`
+}
+
+// ScoreResult is the structured response from Tagger.Score. Wrapping the
+// return value in a struct lets later signals (e.g. confidence intervals
+// or alternative candidate lists) be added without breaking callers.
+type ScoreResult struct {
+	Tags    []TagScore
+	Negated []NegatedTag
+}
+
 type ModelInfo struct {
 	Provider string `json:"provider"`
 	Model    string `json:"model"`
@@ -41,6 +60,7 @@ type EmbeddingResult struct {
 
 type AnalyzedIssue struct {
 	Tags      []TagScore
+	Negated   []NegatedTag
 	Embedding EmbeddingResult
 	Tagger    ModelInfo
 	Embedder  ModelInfo
@@ -48,6 +68,7 @@ type AnalyzedIssue struct {
 
 type IssueAnalysis struct {
 	Tags      []TagScore    `json:"tags"`
+	Negated   []NegatedTag  `json:"negated,omitempty"`
 	Embedding EmbeddingInfo `json:"embedding"`
 	Tagger    ModelInfo     `json:"tagger"`
 	Embedder  ModelInfo     `json:"embedder"`
@@ -68,7 +89,7 @@ type FewShotTag struct {
 }
 
 type Tagger interface {
-	Score(ctx context.Context, text string, tags []Tag, examples []FewShotExample) ([]TagScore, error)
+	Score(ctx context.Context, text string, tags []Tag, examples []FewShotExample) (ScoreResult, error)
 	Provider() string
 	Model() string
 }

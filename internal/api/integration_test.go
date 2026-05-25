@@ -18,25 +18,25 @@ import (
 
 type integrationMockTagger struct{}
 
-func (t *integrationMockTagger) Score(_ context.Context, text string, _ []ai.Tag, _ []ai.FewShotExample) ([]ai.TagScore, error) {
+func (t *integrationMockTagger) Score(_ context.Context, text string, _ []ai.Tag, _ []ai.FewShotExample) (ai.ScoreResult, error) {
 	lower := strings.ToLower(text)
 	switch {
 	case strings.Contains(lower, "signup"):
-		return []ai.TagScore{
+		return ai.ScoreResult{Tags: []ai.TagScore{
 			{Tag: "onboarding", Relevance: 0.97},
 			{Tag: "wizard", Relevance: 0.91, Suggested: true, Description: "multi-step setup flow"},
 			{Tag: "ux", Relevance: 0.42},
-		}, nil
+		}}, nil
 	case strings.Contains(lower, "export"):
-		return []ai.TagScore{
+		return ai.ScoreResult{Tags: []ai.TagScore{
 			{Tag: "export", Relevance: 0.96},
 			{Tag: "csv", Relevance: 0.9, Suggested: true, Description: "csv export format"},
 			{Tag: "performance", Relevance: 0.45},
-		}, nil
+		}}, nil
 	default:
-		return []ai.TagScore{
+		return ai.ScoreResult{Tags: []ai.TagScore{
 			{Tag: "idea", Relevance: 0.61},
-		}, nil
+		}}, nil
 	}
 }
 

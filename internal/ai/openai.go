@@ -138,7 +138,7 @@ func NewOpenAIEmbedder(cfg OpenAIConfig) (*OpenAIEmbedder, error) {
 	}, nil
 }
 
-func (t *OpenAITagger) Score(ctx context.Context, text string, tags []Tag, examples []FewShotExample) ([]TagScore, error) {
+func (t *OpenAITagger) Score(ctx context.Context, text string, tags []Tag, examples []FewShotExample) (ScoreResult, error) {
 	request := openAIChatCompletionRequest{
 		Model:       t.model,
 		Temperature: 0,
@@ -159,17 +159,17 @@ func (t *OpenAITagger) Score(ctx context.Context, text string, tags []Tag, examp
 
 	var response openAIChatCompletionResponse
 	if err := t.client.doJSON(ctx, "/chat/completions", request, &response); err != nil {
-		return nil, err
+		return ScoreResult{}, err
 	}
 	if len(response.Choices) == 0 {
-		return nil, errors.New("openai returned no completion choices")
+		return ScoreResult{}, errors.New("openai returned no completion choices")
 	}
 
 	var payload openAITagScoresResponse
 	if err := json.Unmarshal([]byte(response.Choices[0].Message.Content), &payload); err != nil {
-		return nil, fmt.Errorf("decode tag response: %w", err)
+		return ScoreResult{}, fmt.Errorf("decode tag response: %w", err)
 	}
-	return payload.Tags, nil
+	return ScoreResult{Tags: payload.Tags}, nil
 }
 
 func (t *OpenAITagger) Provider() string {
