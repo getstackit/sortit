@@ -27,7 +27,12 @@ const (
 	verifierDominatingAlignment = 0.35
 	verifierDominanceMargin     = 0.18
 	verifierSpecificityMargin   = 0.10
-	verifierDownrankMultiplier  = 0.75
+	// verifierDominanceNegation is the negation value the verifier emits when
+	// an assigned tag is dominated by a better-aligned unassigned candidate.
+	// The historical behavior shrunk Relevance by 0.75; emitting a 0.25
+	// negation keeps the effective render-time score (Relevance - Negation)
+	// equivalent while preserving the positive AI signal.
+	verifierDominanceNegation = 0.25
 	// analyzerNegationMinConfidence is the floor below which an analyzer-emitted
 	// negation is discarded even if it has resolvable evidence. Negative signal
 	// requires both textual grounding and meaningful confidence.
@@ -212,7 +217,12 @@ func (s *IssueEnricher) decorateAndVerifyTagScores(
 		case dominating != nil && out[i].Alignment != nil && *out[i].Alignment < verifierWeakAlignment:
 			out[i].VerificationVerdict = domain.TagVerificationVerdictDownRank
 			out[i].VerificationReason = fmt.Sprintf("dominated by nearby unassigned %s", dominating.Name)
-			out[i].Relevance = roundRelevance(max(issueTagRelevanceFloor, out[i].Relevance*verifierDownrankMultiplier))
+			// Emit explicit Negation instead of mutating Relevance. The
+			// analyzer-negation pass below may overwrite this with a higher-
+			// quality (evidenced) negation when both target the same tag.
+			out[i].Negation = cloneMetricPointer(verifierDominanceNegation)
+			out[i].NegationProvenance = domain.NegationProvenanceVerifier
+			out[i].NegationReason = out[i].VerificationReason
 		case anchorOnlyCandidate(out[i].CandidateSources) && out[i].Alignment != nil && *out[i].Alignment < verifierWeakAlignment && out[i].Relevance >= 0.35:
 			out[i].VerificationVerdict = domain.TagVerificationVerdictFlagged
 			out[i].VerificationReason = "anchor-only candidate with weak embedding alignment"
@@ -281,9 +291,16 @@ func applyAnalyzerNegations(
 
 		if idx, ok := indexByTag[name]; ok {
 			// Analyzer evidence overrides any prior negation source (e.g. a
-			// future verifier-dominance negation in PR 5) when both target
-			// the same tag.
-			out[idx].Negation = cloneMetricPointer(confidence)
+			// verifier-dominance negation set above) when both target the same
+			// tag. Take the max of the two values so the verifier signal isn't
+			// silently weakened, capped at the negation ceiling.
+			merged := confidence
+			if out[idx].Negation != nil && *out[idx].Negation > merged {
+				merged = *out[idx].Negation
+			}
+			merged = min(negationConfidenceCap, merged)
+			merged = roundVerifierMetric(merged)
+			out[idx].Negation = cloneMetricPointer(merged)
 			out[idx].NegationProvenance = domain.NegationProvenanceAnalyzer
 			out[idx].NegationEvidence = append([]domain.EvidenceRange(nil), ranges...)
 			out[idx].NegationReason = reason
@@ -501,8 +518,4 @@ func copyMetricPointer(value *float64) *float64 {
 
 func roundVerifierMetric(value float64) float64 {
 	return math.Round(value*1000) / 1000
-}
-
-func roundRelevance(value float64) float64 {
-	return math.Round(value*100) / 100
 }
