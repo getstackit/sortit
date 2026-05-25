@@ -10,6 +10,18 @@ const (
 	TagVerificationVerdictFlagged  TagVerificationVerdict = "flagged"
 )
 
+// NegationProvenance identifies the source that produced a Negation value on
+// a TagRelevance. The math layer treats r_i⁻ as a structured signal whose
+// origin determines how it should be weighted.
+type NegationProvenance string
+
+const (
+	NegationProvenanceAnalyzer     NegationProvenance = "analyzer-negation"
+	NegationProvenanceVerifier     NegationProvenance = "verifier-dominance"
+	NegationProvenanceDismiss      NegationProvenance = "dismiss"
+	NegationProvenanceCooccurrence NegationProvenance = "cooccurrence"
+)
+
 // TagRelevance represents the relevance score of a tag to an issue.
 type TagRelevance struct {
 	Tag                 string                 `json:"tag"`
@@ -29,6 +41,14 @@ type TagRelevance struct {
 	// Empty means no grounded evidence was found (the model may still have
 	// returned quotes that could not be matched).
 	Evidence []EvidenceRange `json:"evidence,omitempty"`
+	// Negation carries r_i⁻[tag] when the tag has been explicitly refuted by
+	// the analyzer, dominated by a better-aligned candidate, dismissed, or
+	// flagged via co-occurrence anti-correlation. Range [0, 0.7]; nil means
+	// no negative signal.
+	Negation           *float64           `json:"negation,omitempty"`
+	NegationProvenance NegationProvenance `json:"negationProvenance,omitempty"`
+	NegationEvidence   []EvidenceRange    `json:"negationEvidence,omitempty"`
+	NegationReason     string             `json:"negationReason,omitempty"`
 }
 
 // EvidenceRange is a half-open byte-offset range [Start, End) in the source

@@ -237,7 +237,11 @@ func equalTagScore(left, right TagRelevance) bool {
 		left.VerificationReason == right.VerificationReason &&
 		left.DominatedBy == right.DominatedBy &&
 		equalFloat64Ptr(left.DominanceGap, right.DominanceGap) &&
-		equalEvidenceRanges(left.Evidence, right.Evidence)
+		equalEvidenceRanges(left.Evidence, right.Evidence) &&
+		equalFloat64Ptr(left.Negation, right.Negation) &&
+		left.NegationProvenance == right.NegationProvenance &&
+		equalEvidenceRanges(left.NegationEvidence, right.NegationEvidence) &&
+		left.NegationReason == right.NegationReason
 }
 
 func equalEvidenceRanges(left, right []domain.EvidenceRange) bool {
