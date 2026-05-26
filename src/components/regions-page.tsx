@@ -7,6 +7,7 @@ import { useCallback, useMemo } from "react";
 import { AppShell } from "@/components/app-shell";
 import { AppSidebar } from "@/components/app-sidebar";
 import { FilterToggleGroup } from "@/components/filter-toggle";
+import { RegionsCartography } from "@/components/regions-cartography";
 import { SiteHeader } from "@/components/site-header";
 import { TagBadge } from "@/components/tag-badge";
 import { useRegions } from "@/hooks/use-regions";
@@ -21,6 +22,7 @@ import {
   parseRegionsURLState,
   regionsURLQuery,
   type RegionSortKey,
+  type RegionsView,
 } from "@/lib/regions-url-state";
 
 const WINDOW_OPTIONS: readonly RegionWindow[] = [
@@ -40,6 +42,13 @@ const SORT_LABELS: Record<RegionSortKey, string> = {
   growth: "Growth",
   closure: "Closure",
   name: "Name",
+};
+
+const VIEW_OPTIONS: readonly RegionsView[] = ["list", "map"];
+
+const VIEW_LABELS: Record<RegionsView, string> = {
+  list: "List",
+  map: "Cartography",
 };
 
 const BUCKET_ORDER = ["<1w", "1-4w", "1-3m", "3m+"] as const;
@@ -86,6 +95,12 @@ export function RegionsPage() {
         }
         actions={
           <div className="flex flex-wrap items-center gap-2">
+            <FilterToggleGroup<RegionsView>
+              options={VIEW_OPTIONS}
+              value={urlState.view}
+              onChange={(view) => updateURL({ view })}
+              formatLabel={(value) => VIEW_LABELS[value]}
+            />
             <FilterToggleGroup<RegionWindow>
               options={WINDOW_OPTIONS}
               value={urlState.window}
@@ -97,17 +112,19 @@ export function RegionsPage() {
 
       <div className="app-scrollarea min-h-0 flex-1 overflow-y-auto">
         <div className="flex w-full flex-col gap-6 px-4 py-6 lg:px-6 xl:px-8">
-          <div className="flex flex-wrap items-center gap-2">
-            <p className="text-[11px] font-medium uppercase tracking-[0.14em] text-muted-foreground">
-              Sort by
-            </p>
-            <FilterToggleGroup<RegionSortKey>
-              options={SORT_OPTIONS}
-              value={urlState.sort}
-              onChange={(sort) => updateURL({ sort })}
-              formatLabel={(value) => SORT_LABELS[value]}
-            />
-          </div>
+          {urlState.view === "list" && (
+            <div className="flex flex-wrap items-center gap-2">
+              <p className="text-[11px] font-medium uppercase tracking-[0.14em] text-muted-foreground">
+                Sort by
+              </p>
+              <FilterToggleGroup<RegionSortKey>
+                options={SORT_OPTIONS}
+                value={urlState.sort}
+                onChange={(sort) => updateURL({ sort })}
+                formatLabel={(value) => SORT_LABELS[value]}
+              />
+            </div>
+          )}
 
           {isLoading && (
             <p className="text-sm text-muted-foreground">Loading regions…</p>
@@ -126,12 +143,19 @@ export function RegionsPage() {
             </p>
           )}
 
-          {sortedRegions.length > 0 && (
+          {sortedRegions.length > 0 && urlState.view === "list" && (
             <div className="grid grid-cols-1 gap-4 lg:grid-cols-2 xl:grid-cols-3">
               {sortedRegions.map((entry) => (
                 <RegionTile key={entry.region.key.id} entry={entry} />
               ))}
             </div>
+          )}
+
+          {sortedRegions.length > 0 && urlState.view === "map" && (
+            <RegionsCartography
+              regions={sortedRegions}
+              windowLabel={data?.window.label ?? urlState.window}
+            />
           )}
         </div>
       </div>

@@ -154,6 +154,17 @@ describe("RegionsPage", () => {
     expect(screen.getByText(/Failed to load regions/i)).toBeInTheDocument();
   });
 
+  it("renders cartography when view=map in URL", () => {
+    setLocation("view=map");
+    mockRegions([
+      makeRegion({ id: "auth", mass: 5, growth: 0.4, closure: 0.1 }),
+    ]);
+
+    render(<RegionsPage />);
+
+    expect(screen.getByTestId("region-bubble-auth")).toBeInTheDocument();
+  });
+
   it("updates URL when window selector changes", () => {
     mockRegions([makeRegion({ id: "auth" })]);
 
