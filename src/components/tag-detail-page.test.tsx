@@ -2,6 +2,7 @@ import type { ReactNode } from "react";
 import { render, screen } from "@testing-library/react";
 import { TagDetailPage } from "@/components/tag-detail-page";
 import { useIssues } from "@/hooks/use-issues";
+import { useRegion } from "@/hooks/use-region";
 import {
   clearRecentHistory,
   readRecentHistory,
@@ -52,6 +53,10 @@ vi.mock("@/hooks/use-issues", () => ({
   useIssues: vi.fn(),
 }));
 
+vi.mock("@/hooks/use-region", () => ({
+  useRegion: vi.fn(() => ({ data: undefined, error: undefined, isLoading: true })),
+}));
+
 function makeTag(overrides: Partial<TagRecord>): TagRecord {
   return {
     name: "billing",
@@ -79,6 +84,12 @@ describe("TagDetailPage", () => {
   beforeEach(() => {
     vi.mocked(useTags).mockReset();
     vi.mocked(useIssues).mockReset();
+    vi.mocked(useRegion).mockReset();
+    vi.mocked(useRegion).mockReturnValue({
+      data: undefined,
+      error: undefined,
+      isLoading: true,
+    } as ReturnType<typeof useRegion>);
     clearRecentHistory();
   });
 
@@ -153,6 +164,49 @@ describe("TagDetailPage", () => {
     render(<TagDetailPage tagName="billing" />);
 
     expect(screen.getByText(/No tag exists for/i)).toBeInTheDocument();
+  });
+
+  it("renders region metrics with mass and age buckets when available", () => {
+    vi.mocked(useTags).mockReturnValue({
+      data: [makeTag({ name: "billing" })],
+      error: undefined,
+      isLoading: false,
+    } as ReturnType<typeof useTags>);
+    vi.mocked(useIssues).mockReturnValue({
+      data: [],
+      error: undefined,
+      isLoading: false,
+    } as ReturnType<typeof useIssues>);
+    vi.mocked(useRegion).mockReturnValue({
+      data: {
+        region: { key: { kind: "tag", id: "billing" }, label: "billing" },
+        metrics: {
+          key: { kind: "tag", id: "billing" },
+          window: { label: "30d", start: "2026-04-25T12:00:00Z", end: "2026-05-25T12:00:00Z" },
+          mass: 5,
+          massOpen: 3,
+          massClosed: 2,
+          ageBuckets: [
+            { label: "<1w", count: 1 },
+            { label: "1-4w", count: 2 },
+            { label: "1-3m", count: 0 },
+            { label: "3m+", count: 0 },
+          ],
+        },
+        window: { label: "30d", start: "2026-04-25T12:00:00Z", end: "2026-05-25T12:00:00Z" },
+      },
+      error: undefined,
+      isLoading: false,
+    } as ReturnType<typeof useRegion>);
+
+    render(<TagDetailPage tagName="billing" />);
+
+    expect(screen.getByText("Region metrics")).toBeInTheDocument();
+    expect(screen.getByText("Open at floor")).toBeInTheDocument();
+    expect(screen.getByText("Closed at floor")).toBeInTheDocument();
+    expect(screen.getByText("Open issues by age")).toBeInTheDocument();
+    expect(screen.getByText("<1w")).toBeInTheDocument();
+    expect(screen.getByText("3m+")).toBeInTheDocument();
   });
 
   it("records the viewed tag in recent history", () => {

@@ -35,7 +35,7 @@ func TestLoaderCachesByRevision(t *testing.T) {
 	now := time.Date(2026, 5, 25, 12, 0, 0, 0, time.UTC)
 	window := domain.TimeWindow{Label: "30d", End: now}
 	store := &stubStore{items: []issues.Issue{
-		{ID: "a", Status: issues.StatusOpen, CreatedAt: now, TagScores: []domain.TagRelevance{{Tag: "auth", Relevance: 0.9}}},
+		{ID: "a", Status: issues.StatusOpen, CreatedAt: now, TagScores: []domain.TagRelevance{{Tag: authTag, Relevance: 0.9}}},
 	}}
 	rev := &stubRevision{v: 1}
 	loader := &Loader{Store: store, Revisions: rev}
@@ -62,7 +62,7 @@ func TestLoaderInvalidateClearsCache(t *testing.T) {
 	now := time.Date(2026, 5, 25, 12, 0, 0, 0, time.UTC)
 	window := domain.TimeWindow{Label: "30d", End: now}
 	store := &stubStore{items: []issues.Issue{
-		{ID: "a", Status: issues.StatusOpen, CreatedAt: now, TagScores: []domain.TagRelevance{{Tag: "auth", Relevance: 0.9}}},
+		{ID: "a", Status: issues.StatusOpen, CreatedAt: now, TagScores: []domain.TagRelevance{{Tag: authTag, Relevance: 0.9}}},
 	}}
 	loader := &Loader{Store: store, Revisions: &stubRevision{v: 1}}
 
@@ -82,7 +82,7 @@ func TestLoaderGetReturnsRegion(t *testing.T) {
 	now := time.Date(2026, 5, 25, 12, 0, 0, 0, time.UTC)
 	window := domain.TimeWindow{Label: "30d", End: now}
 	store := &stubStore{items: []issues.Issue{
-		{ID: "a", Status: issues.StatusOpen, CreatedAt: now, TagScores: []domain.TagRelevance{{Tag: "auth", Relevance: 0.9}}},
+		{ID: "a", Status: issues.StatusOpen, CreatedAt: now, TagScores: []domain.TagRelevance{{Tag: authTag, Relevance: 0.9}}},
 	}}
 	loader := &Loader{Store: store}
 
@@ -93,7 +93,7 @@ func TestLoaderGetReturnsRegion(t *testing.T) {
 	if !ok {
 		t.Fatal("expected region to be found")
 	}
-	if region.Region.Key.ID != "auth" {
+	if region.Region.Key.ID != authTag {
 		t.Fatalf("expected key auth, got %q", region.Region.Key.ID)
 	}
 }
