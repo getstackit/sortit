@@ -11,6 +11,7 @@ These docs describe the current product and implementation. Historical planning 
 - [API, CLI, and MCP](./api-cli-mcp.md): supported integration surfaces.
 - [Scoring, Search, and Map](./scoring-search-map.md): how tags, embeddings, ranking, and projection work.
 - [Data Model](./data-model.md): PostgreSQL tables, append-only facts, projections, and migrations.
+- [Planning](./planning.md): forward-looking design sketch for the quantitative project management layer.
 
 ## Quick Start
 
