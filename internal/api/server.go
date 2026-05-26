@@ -40,44 +40,45 @@ type ServerConfig struct {
 }
 
 type Server struct {
-	config              ServerConfig
-	logger              *slog.Logger
-	httpServer          *http.Server
-	startedAt           time.Time
-	revisions           *issues.RevisionTracker
-	mapProjectionLoader *mapview.MapProjectionLoader
-	enrichmentWorker    *issueenrichment.IssueEnrichmentWorker
-	enrichmentCancel    context.CancelFunc
-	enrichmentDone      chan struct{}
-	createIssue         issuecmd.CreateIssueHandler
-	refineIssue         issuecmd.RefineIssueHandler
-	progressIssue       issuecmd.ProgressIssueHandler
-	closeIssue          issuecmd.CloseIssueHandler
-	reopenIssue         issuecmd.ReopenIssueHandler
-	assignIssue         issuecmd.AssignIssueHandler
-	reEnrichIssue       issuecmd.ReEnrichIssueHandler
-	splitIssue          issuecmd.SplitIssueHandler
-	combineIssues       issuecmd.CombineIssuesHandler
-	linkIssues          issuecmd.LinkIssuesHandler
-	listIssues          issueviews.ListIssuesHandler
-	listActivity        issueviews.ListActivityHandler
-	getIssue            issueviews.GetIssueHandler
-	compareIssues       issueviews.CompareIssuesHandler
-	searchIssues        search.SearchIssuesHandler
-	searchUnified       search.SearchUnifiedHandler
-	listTags            issueviews.ListTagsHandler
-	getMap              mapview.MapHandler
-	getMapEdges         mapview.EdgeHandler
-	debugAnalyzeIssue   diagnostics.DebugAnalyzeIssueHandler
-	debugEvalTags       diagnostics.DebugEvalTagsHandler
-	debugFactorWeights  diagnostics.DebugFactorWeightsHandler
-	debugIssueR2        diagnostics.DebugIssueR2Handler
-	exploreIssue        mapview.ExploreIssueHandler
-	getPersonProfile    people.GetPersonProfileHandler
-	getPersonDetail     people.GetPersonDetailHandler
-	workCorrelations    people.WorkCorrelationsHandler
-	authService         *auth.Service
-	catalog             *tags.CatalogService
+	config               ServerConfig
+	logger               *slog.Logger
+	httpServer           *http.Server
+	startedAt            time.Time
+	revisions            *issues.RevisionTracker
+	mapProjectionLoader  *mapview.MapProjectionLoader
+	enrichmentWorker     *issueenrichment.IssueEnrichmentWorker
+	enrichmentCancel     context.CancelFunc
+	enrichmentDone       chan struct{}
+	createIssue          issuecmd.CreateIssueHandler
+	refineIssue          issuecmd.RefineIssueHandler
+	progressIssue        issuecmd.ProgressIssueHandler
+	closeIssue           issuecmd.CloseIssueHandler
+	reopenIssue          issuecmd.ReopenIssueHandler
+	assignIssue          issuecmd.AssignIssueHandler
+	reEnrichIssue        issuecmd.ReEnrichIssueHandler
+	splitIssue           issuecmd.SplitIssueHandler
+	combineIssues        issuecmd.CombineIssuesHandler
+	linkIssues           issuecmd.LinkIssuesHandler
+	listIssues           issueviews.ListIssuesHandler
+	listActivity         issueviews.ListActivityHandler
+	getIssue             issueviews.GetIssueHandler
+	compareIssues        issueviews.CompareIssuesHandler
+	searchIssues         search.SearchIssuesHandler
+	searchUnified        search.SearchUnifiedHandler
+	listTags             issueviews.ListTagsHandler
+	getMap               mapview.MapHandler
+	getMapEdges          mapview.EdgeHandler
+	debugAnalyzeIssue    diagnostics.DebugAnalyzeIssueHandler
+	debugEvalTags        diagnostics.DebugEvalTagsHandler
+	debugFactorWeights   diagnostics.DebugFactorWeightsHandler
+	debugIssueR2         diagnostics.DebugIssueR2Handler
+	debugTagCooccurrence diagnostics.DebugTagCooccurrenceHandler
+	exploreIssue         mapview.ExploreIssueHandler
+	getPersonProfile     people.GetPersonProfileHandler
+	getPersonDetail      people.GetPersonDetailHandler
+	workCorrelations     people.WorkCorrelationsHandler
+	authService          *auth.Service
+	catalog              *tags.CatalogService
 }
 
 type issueTagStore interface {
@@ -258,6 +259,7 @@ func (s *Server) registerDedicatedAPIRoutes(r chi.Router) {
 			r.Get("/eval-tags", s.handleDebugEvalTags)
 			r.Get("/factor-weights", s.handleDebugFactorWeights)
 			r.Get("/issues/{id}/r2", s.handleDebugIssueR2)
+			r.Get("/tag-cooccurrence", s.handleDebugTagCooccurrence)
 		})
 	})
 }
@@ -291,6 +293,7 @@ func (s *Server) registerUIRoutes(r chi.Router) {
 			r.Get("/eval-tags", s.handleDebugEvalTags)
 			r.Get("/factor-weights", s.handleDebugFactorWeights)
 			r.Get("/issues/{id}/r2", s.handleDebugIssueR2)
+			r.Get("/tag-cooccurrence", s.handleDebugTagCooccurrence)
 		})
 	})
 }
@@ -628,18 +631,19 @@ func NewServer(cfg ServerConfig) *Server {
 			SearchStore:  semanticSearchStoreFromStore(baseStore),
 			Catalog:      catalog,
 		},
-		listTags:           issueviews.ListTagsHandler{Catalog: catalog},
-		getMap:             mapview.MapHandler{IssueStore: store, Catalog: catalog, Projection: mapProjectionLoader},
-		getMapEdges:        mapview.EdgeHandler{IssueStore: store, Catalog: catalog, Projection: mapProjectionLoader},
-		debugAnalyzeIssue:  diagnostics.DebugAnalyzeIssueHandler{Analyzer: cfg.Analyzer, Catalog: catalog, Enricher: enricher, Store: store},
-		debugEvalTags:      diagnostics.DebugEvalTagsHandler{Analyzer: cfg.Analyzer, Catalog: catalog, Enricher: enricher},
-		debugFactorWeights: diagnostics.DebugFactorWeightsHandler{Store: store, Catalog: catalog},
-		debugIssueR2:       diagnostics.DebugIssueR2Handler{Store: store, Catalog: catalog},
-		getPersonProfile:   people.GetPersonProfileHandler{Store: store, Catalog: catalog},
-		getPersonDetail:    people.GetPersonDetailHandler{Store: store, Catalog: catalog},
-		workCorrelations:   people.WorkCorrelationsHandler{Store: store, Catalog: catalog},
-		authService:        cfg.Auth,
-		catalog:            catalog,
+		listTags:             issueviews.ListTagsHandler{Catalog: catalog},
+		getMap:               mapview.MapHandler{IssueStore: store, Catalog: catalog, Projection: mapProjectionLoader},
+		getMapEdges:          mapview.EdgeHandler{IssueStore: store, Catalog: catalog, Projection: mapProjectionLoader},
+		debugAnalyzeIssue:    diagnostics.DebugAnalyzeIssueHandler{Analyzer: cfg.Analyzer, Catalog: catalog, Enricher: enricher, Store: store},
+		debugEvalTags:        diagnostics.DebugEvalTagsHandler{Analyzer: cfg.Analyzer, Catalog: catalog, Enricher: enricher},
+		debugFactorWeights:   diagnostics.DebugFactorWeightsHandler{Store: store, Catalog: catalog},
+		debugIssueR2:         diagnostics.DebugIssueR2Handler{Store: store, Catalog: catalog},
+		debugTagCooccurrence: diagnostics.DebugTagCooccurrenceHandler{Store: store},
+		getPersonProfile:     people.GetPersonProfileHandler{Store: store, Catalog: catalog},
+		getPersonDetail:      people.GetPersonDetailHandler{Store: store, Catalog: catalog},
+		workCorrelations:     people.WorkCorrelationsHandler{Store: store, Catalog: catalog},
+		authService:          cfg.Auth,
+		catalog:              catalog,
 	}
 }
 

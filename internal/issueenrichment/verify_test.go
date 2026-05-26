@@ -74,11 +74,15 @@ func TestResolveEvidenceRangesReturnsNilForNoMatch(t *testing.T) {
 }
 
 type evidenceTagger struct {
-	scores []ai.TagScore
+	scores  []ai.TagScore
+	negated []ai.NegatedTag
 }
 
-func (t *evidenceTagger) Score(_ context.Context, _ string, _ []ai.Tag, _ []ai.FewShotExample) ([]ai.TagScore, error) {
-	return append([]ai.TagScore(nil), t.scores...), nil
+func (t *evidenceTagger) Score(_ context.Context, _ string, _ []ai.Tag, _ []ai.FewShotExample) (ai.ScoreResult, error) {
+	return ai.ScoreResult{
+		Tags:    append([]ai.TagScore(nil), t.scores...),
+		Negated: append([]ai.NegatedTag(nil), t.negated...),
+	}, nil
 }
 
 func (t *evidenceTagger) Provider() string { return "test" }
@@ -214,5 +218,219 @@ func TestIssueTagScoresFromAnalysisDoesNotCopyEvidence(t *testing.T) {
 	}
 	if len(scores[0].Evidence) != 0 {
 		t.Fatalf("expected no evidence on TagRelevance (resolved later), got %#v", scores[0].Evidence)
+	}
+}
+
+func TestAnalyzeTextAppliesAnalyzerNegationWithEvidence(t *testing.T) {
+	tagger := &evidenceTagger{
+		scores: []ai.TagScore{{Tag: "database", Relevance: 0.9, Evidence: []string{"raw text"}}},
+		negated: []ai.NegatedTag{
+			{Tag: "cleanup", Confidence: 0.6, Evidence: []string{"search box clears"}},
+		},
+	}
+	enricher := newEvidenceEnricher(t, tagger, []issues.Tag{
+		{Name: "database", Embedding: []float64{1, 0}},
+		{Name: "cleanup", Embedding: []float64{0, 1}},
+	})
+
+	result, err := enricher.AnalyzeText(context.Background(), "raw text with search box clears", AnalyzeTextOptions{
+		CandidateMode: tags.CandidateModeRetrievalShortlist,
+		Verify:        true,
+	})
+	if err != nil {
+		t.Fatalf("AnalyzeText: %v", err)
+	}
+
+	// "cleanup" was not assigned positively but the negation creates a synthetic row.
+	cleanup := findScore(t, result.TagScores, "cleanup")
+	if cleanup.Relevance != 0 {
+		t.Fatalf("expected synthetic row to have Relevance 0, got %v", cleanup.Relevance)
+	}
+	if cleanup.Negation == nil || *cleanup.Negation != 0.6 {
+		t.Fatalf("expected negation 0.6, got %#v", cleanup.Negation)
+	}
+	if cleanup.NegationProvenance != domain.NegationProvenanceAnalyzer {
+		t.Fatalf("expected analyzer provenance, got %q", cleanup.NegationProvenance)
+	}
+	if len(cleanup.NegationEvidence) == 0 {
+		t.Fatalf("expected negation evidence to be resolved")
+	}
+	if cleanup.NegationReason == "" {
+		t.Fatalf("expected negation reason to be set")
+	}
+}
+
+func TestAnalyzeTextDiscardsNegationWithoutEvidence(t *testing.T) {
+	tagger := &evidenceTagger{
+		scores: []ai.TagScore{{Tag: "database", Relevance: 0.9, Evidence: []string{"raw text"}}},
+		negated: []ai.NegatedTag{
+			// "completely fabricated phrase" never appears in the source text.
+			{Tag: "cleanup", Confidence: 0.9, Evidence: []string{"completely fabricated phrase"}},
+		},
+	}
+	enricher := newEvidenceEnricher(t, tagger, []issues.Tag{
+		{Name: "database", Embedding: []float64{1, 0}},
+		{Name: "cleanup", Embedding: []float64{0, 1}},
+	})
+
+	result, err := enricher.AnalyzeText(context.Background(), "raw text with search box clears", AnalyzeTextOptions{
+		CandidateMode: tags.CandidateModeRetrievalShortlist,
+		Verify:        true,
+	})
+	if err != nil {
+		t.Fatalf("AnalyzeText: %v", err)
+	}
+
+	for _, score := range result.TagScores {
+		if score.Tag == "cleanup" {
+			t.Fatalf("expected cleanup row to be discarded entirely (no evidence), got %#v", score)
+		}
+	}
+}
+
+func TestAnalyzeTextNegationOnAssignedTagWritesToExistingRow(t *testing.T) {
+	tagger := &evidenceTagger{
+		scores: []ai.TagScore{
+			{Tag: "database", Relevance: 0.9, Evidence: []string{"raw text"}},
+			{Tag: "cleanup", Relevance: 0.4},
+		},
+		negated: []ai.NegatedTag{
+			{Tag: "cleanup", Confidence: 0.5, Evidence: []string{"search box clears"}},
+		},
+	}
+	enricher := newEvidenceEnricher(t, tagger, []issues.Tag{
+		{Name: "database", Embedding: []float64{1, 0}},
+		{Name: "cleanup", Embedding: []float64{0, 1}},
+	})
+
+	result, err := enricher.AnalyzeText(context.Background(), "raw text with search box clears", AnalyzeTextOptions{
+		CandidateMode: tags.CandidateModeRetrievalShortlist,
+		Verify:        true,
+	})
+	if err != nil {
+		t.Fatalf("AnalyzeText: %v", err)
+	}
+
+	cleanup := findScore(t, result.TagScores, "cleanup")
+	if cleanup.Relevance == 0 {
+		t.Fatalf("expected existing relevance preserved, got 0")
+	}
+	if cleanup.Negation == nil || *cleanup.Negation != 0.5 {
+		t.Fatalf("expected negation 0.5 on existing row, got %#v", cleanup.Negation)
+	}
+	if cleanup.NegationProvenance != domain.NegationProvenanceAnalyzer {
+		t.Fatalf("expected analyzer provenance, got %q", cleanup.NegationProvenance)
+	}
+}
+
+func TestVerifierDownRankEmitsNegationInsteadOfMutatingRelevance(t *testing.T) {
+	// Setup: cleanup gets the AI tag (Relevance 0.3 — under the Flagged
+	// threshold of 0.4 so we route to DownRank instead) with embedding {0,1}
+	// orthogonal to the issue {1,0} (alignment 0). The unassigned "database"
+	// candidate has embedding {1,0} aligning perfectly with the issue
+	// (alignment 1.0), triggering the dominance branch.
+	tagger := &evidenceTagger{
+		scores: []ai.TagScore{{Tag: "cleanup", Relevance: 0.3}},
+	}
+	enricher := newEvidenceEnricher(t, tagger, []issues.Tag{
+		{Name: "cleanup", Embedding: []float64{0, 1}},
+		{Name: "database", Embedding: []float64{1, 0}},
+	})
+
+	result, err := enricher.AnalyzeText(context.Background(), "raw text with search box clears", AnalyzeTextOptions{
+		CandidateMode: tags.CandidateModeRetrievalShortlist,
+		Verify:        true,
+	})
+	if err != nil {
+		t.Fatalf("AnalyzeText: %v", err)
+	}
+
+	cleanup := findScore(t, result.TagScores, "cleanup")
+	if cleanup.VerificationVerdict != domain.TagVerificationVerdictDownRank {
+		t.Fatalf("expected DownRank verdict, got %q", cleanup.VerificationVerdict)
+	}
+	// Relevance must not be mutated by the down-rank branch anymore.
+	if cleanup.Relevance != 0.3 {
+		t.Fatalf("expected Relevance preserved at 0.3, got %v", cleanup.Relevance)
+	}
+	if cleanup.Negation == nil {
+		t.Fatalf("expected Negation to be set on DownRank verdict, got nil")
+	}
+	if *cleanup.Negation != verifierDominanceNegation {
+		t.Fatalf("expected Negation %v, got %v", verifierDominanceNegation, *cleanup.Negation)
+	}
+	if cleanup.NegationProvenance != domain.NegationProvenanceVerifier {
+		t.Fatalf("expected verifier-dominance provenance, got %q", cleanup.NegationProvenance)
+	}
+	if cleanup.NegationReason == "" {
+		t.Fatalf("expected NegationReason to be set")
+	}
+}
+
+func TestAnalyzerNegationOverridesVerifierDominanceOnSameTag(t *testing.T) {
+	// cleanup is dominated by database (sets verifier-dominance negation), and
+	// the analyzer also emits a negation for cleanup with explicit evidence.
+	// The analyzer signal should win, and the merged value should be the max
+	// of the two, capped at 0.7. Relevance kept < 0.4 to route to DownRank
+	// rather than Flagged.
+	tagger := &evidenceTagger{
+		scores: []ai.TagScore{{Tag: "cleanup", Relevance: 0.3}},
+		negated: []ai.NegatedTag{
+			{Tag: "cleanup", Confidence: 0.4, Evidence: []string{"search box clears"}},
+		},
+	}
+	enricher := newEvidenceEnricher(t, tagger, []issues.Tag{
+		{Name: "cleanup", Embedding: []float64{0, 1}},
+		{Name: "database", Embedding: []float64{1, 0}},
+	})
+
+	result, err := enricher.AnalyzeText(context.Background(), "raw text with search box clears", AnalyzeTextOptions{
+		CandidateMode: tags.CandidateModeRetrievalShortlist,
+		Verify:        true,
+	})
+	if err != nil {
+		t.Fatalf("AnalyzeText: %v", err)
+	}
+
+	cleanup := findScore(t, result.TagScores, "cleanup")
+	if cleanup.NegationProvenance != domain.NegationProvenanceAnalyzer {
+		t.Fatalf("expected analyzer provenance to win, got %q", cleanup.NegationProvenance)
+	}
+	if cleanup.Negation == nil {
+		t.Fatalf("expected merged Negation to be set")
+	}
+	// verifierDominanceNegation = 0.25, analyzer confidence = 0.4. Max = 0.4.
+	if *cleanup.Negation != 0.4 {
+		t.Fatalf("expected merged negation to take max (0.4), got %v", *cleanup.Negation)
+	}
+	if len(cleanup.NegationEvidence) == 0 {
+		t.Fatalf("expected evidence ranges from analyzer signal")
+	}
+}
+
+func TestAnalyzeTextNegationBelowConfidenceFloorDiscarded(t *testing.T) {
+	tagger := &evidenceTagger{
+		scores: []ai.TagScore{{Tag: "database", Relevance: 0.9, Evidence: []string{"raw text"}}},
+		negated: []ai.NegatedTag{
+			{Tag: "cleanup", Confidence: 0.05, Evidence: []string{"search box clears"}},
+		},
+	}
+	enricher := newEvidenceEnricher(t, tagger, []issues.Tag{
+		{Name: "database", Embedding: []float64{1, 0}},
+		{Name: "cleanup", Embedding: []float64{0, 1}},
+	})
+
+	result, err := enricher.AnalyzeText(context.Background(), "raw text with search box clears", AnalyzeTextOptions{
+		CandidateMode: tags.CandidateModeRetrievalShortlist,
+		Verify:        true,
+	})
+	if err != nil {
+		t.Fatalf("AnalyzeText: %v", err)
+	}
+
+	for _, score := range result.TagScores {
+		if score.Tag == "cleanup" {
+			t.Fatalf("expected sub-floor confidence negation to be discarded, got %#v", score)
+		}
 	}
 }

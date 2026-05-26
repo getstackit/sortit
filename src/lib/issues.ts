@@ -38,6 +38,12 @@ export type EvidenceRange = {
   kind?: string;
 };
 
+export type NegationProvenance =
+  | "analyzer-negation"
+  | "verifier-dominance"
+  | "dismiss"
+  | "cooccurrence";
+
 export type IssueTagScore = {
   tag: string;
   relevance: number;
@@ -51,6 +57,10 @@ export type IssueTagScore = {
   dominatedBy?: string;
   dominanceGap?: number | null;
   evidence?: EvidenceRange[];
+  negation?: number | null;
+  negationProvenance?: NegationProvenance;
+  negationEvidence?: EvidenceRange[];
+  negationReason?: string;
 };
 
 export type IssueReferenceRecord = {

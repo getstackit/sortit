@@ -52,6 +52,7 @@ type DebugEvalTagsCaseResult struct {
 	ExactMatch          bool       `json:"exactMatch"`
 	DownrankedCount     int        `json:"downrankedCount,omitempty"`
 	FlaggedCount        int        `json:"flaggedCount,omitempty"`
+	NegatedCount        int        `json:"negatedCount,omitempty"`
 	StabilityExact      bool       `json:"stabilityExact,omitempty"`
 	StabilityJaccard    float64    `json:"stabilityJaccard,omitempty"`
 }
@@ -67,6 +68,7 @@ type DebugEvalTagsResult struct {
 	ExactMatchCount  int                       `json:"exactMatchCount"`
 	DownrankedCount  int                       `json:"downrankedCount,omitempty"`
 	FlaggedCount     int                       `json:"flaggedCount,omitempty"`
+	NegatedCount     int                       `json:"negatedCount,omitempty"`
 	ExactStableCount int                       `json:"exactStableCount,omitempty"`
 	ExactStability   float64                   `json:"exactStability,omitempty"`
 	AverageStability float64                   `json:"averageStability,omitempty"`
@@ -106,10 +108,11 @@ func (h DebugEvalTagsHandler) HandleFixture(ctx context.Context, requestedFixtur
 	exactMatches := 0
 	totalDownranked := 0
 	totalFlagged := 0
+	totalNegated := 0
 	exactStableCount := 0
 	totalStability := 0.0
 	for _, item := range fixture {
-		actualTags, downrankedCount, flaggedCount, err := h.evaluateCase(ctx, item, mode, verify)
+		actualTags, downrankedCount, flaggedCount, negatedCount, err := h.evaluateCase(ctx, item, mode, verify)
 		if err != nil {
 			return DebugEvalTagsResult{}, err
 		}
@@ -128,6 +131,7 @@ func (h DebugEvalTagsHandler) HandleFixture(ctx context.Context, requestedFixtur
 			ExactMatch:      len(missing) == 0 && len(unexpected) == 0,
 			DownrankedCount: downrankedCount,
 			FlaggedCount:    flaggedCount,
+			NegatedCount:    negatedCount,
 		}
 		caseResult.StabilityExact = true
 		caseResult.StabilityJaccard = 1
@@ -153,6 +157,7 @@ func (h DebugEvalTagsHandler) HandleFixture(ctx context.Context, requestedFixtur
 		totalTruePositive += truePositive
 		totalDownranked += downrankedCount
 		totalFlagged += flaggedCount
+		totalNegated += negatedCount
 		totalStability += caseResult.StabilityJaccard
 	}
 
@@ -167,6 +172,7 @@ func (h DebugEvalTagsHandler) HandleFixture(ctx context.Context, requestedFixtur
 		ExactMatchCount:  exactMatches,
 		DownrankedCount:  totalDownranked,
 		FlaggedCount:     totalFlagged,
+		NegatedCount:     totalNegated,
 		ExactStableCount: exactStableCount,
 		ExactStability:   roundMetric(ratio(exactStableCount, len(results))),
 		AverageStability: roundMetric(totalStability / float64(max(1, len(results)))),
@@ -174,13 +180,13 @@ func (h DebugEvalTagsHandler) HandleFixture(ctx context.Context, requestedFixtur
 	}, nil
 }
 
-func (h DebugEvalTagsHandler) evaluateCase(ctx context.Context, item DebugTagEvalCase, mode tags.CandidateMode, verify bool) ([]string, int, int, error) {
+func (h DebugEvalTagsHandler) evaluateCase(ctx context.Context, item DebugTagEvalCase, mode tags.CandidateMode, verify bool) ([]string, int, int, int, error) {
 	if h.Enricher == nil {
 		actualTags, err := h.evaluateCaseLegacy(ctx, item, mode)
 		if err != nil {
-			return nil, 0, 0, err
+			return nil, 0, 0, 0, err
 		}
-		return actualTags, 0, 0, nil
+		return actualTags, 0, 0, 0, nil
 	}
 
 	analysis, err := h.Enricher.AnalyzeText(ctx, item.Text, issueenrichment.AnalyzeTextOptions{
@@ -188,15 +194,16 @@ func (h DebugEvalTagsHandler) evaluateCase(ctx context.Context, item DebugTagEva
 		Verify:        verify,
 	})
 	if err != nil {
-		return nil, 0, 0, err
+		return nil, 0, 0, 0, err
 	}
-	downrankedCount, flaggedCount := countVerificationVerdicts(analysis.TagScores)
-	return predictedEvalTagRelevance(analysis.TagScores), downrankedCount, flaggedCount, nil
+	downrankedCount, flaggedCount, negatedCount := countVerificationVerdicts(analysis.TagScores)
+	return predictedEvalTagRelevance(analysis.TagScores), downrankedCount, flaggedCount, negatedCount, nil
 }
 
-func countVerificationVerdicts(scores []issues.TagRelevance) (int, int) {
+func countVerificationVerdicts(scores []issues.TagRelevance) (int, int, int) {
 	downranked := 0
 	flagged := 0
+	negated := 0
 	for _, score := range scores {
 		switch score.VerificationVerdict {
 		case domain.TagVerificationVerdictDownRank:
@@ -204,8 +211,11 @@ func countVerificationVerdicts(scores []issues.TagRelevance) (int, int) {
 		case domain.TagVerificationVerdictFlagged:
 			flagged++
 		}
+		if score.Negation != nil && *score.Negation > 0 {
+			negated++
+		}
 	}
-	return downranked, flagged
+	return downranked, flagged, negated
 }
 
 func (h DebugEvalTagsHandler) evaluateCaseStability(ctx context.Context, item DebugTagEvalCase, mode tags.CandidateMode, baseline []string, runs int, verify bool) ([][]string, bool, float64, error) {
@@ -218,7 +228,7 @@ func (h DebugEvalTagsHandler) evaluateCaseStability(ctx context.Context, item De
 	exactStable := true
 	totalJaccard := 0.0
 	for range runs - 1 {
-		repeatedTags, _, _, err := h.evaluateCase(ctx, item, mode, verify)
+		repeatedTags, _, _, _, err := h.evaluateCase(ctx, item, mode, verify)
 		if err != nil {
 			return nil, false, 0, err
 		}
