@@ -1,6 +1,7 @@
 package regions
 
 import (
+	"math"
 	"sort"
 	"time"
 
@@ -73,7 +74,58 @@ func ComputeAgeBuckets(items []issues.Issue, key domain.RegionKey, now time.Time
 	return buckets
 }
 
-// ComputeMetrics produces phase-1 metrics for a single region. Returns
+// ComputeGrowth counts currently-in-region issues whose CreatedAt falls
+// in [window.Start, window.End], returning Count and PerDay. Returns nil
+// when the window has no finite Start (label "all"), since PerDay has no
+// meaningful denominator without a bounded span.
+//
+// Membership is current-state by design: an issue created in the window
+// counts iff it is currently a member of the region. This matches the
+// closed-factor-attribution timeline's precedent.
+func ComputeGrowth(items []issues.Issue, key domain.RegionKey, window domain.TimeWindow) *domain.Rate {
+	if window.Start.IsZero() {
+		return nil
+	}
+	count := 0
+	for _, issue := range items {
+		if !BelongsTo(issue, key) {
+			continue
+		}
+		if !inWindow(issue.CreatedAt, window) {
+			continue
+		}
+		count++
+	}
+	return rateOver(count, window)
+}
+
+// ComputeClosure counts currently-in-region issues whose ClosedAt falls
+// in window, restricted to Status == closed. Returns nil for the "all"
+// window like ComputeGrowth.
+func ComputeClosure(items []issues.Issue, key domain.RegionKey, window domain.TimeWindow) *domain.Rate {
+	if window.Start.IsZero() {
+		return nil
+	}
+	count := 0
+	for _, issue := range items {
+		if issue.Status != issues.StatusClosed {
+			continue
+		}
+		if issue.ClosedAt == nil {
+			continue
+		}
+		if !BelongsTo(issue, key) {
+			continue
+		}
+		if !inWindow(*issue.ClosedAt, window) {
+			continue
+		}
+		count++
+	}
+	return rateOver(count, window)
+}
+
+// ComputeMetrics produces phase-2 metrics for a single region. Returns
 // false if no issues are members (zero mass).
 func ComputeMetrics(items []issues.Issue, key domain.RegionKey, window domain.TimeWindow, now time.Time) (domain.RegionMetrics, bool) {
 	mass, open, closed := ComputeMass(items, key)
@@ -87,7 +139,35 @@ func ComputeMetrics(items []issues.Issue, key domain.RegionKey, window domain.Ti
 		MassOpen:   open,
 		MassClosed: closed,
 		AgeBuckets: ComputeAgeBuckets(items, key, now),
+		Growth:     ComputeGrowth(items, key, window),
+		Closure:    ComputeClosure(items, key, window),
 	}, true
+}
+
+// inWindow returns true when t is in [window.Start, window.End].
+// Endpoints are inclusive so a closure exactly at window.End counts.
+func inWindow(t time.Time, window domain.TimeWindow) bool {
+	if t.Before(window.Start) {
+		return false
+	}
+	if t.After(window.End) {
+		return false
+	}
+	return true
+}
+
+// rateOver normalizes a count by the window's duration in days, rounded
+// to two decimal places. Callers must have already short-circuited the
+// "all" window before calling.
+func rateOver(count int, window domain.TimeWindow) *domain.Rate {
+	days := window.End.Sub(window.Start).Hours() / 24
+	perDay := 0.0
+	if days > 0 {
+		perDay = float64(count) / days
+	}
+	// Round to two decimals so JSON stays compact and stable in tests.
+	perDay = math.Round(perDay*100) / 100
+	return &domain.Rate{Count: count, PerDay: perDay}
 }
 
 // ListRegionsWithMetrics enumerates every tag-region with at least one

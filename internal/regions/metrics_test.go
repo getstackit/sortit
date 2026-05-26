@@ -146,6 +146,169 @@ func TestListRegionsWithMetricsSortedByMass(t *testing.T) {
 	}
 }
 
+func TestComputeGrowthInWindow(t *testing.T) {
+	now := time.Date(2026, 5, 25, 12, 0, 0, 0, time.UTC)
+	auth := domain.RegionKey{Kind: domain.RegionKindTag, ID: "auth"}
+	mk := func(daysAgo float64, relevance float64) issues.Issue {
+		return issues.Issue{
+			Status:    issues.StatusOpen,
+			CreatedAt: now.Add(-time.Duration(daysAgo * float64(24*time.Hour))),
+			TagScores: []domain.TagRelevance{{Tag: "auth", Relevance: relevance}},
+		}
+	}
+	items := []issues.Issue{
+		mk(2, 0.9),  // in 7d, 30d, 90d
+		mk(10, 0.8), // in 30d, 90d
+		mk(50, 0.7), // in 90d only
+		mk(5, 0.1),  // never (below floor)
+	}
+
+	window7d, _ := ParseTimeWindow("7d", now)
+	growth7d := ComputeGrowth(items, auth, window7d)
+	if growth7d == nil || growth7d.Count != 1 {
+		t.Fatalf("7d: expected count 1, got %+v", growth7d)
+	}
+
+	window30d, _ := ParseTimeWindow("30d", now)
+	growth30d := ComputeGrowth(items, auth, window30d)
+	if growth30d == nil || growth30d.Count != 2 {
+		t.Fatalf("30d: expected count 2, got %+v", growth30d)
+	}
+
+	window90d, _ := ParseTimeWindow("90d", now)
+	growth90d := ComputeGrowth(items, auth, window90d)
+	if growth90d == nil || growth90d.Count != 3 {
+		t.Fatalf("90d: expected count 3, got %+v", growth90d)
+	}
+}
+
+func TestComputeGrowthReturnsNilForAllWindow(t *testing.T) {
+	now := time.Date(2026, 5, 25, 12, 0, 0, 0, time.UTC)
+	auth := domain.RegionKey{Kind: domain.RegionKindTag, ID: "auth"}
+	items := []issues.Issue{
+		{Status: issues.StatusOpen, CreatedAt: now.Add(-time.Hour), TagScores: []domain.TagRelevance{{Tag: "auth", Relevance: 0.9}}},
+	}
+	window, _ := ParseTimeWindow("all", now)
+	if got := ComputeGrowth(items, auth, window); got != nil {
+		t.Fatalf("expected nil for all window; got %+v", got)
+	}
+}
+
+func TestComputeGrowthRespectsCurrentMembership(t *testing.T) {
+	now := time.Date(2026, 5, 25, 12, 0, 0, 0, time.UTC)
+	auth := domain.RegionKey{Kind: domain.RegionKindTag, ID: "auth"}
+	items := []issues.Issue{
+		{
+			Status:    issues.StatusOpen,
+			CreatedAt: now.Add(-time.Hour),
+			TagScores: []domain.TagRelevance{{Tag: "auth", Relevance: 0.1}},
+		},
+	}
+	window, _ := ParseTimeWindow("30d", now)
+	growth := ComputeGrowth(items, auth, window)
+	if growth == nil || growth.Count != 0 {
+		t.Fatalf("expected count 0 for issue below floor; got %+v", growth)
+	}
+}
+
+func TestComputeGrowthPerDay(t *testing.T) {
+	now := time.Date(2026, 5, 25, 12, 0, 0, 0, time.UTC)
+	auth := domain.RegionKey{Kind: domain.RegionKindTag, ID: "auth"}
+	items := make([]issues.Issue, 0, 6)
+	for i := range 6 {
+		items = append(items, issues.Issue{
+			Status:    issues.StatusOpen,
+			CreatedAt: now.Add(-time.Duration(i+1) * 24 * time.Hour),
+			TagScores: []domain.TagRelevance{{Tag: "auth", Relevance: 0.7}},
+		})
+	}
+	window, _ := ParseTimeWindow("30d", now)
+	growth := ComputeGrowth(items, auth, window)
+	if growth == nil {
+		t.Fatal("expected non-nil rate")
+	}
+	if growth.Count != 6 {
+		t.Fatalf("count = %d, want 6", growth.Count)
+	}
+	if growth.PerDay != 0.2 {
+		t.Fatalf("perDay = %v, want 0.20", growth.PerDay)
+	}
+}
+
+func TestComputeClosureInWindow(t *testing.T) {
+	now := time.Date(2026, 5, 25, 12, 0, 0, 0, time.UTC)
+	auth := domain.RegionKey{Kind: domain.RegionKindTag, ID: "auth"}
+	mkClosed := func(daysAgo float64) issues.Issue {
+		t := now.Add(-time.Duration(daysAgo * float64(24*time.Hour)))
+		return issues.Issue{
+			Status:    issues.StatusClosed,
+			CreatedAt: t.Add(-30 * 24 * time.Hour),
+			ClosedAt:  &t,
+			TagScores: []domain.TagRelevance{{Tag: "auth", Relevance: 0.8}},
+		}
+	}
+	items := []issues.Issue{
+		mkClosed(2),
+		mkClosed(15),
+		mkClosed(60),
+		{
+			Status:    issues.StatusOpen,
+			CreatedAt: now.Add(-24 * time.Hour),
+			TagScores: []domain.TagRelevance{{Tag: "auth", Relevance: 0.9}},
+		},
+	}
+
+	window30d, _ := ParseTimeWindow("30d", now)
+	closure := ComputeClosure(items, auth, window30d)
+	if closure == nil || closure.Count != 2 {
+		t.Fatalf("30d: expected count 2 (2-day, 15-day); got %+v", closure)
+	}
+
+	window90d, _ := ParseTimeWindow("90d", now)
+	closure90 := ComputeClosure(items, auth, window90d)
+	if closure90 == nil || closure90.Count != 3 {
+		t.Fatalf("90d: expected count 3; got %+v", closure90)
+	}
+}
+
+func TestComputeClosureSkipsOpenStatus(t *testing.T) {
+	now := time.Date(2026, 5, 25, 12, 0, 0, 0, time.UTC)
+	auth := domain.RegionKey{Kind: domain.RegionKindTag, ID: "auth"}
+	closedAt := now.Add(-24 * time.Hour)
+	items := []issues.Issue{
+		{
+			Status:    issues.StatusOpen,
+			CreatedAt: now.Add(-30 * 24 * time.Hour),
+			ClosedAt:  &closedAt, // paranoia: closedAt set but status open
+			TagScores: []domain.TagRelevance{{Tag: "auth", Relevance: 0.9}},
+		},
+	}
+	window, _ := ParseTimeWindow("30d", now)
+	closure := ComputeClosure(items, auth, window)
+	if closure == nil || closure.Count != 0 {
+		t.Fatalf("expected count 0 when status is open; got %+v", closure)
+	}
+}
+
+func TestComputeMetricsNilFlowMetricsForAllWindow(t *testing.T) {
+	now := time.Date(2026, 5, 25, 12, 0, 0, 0, time.UTC)
+	auth := domain.RegionKey{Kind: domain.RegionKindTag, ID: "auth"}
+	items := []issues.Issue{
+		{Status: issues.StatusOpen, CreatedAt: now.Add(-time.Hour), TagScores: []domain.TagRelevance{{Tag: "auth", Relevance: 0.9}}},
+	}
+	window, _ := ParseTimeWindow("all", now)
+	metrics, ok := ComputeMetrics(items, auth, window, now)
+	if !ok {
+		t.Fatal("expected metrics for non-empty region")
+	}
+	if metrics.Growth != nil {
+		t.Fatalf("expected Growth nil for all window; got %+v", metrics.Growth)
+	}
+	if metrics.Closure != nil {
+		t.Fatalf("expected Closure nil for all window; got %+v", metrics.Closure)
+	}
+}
+
 func TestListRegionsWithMetricsIgnoresBelowFloor(t *testing.T) {
 	now := time.Date(2026, 5, 25, 12, 0, 0, 0, time.UTC)
 	window := domain.TimeWindow{Label: "30d", End: now}

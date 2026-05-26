@@ -192,6 +192,8 @@ describe("TagDetailPage", () => {
             { label: "1-3m", count: 0 },
             { label: "3m+", count: 0 },
           ],
+          growth: { count: 12, perDay: 0.4 },
+          closure: { count: 5, perDay: 0.17 },
         },
         window: { label: "30d", start: "2026-04-25T12:00:00Z", end: "2026-05-25T12:00:00Z" },
       },
@@ -207,6 +209,10 @@ describe("TagDetailPage", () => {
     expect(screen.getByText("Open issues by age")).toBeInTheDocument();
     expect(screen.getByText("<1w")).toBeInTheDocument();
     expect(screen.getByText("3m+")).toBeInTheDocument();
+    expect(screen.getByText("Growth (30d)")).toBeInTheDocument();
+    expect(screen.getByText("Closure (30d)")).toBeInTheDocument();
+    expect(screen.getByText("0.40/day")).toBeInTheDocument();
+    expect(screen.getByText("0.17/day")).toBeInTheDocument();
   });
 
   it("records the viewed tag in recent history", () => {

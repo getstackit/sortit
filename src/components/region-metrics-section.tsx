@@ -3,7 +3,7 @@
 import { ActivityIcon } from "lucide-react";
 
 import { useRegion } from "@/hooks/use-region";
-import type { RegionKind } from "@/lib/regions";
+import type { Rate, RegionKind } from "@/lib/regions";
 
 type Props = {
   kind: RegionKind;
@@ -92,6 +92,17 @@ export function RegionMetricsSection({ kind, id }: Props) {
         </div>
       )}
 
+      <div className="mt-4 grid grid-cols-2 gap-3">
+        <FlowTile
+          label={`Growth (${metrics.window.label})`}
+          rate={metrics.growth}
+        />
+        <FlowTile
+          label={`Closure (${metrics.window.label})`}
+          rate={metrics.closure}
+        />
+      </div>
+
       <p className="mt-4 text-[11px] text-muted-foreground">
         Membership uses a 0.4 relevance floor (the verifier&apos;s keep threshold), so these
         counts can be lower than &ldquo;issues tagged&rdquo;.
@@ -105,6 +116,26 @@ function RegionMetricsHeader() {
     <div className="flex items-center gap-2">
       <ActivityIcon className="size-4 text-muted-foreground" />
       <h3 className="text-sm font-semibold">Region metrics</h3>
+    </div>
+  );
+}
+
+function FlowTile({ label, rate }: { label: string; rate?: Rate | null }) {
+  return (
+    <div className="app-subtle-surface rounded-[1.25rem] px-3 py-2.5">
+      <p className="text-[10px] font-medium uppercase tracking-[0.14em] text-muted-foreground">
+        {label}
+      </p>
+      {rate ? (
+        <>
+          <p className="mt-1 text-xl font-semibold tabular-nums">{rate.count}</p>
+          <p className="text-[10px] tabular-nums text-muted-foreground">
+            {rate.perDay.toFixed(2)}/day
+          </p>
+        </>
+      ) : (
+        <p className="mt-1 text-xl font-semibold tabular-nums text-muted-foreground">—</p>
+      )}
     </div>
   );
 }
