@@ -188,6 +188,17 @@ func (s *Server) handleDebugFactorWeights(w http.ResponseWriter, r *http.Request
 	writeJSON(w, http.StatusOK, result)
 }
 
+func (s *Server) handleDebugTagCooccurrence(w http.ResponseWriter, r *http.Request) {
+	tag := strings.TrimSpace(r.URL.Query().Get("tag"))
+	result, err := s.debugTagCooccurrence.Handle(r.Context(), tag)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+
+	writeJSON(w, http.StatusOK, result)
+}
+
 func decodeDebugIssueAnalyzeRequest(r *http.Request) (debugIssueAnalyzeRequest, error) {
 	request, err := decodeJSON[debugIssueAnalyzeRequest](r)
 	if err != nil {

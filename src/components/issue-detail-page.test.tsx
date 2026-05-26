@@ -277,6 +277,47 @@ describe("IssueDetailPage", () => {
     );
   });
 
+  it("renders a Contested section when a tag carries a negation signal", async () => {
+    vi.mocked(fetchIssue).mockResolvedValue(
+      makeIssue({
+        raw: "Safari export hangs — this is not a regression",
+        tagScores: [
+          {
+            tag: "safari",
+            relevance: 0.9,
+          },
+          {
+            tag: "regression",
+            relevance: 0,
+            negation: 0.6,
+            negationProvenance: "analyzer-negation",
+            negationReason: "explicitly refuted by source text",
+            negationEvidence: [
+              {
+                start: 24,
+                end: 47,
+                text: "this is not a regression",
+                source: "source_text",
+                kind: "direct_quote",
+              },
+            ],
+          },
+        ],
+      })
+    );
+
+    renderIssueDetail("issue-123");
+
+    expect(await screen.findByText("Contested tags")).toBeInTheDocument();
+    expect(screen.getByText("regression")).toBeInTheDocument();
+    expect(screen.getByText("Analyzer")).toBeInTheDocument();
+    expect(screen.getByText("−0.60")).toBeInTheDocument();
+    // Synthetic Relevance:0 rows must not appear in the Classification confidence bars.
+    // The bars filter to relevance > 0; only "safari" should appear there.
+    const bars = screen.queryAllByText("regression");
+    expect(bars).toHaveLength(1); // Only the one in Contested
+  });
+
   it("shows lifecycle stability when metrics are present", async () => {
     vi.mocked(fetchIssue).mockResolvedValue(makeIssue({
       lifecycleMetrics: {

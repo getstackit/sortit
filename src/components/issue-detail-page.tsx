@@ -283,6 +283,94 @@ function citationSourceLabel(source?: string) {
   }
 }
 
+const NEGATION_PROVENANCE_LABELS: Record<string, string> = {
+  "analyzer-negation": "Analyzer",
+  "verifier-dominance": "Verifier",
+  dismiss: "Dismissed",
+  cooccurrence: "Co-occurrence",
+};
+
+function ContestedTags({
+  raw,
+  tagScores,
+}: {
+  raw: string;
+  tagScores: NonNullable<IssueRecord["tagScores"]>;
+}) {
+  const contested = tagScores
+    .filter((score) => score.negation != null && score.negation > 0)
+    .map((score) => {
+      const evidence = score.negationEvidence ?? [];
+      const ranges = convertEvidenceRanges(raw, evidence).map((range) => ({
+        ...range,
+        quote: range.text || raw.slice(range.start, range.end),
+      }));
+      return { score, ranges };
+    });
+
+  if (contested.length === 0) {
+    return null;
+  }
+
+  return (
+    <section className="app-surface rounded-[1.5rem] p-5">
+      <div className="flex items-center justify-between gap-3">
+        <h3 className="text-sm font-semibold">Contested tags</h3>
+        <Badge variant="outline">{contested.length}</Badge>
+      </div>
+      <p className="mt-1 text-[11px] text-muted-foreground">
+        Tags that the issue text explicitly refutes or that the verifier judged misaligned.
+      </p>
+      <div className="mt-3 space-y-3">
+        {contested.map(({ score, ranges }) => (
+          <div key={score.tag} className="space-y-2">
+            <div className="flex flex-wrap items-center gap-2">
+              <span
+                className="size-2 rounded-full opacity-40"
+                style={{ backgroundColor: defaultTagColor(score.tag) }}
+              />
+              <Link
+                href={tagHref(score.tag)}
+                className="text-xs font-medium text-foreground line-through decoration-muted-foreground/60 hover:no-underline hover:underline-offset-2"
+              >
+                {score.tag}
+              </Link>
+              {score.negation != null && (
+                <span className="text-[11px] tabular-nums text-muted-foreground">
+                  −{score.negation.toFixed(2)}
+                </span>
+              )}
+              {score.negationProvenance && (
+                <Badge variant="outline">
+                  {NEGATION_PROVENANCE_LABELS[score.negationProvenance] ??
+                    score.negationProvenance}
+                </Badge>
+              )}
+            </div>
+            {score.negationReason && (
+              <p className="pl-4 text-xs text-muted-foreground">
+                {score.negationReason}
+              </p>
+            )}
+            {ranges.length > 0 && (
+              <div className="space-y-1.5 pl-4">
+                {ranges.map((range, index) => (
+                  <blockquote
+                    key={`${score.tag}-neg-${range.start}-${range.end}-${index}`}
+                    className="border-l-2 border-muted-foreground/40 pl-2 text-xs leading-5 text-muted-foreground"
+                  >
+                    <span className="text-foreground">&ldquo;{range.quote}&rdquo;</span>
+                  </blockquote>
+                ))}
+              </div>
+            )}
+          </div>
+        ))}
+      </div>
+    </section>
+  );
+}
+
 function CitationInspector({
   raw,
   tagScores,
@@ -1582,12 +1670,13 @@ export function IssueDetailPage({ issueID }: { issueID: string }) {
                   </dl>
                 </section>
 
-                {issue.tagScores && issue.tagScores.length > 0 && (
+                {issue.tagScores &&
+                  issue.tagScores.some((score) => score.relevance > 0) && (
                   <section className="app-surface rounded-[1.5rem] p-5">
                     <h3 className="text-sm font-semibold">Classification confidence</h3>
                     <div className="mt-3">
                       <TagRelevanceBars
-                        tags={issue.tagScores}
+                        tags={issue.tagScores.filter((score) => score.relevance > 0)}
                         hasEvidence={tagHasEvidence}
                         evidenceCount={tagEvidenceCount}
                         activeTags={activeCitationTags}
@@ -1596,6 +1685,10 @@ export function IssueDetailPage({ issueID }: { issueID: string }) {
                     </div>
                     <CitationInspector raw={issue.raw} tagScores={issue.tagScores} />
                   </section>
+                )}
+
+                {issue.tagScores && issue.tagScores.length > 0 && (
+                  <ContestedTags raw={issue.raw} tagScores={issue.tagScores} />
                 )}
 
                 {r2Data && !r2Data.skipped && (

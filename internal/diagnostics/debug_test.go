@@ -228,8 +228,8 @@ type debugEvalTagger struct {
 	scoresByText map[string][]ai.TagScore
 }
 
-func (t *debugEvalTagger) Score(_ context.Context, text string, _ []ai.Tag, _ []ai.FewShotExample) ([]ai.TagScore, error) {
-	return append([]ai.TagScore(nil), t.scoresByText[text]...), nil
+func (t *debugEvalTagger) Score(_ context.Context, text string, _ []ai.Tag, _ []ai.FewShotExample) (ai.ScoreResult, error) {
+	return ai.ScoreResult{Tags: append([]ai.TagScore(nil), t.scoresByText[text]...)}, nil
 }
 
 func (t *debugEvalTagger) Provider() string {
@@ -245,20 +245,20 @@ type debugEvalSequenceTagger struct {
 	calls     map[string]int
 }
 
-func (t *debugEvalSequenceTagger) Score(_ context.Context, text string, _ []ai.Tag, _ []ai.FewShotExample) ([]ai.TagScore, error) {
+func (t *debugEvalSequenceTagger) Score(_ context.Context, text string, _ []ai.Tag, _ []ai.FewShotExample) (ai.ScoreResult, error) {
 	if t.calls == nil {
 		t.calls = make(map[string]int)
 	}
 	sequence := t.sequences[text]
 	if len(sequence) == 0 {
-		return nil, nil
+		return ai.ScoreResult{}, nil
 	}
 	index := t.calls[text]
 	if index >= len(sequence) {
 		index = len(sequence) - 1
 	}
 	t.calls[text]++
-	return append([]ai.TagScore(nil), sequence[index]...), nil
+	return ai.ScoreResult{Tags: append([]ai.TagScore(nil), sequence[index]...)}, nil
 }
 
 func (t *debugEvalSequenceTagger) Provider() string {

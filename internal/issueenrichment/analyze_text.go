@@ -70,6 +70,7 @@ func (s *IssueEnricher) AnalyzeText(ctx context.Context, raw string, opts Analyz
 		candidates,
 		tagScores,
 		analyzed.Tags,
+		analyzed.Negated,
 		tagSpecificity,
 		opts.Verify,
 	)

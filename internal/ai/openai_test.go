@@ -1,6 +1,7 @@
 package ai
 
 import (
+	"encoding/json"
 	"net/http"
 	"strings"
 	"testing"
@@ -145,6 +146,62 @@ func TestBuildOpenAITaggingPromptsRequestOptionalEvidence(t *testing.T) {
 	}
 	if strings.Contains(userPrompt, "do not assign the tag") {
 		t.Fatal("user prompt should not reject tags without evidence")
+	}
+}
+
+func TestBuildOpenAITaggingPromptInstructsNegatedTags(t *testing.T) {
+	systemPrompt := buildOpenAITaggingSystemPrompt()
+	for _, expected := range []string{
+		"negated_tags",
+		"EXPLICITLY REFUTES",
+		"Evidence for negated tags is required",
+		"Never invent tag names in negated_tags",
+	} {
+		if !strings.Contains(systemPrompt, expected) {
+			t.Fatalf("expected system prompt to contain %q", expected)
+		}
+	}
+
+	userPrompt := buildOpenAITaggingPrompt("an issue", []Tag{{Name: "bug"}}, nil)
+	if !strings.Contains(userPrompt, "negated_tags") {
+		t.Fatalf("expected user prompt to mention negated_tags")
+	}
+	if !strings.Contains(userPrompt, "EXPLICITLY REFUTES") {
+		t.Fatalf("expected user prompt to instruct on explicit refutation")
+	}
+}
+
+func TestOpenAITagScoresResponseAcceptsMissingNegatedTags(t *testing.T) {
+	body := `{"tags": [{"tag": "bug", "relevance": 0.9}]}`
+	var payload openAITagScoresResponse
+	if err := json.Unmarshal([]byte(body), &payload); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(payload.Tags) != 1 {
+		t.Fatalf("expected 1 tag, got %d", len(payload.Tags))
+	}
+	if payload.NegatedTags != nil {
+		t.Fatalf("expected NegatedTags to be nil when absent, got %+v", payload.NegatedTags)
+	}
+}
+
+func TestOpenAITagScoresResponseParsesNegatedTags(t *testing.T) {
+	body := `{
+		"tags": [{"tag": "bug", "relevance": 0.9}],
+		"negated_tags": [
+			{"tag": "regression", "confidence": 0.85, "evidence": ["this is not a regression"]}
+		]
+	}`
+	var payload openAITagScoresResponse
+	if err := json.Unmarshal([]byte(body), &payload); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(payload.NegatedTags) != 1 {
+		t.Fatalf("expected 1 negated tag, got %d", len(payload.NegatedTags))
+	}
+	got := payload.NegatedTags[0]
+	if got.Tag != "regression" || got.Confidence != 0.85 || len(got.Evidence) != 1 {
+		t.Fatalf("unexpected negated tag payload: %+v", got)
 	}
 }
 

@@ -12,6 +12,8 @@ These docs describe the current product and implementation. Historical planning 
 - [Scoring, Search, and Map](./scoring-search-map.md): how tags, embeddings, ranking, and projection work.
 - [Data Model](./data-model.md): PostgreSQL tables, append-only facts, projections, and migrations.
 - [Planning](./planning.md): forward-looking design sketch for the quantitative project management layer.
+- [White Paper](./whitepaper.md): the math behind enrichment, search, and map — with critical notes on where the implementation diverges from textbook.
+- [Math Evolution](./math-evolution.md): forward-looking design for signed tag loadings, ridge regression, and the quantitative planning layer.
 
 ## Quick Start
 

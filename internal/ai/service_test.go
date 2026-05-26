@@ -71,6 +71,59 @@ func TestNormalizeScoresRoundsRelevanceToTwoDecimals(t *testing.T) {
 	}
 }
 
+func TestNormalizeNegatedKeepsOnlyEvidencedTaxonomyTags(t *testing.T) {
+	taxonomy := []Tag{
+		{Name: "regression"},
+		{Name: "safari"},
+	}
+
+	negated := []NegatedTag{
+		{Tag: " Regression ", Confidence: 0.9, Evidence: []string{"this is not a regression"}},
+		{Tag: "safari", Confidence: 0.4, Evidence: []string{}},                        // dropped: no evidence
+		{Tag: "feature", Confidence: 0.6, Evidence: []string{"not a feature"}},        // dropped: not in taxonomy
+		{Tag: "regression", Confidence: 0.5, Evidence: []string{"never worked"}},      // dedup: keeps higher confidence
+		{Tag: "", Confidence: 0.7, Evidence: []string{"never worked"}},                // dropped: empty tag
+		{Tag: "safari", Confidence: 1.2, Evidence: []string{"all browsers affected"}}, // cap at 0.7
+	}
+
+	out := normalizeNegated(negated, taxonomy)
+	if len(out) != 2 {
+		t.Fatalf("expected 2 normalized negations, got %d: %+v", len(out), out)
+	}
+
+	byTag := make(map[string]NegatedTag, len(out))
+	for _, n := range out {
+		byTag[n.Tag] = n
+	}
+
+	reg, ok := byTag["regression"]
+	if !ok {
+		t.Fatalf("expected regression to be present")
+	}
+	// 0.9 is capped at the 0.7 negation cap; merge keeps the higher of the
+	// two regression entries (0.7 vs 0.5).
+	if reg.Confidence != 0.7 {
+		t.Errorf("expected regression confidence capped at 0.7, got %v", reg.Confidence)
+	}
+	if len(reg.Evidence) == 0 {
+		t.Errorf("expected regression to carry evidence")
+	}
+
+	saf, ok := byTag["safari"]
+	if !ok {
+		t.Fatalf("expected safari to be present (the evidenced entry)")
+	}
+	if saf.Confidence != 0.7 {
+		t.Errorf("expected safari confidence capped at 0.7, got %v", saf.Confidence)
+	}
+}
+
+func TestNormalizeNegatedEmptyInput(t *testing.T) {
+	if got := normalizeNegated(nil, []Tag{{Name: "bug"}}); got != nil {
+		t.Errorf("expected nil for nil input, got %+v", got)
+	}
+}
+
 func TestScoreTagSpecificityWithStub(t *testing.T) {
 	analyzer := NewAnalyzer(NewStubTagger(), NewStubEmbedder())
 

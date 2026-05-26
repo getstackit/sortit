@@ -37,7 +37,7 @@ func (a *Analyzer) AnalyzeIssueData(ctx context.Context, text string, tags []Tag
 		return AnalyzedIssue{}, ErrNotConfigured
 	}
 
-	scores, err := a.tagger.Score(ctx, text, tags, examples)
+	result, err := a.tagger.Score(ctx, text, tags, examples)
 	if err != nil {
 		return AnalyzedIssue{}, fmt.Errorf("score tags: %w", err)
 	}
@@ -48,7 +48,8 @@ func (a *Analyzer) AnalyzeIssueData(ctx context.Context, text string, tags []Tag
 	}
 
 	return AnalyzedIssue{
-		Tags:      normalizeScores(scores, tags),
+		Tags:      normalizeScores(result.Tags, tags),
+		Negated:   normalizeNegated(result.Negated, tags),
 		Embedding: embedding,
 		Tagger: ModelInfo{
 			Provider: a.tagger.Provider(),
@@ -69,6 +70,7 @@ func (a *Analyzer) AnalyzeIssue(ctx context.Context, text string, tags []Tag, ex
 
 	return IssueAnalysis{
 		Tags:      analyzed.Tags,
+		Negated:   analyzed.Negated,
 		Embedding: analyzed.Embedding.Info,
 		Tagger:    analyzed.Tagger,
 		Embedder:  analyzed.Embedder,
@@ -159,6 +161,81 @@ func normalizeScores(scores []TagScore, taxonomy []Tag) []TagScore {
 		return cmp.Compare(a.Tag, b.Tag)
 	})
 	return normalized
+}
+
+// negationConfidenceCap mirrors docs/math-evolution.md §4.2: r_i⁻ is capped at
+// 0.7 so the math layer always has room to disagree.
+const negationConfidenceCap = 0.7
+
+// normalizeNegated filters the analyzer's negated_tags output:
+//   - tag names must be in the supplied taxonomy (no inventing negations)
+//   - duplicate tag names collapse to the highest confidence
+//   - confidence is clamped to [0, negationConfidenceCap]
+//   - entries with no evidence are dropped (negative signal requires textual
+//     grounding; the verifier rejects unevidenced negations regardless)
+func normalizeNegated(negated []NegatedTag, taxonomy []Tag) []NegatedTag {
+	if len(negated) == 0 {
+		return nil
+	}
+	taxonomyNames := make(map[string]string, len(taxonomy))
+	for _, tag := range taxonomy {
+		name := normalizeTagName(tag.Name)
+		if name == "" {
+			continue
+		}
+		taxonomyNames[name] = tag.Name
+	}
+
+	merged := make(map[string]NegatedTag, len(negated))
+	for _, item := range negated {
+		name := normalizeTagName(item.Tag)
+		if name == "" {
+			continue
+		}
+		exactName, ok := taxonomyNames[name]
+		if !ok {
+			continue
+		}
+		evidence := make([]string, 0, len(item.Evidence))
+		for _, quote := range item.Evidence {
+			quote = strings.TrimSpace(quote)
+			if quote != "" {
+				evidence = append(evidence, quote)
+			}
+		}
+		if len(evidence) == 0 {
+			continue
+		}
+		confidence := minFloat(negationConfidenceCap, maxFloat(0, item.Confidence))
+		confidence = math.Round(confidence*100) / 100
+
+		entry := NegatedTag{
+			Tag:        exactName,
+			Confidence: confidence,
+			Evidence:   evidence,
+		}
+		existing, seen := merged[strings.ToLower(exactName)]
+		if !seen || entry.Confidence > existing.Confidence {
+			merged[strings.ToLower(exactName)] = entry
+			continue
+		}
+		if len(existing.Evidence) == 0 && len(entry.Evidence) > 0 {
+			existing.Evidence = entry.Evidence
+			merged[strings.ToLower(exactName)] = existing
+		}
+	}
+
+	out := make([]NegatedTag, 0, len(merged))
+	for _, entry := range merged {
+		out = append(out, entry)
+	}
+	slices.SortStableFunc(out, func(a, b NegatedTag) int {
+		if c := cmp.Compare(b.Confidence, a.Confidence); c != 0 {
+			return c
+		}
+		return cmp.Compare(a.Tag, b.Tag)
+	})
+	return out
 }
 
 func normalizeTagName(tag string) string {
