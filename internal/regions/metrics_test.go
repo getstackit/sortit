@@ -8,19 +8,21 @@ import (
 	"sortit/internal/issues"
 )
 
+const authTag = "auth"
+
 func TestComputeMassEmptyCorpus(t *testing.T) {
-	mass, open, closed := ComputeMass(nil, domain.RegionKey{Kind: domain.RegionKindTag, ID: "auth"})
+	mass, open, closed := ComputeMass(nil, domain.RegionKey{Kind: domain.RegionKindTag, ID: authTag})
 	if mass != 0 || open != 0 || closed != 0 {
 		t.Fatalf("expected zeros, got mass=%d open=%d closed=%d", mass, open, closed)
 	}
 }
 
 func TestComputeMassFloorEdge(t *testing.T) {
-	auth := domain.RegionKey{Kind: domain.RegionKindTag, ID: "auth"}
+	auth := domain.RegionKey{Kind: domain.RegionKindTag, ID: authTag}
 	items := []issues.Issue{
-		{ID: "a", Status: issues.StatusOpen, TagScores: []domain.TagRelevance{{Tag: "auth", Relevance: MembershipFloor - 0.001}}},
-		{ID: "b", Status: issues.StatusOpen, TagScores: []domain.TagRelevance{{Tag: "auth", Relevance: MembershipFloor}}},
-		{ID: "c", Status: issues.StatusOpen, TagScores: []domain.TagRelevance{{Tag: "auth", Relevance: MembershipFloor + 0.01}}},
+		{ID: "a", Status: issues.StatusOpen, TagScores: []domain.TagRelevance{{Tag: authTag, Relevance: MembershipFloor - 0.001}}},
+		{ID: "b", Status: issues.StatusOpen, TagScores: []domain.TagRelevance{{Tag: authTag, Relevance: MembershipFloor}}},
+		{ID: "c", Status: issues.StatusOpen, TagScores: []domain.TagRelevance{{Tag: authTag, Relevance: MembershipFloor + 0.01}}},
 	}
 	mass, open, closed := ComputeMass(items, auth)
 	if mass != 2 {
@@ -35,11 +37,11 @@ func TestComputeMassFloorEdge(t *testing.T) {
 }
 
 func TestComputeMassStatusSplit(t *testing.T) {
-	auth := domain.RegionKey{Kind: domain.RegionKindTag, ID: "auth"}
+	auth := domain.RegionKey{Kind: domain.RegionKindTag, ID: authTag}
 	items := []issues.Issue{
-		{ID: "a", Status: issues.StatusOpen, TagScores: []domain.TagRelevance{{Tag: "auth", Relevance: 0.8}}},
-		{ID: "b", Status: issues.StatusClosed, TagScores: []domain.TagRelevance{{Tag: "auth", Relevance: 0.6}}},
-		{ID: "c", Status: issues.StatusClosed, TagScores: []domain.TagRelevance{{Tag: "auth", Relevance: 0.5}}},
+		{ID: "a", Status: issues.StatusOpen, TagScores: []domain.TagRelevance{{Tag: authTag, Relevance: 0.8}}},
+		{ID: "b", Status: issues.StatusClosed, TagScores: []domain.TagRelevance{{Tag: authTag, Relevance: 0.6}}},
+		{ID: "c", Status: issues.StatusClosed, TagScores: []domain.TagRelevance{{Tag: authTag, Relevance: 0.5}}},
 	}
 	mass, open, closed := ComputeMass(items, auth)
 	if mass != 3 || open != 1 || closed != 2 {
@@ -48,9 +50,9 @@ func TestComputeMassStatusSplit(t *testing.T) {
 }
 
 func TestComputeMassExcludesNegationOnly(t *testing.T) {
-	auth := domain.RegionKey{Kind: domain.RegionKindTag, ID: "auth"}
+	auth := domain.RegionKey{Kind: domain.RegionKindTag, ID: authTag}
 	items := []issues.Issue{
-		{ID: "a", Status: issues.StatusOpen, TagScores: []domain.TagRelevance{{Tag: "auth", Relevance: 0, Negation: new(0.6)}}},
+		{ID: "a", Status: issues.StatusOpen, TagScores: []domain.TagRelevance{{Tag: authTag, Relevance: 0, Negation: new(0.6)}}},
 	}
 	mass, _, _ := ComputeMass(items, auth)
 	if mass != 0 {
@@ -60,13 +62,13 @@ func TestComputeMassExcludesNegationOnly(t *testing.T) {
 
 func TestComputeAgeBucketsBoundaries(t *testing.T) {
 	now := time.Date(2026, 5, 25, 12, 0, 0, 0, time.UTC)
-	auth := domain.RegionKey{Kind: domain.RegionKindTag, ID: "auth"}
+	auth := domain.RegionKey{Kind: domain.RegionKindTag, ID: authTag}
 	mkIssue := func(id string, ageDays float64) issues.Issue {
 		return issues.Issue{
 			ID:        id,
 			Status:    issues.StatusOpen,
 			CreatedAt: now.Add(-time.Duration(ageDays * float64(24*time.Hour))),
-			TagScores: []domain.TagRelevance{{Tag: "auth", Relevance: 0.7}},
+			TagScores: []domain.TagRelevance{{Tag: authTag, Relevance: 0.7}},
 		}
 	}
 	items := []issues.Issue{
@@ -98,13 +100,13 @@ func TestComputeAgeBucketsBoundaries(t *testing.T) {
 
 func TestComputeAgeBucketsExcludesClosed(t *testing.T) {
 	now := time.Date(2026, 5, 25, 12, 0, 0, 0, time.UTC)
-	auth := domain.RegionKey{Kind: domain.RegionKindTag, ID: "auth"}
+	auth := domain.RegionKey{Kind: domain.RegionKindTag, ID: authTag}
 	items := []issues.Issue{
 		{
 			ID:        "a",
 			Status:    issues.StatusClosed,
 			CreatedAt: now.Add(-time.Hour),
-			TagScores: []domain.TagRelevance{{Tag: "auth", Relevance: 0.9}},
+			TagScores: []domain.TagRelevance{{Tag: authTag, Relevance: 0.9}},
 		},
 	}
 	buckets := ComputeAgeBuckets(items, auth, now)
@@ -118,7 +120,7 @@ func TestComputeAgeBucketsExcludesClosed(t *testing.T) {
 func TestComputeMetricsZeroMassReturnsFalse(t *testing.T) {
 	now := time.Date(2026, 5, 25, 12, 0, 0, 0, time.UTC)
 	window := domain.TimeWindow{Label: "30d", End: now}
-	_, ok := ComputeMetrics(nil, domain.RegionKey{Kind: domain.RegionKindTag, ID: "auth"}, window, now)
+	_, ok := ComputeMetrics(nil, domain.RegionKey{Kind: domain.RegionKindTag, ID: authTag}, window, now)
 	if ok {
 		t.Fatal("expected ok=false for empty corpus")
 	}
@@ -128,15 +130,15 @@ func TestListRegionsWithMetricsSortedByMass(t *testing.T) {
 	now := time.Date(2026, 5, 25, 12, 0, 0, 0, time.UTC)
 	window := domain.TimeWindow{Label: "30d", End: now}
 	items := []issues.Issue{
-		{ID: "a", Status: issues.StatusOpen, CreatedAt: now, TagScores: []domain.TagRelevance{{Tag: "auth", Relevance: 0.9}}},
-		{ID: "b", Status: issues.StatusOpen, CreatedAt: now, TagScores: []domain.TagRelevance{{Tag: "auth", Relevance: 0.5}}},
+		{ID: "a", Status: issues.StatusOpen, CreatedAt: now, TagScores: []domain.TagRelevance{{Tag: authTag, Relevance: 0.9}}},
+		{ID: "b", Status: issues.StatusOpen, CreatedAt: now, TagScores: []domain.TagRelevance{{Tag: authTag, Relevance: 0.5}}},
 		{ID: "c", Status: issues.StatusOpen, CreatedAt: now, TagScores: []domain.TagRelevance{{Tag: "billing", Relevance: 0.7}}},
 	}
 	regions := ListRegionsWithMetrics(items, window, now)
 	if len(regions) != 2 {
 		t.Fatalf("expected 2 regions, got %d", len(regions))
 	}
-	if regions[0].Region.Key.ID != "auth" {
+	if regions[0].Region.Key.ID != authTag {
 		t.Fatalf("expected auth first (higher mass); got %q", regions[0].Region.Key.ID)
 	}
 	if regions[0].Metrics.Mass != 2 || regions[1].Metrics.Mass != 1 {
@@ -149,7 +151,7 @@ func TestListRegionsWithMetricsIgnoresBelowFloor(t *testing.T) {
 	window := domain.TimeWindow{Label: "30d", End: now}
 	items := []issues.Issue{
 		{ID: "a", Status: issues.StatusOpen, CreatedAt: now, TagScores: []domain.TagRelevance{
-			{Tag: "auth", Relevance: 0.1},
+			{Tag: authTag, Relevance: 0.1},
 			{Tag: "billing", Relevance: 0.6},
 		}},
 	}

@@ -24,6 +24,7 @@ import (
 	"sortit/internal/mapview"
 	mcpserver "sortit/internal/mcp"
 	"sortit/internal/people"
+	"sortit/internal/regions"
 	"sortit/internal/search"
 	"sortit/internal/tags"
 	"sortit/internal/tracing"
@@ -77,6 +78,7 @@ type Server struct {
 	getPersonProfile     people.GetPersonProfileHandler
 	getPersonDetail      people.GetPersonDetailHandler
 	workCorrelations     people.WorkCorrelationsHandler
+	regions              *regions.Handler
 	authService          *auth.Service
 	catalog              *tags.CatalogService
 }
@@ -254,6 +256,8 @@ func (s *Server) registerDedicatedAPIRoutes(r chi.Router) {
 		r.Get("/people/correlations", s.handleWorkCorrelations)
 		r.Get("/people/{person}", s.handlePersonDetail)
 		r.Get("/people/{person}/profile", s.handlePersonProfileRoute)
+		r.Get("/regions", s.handleRegionsList)
+		r.Get("/regions/{kind}/{id}", s.handleRegionGet)
 		r.Route("/debug", func(r chi.Router) {
 			r.Use(middleware.Timeout(debugRequestTimeout))
 			r.Get("/eval-tags", s.handleDebugEvalTags)
@@ -285,6 +289,8 @@ func (s *Server) registerUIRoutes(r chi.Router) {
 		r.Get("/people/correlations", s.handleWorkCorrelations)
 		r.Get("/people/{person}", s.handlePersonDetail)
 		r.Get("/people/{person}/profile", s.handlePersonProfileRoute)
+		r.Get("/regions", s.handleRegionsList)
+		r.Get("/regions/{kind}/{id}", s.handleRegionGet)
 		r.Route("/debug", func(r chi.Router) {
 			r.Use(middleware.Timeout(debugRequestTimeout))
 			r.Post("/issues/analyze", s.handleDebugIssueAnalyze)
@@ -561,6 +567,8 @@ func NewServer(cfg ServerConfig) *Server {
 		Revisions:   revisions,
 		Projections: mapProjectionStoreFromIssueStore(baseStore),
 	}
+	regionsLoader := &regions.Loader{Store: store, Revisions: revisions}
+	regionsHandler := &regions.Handler{Loader: regionsLoader}
 
 	return &Server{
 		config:              cfg,
@@ -642,6 +650,7 @@ func NewServer(cfg ServerConfig) *Server {
 		getPersonProfile:     people.GetPersonProfileHandler{Store: store, Catalog: catalog},
 		getPersonDetail:      people.GetPersonDetailHandler{Store: store, Catalog: catalog},
 		workCorrelations:     people.WorkCorrelationsHandler{Store: store, Catalog: catalog},
+		regions:              regionsHandler,
 		authService:          cfg.Auth,
 		catalog:              catalog,
 	}
