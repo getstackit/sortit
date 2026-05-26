@@ -15,6 +15,7 @@ import { AppShell } from "@/components/app-shell";
 import { AppSidebar } from "@/components/app-sidebar";
 import { DetailPageLayout, DetailPageGrid } from "@/components/detail-page-layout";
 import { IssueCard } from "@/components/issue-card";
+import { RegionMetricsSection } from "@/components/region-metrics-section";
 import { SectionHeader } from "@/components/section-header";
 import { SiteHeader } from "@/components/site-header";
 import { TagBadge } from "@/components/tag-badge";
@@ -212,6 +213,8 @@ export function TagDetailPage({ tagName }: { tagName: string }) {
           <DetailPageGrid
             sidebar={
               <>
+                <RegionMetricsSection kind="tag" id={tag.name} />
+
                 <section id="related" className="app-surface rounded-[1.5rem] p-5">
                   <div className="flex items-center gap-2">
                     <HashIcon className="size-4 text-muted-foreground" />
