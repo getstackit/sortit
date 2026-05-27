@@ -7,6 +7,7 @@ import (
 
 	"sortit/internal/domain"
 	"sortit/internal/issues"
+	"sortit/internal/vectors"
 )
 
 // Age bucket labels in display order.
@@ -125,6 +126,63 @@ func ComputeClosure(items []issues.Issue, key domain.RegionKey, window domain.Ti
 	return rateOver(count, window)
 }
 
+// DensityMinMembers is the minimum number of in-region issues with
+// embeddings required for ComputeDensity to return a value. Smaller
+// samples produce too noisy a centroid to trust.
+const DensityMinMembers = 5
+
+// ComputeDensity returns a [0, 1] cohesion score for the region: the
+// mean cosine similarity between each in-region issue's embedding and
+// the region's centroid (L2-normalized mean of member embeddings).
+// Returns nil when fewer than DensityMinMembers issues have embeddings
+// or when the centroid is degenerate (zero vector / mismatched dims).
+func ComputeDensity(items []issues.Issue, key domain.RegionKey) *float64 {
+	members := make([][]float64, 0)
+	dim := 0
+	for _, issue := range items {
+		if !BelongsTo(issue, key) {
+			continue
+		}
+		if len(issue.Embedding) == 0 {
+			continue
+		}
+		if dim == 0 {
+			dim = len(issue.Embedding)
+		}
+		if len(issue.Embedding) != dim {
+			continue
+		}
+		members = append(members, issue.Embedding)
+	}
+	if len(members) < DensityMinMembers {
+		return nil
+	}
+	centroid := make([]float64, dim)
+	for _, vec := range members {
+		for i, v := range vec {
+			centroid[i] += v
+		}
+	}
+	n := float64(len(members))
+	for i := range centroid {
+		centroid[i] /= n
+	}
+	mag := 0.0
+	for _, v := range centroid {
+		mag += v * v
+	}
+	if mag == 0 {
+		return nil
+	}
+	sum := 0.0
+	for _, vec := range members {
+		sum += vectors.CosineSimilarity(vec, centroid)
+	}
+	density := sum / n
+	density = math.Round(density*1000) / 1000
+	return &density
+}
+
 // ComputeChurn counts events whose IssueID is currently a region member
 // and whose timestamp falls in window. Events are pre-filtered to the
 // relevant kinds and window by the Store; this function only buckets by
@@ -162,6 +220,7 @@ func ComputeMetrics(items []issues.Issue, events []issues.Event, key domain.Regi
 		MassOpen:   open,
 		MassClosed: closed,
 		AgeBuckets: ComputeAgeBuckets(items, key, now),
+		Density:    ComputeDensity(items, key),
 		Growth:     ComputeGrowth(items, key, window),
 		Closure:    ComputeClosure(items, key, window),
 		Churn:      ComputeChurn(events, items, key, window),

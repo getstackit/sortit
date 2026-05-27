@@ -290,6 +290,73 @@ func TestComputeClosureSkipsOpenStatus(t *testing.T) {
 	}
 }
 
+func TestComputeDensityNilForSmallSample(t *testing.T) {
+	auth := domain.RegionKey{Kind: domain.RegionKindTag, ID: "auth"}
+	items := []issues.Issue{
+		{Status: issues.StatusOpen, TagScores: []domain.TagRelevance{{Tag: "auth", Relevance: 0.9}}, Embedding: []float64{1, 0}},
+		{Status: issues.StatusOpen, TagScores: []domain.TagRelevance{{Tag: "auth", Relevance: 0.9}}, Embedding: []float64{1, 0}},
+	}
+	if got := ComputeDensity(items, auth); got != nil {
+		t.Fatalf("expected nil for < 5 members; got %+v", got)
+	}
+}
+
+func TestComputeDensityIdenticalEmbeddingsApproachOne(t *testing.T) {
+	auth := domain.RegionKey{Kind: domain.RegionKindTag, ID: "auth"}
+	items := make([]issues.Issue, 0, 5)
+	for range 5 {
+		items = append(items, issues.Issue{
+			Status:    issues.StatusOpen,
+			TagScores: []domain.TagRelevance{{Tag: "auth", Relevance: 0.9}},
+			Embedding: []float64{1, 0, 0},
+		})
+	}
+	density := ComputeDensity(items, auth)
+	if density == nil {
+		t.Fatal("expected non-nil density")
+	}
+	if *density < 0.99 {
+		t.Fatalf("expected density ~1.0 for identical embeddings; got %v", *density)
+	}
+}
+
+func TestComputeDensityOrthogonalEmbeddingsLow(t *testing.T) {
+	auth := domain.RegionKey{Kind: domain.RegionKindTag, ID: "auth"}
+	dim := 5
+	items := make([]issues.Issue, 0, dim)
+	for i := range dim {
+		vec := make([]float64, dim)
+		vec[i] = 1
+		items = append(items, issues.Issue{
+			Status:    issues.StatusOpen,
+			TagScores: []domain.TagRelevance{{Tag: "auth", Relevance: 0.9}},
+			Embedding: vec,
+		})
+	}
+	density := ComputeDensity(items, auth)
+	if density == nil {
+		t.Fatal("expected non-nil density")
+	}
+	// For 5 orthogonal unit vectors, centroid is (0.2,0.2,0.2,0.2,0.2) and
+	// each vector has cosine sim 0.2/sqrt(0.2) ≈ 0.447 with the centroid.
+	if *density > 0.5 {
+		t.Fatalf("expected low density for orthogonal embeddings; got %v", *density)
+	}
+}
+
+func TestComputeDensitySkipsIssuesWithoutEmbeddings(t *testing.T) {
+	auth := domain.RegionKey{Kind: domain.RegionKindTag, ID: "auth"}
+	items := []issues.Issue{
+		{Status: issues.StatusOpen, TagScores: []domain.TagRelevance{{Tag: "auth", Relevance: 0.9}}, Embedding: []float64{1, 0}},
+		{Status: issues.StatusOpen, TagScores: []domain.TagRelevance{{Tag: "auth", Relevance: 0.9}}, Embedding: nil},
+		{Status: issues.StatusOpen, TagScores: []domain.TagRelevance{{Tag: "auth", Relevance: 0.9}}, Embedding: nil},
+		{Status: issues.StatusOpen, TagScores: []domain.TagRelevance{{Tag: "auth", Relevance: 0.9}}, Embedding: nil},
+	}
+	if got := ComputeDensity(items, auth); got != nil {
+		t.Fatalf("expected nil when only 1 member has an embedding; got %+v", got)
+	}
+}
+
 func TestComputeChurnCountsInRegionEvents(t *testing.T) {
 	now := time.Date(2026, 5, 25, 12, 0, 0, 0, time.UTC)
 	auth := domain.RegionKey{Kind: domain.RegionKindTag, ID: "auth"}

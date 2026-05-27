@@ -176,9 +176,12 @@ function RegionTile({ entry }: { entry: RegionWithMetrics }) {
     >
       <div className="flex items-center justify-between gap-2">
         <TagBadge tag={region.label} />
-        <span className="text-[11px] tabular-nums text-muted-foreground">
-          {metrics.mass} total
-        </span>
+        <div className="flex items-center gap-2">
+          {metrics.density != null && <DensityChip value={metrics.density} />}
+          <span className="text-[11px] tabular-nums text-muted-foreground">
+            {metrics.mass} total
+          </span>
+        </div>
       </div>
 
       <div className="mt-4 grid grid-cols-3 gap-3">
@@ -197,6 +200,18 @@ function RegionTile({ entry }: { entry: RegionWithMetrics }) {
         <FlowCell label={`Churn (${metrics.window.label})`} rate={metrics.churn} />
       </div>
     </Link>
+  );
+}
+
+function DensityChip({ value }: { value: number }) {
+  const pct = Math.round(value * 100);
+  return (
+    <span
+      title={`Embedding cohesion: ${value.toFixed(3)} (mean cosine sim to centroid)`}
+      className="rounded-full border border-border bg-muted/40 px-2 py-0.5 text-[10px] font-medium tabular-nums text-muted-foreground"
+    >
+      density {pct}%
+    </span>
   );
 }
 
