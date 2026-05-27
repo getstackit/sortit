@@ -37,13 +37,21 @@ func TestHandlerListDefaultsKindAndWindow(t *testing.T) {
 
 func TestHandlerListRejectsUnsupportedKind(t *testing.T) {
 	h := newTestHandler(nil, time.Now())
-	for _, kind := range []string{"cluster", "custom", "bogus"} {
+	for _, kind := range []string{"custom", "bogus"} {
 		t.Run(kind, func(t *testing.T) {
 			_, err := h.List(context.Background(), kind, "30d")
 			if !errors.Is(err, ErrUnsupportedKind) {
 				t.Fatalf("expected ErrUnsupportedKind, got %v", err)
 			}
 		})
+	}
+}
+
+func TestHandlerListAcceptsClusterKind(t *testing.T) {
+	h := newTestHandler(nil, time.Now())
+	_, err := h.List(context.Background(), "cluster", "30d")
+	if err != nil {
+		t.Fatalf("expected cluster kind to be accepted; got %v", err)
 	}
 }
 
@@ -83,7 +91,7 @@ func TestHandlerGetReturnsNotFound(t *testing.T) {
 
 func TestHandlerGetRejectsUnsupportedKind(t *testing.T) {
 	h := newTestHandler(nil, time.Now())
-	_, err := h.Get(context.Background(), "cluster", "anything", "30d")
+	_, err := h.Get(context.Background(), "custom", "anything", "30d")
 	if !errors.Is(err, ErrUnsupportedKind) {
 		t.Fatalf("expected ErrUnsupportedKind, got %v", err)
 	}

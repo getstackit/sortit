@@ -569,7 +569,12 @@ func NewServer(cfg ServerConfig) *Server {
 		Revisions:   revisions,
 		Projections: mapProjectionStoreFromIssueStore(baseStore),
 	}
-	regionsLoader := &regions.Loader{Store: store, Tags: catalog, Revisions: revisions}
+	regionsLoader := &regions.Loader{
+		Store:         store,
+		Tags:          catalog,
+		MapProjection: mapProjectionLoader,
+		Revisions:     revisions,
+	}
 	regionsHandler := &regions.Handler{Loader: regionsLoader}
 
 	return &Server{

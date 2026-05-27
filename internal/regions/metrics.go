@@ -28,10 +28,14 @@ type RegionWithMetrics struct {
 // region. Counts are derived from BelongsTo, so the membership semantics
 // stay in one place.
 func ComputeMass(items []issues.Issue, key domain.RegionKey) (mass, open, closed int) {
-	for _, issue := range items {
-		if !BelongsTo(issue, key) {
-			continue
-		}
+	return ComputeMassMembers(filterMembers(items, key))
+}
+
+// ComputeMassMembers counts mass for a pre-filtered member set. Used by
+// both the tag-region path (filters via BelongsTo) and the cluster path
+// (filters via cluster.IssueIDs).
+func ComputeMassMembers(members []issues.Issue) (mass, open, closed int) {
+	for _, issue := range members {
 		mass++
 		if issue.Status == issues.StatusClosed {
 			closed++
@@ -47,17 +51,19 @@ func ComputeMass(items []issues.Issue, key domain.RegionKey) (mass, open, closed
 // Boundaries are half-open: an issue exactly at the 7-day mark falls into
 // the 1-4w bucket.
 func ComputeAgeBuckets(items []issues.Issue, key domain.RegionKey, now time.Time) []domain.AgeBucket {
+	return ComputeAgeBucketsMembers(filterMembers(items, key), now)
+}
+
+// ComputeAgeBucketsMembers buckets open issues in a pre-filtered set.
+func ComputeAgeBucketsMembers(members []issues.Issue, now time.Time) []domain.AgeBucket {
 	buckets := []domain.AgeBucket{
 		{Label: AgeBucketUnderOneWeek},
 		{Label: AgeBucketOneToFourWeeks},
 		{Label: AgeBucketOneToThreeMonths},
 		{Label: AgeBucketThreeMonthsPlus},
 	}
-	for _, issue := range items {
+	for _, issue := range members {
 		if issue.Status != issues.StatusOpen {
-			continue
-		}
-		if !BelongsTo(issue, key) {
 			continue
 		}
 		age := now.Sub(issue.CreatedAt)
@@ -84,14 +90,16 @@ func ComputeAgeBuckets(items []issues.Issue, key domain.RegionKey, now time.Time
 // counts iff it is currently a member of the region. This matches the
 // closed-factor-attribution timeline's precedent.
 func ComputeGrowth(items []issues.Issue, key domain.RegionKey, window domain.TimeWindow) *domain.Rate {
+	return ComputeGrowthMembers(filterMembers(items, key), window)
+}
+
+// ComputeGrowthMembers counts growth for a pre-filtered member set.
+func ComputeGrowthMembers(members []issues.Issue, window domain.TimeWindow) *domain.Rate {
 	if window.Start.IsZero() {
 		return nil
 	}
 	count := 0
-	for _, issue := range items {
-		if !BelongsTo(issue, key) {
-			continue
-		}
+	for _, issue := range members {
 		if !inWindow(issue.CreatedAt, window) {
 			continue
 		}
@@ -104,18 +112,20 @@ func ComputeGrowth(items []issues.Issue, key domain.RegionKey, window domain.Tim
 // in window, restricted to Status == closed. Returns nil for the "all"
 // window like ComputeGrowth.
 func ComputeClosure(items []issues.Issue, key domain.RegionKey, window domain.TimeWindow) *domain.Rate {
+	return ComputeClosureMembers(filterMembers(items, key), window)
+}
+
+// ComputeClosureMembers counts closures for a pre-filtered member set.
+func ComputeClosureMembers(members []issues.Issue, window domain.TimeWindow) *domain.Rate {
 	if window.Start.IsZero() {
 		return nil
 	}
 	count := 0
-	for _, issue := range items {
+	for _, issue := range members {
 		if issue.Status != issues.StatusClosed {
 			continue
 		}
 		if issue.ClosedAt == nil {
-			continue
-		}
-		if !BelongsTo(issue, key) {
 			continue
 		}
 		if !inWindow(*issue.ClosedAt, window) {
@@ -137,12 +147,14 @@ const DensityMinMembers = 5
 // Returns nil when fewer than DensityMinMembers issues have embeddings
 // or when the centroid is degenerate (zero vector / mismatched dims).
 func ComputeDensity(items []issues.Issue, key domain.RegionKey) *float64 {
+	return ComputeDensityMembers(filterMembers(items, key))
+}
+
+// ComputeDensityMembers computes density from a pre-filtered set.
+func ComputeDensityMembers(memberIssues []issues.Issue) *float64 {
 	members := make([][]float64, 0)
 	dim := 0
-	for _, issue := range items {
-		if !BelongsTo(issue, key) {
-			continue
-		}
+	for _, issue := range memberIssues {
 		if len(issue.Embedding) == 0 {
 			continue
 		}
@@ -257,14 +269,17 @@ func ComputeCorpusOrphans(items []issues.Issue, tags []issues.Tag) domain.Corpus
 // relevant kinds and window by the Store; this function only buckets by
 // region. Returns nil for the "all" window (no meaningful denominator).
 func ComputeChurn(events []issues.Event, items []issues.Issue, key domain.RegionKey, window domain.TimeWindow) *domain.Rate {
+	return ComputeChurnMembers(events, filterMembers(items, key), window)
+}
+
+// ComputeChurnMembers counts churn events against a pre-filtered member set.
+func ComputeChurnMembers(events []issues.Event, members []issues.Issue, window domain.TimeWindow) *domain.Rate {
 	if window.Start.IsZero() {
 		return nil
 	}
-	inRegion := make(map[string]struct{})
-	for _, issue := range items {
-		if BelongsTo(issue, key) {
-			inRegion[issue.ID] = struct{}{}
-		}
+	inRegion := make(map[string]struct{}, len(members))
+	for _, issue := range members {
+		inRegion[issue.ID] = struct{}{}
 	}
 	count := 0
 	for _, event := range events {
@@ -275,10 +290,24 @@ func ComputeChurn(events []issues.Event, items []issues.Issue, key domain.Region
 	return rateOver(count, window)
 }
 
-// ComputeMetrics produces all current-phase metrics for a single region.
-// Returns false if no issues are members (zero mass).
-func ComputeMetrics(items []issues.Issue, events []issues.Event, key domain.RegionKey, window domain.TimeWindow, now time.Time) (domain.RegionMetrics, bool) {
-	mass, open, closed := ComputeMass(items, key)
+// filterMembers returns the subset of items where BelongsTo(item, key)
+// is true. Used by the tag-region wrappers to bridge the old (items,
+// key) signature to the new members-based compute functions.
+func filterMembers(items []issues.Issue, key domain.RegionKey) []issues.Issue {
+	out := make([]issues.Issue, 0, len(items))
+	for _, issue := range items {
+		if BelongsTo(issue, key) {
+			out = append(out, issue)
+		}
+	}
+	return out
+}
+
+// ComputeMetricsForMembers builds RegionMetrics from a pre-filtered
+// member set. Cluster regions use this directly; tag regions go through
+// ComputeMetrics, which filters and then calls this.
+func ComputeMetricsForMembers(key domain.RegionKey, members []issues.Issue, events []issues.Event, window domain.TimeWindow, now time.Time) (domain.RegionMetrics, bool) {
+	mass, open, closed := ComputeMassMembers(members)
 	if mass == 0 {
 		return domain.RegionMetrics{}, false
 	}
@@ -288,12 +317,19 @@ func ComputeMetrics(items []issues.Issue, events []issues.Event, key domain.Regi
 		Mass:       mass,
 		MassOpen:   open,
 		MassClosed: closed,
-		AgeBuckets: ComputeAgeBuckets(items, key, now),
-		Density:    ComputeDensity(items, key),
-		Growth:     ComputeGrowth(items, key, window),
-		Closure:    ComputeClosure(items, key, window),
-		Churn:      ComputeChurn(events, items, key, window),
+		AgeBuckets: ComputeAgeBucketsMembers(members, now),
+		Density:    ComputeDensityMembers(members),
+		Growth:     ComputeGrowthMembers(members, window),
+		Closure:    ComputeClosureMembers(members, window),
+		Churn:      ComputeChurnMembers(events, members, window),
 	}, true
+}
+
+// ComputeMetrics produces all current-phase metrics for a single
+// tag-region. Returns false if no issues are members (zero mass).
+// Delegates to ComputeMetricsForMembers after filtering by BelongsTo.
+func ComputeMetrics(items []issues.Issue, events []issues.Event, key domain.RegionKey, window domain.TimeWindow, now time.Time) (domain.RegionMetrics, bool) {
+	return ComputeMetricsForMembers(key, filterMembers(items, key), events, window, now)
 }
 
 // inWindow returns true when t is in [window.Start, window.End].

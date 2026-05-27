@@ -2,6 +2,8 @@ package issuemap
 
 import (
 	"cmp"
+	"fmt"
+	"hash/fnv"
 	"math"
 	"math/rand"
 	"slices"
@@ -12,6 +14,7 @@ import (
 )
 
 type Cluster struct {
+	ID       string   `json:"id"`
 	Label    string   `json:"label"`
 	CenterX  float64  `json:"centerX"`
 	CenterY  float64  `json:"centerY"`
@@ -55,8 +58,9 @@ func ComputeFactorClusters(items []issues.Issue, positions map[string]Position) 
 		ys[i] = p.Y
 	}
 
-	// Deterministic seed based on issue count
-	rng := rand.New(rand.NewSource(int64(n))) //nolint:gosec
+	// Deterministic seed based on a content hash of the sorted issue IDs.
+	// Same corpus snapshot → same clusters → same cluster IDs across runs.
+	rng := rand.New(rand.NewSource(int64(hashSortedIssueIDs(items)))) //nolint:gosec
 
 	bestScore := -2.0
 	var bestAssign []int
@@ -112,6 +116,7 @@ func ComputeFactorClusters(items []issues.Issue, positions map[string]Position) 
 		topTag := clusterTopTag(group)
 
 		clusters = append(clusters, Cluster{
+			ID:       clusterID(ids),
 			Label:    label,
 			CenterX:  math.Round(cx*1000) / 1000,
 			CenterY:  math.Round(cy*1000) / 1000,
@@ -122,7 +127,51 @@ func ComputeFactorClusters(items []issues.Issue, positions map[string]Position) 
 		})
 	}
 
+	// groups is a map, so the append order above is non-deterministic.
+	// Sort by centroid (then ID) to give a stable, reproducible ordering.
+	slices.SortFunc(clusters, func(a, b Cluster) int {
+		if c := cmp.Compare(a.CenterX, b.CenterX); c != 0 {
+			return c
+		}
+		if c := cmp.Compare(a.CenterY, b.CenterY); c != 0 {
+			return c
+		}
+		return cmp.Compare(a.ID, b.ID)
+	})
+
 	return clusters
+}
+
+// hashSortedIssueIDs returns an FNV-64 hash of the sorted issue IDs in
+// items. Used as the deterministic k-means seed so the same corpus
+// snapshot always produces the same clusters.
+func hashSortedIssueIDs(items []issues.Issue) uint64 {
+	ids := make([]string, len(items))
+	for i, issue := range items {
+		ids[i] = issue.ID
+	}
+	slices.Sort(ids)
+	h := fnv.New64a()
+	for _, id := range ids {
+		_, _ = h.Write([]byte(id))
+		_, _ = h.Write([]byte{0}) // separator
+	}
+	return h.Sum64()
+}
+
+// clusterID derives a stable identifier for a cluster from its member
+// issue IDs. Same membership → same ID. Membership change → new ID.
+// IDs are prefixed with "c-" and rendered as zero-padded hex.
+func clusterID(memberIDs []string) string {
+	sorted := make([]string, len(memberIDs))
+	copy(sorted, memberIDs)
+	slices.Sort(sorted)
+	h := fnv.New64a()
+	for _, id := range sorted {
+		_, _ = h.Write([]byte(id))
+		_, _ = h.Write([]byte{0})
+	}
+	return fmt.Sprintf("c-%016x", h.Sum64())
 }
 
 // runKMeans performs k-means clustering and returns assignments and final centroids.

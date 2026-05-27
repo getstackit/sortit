@@ -44,8 +44,9 @@ func (h *Handler) List(ctx context.Context, kind, windowLabel string) (ListRespo
 	if kind == "" {
 		kind = string(domain.RegionKindTag)
 	}
-	if kind != string(domain.RegionKindTag) {
-		return ListResponse{}, fmt.Errorf("%w: %q", ErrUnsupportedKind, kind)
+	regionKind, err := parseSupportedKind(kind)
+	if err != nil {
+		return ListResponse{}, err
 	}
 	if windowLabel == "" {
 		windowLabel = DefaultWindowLabel
@@ -55,7 +56,7 @@ func (h *Handler) List(ctx context.Context, kind, windowLabel string) (ListRespo
 	if err != nil {
 		return ListResponse{}, err
 	}
-	result, err := h.Loader.List(ctx, window, now)
+	result, err := h.Loader.List(ctx, regionKind, window, now)
 	if err != nil {
 		return ListResponse{}, err
 	}
@@ -65,8 +66,9 @@ func (h *Handler) List(ctx context.Context, kind, windowLabel string) (ListRespo
 // Get returns a single region's metrics, or ErrRegionNotFound if no
 // issues are members.
 func (h *Handler) Get(ctx context.Context, kind, id, windowLabel string) (GetResponse, error) {
-	if kind != string(domain.RegionKindTag) {
-		return GetResponse{}, fmt.Errorf("%w: %q", ErrUnsupportedKind, kind)
+	regionKind, err := parseSupportedKind(kind)
+	if err != nil {
+		return GetResponse{}, err
 	}
 	if windowLabel == "" {
 		windowLabel = DefaultWindowLabel
@@ -76,7 +78,7 @@ func (h *Handler) Get(ctx context.Context, kind, id, windowLabel string) (GetRes
 	if err != nil {
 		return GetResponse{}, err
 	}
-	key := domain.RegionKey{Kind: domain.RegionKindTag, ID: id}
+	key := domain.RegionKey{Kind: regionKind, ID: id}
 	region, ok, err := h.Loader.Get(ctx, key, window, now)
 	if err != nil {
 		return GetResponse{}, err
@@ -91,6 +93,19 @@ func (h *Handler) Get(ctx context.Context, kind, id, windowLabel string) (GetRes
 	}, nil
 }
 
+// parseSupportedKind validates the wire-form kind against the kinds the
+// loader knows how to compute (tag and cluster). Returns
+// ErrUnsupportedKind otherwise.
+func parseSupportedKind(raw string) (domain.RegionKind, error) {
+	switch raw {
+	case string(domain.RegionKindTag):
+		return domain.RegionKindTag, nil
+	case string(domain.RegionKindCluster):
+		return domain.RegionKindCluster, nil
+	}
+	return "", fmt.Errorf("%w: %q", ErrUnsupportedKind, raw)
+}
+
 // Orphans returns the corpus-level orphan signal: count and fraction of
 // issues that belong to no region and have no nearby tag in embedding
 // space. Window is ignored (orphan-ness is a snapshot quantity).
@@ -101,7 +116,7 @@ func (h *Handler) Orphans(ctx context.Context) (domain.CorpusOrphans, error) {
 	if err != nil {
 		return domain.CorpusOrphans{}, err
 	}
-	result, err := h.Loader.List(ctx, window, now)
+	result, err := h.Loader.List(ctx, domain.RegionKindTag, window, now)
 	if err != nil {
 		return domain.CorpusOrphans{}, err
 	}

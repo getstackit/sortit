@@ -5,6 +5,7 @@ import (
 	"time"
 
 	"sortit/internal/issues"
+	issuemap "sortit/internal/map"
 )
 
 // ChurnKinds lists the event kinds counted toward region churn:
@@ -26,6 +27,13 @@ type Store interface {
 // satisfies this interface via its StoredTags method.
 type TagReader interface {
 	StoredTags(ctx context.Context) ([]issues.Tag, error)
+}
+
+// MapProjectionReader supplies the current k-means clusters used by
+// cluster-region compute. *mapview.MapProjectionLoader satisfies this
+// interface via its Current method.
+type MapProjectionReader interface {
+	Current(ctx context.Context) (issuemap.MapProjection, error)
 }
 
 // RevisionSource is the optional capability for revision-based cache
