@@ -48,7 +48,17 @@ export function RegionMetricsSection({ kind, id }: Props) {
 
   return (
     <section className="app-surface rounded-[1.5rem] p-5">
-      <RegionMetricsHeader />
+      <div className="flex items-center justify-between gap-2">
+        <RegionMetricsHeader />
+        {metrics.density != null && (
+          <span
+            title={`Embedding cohesion: ${metrics.density.toFixed(3)} (mean cosine sim to centroid)`}
+            className="rounded-full border border-border bg-muted/40 px-2 py-0.5 text-[10px] font-medium tabular-nums text-muted-foreground"
+          >
+            density {Math.round(metrics.density * 100)}%
+          </span>
+        )}
+      </div>
 
       <div className="mt-4 grid grid-cols-2 gap-3">
         <div className="app-subtle-surface rounded-[1.25rem] px-3 py-2.5">
@@ -92,7 +102,7 @@ export function RegionMetricsSection({ kind, id }: Props) {
         </div>
       )}
 
-      <div className="mt-4 grid grid-cols-2 gap-3">
+      <div className="mt-4 grid grid-cols-3 gap-3">
         <FlowTile
           label={`Growth (${metrics.window.label})`}
           rate={metrics.growth}
@@ -100,6 +110,10 @@ export function RegionMetricsSection({ kind, id }: Props) {
         <FlowTile
           label={`Closure (${metrics.window.label})`}
           rate={metrics.closure}
+        />
+        <FlowTile
+          label={`Churn (${metrics.window.label})`}
+          rate={metrics.churn}
         />
       </div>
 

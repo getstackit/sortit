@@ -48,9 +48,16 @@ export type RegionWithMetrics = {
   metrics: RegionMetrics;
 };
 
+export type CorpusOrphans = {
+  total: number;
+  open: number;
+  fraction: number;
+};
+
 export type RegionListResponse = {
   regions: RegionWithMetrics[];
   window: TimeWindow;
+  orphans?: CorpusOrphans | null;
 };
 
 export type RegionGetResponse = {

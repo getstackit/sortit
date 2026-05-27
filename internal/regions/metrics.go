@@ -7,6 +7,7 @@ import (
 
 	"sortit/internal/domain"
 	"sortit/internal/issues"
+	"sortit/internal/vectors"
 )
 
 // Age bucket labels in display order.
@@ -125,9 +126,158 @@ func ComputeClosure(items []issues.Issue, key domain.RegionKey, window domain.Ti
 	return rateOver(count, window)
 }
 
-// ComputeMetrics produces phase-2 metrics for a single region. Returns
-// false if no issues are members (zero mass).
-func ComputeMetrics(items []issues.Issue, key domain.RegionKey, window domain.TimeWindow, now time.Time) (domain.RegionMetrics, bool) {
+// DensityMinMembers is the minimum number of in-region issues with
+// embeddings required for ComputeDensity to return a value. Smaller
+// samples produce too noisy a centroid to trust.
+const DensityMinMembers = 5
+
+// ComputeDensity returns a [0, 1] cohesion score for the region: the
+// mean cosine similarity between each in-region issue's embedding and
+// the region's centroid (L2-normalized mean of member embeddings).
+// Returns nil when fewer than DensityMinMembers issues have embeddings
+// or when the centroid is degenerate (zero vector / mismatched dims).
+func ComputeDensity(items []issues.Issue, key domain.RegionKey) *float64 {
+	members := make([][]float64, 0)
+	dim := 0
+	for _, issue := range items {
+		if !BelongsTo(issue, key) {
+			continue
+		}
+		if len(issue.Embedding) == 0 {
+			continue
+		}
+		if dim == 0 {
+			dim = len(issue.Embedding)
+		}
+		if len(issue.Embedding) != dim {
+			continue
+		}
+		members = append(members, issue.Embedding)
+	}
+	if len(members) < DensityMinMembers {
+		return nil
+	}
+	centroid := make([]float64, dim)
+	for _, vec := range members {
+		for i, v := range vec {
+			centroid[i] += v
+		}
+	}
+	n := float64(len(members))
+	for i := range centroid {
+		centroid[i] /= n
+	}
+	mag := 0.0
+	for _, v := range centroid {
+		mag += v * v
+	}
+	if mag == 0 {
+		return nil
+	}
+	sum := 0.0
+	for _, vec := range members {
+		sum += vectors.CosineSimilarity(vec, centroid)
+	}
+	density := sum / n
+	density = math.Round(density*1000) / 1000
+	return &density
+}
+
+// OrphanAlignmentFloor is the cosine-similarity threshold below which an
+// issue is considered semantically distant from every tag in the catalog.
+// The value matches the verifier's verifierFlaggedAlignment constant,
+// keeping the corpus-level orphan signal consistent with how the
+// verifier classifies individual tag assignments as "flagged."
+const OrphanAlignmentFloor = 0.08
+
+// ComputeCorpusOrphans returns the count of issues that don't belong to
+// any region and aren't even close to any tag in the catalog. An issue
+// is an orphan when BOTH:
+//   - its highest TagRelevance is below MembershipFloor (no region
+//     membership today), AND
+//   - the cosine similarity between its embedding and the nearest tag
+//     embedding is below OrphanAlignmentFloor (no semantic neighbor
+//     in the catalog).
+//
+// Issues lacking an embedding are not counted as orphans on the second
+// criterion alone (we can't tell); they're skipped.
+func ComputeCorpusOrphans(items []issues.Issue, tags []issues.Tag) domain.CorpusOrphans {
+	tagEmbeddings := make([][]float64, 0, len(tags))
+	for _, t := range tags {
+		if len(t.Embedding) > 0 {
+			tagEmbeddings = append(tagEmbeddings, t.Embedding)
+		}
+	}
+
+	var total, open int
+	considered := 0
+	for _, issue := range items {
+		if len(issue.Embedding) == 0 {
+			// Can't measure semantic alignment without an embedding; skip.
+			continue
+		}
+		considered++
+
+		topRelevance := 0.0
+		for _, score := range issue.TagScores {
+			if score.Relevance > topRelevance {
+				topRelevance = score.Relevance
+			}
+		}
+		if topRelevance >= MembershipFloor {
+			continue
+		}
+
+		nearest := 0.0
+		for _, tagVec := range tagEmbeddings {
+			sim := vectors.CosineSimilarity(issue.Embedding, tagVec)
+			if sim > nearest {
+				nearest = sim
+			}
+		}
+		if nearest >= OrphanAlignmentFloor {
+			continue
+		}
+
+		total++
+		if issue.Status == issues.StatusOpen {
+			open++
+		}
+	}
+
+	fraction := 0.0
+	if considered > 0 {
+		fraction = float64(total) / float64(considered)
+	}
+	return domain.CorpusOrphans{Total: total, Open: open, Fraction: fraction}
+}
+
+// ComputeChurn counts events whose IssueID is currently a region member
+// and whose timestamp falls in window. Events are pre-filtered to the
+// relevant kinds and window by the Store; this function only buckets by
+// region. Returns nil for the "all" window (no meaningful denominator).
+func ComputeChurn(events []issues.Event, items []issues.Issue, key domain.RegionKey, window domain.TimeWindow) *domain.Rate {
+	if window.Start.IsZero() {
+		return nil
+	}
+	inRegion := make(map[string]struct{})
+	for _, issue := range items {
+		if BelongsTo(issue, key) {
+			inRegion[issue.ID] = struct{}{}
+		}
+	}
+	count := 0
+	for _, event := range events {
+		if _, ok := inRegion[event.IssueID]; ok {
+			count++
+		}
+	}
+	return rateOver(count, window)
+}
+
+// ComputeMetrics produces all current-phase metrics for a single region.
+// Returns false if no issues are members (zero mass).
+func ComputeMetrics(items []issues.Issue, events []issues.Event, key domain.RegionKey, window domain.TimeWindow, now time.Time) (domain.RegionMetrics, bool) {
 	mass, open, closed := ComputeMass(items, key)
 	if mass == 0 {
 		return domain.RegionMetrics{}, false
@@ -139,8 +289,10 @@ func ComputeMetrics(items []issues.Issue, key domain.RegionKey, window domain.Ti
 		MassOpen:   open,
 		MassClosed: closed,
 		AgeBuckets: ComputeAgeBuckets(items, key, now),
+		Density:    ComputeDensity(items, key),
 		Growth:     ComputeGrowth(items, key, window),
 		Closure:    ComputeClosure(items, key, window),
+		Churn:      ComputeChurn(events, items, key, window),
 	}, true
 }
 
@@ -171,14 +323,15 @@ func rateOver(count int, window domain.TimeWindow) *domain.Rate {
 }
 
 // ListRegionsWithMetrics enumerates every tag-region with at least one
-// issue at or above MembershipFloor and computes phase-1 metrics for each.
-// Results are sorted by Mass descending, ties broken by tag name.
-func ListRegionsWithMetrics(items []issues.Issue, window domain.TimeWindow, now time.Time) []RegionWithMetrics {
+// issue at or above MembershipFloor and computes its metrics. Events
+// must already be filtered to the relevant kinds and window. Results
+// are sorted by Mass descending, ties broken by tag name.
+func ListRegionsWithMetrics(items []issues.Issue, events []issues.Event, window domain.TimeWindow, now time.Time) []RegionWithMetrics {
 	tags := presentTags(items)
 	out := make([]RegionWithMetrics, 0, len(tags))
 	for _, tag := range tags {
 		key := domain.RegionKey{Kind: domain.RegionKindTag, ID: tag}
-		metrics, ok := ComputeMetrics(items, key, window, now)
+		metrics, ok := ComputeMetrics(items, events, key, window, now)
 		if !ok {
 			continue
 		}

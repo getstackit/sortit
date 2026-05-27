@@ -29,6 +29,15 @@ func (s *Server) handleRegionGet(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, result)
 }
 
+func (s *Server) handleRegionOrphans(w http.ResponseWriter, r *http.Request) {
+	orphans, err := s.regions.Orphans(r.Context())
+	if err != nil {
+		s.writeRegionsError(w, err)
+		return
+	}
+	writeJSON(w, http.StatusOK, orphans)
+}
+
 func (s *Server) writeRegionsError(w http.ResponseWriter, err error) {
 	switch {
 	case errors.Is(err, regions.ErrUnsupportedKind):

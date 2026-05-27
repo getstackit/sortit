@@ -120,7 +120,7 @@ func TestComputeAgeBucketsExcludesClosed(t *testing.T) {
 func TestComputeMetricsZeroMassReturnsFalse(t *testing.T) {
 	now := time.Date(2026, 5, 25, 12, 0, 0, 0, time.UTC)
 	window := domain.TimeWindow{Label: "30d", End: now}
-	_, ok := ComputeMetrics(nil, domain.RegionKey{Kind: domain.RegionKindTag, ID: authTag}, window, now)
+	_, ok := ComputeMetrics(nil, nil, domain.RegionKey{Kind: domain.RegionKindTag, ID: authTag}, window, now)
 	if ok {
 		t.Fatal("expected ok=false for empty corpus")
 	}
@@ -134,7 +134,7 @@ func TestListRegionsWithMetricsSortedByMass(t *testing.T) {
 		{ID: "b", Status: issues.StatusOpen, CreatedAt: now, TagScores: []domain.TagRelevance{{Tag: authTag, Relevance: 0.5}}},
 		{ID: "c", Status: issues.StatusOpen, CreatedAt: now, TagScores: []domain.TagRelevance{{Tag: "billing", Relevance: 0.7}}},
 	}
-	regions := ListRegionsWithMetrics(items, window, now)
+	regions := ListRegionsWithMetrics(items, nil, window, now)
 	if len(regions) != 2 {
 		t.Fatalf("expected 2 regions, got %d", len(regions))
 	}
@@ -290,6 +290,152 @@ func TestComputeClosureSkipsOpenStatus(t *testing.T) {
 	}
 }
 
+func TestComputeDensityNilForSmallSample(t *testing.T) {
+	auth := domain.RegionKey{Kind: domain.RegionKindTag, ID: "auth"}
+	items := []issues.Issue{
+		{Status: issues.StatusOpen, TagScores: []domain.TagRelevance{{Tag: "auth", Relevance: 0.9}}, Embedding: []float64{1, 0}},
+		{Status: issues.StatusOpen, TagScores: []domain.TagRelevance{{Tag: "auth", Relevance: 0.9}}, Embedding: []float64{1, 0}},
+	}
+	if got := ComputeDensity(items, auth); got != nil {
+		t.Fatalf("expected nil for < 5 members; got %+v", got)
+	}
+}
+
+func TestComputeDensityIdenticalEmbeddingsApproachOne(t *testing.T) {
+	auth := domain.RegionKey{Kind: domain.RegionKindTag, ID: "auth"}
+	items := make([]issues.Issue, 0, 5)
+	for range 5 {
+		items = append(items, issues.Issue{
+			Status:    issues.StatusOpen,
+			TagScores: []domain.TagRelevance{{Tag: "auth", Relevance: 0.9}},
+			Embedding: []float64{1, 0, 0},
+		})
+	}
+	density := ComputeDensity(items, auth)
+	if density == nil {
+		t.Fatal("expected non-nil density")
+	}
+	if *density < 0.99 {
+		t.Fatalf("expected density ~1.0 for identical embeddings; got %v", *density)
+	}
+}
+
+func TestComputeDensityOrthogonalEmbeddingsLow(t *testing.T) {
+	auth := domain.RegionKey{Kind: domain.RegionKindTag, ID: "auth"}
+	dim := 5
+	items := make([]issues.Issue, 0, dim)
+	for i := range dim {
+		vec := make([]float64, dim)
+		vec[i] = 1
+		items = append(items, issues.Issue{
+			Status:    issues.StatusOpen,
+			TagScores: []domain.TagRelevance{{Tag: "auth", Relevance: 0.9}},
+			Embedding: vec,
+		})
+	}
+	density := ComputeDensity(items, auth)
+	if density == nil {
+		t.Fatal("expected non-nil density")
+	}
+	// For 5 orthogonal unit vectors, centroid is (0.2,0.2,0.2,0.2,0.2) and
+	// each vector has cosine sim 0.2/sqrt(0.2) ≈ 0.447 with the centroid.
+	if *density > 0.5 {
+		t.Fatalf("expected low density for orthogonal embeddings; got %v", *density)
+	}
+}
+
+func TestComputeDensitySkipsIssuesWithoutEmbeddings(t *testing.T) {
+	auth := domain.RegionKey{Kind: domain.RegionKindTag, ID: "auth"}
+	items := []issues.Issue{
+		{Status: issues.StatusOpen, TagScores: []domain.TagRelevance{{Tag: "auth", Relevance: 0.9}}, Embedding: []float64{1, 0}},
+		{Status: issues.StatusOpen, TagScores: []domain.TagRelevance{{Tag: "auth", Relevance: 0.9}}, Embedding: nil},
+		{Status: issues.StatusOpen, TagScores: []domain.TagRelevance{{Tag: "auth", Relevance: 0.9}}, Embedding: nil},
+		{Status: issues.StatusOpen, TagScores: []domain.TagRelevance{{Tag: "auth", Relevance: 0.9}}, Embedding: nil},
+	}
+	if got := ComputeDensity(items, auth); got != nil {
+		t.Fatalf("expected nil when only 1 member has an embedding; got %+v", got)
+	}
+}
+
+func TestComputeCorpusOrphansEmpty(t *testing.T) {
+	got := ComputeCorpusOrphans(nil, nil)
+	if got.Total != 0 || got.Open != 0 || got.Fraction != 0 {
+		t.Fatalf("expected zeros for empty corpus, got %+v", got)
+	}
+}
+
+func TestComputeCorpusOrphansIdentifiesUnalignedIssues(t *testing.T) {
+	tags := []issues.Tag{
+		{Name: "auth", Embedding: []float64{1, 0, 0}},
+		{Name: "billing", Embedding: []float64{0, 1, 0}},
+	}
+	items := []issues.Issue{
+		// In-region: top tag relevance >= floor.
+		{ID: "1", Status: issues.StatusOpen, Embedding: []float64{1, 0, 0}, TagScores: []domain.TagRelevance{{Tag: "auth", Relevance: 0.8}}},
+		// Below floor but aligned with auth — not an orphan.
+		{ID: "2", Status: issues.StatusOpen, Embedding: []float64{0.9, 0.1, 0}, TagScores: []domain.TagRelevance{{Tag: "auth", Relevance: 0.2}}},
+		// Below floor AND embedding orthogonal to all tag embeddings — orphan.
+		{ID: "3", Status: issues.StatusOpen, Embedding: []float64{0, 0, 1}, TagScores: []domain.TagRelevance{{Tag: "auth", Relevance: 0.1}}},
+		// Below floor, orthogonal, closed — orphan (counted but not in Open).
+		{ID: "4", Status: issues.StatusClosed, Embedding: []float64{0, 0, 1}, TagScores: []domain.TagRelevance{}},
+	}
+	got := ComputeCorpusOrphans(items, tags)
+	if got.Total != 2 {
+		t.Fatalf("expected 2 orphans, got %d (%+v)", got.Total, got)
+	}
+	if got.Open != 1 {
+		t.Fatalf("expected 1 open orphan, got %d", got.Open)
+	}
+	if got.Fraction != 0.5 {
+		t.Fatalf("expected fraction 0.5 (2/4 considered), got %v", got.Fraction)
+	}
+}
+
+func TestComputeCorpusOrphansSkipsIssuesWithoutEmbedding(t *testing.T) {
+	tags := []issues.Tag{{Name: "auth", Embedding: []float64{1, 0}}}
+	items := []issues.Issue{
+		{ID: "1", Status: issues.StatusOpen, Embedding: nil, TagScores: []domain.TagRelevance{}},
+	}
+	got := ComputeCorpusOrphans(items, tags)
+	if got.Total != 0 {
+		t.Fatalf("expected 0 orphans when issues lack embeddings, got %d", got.Total)
+	}
+}
+
+func TestComputeChurnCountsInRegionEvents(t *testing.T) {
+	now := time.Date(2026, 5, 25, 12, 0, 0, 0, time.UTC)
+	auth := domain.RegionKey{Kind: domain.RegionKindTag, ID: "auth"}
+	items := []issues.Issue{
+		{ID: "in-region", Status: issues.StatusOpen, CreatedAt: now, TagScores: []domain.TagRelevance{{Tag: "auth", Relevance: 0.9}}},
+		{ID: "outside", Status: issues.StatusOpen, CreatedAt: now, TagScores: []domain.TagRelevance{{Tag: "billing", Relevance: 0.9}}},
+	}
+	events := []issues.Event{
+		{IssueID: "in-region", Kind: "refinement", CreatedAt: now.Add(-3 * 24 * time.Hour)},
+		{IssueID: "in-region", Kind: "split", CreatedAt: now.Add(-1 * 24 * time.Hour)},
+		{IssueID: "outside", Kind: "refinement", CreatedAt: now.Add(-2 * 24 * time.Hour)},
+	}
+	window, _ := ParseTimeWindow("30d", now)
+	churn := ComputeChurn(events, items, auth, window)
+	if churn == nil || churn.Count != 2 {
+		t.Fatalf("expected count 2 (in-region only); got %+v", churn)
+	}
+}
+
+func TestComputeChurnReturnsNilForAllWindow(t *testing.T) {
+	now := time.Date(2026, 5, 25, 12, 0, 0, 0, time.UTC)
+	auth := domain.RegionKey{Kind: domain.RegionKindTag, ID: "auth"}
+	items := []issues.Issue{
+		{ID: "a", Status: issues.StatusOpen, CreatedAt: now, TagScores: []domain.TagRelevance{{Tag: "auth", Relevance: 0.9}}},
+	}
+	events := []issues.Event{
+		{IssueID: "a", Kind: "refinement", CreatedAt: now.Add(-time.Hour)},
+	}
+	window, _ := ParseTimeWindow("all", now)
+	if got := ComputeChurn(events, items, auth, window); got != nil {
+		t.Fatalf("expected nil for all window; got %+v", got)
+	}
+}
+
 func TestComputeMetricsNilFlowMetricsForAllWindow(t *testing.T) {
 	now := time.Date(2026, 5, 25, 12, 0, 0, 0, time.UTC)
 	auth := domain.RegionKey{Kind: domain.RegionKindTag, ID: "auth"}
@@ -297,7 +443,7 @@ func TestComputeMetricsNilFlowMetricsForAllWindow(t *testing.T) {
 		{Status: issues.StatusOpen, CreatedAt: now.Add(-time.Hour), TagScores: []domain.TagRelevance{{Tag: "auth", Relevance: 0.9}}},
 	}
 	window, _ := ParseTimeWindow("all", now)
-	metrics, ok := ComputeMetrics(items, auth, window, now)
+	metrics, ok := ComputeMetrics(items, nil, auth, window, now)
 	if !ok {
 		t.Fatal("expected metrics for non-empty region")
 	}
@@ -318,7 +464,7 @@ func TestListRegionsWithMetricsIgnoresBelowFloor(t *testing.T) {
 			{Tag: "billing", Relevance: 0.6},
 		}},
 	}
-	regions := ListRegionsWithMetrics(items, window, now)
+	regions := ListRegionsWithMetrics(items, nil, window, now)
 	if len(regions) != 1 {
 		t.Fatalf("expected 1 region, got %d", len(regions))
 	}

@@ -23,4 +23,5 @@ type EventParticipant struct {
 type EventStore interface {
 	RecordEvent(ctx context.Context, event Event) error
 	ListEvents(ctx context.Context, limit int, cursor string, kind string) ([]Event, string, error)
+	ListLifecycleEvents(ctx context.Context, kinds []string, start, end time.Time) ([]Event, error)
 }

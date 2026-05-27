@@ -126,6 +126,13 @@ func (s *ObservedStore) ListEvents(ctx context.Context, limit int, cursor string
 	return s.eventStore.ListEvents(ctx, limit, cursor, kind)
 }
 
+func (s *ObservedStore) ListLifecycleEvents(ctx context.Context, kinds []string, start, end time.Time) ([]Event, error) {
+	if s.eventStore == nil {
+		return nil, nil
+	}
+	return s.eventStore.ListLifecycleEvents(ctx, kinds, start, end)
+}
+
 func (s *ObservedStore) List(ctx context.Context) ([]Issue, error) {
 	return s.base.List(ctx)
 }
