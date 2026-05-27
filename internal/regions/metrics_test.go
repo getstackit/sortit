@@ -120,7 +120,7 @@ func TestComputeAgeBucketsExcludesClosed(t *testing.T) {
 func TestComputeMetricsZeroMassReturnsFalse(t *testing.T) {
 	now := time.Date(2026, 5, 25, 12, 0, 0, 0, time.UTC)
 	window := domain.TimeWindow{Label: "30d", End: now}
-	_, ok := ComputeMetrics(nil, domain.RegionKey{Kind: domain.RegionKindTag, ID: authTag}, window, now)
+	_, ok := ComputeMetrics(nil, nil, domain.RegionKey{Kind: domain.RegionKindTag, ID: authTag}, window, now)
 	if ok {
 		t.Fatal("expected ok=false for empty corpus")
 	}
@@ -134,7 +134,7 @@ func TestListRegionsWithMetricsSortedByMass(t *testing.T) {
 		{ID: "b", Status: issues.StatusOpen, CreatedAt: now, TagScores: []domain.TagRelevance{{Tag: authTag, Relevance: 0.5}}},
 		{ID: "c", Status: issues.StatusOpen, CreatedAt: now, TagScores: []domain.TagRelevance{{Tag: "billing", Relevance: 0.7}}},
 	}
-	regions := ListRegionsWithMetrics(items, window, now)
+	regions := ListRegionsWithMetrics(items, nil, window, now)
 	if len(regions) != 2 {
 		t.Fatalf("expected 2 regions, got %d", len(regions))
 	}
@@ -290,6 +290,40 @@ func TestComputeClosureSkipsOpenStatus(t *testing.T) {
 	}
 }
 
+func TestComputeChurnCountsInRegionEvents(t *testing.T) {
+	now := time.Date(2026, 5, 25, 12, 0, 0, 0, time.UTC)
+	auth := domain.RegionKey{Kind: domain.RegionKindTag, ID: "auth"}
+	items := []issues.Issue{
+		{ID: "in-region", Status: issues.StatusOpen, CreatedAt: now, TagScores: []domain.TagRelevance{{Tag: "auth", Relevance: 0.9}}},
+		{ID: "outside", Status: issues.StatusOpen, CreatedAt: now, TagScores: []domain.TagRelevance{{Tag: "billing", Relevance: 0.9}}},
+	}
+	events := []issues.Event{
+		{IssueID: "in-region", Kind: "refinement", CreatedAt: now.Add(-3 * 24 * time.Hour)},
+		{IssueID: "in-region", Kind: "split", CreatedAt: now.Add(-1 * 24 * time.Hour)},
+		{IssueID: "outside", Kind: "refinement", CreatedAt: now.Add(-2 * 24 * time.Hour)},
+	}
+	window, _ := ParseTimeWindow("30d", now)
+	churn := ComputeChurn(events, items, auth, window)
+	if churn == nil || churn.Count != 2 {
+		t.Fatalf("expected count 2 (in-region only); got %+v", churn)
+	}
+}
+
+func TestComputeChurnReturnsNilForAllWindow(t *testing.T) {
+	now := time.Date(2026, 5, 25, 12, 0, 0, 0, time.UTC)
+	auth := domain.RegionKey{Kind: domain.RegionKindTag, ID: "auth"}
+	items := []issues.Issue{
+		{ID: "a", Status: issues.StatusOpen, CreatedAt: now, TagScores: []domain.TagRelevance{{Tag: "auth", Relevance: 0.9}}},
+	}
+	events := []issues.Event{
+		{IssueID: "a", Kind: "refinement", CreatedAt: now.Add(-time.Hour)},
+	}
+	window, _ := ParseTimeWindow("all", now)
+	if got := ComputeChurn(events, items, auth, window); got != nil {
+		t.Fatalf("expected nil for all window; got %+v", got)
+	}
+}
+
 func TestComputeMetricsNilFlowMetricsForAllWindow(t *testing.T) {
 	now := time.Date(2026, 5, 25, 12, 0, 0, 0, time.UTC)
 	auth := domain.RegionKey{Kind: domain.RegionKindTag, ID: "auth"}
@@ -297,7 +331,7 @@ func TestComputeMetricsNilFlowMetricsForAllWindow(t *testing.T) {
 		{Status: issues.StatusOpen, CreatedAt: now.Add(-time.Hour), TagScores: []domain.TagRelevance{{Tag: "auth", Relevance: 0.9}}},
 	}
 	window, _ := ParseTimeWindow("all", now)
-	metrics, ok := ComputeMetrics(items, auth, window, now)
+	metrics, ok := ComputeMetrics(items, nil, auth, window, now)
 	if !ok {
 		t.Fatal("expected metrics for non-empty region")
 	}
@@ -318,7 +352,7 @@ func TestListRegionsWithMetricsIgnoresBelowFloor(t *testing.T) {
 			{Tag: "billing", Relevance: 0.6},
 		}},
 	}
-	regions := ListRegionsWithMetrics(items, window, now)
+	regions := ListRegionsWithMetrics(items, nil, window, now)
 	if len(regions) != 1 {
 		t.Fatalf("expected 1 region, got %d", len(regions))
 	}

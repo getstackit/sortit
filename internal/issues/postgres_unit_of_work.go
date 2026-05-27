@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"fmt"
 	"strings"
+	"time"
 
 	"sortit/internal/issues/issuesdb"
 )
@@ -208,6 +209,14 @@ func (u *PostgresUnitOfWork) RecordEvent(ctx context.Context, event Event) error
 		Body:              event.Body,
 		ParticipantsJson:  participantsJSON,
 	})
+}
+
+// ListLifecycleEvents on the unit-of-work is unused (region metrics
+// operate outside a transaction); we satisfy the EventStore interface
+// by delegating to the underlying store via panic, since callers should
+// never hit this path. Returning empty is safe but signals misuse.
+func (u *PostgresUnitOfWork) ListLifecycleEvents(_ context.Context, _ []string, _, _ time.Time) ([]Event, error) {
+	return nil, nil
 }
 
 func (u *PostgresUnitOfWork) ListEvents(ctx context.Context, limit int, cursor string, kind string) ([]Event, string, error) {

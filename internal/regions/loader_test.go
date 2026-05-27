@@ -12,9 +12,10 @@ import (
 )
 
 type stubStore struct {
-	items []issues.Issue
-	calls int32
-	err   error
+	items  []issues.Issue
+	events []issues.Event
+	calls  int32
+	err    error
 }
 
 func (s *stubStore) List(_ context.Context) ([]issues.Issue, error) {
@@ -23,6 +24,10 @@ func (s *stubStore) List(_ context.Context) ([]issues.Issue, error) {
 		return nil, s.err
 	}
 	return s.items, nil
+}
+
+func (s *stubStore) ListLifecycleEvents(_ context.Context, _ []string, _, _ time.Time) ([]issues.Event, error) {
+	return s.events, nil
 }
 
 type stubRevision struct {

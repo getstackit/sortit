@@ -92,7 +92,7 @@ export function RegionMetricsSection({ kind, id }: Props) {
         </div>
       )}
 
-      <div className="mt-4 grid grid-cols-2 gap-3">
+      <div className="mt-4 grid grid-cols-3 gap-3">
         <FlowTile
           label={`Growth (${metrics.window.label})`}
           rate={metrics.growth}
@@ -100,6 +100,10 @@ export function RegionMetricsSection({ kind, id }: Props) {
         <FlowTile
           label={`Closure (${metrics.window.label})`}
           rate={metrics.closure}
+        />
+        <FlowTile
+          label={`Churn (${metrics.window.label})`}
+          rate={metrics.churn}
         />
       </div>
 

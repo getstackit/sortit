@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"strings"
+	"time"
 )
 
 func (s *InMemoryStore) RecordEvent(_ context.Context, event Event) error {
@@ -49,4 +50,32 @@ func (s *InMemoryStore) ListEvents(_ context.Context, limit int, cursor string, 
 	}
 
 	return filtered, "", nil
+}
+
+func (s *InMemoryStore) ListLifecycleEvents(_ context.Context, kinds []string, start, end time.Time) ([]Event, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	if len(kinds) == 0 {
+		return nil, nil
+	}
+	kindSet := make(map[string]struct{}, len(kinds))
+	for _, k := range kinds {
+		kindSet[strings.TrimSpace(k)] = struct{}{}
+	}
+
+	out := make([]Event, 0)
+	for _, event := range s.events {
+		if _, ok := kindSet[event.Kind]; !ok {
+			continue
+		}
+		if event.CreatedAt.Before(start) || event.CreatedAt.After(end) {
+			continue
+		}
+		if strings.TrimSpace(event.IssueID) == "" {
+			continue
+		}
+		out = append(out, event)
+	}
+	return out, nil
 }

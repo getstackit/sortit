@@ -8,6 +8,8 @@ import (
 	"strings"
 	"time"
 
+	"github.com/lib/pq"
+
 	"sortit/internal/issues/issuesdb"
 )
 
@@ -91,6 +93,64 @@ func (s *PostgresStore) ListEvents(ctx context.Context, limit int, cursor string
 	}
 
 	return events, nextCursor, nil
+}
+
+// ListLifecycleEvents returns all events whose kind matches one of the
+// given kinds and whose created_at falls in [start, end]. Empty kinds
+// short-circuit to nil. Used by region churn computation.
+func (s *PostgresStore) ListLifecycleEvents(ctx context.Context, kinds []string, start, end time.Time) ([]Event, error) {
+	if len(kinds) == 0 {
+		return nil, nil
+	}
+
+	rows, err := s.db.QueryContext(
+		ctx,
+		`SELECT id, kind, issue_id, created_by, created_at_unix_nano, body, participants_json
+		 FROM events
+		 WHERE kind = ANY($1::text[])
+		   AND created_at_unix_nano BETWEEN $2 AND $3
+		   AND issue_id != ''
+		 ORDER BY created_at_unix_nano ASC, id ASC`,
+		pq.Array(kinds), start.UnixNano(), end.UnixNano(),
+	)
+	if err != nil {
+		return nil, fmt.Errorf("list lifecycle events: %w", err)
+	}
+	defer rows.Close() //nolint:errcheck
+
+	out := make([]Event, 0)
+	for rows.Next() {
+		var (
+			id           string
+			kind         string
+			issueID      string
+			createdBy    string
+			createdAtNS  int64
+			body         string
+			participants []byte
+		)
+		if err := rows.Scan(&id, &kind, &issueID, &createdBy, &createdAtNS, &body, &participants); err != nil {
+			return nil, fmt.Errorf("scan lifecycle event: %w", err)
+		}
+		event := Event{
+			ID:        id,
+			Kind:      kind,
+			IssueID:   issueID,
+			CreatedBy: createdBy,
+			CreatedAt: time.Unix(0, createdAtNS).UTC(),
+			Body:      body,
+		}
+		if len(participants) > 0 {
+			if err := json.Unmarshal(participants, &event.Participants); err != nil {
+				return nil, fmt.Errorf("unmarshal lifecycle event participants: %w", err)
+			}
+		}
+		out = append(out, event)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("iterate lifecycle events: %w", err)
+	}
+	return out, nil
 }
 
 func eventFromRow(row issuesdb.Event) (Event, error) {

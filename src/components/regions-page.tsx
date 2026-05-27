@@ -191,9 +191,10 @@ function RegionTile({ entry }: { entry: RegionWithMetrics }) {
         <AgeBuckets buckets={orderedBuckets} />
       )}
 
-      <div className="mt-4 grid grid-cols-2 gap-3">
+      <div className="mt-4 grid grid-cols-3 gap-3">
         <FlowCell label={`Growth (${metrics.window.label})`} rate={metrics.growth} />
         <FlowCell label={`Closure (${metrics.window.label})`} rate={metrics.closure} />
+        <FlowCell label={`Churn (${metrics.window.label})`} rate={metrics.churn} />
       </div>
     </Link>
   );

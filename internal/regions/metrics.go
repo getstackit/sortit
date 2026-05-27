@@ -125,9 +125,32 @@ func ComputeClosure(items []issues.Issue, key domain.RegionKey, window domain.Ti
 	return rateOver(count, window)
 }
 
-// ComputeMetrics produces phase-2 metrics for a single region. Returns
-// false if no issues are members (zero mass).
-func ComputeMetrics(items []issues.Issue, key domain.RegionKey, window domain.TimeWindow, now time.Time) (domain.RegionMetrics, bool) {
+// ComputeChurn counts events whose IssueID is currently a region member
+// and whose timestamp falls in window. Events are pre-filtered to the
+// relevant kinds and window by the Store; this function only buckets by
+// region. Returns nil for the "all" window (no meaningful denominator).
+func ComputeChurn(events []issues.Event, items []issues.Issue, key domain.RegionKey, window domain.TimeWindow) *domain.Rate {
+	if window.Start.IsZero() {
+		return nil
+	}
+	inRegion := make(map[string]struct{})
+	for _, issue := range items {
+		if BelongsTo(issue, key) {
+			inRegion[issue.ID] = struct{}{}
+		}
+	}
+	count := 0
+	for _, event := range events {
+		if _, ok := inRegion[event.IssueID]; ok {
+			count++
+		}
+	}
+	return rateOver(count, window)
+}
+
+// ComputeMetrics produces all current-phase metrics for a single region.
+// Returns false if no issues are members (zero mass).
+func ComputeMetrics(items []issues.Issue, events []issues.Event, key domain.RegionKey, window domain.TimeWindow, now time.Time) (domain.RegionMetrics, bool) {
 	mass, open, closed := ComputeMass(items, key)
 	if mass == 0 {
 		return domain.RegionMetrics{}, false
@@ -141,6 +164,7 @@ func ComputeMetrics(items []issues.Issue, key domain.RegionKey, window domain.Ti
 		AgeBuckets: ComputeAgeBuckets(items, key, now),
 		Growth:     ComputeGrowth(items, key, window),
 		Closure:    ComputeClosure(items, key, window),
+		Churn:      ComputeChurn(events, items, key, window),
 	}, true
 }
 
@@ -171,14 +195,15 @@ func rateOver(count int, window domain.TimeWindow) *domain.Rate {
 }
 
 // ListRegionsWithMetrics enumerates every tag-region with at least one
-// issue at or above MembershipFloor and computes phase-1 metrics for each.
-// Results are sorted by Mass descending, ties broken by tag name.
-func ListRegionsWithMetrics(items []issues.Issue, window domain.TimeWindow, now time.Time) []RegionWithMetrics {
+// issue at or above MembershipFloor and computes its metrics. Events
+// must already be filtered to the relevant kinds and window. Results
+// are sorted by Mass descending, ties broken by tag name.
+func ListRegionsWithMetrics(items []issues.Issue, events []issues.Event, window domain.TimeWindow, now time.Time) []RegionWithMetrics {
 	tags := presentTags(items)
 	out := make([]RegionWithMetrics, 0, len(tags))
 	for _, tag := range tags {
 		key := domain.RegionKey{Kind: domain.RegionKindTag, ID: tag}
-		metrics, ok := ComputeMetrics(items, key, window, now)
+		metrics, ok := ComputeMetrics(items, events, key, window, now)
 		if !ok {
 			continue
 		}

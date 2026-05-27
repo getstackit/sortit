@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"sortit/internal/domain"
+	"sortit/internal/issues"
 )
 
 // ListResult is the payload returned by the loader.
@@ -51,8 +52,12 @@ func (l *Loader) List(ctx context.Context, window domain.TimeWindow, now time.Ti
 	if err != nil {
 		return ListResult{}, err
 	}
+	events, err := l.listEventsForWindow(ctx, window)
+	if err != nil {
+		return ListResult{}, err
+	}
 	result := ListResult{
-		Regions: ListRegionsWithMetrics(items, window, now),
+		Regions: ListRegionsWithMetrics(items, events, window, now),
 		Window:  window,
 	}
 
@@ -101,4 +106,14 @@ func (l *Loader) currentRevision() uint64 {
 		return 0
 	}
 	return l.Revisions.Revision()
+}
+
+// listEventsForWindow fetches the events that ComputeChurn needs. Returns
+// nil for the "all" window, since flow metrics aren't defined without a
+// finite span.
+func (l *Loader) listEventsForWindow(ctx context.Context, window domain.TimeWindow) ([]issues.Event, error) {
+	if window.Start.IsZero() {
+		return nil, nil
+	}
+	return l.Store.ListLifecycleEvents(ctx, ChurnKinds, window.Start, window.End)
 }
