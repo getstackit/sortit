@@ -1,4 +1,4 @@
-import { DEFAULT_REGION_WINDOW, type RegionWindow } from "@/lib/regions";
+import { DEFAULT_REGION_WINDOW, type RegionKind, type RegionWindow } from "@/lib/regions";
 
 const SUPPORTED_WINDOWS: readonly RegionWindow[] = [
   "7d",
@@ -21,13 +21,20 @@ const SUPPORTED_SORTS: readonly RegionSortKey[] = [
 export type RegionsView = "list" | "map";
 const SUPPORTED_VIEWS: readonly RegionsView[] = ["list", "map"];
 
+// Only `tag` and `cluster` are user-selectable from the /regions page;
+// `custom` is still type-reserved and rejected by the backend.
+export type RegionsKindFilter = "tag" | "cluster";
+const SUPPORTED_KINDS: readonly RegionsKindFilter[] = ["tag", "cluster"];
+
 export type RegionsURLState = {
+  kind: RegionsKindFilter;
   window: RegionWindow;
   view: RegionsView;
   sort: RegionSortKey;
 };
 
 export const DEFAULT_REGIONS_URL_STATE: RegionsURLState = {
+  kind: "tag",
   window: DEFAULT_REGION_WINDOW,
   view: "list",
   sort: "mass",
@@ -35,6 +42,7 @@ export const DEFAULT_REGIONS_URL_STATE: RegionsURLState = {
 
 export function parseRegionsURLState(params: URLSearchParams): RegionsURLState {
   return {
+    kind: pick(params.get("kind"), SUPPORTED_KINDS, DEFAULT_REGIONS_URL_STATE.kind),
     window: pick(params.get("window"), SUPPORTED_WINDOWS, DEFAULT_REGIONS_URL_STATE.window),
     view: pick(params.get("view"), SUPPORTED_VIEWS, DEFAULT_REGIONS_URL_STATE.view),
     sort: pick(params.get("sort"), SUPPORTED_SORTS, DEFAULT_REGIONS_URL_STATE.sort),
@@ -43,6 +51,9 @@ export function parseRegionsURLState(params: URLSearchParams): RegionsURLState {
 
 export function regionsURLQuery(state: RegionsURLState): string {
   const params = new URLSearchParams();
+  if (state.kind !== DEFAULT_REGIONS_URL_STATE.kind) {
+    params.set("kind", state.kind);
+  }
   if (state.window !== DEFAULT_REGIONS_URL_STATE.window) {
     params.set("window", state.window);
   }
@@ -53,6 +64,10 @@ export function regionsURLQuery(state: RegionsURLState): string {
     params.set("sort", state.sort);
   }
   return params.toString();
+}
+
+export function asRegionKind(filter: RegionsKindFilter): RegionKind {
+  return filter;
 }
 
 function pick<T extends string>(
