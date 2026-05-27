@@ -183,6 +183,75 @@ func ComputeDensity(items []issues.Issue, key domain.RegionKey) *float64 {
 	return &density
 }
 
+// OrphanAlignmentFloor is the cosine-similarity threshold below which an
+// issue is considered semantically distant from every tag in the catalog.
+// The value matches the verifier's verifierFlaggedAlignment constant,
+// keeping the corpus-level orphan signal consistent with how the
+// verifier classifies individual tag assignments as "flagged."
+const OrphanAlignmentFloor = 0.08
+
+// ComputeCorpusOrphans returns the count of issues that don't belong to
+// any region and aren't even close to any tag in the catalog. An issue
+// is an orphan when BOTH:
+//   - its highest TagRelevance is below MembershipFloor (no region
+//     membership today), AND
+//   - the cosine similarity between its embedding and the nearest tag
+//     embedding is below OrphanAlignmentFloor (no semantic neighbor
+//     in the catalog).
+//
+// Issues lacking an embedding are not counted as orphans on the second
+// criterion alone (we can't tell); they're skipped.
+func ComputeCorpusOrphans(items []issues.Issue, tags []issues.Tag) domain.CorpusOrphans {
+	tagEmbeddings := make([][]float64, 0, len(tags))
+	for _, t := range tags {
+		if len(t.Embedding) > 0 {
+			tagEmbeddings = append(tagEmbeddings, t.Embedding)
+		}
+	}
+
+	var total, open int
+	considered := 0
+	for _, issue := range items {
+		if len(issue.Embedding) == 0 {
+			// Can't measure semantic alignment without an embedding; skip.
+			continue
+		}
+		considered++
+
+		topRelevance := 0.0
+		for _, score := range issue.TagScores {
+			if score.Relevance > topRelevance {
+				topRelevance = score.Relevance
+			}
+		}
+		if topRelevance >= MembershipFloor {
+			continue
+		}
+
+		nearest := 0.0
+		for _, tagVec := range tagEmbeddings {
+			sim := vectors.CosineSimilarity(issue.Embedding, tagVec)
+			if sim > nearest {
+				nearest = sim
+			}
+		}
+		if nearest >= OrphanAlignmentFloor {
+			continue
+		}
+
+		total++
+		if issue.Status == issues.StatusOpen {
+			open++
+		}
+	}
+
+	fraction := 0.0
+	if considered > 0 {
+		fraction = float64(total) / float64(considered)
+	}
+	return domain.CorpusOrphans{Total: total, Open: open, Fraction: fraction}
+}
+
 // ComputeChurn counts events whose IssueID is currently a region member
 // and whose timestamp falls in window. Events are pre-filtered to the
 // relevant kinds and window by the Store; this function only buckets by

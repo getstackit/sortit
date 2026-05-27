@@ -357,6 +357,51 @@ func TestComputeDensitySkipsIssuesWithoutEmbeddings(t *testing.T) {
 	}
 }
 
+func TestComputeCorpusOrphansEmpty(t *testing.T) {
+	got := ComputeCorpusOrphans(nil, nil)
+	if got.Total != 0 || got.Open != 0 || got.Fraction != 0 {
+		t.Fatalf("expected zeros for empty corpus, got %+v", got)
+	}
+}
+
+func TestComputeCorpusOrphansIdentifiesUnalignedIssues(t *testing.T) {
+	tags := []issues.Tag{
+		{Name: "auth", Embedding: []float64{1, 0, 0}},
+		{Name: "billing", Embedding: []float64{0, 1, 0}},
+	}
+	items := []issues.Issue{
+		// In-region: top tag relevance >= floor.
+		{ID: "1", Status: issues.StatusOpen, Embedding: []float64{1, 0, 0}, TagScores: []domain.TagRelevance{{Tag: "auth", Relevance: 0.8}}},
+		// Below floor but aligned with auth — not an orphan.
+		{ID: "2", Status: issues.StatusOpen, Embedding: []float64{0.9, 0.1, 0}, TagScores: []domain.TagRelevance{{Tag: "auth", Relevance: 0.2}}},
+		// Below floor AND embedding orthogonal to all tag embeddings — orphan.
+		{ID: "3", Status: issues.StatusOpen, Embedding: []float64{0, 0, 1}, TagScores: []domain.TagRelevance{{Tag: "auth", Relevance: 0.1}}},
+		// Below floor, orthogonal, closed — orphan (counted but not in Open).
+		{ID: "4", Status: issues.StatusClosed, Embedding: []float64{0, 0, 1}, TagScores: []domain.TagRelevance{}},
+	}
+	got := ComputeCorpusOrphans(items, tags)
+	if got.Total != 2 {
+		t.Fatalf("expected 2 orphans, got %d (%+v)", got.Total, got)
+	}
+	if got.Open != 1 {
+		t.Fatalf("expected 1 open orphan, got %d", got.Open)
+	}
+	if got.Fraction != 0.5 {
+		t.Fatalf("expected fraction 0.5 (2/4 considered), got %v", got.Fraction)
+	}
+}
+
+func TestComputeCorpusOrphansSkipsIssuesWithoutEmbedding(t *testing.T) {
+	tags := []issues.Tag{{Name: "auth", Embedding: []float64{1, 0}}}
+	items := []issues.Issue{
+		{ID: "1", Status: issues.StatusOpen, Embedding: nil, TagScores: []domain.TagRelevance{}},
+	}
+	got := ComputeCorpusOrphans(items, tags)
+	if got.Total != 0 {
+		t.Fatalf("expected 0 orphans when issues lack embeddings, got %d", got.Total)
+	}
+}
+
 func TestComputeChurnCountsInRegionEvents(t *testing.T) {
 	now := time.Date(2026, 5, 25, 12, 0, 0, 0, time.UTC)
 	auth := domain.RegionKey{Kind: domain.RegionKindTag, ID: "auth"}

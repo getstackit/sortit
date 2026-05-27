@@ -257,6 +257,7 @@ func (s *Server) registerDedicatedAPIRoutes(r chi.Router) {
 		r.Get("/people/{person}", s.handlePersonDetail)
 		r.Get("/people/{person}/profile", s.handlePersonProfileRoute)
 		r.Get("/regions", s.handleRegionsList)
+		r.Get("/regions/orphans", s.handleRegionOrphans)
 		r.Get("/regions/{kind}/{id}", s.handleRegionGet)
 		r.Route("/debug", func(r chi.Router) {
 			r.Use(middleware.Timeout(debugRequestTimeout))
@@ -290,6 +291,7 @@ func (s *Server) registerUIRoutes(r chi.Router) {
 		r.Get("/people/{person}", s.handlePersonDetail)
 		r.Get("/people/{person}/profile", s.handlePersonProfileRoute)
 		r.Get("/regions", s.handleRegionsList)
+		r.Get("/regions/orphans", s.handleRegionOrphans)
 		r.Get("/regions/{kind}/{id}", s.handleRegionGet)
 		r.Route("/debug", func(r chi.Router) {
 			r.Use(middleware.Timeout(debugRequestTimeout))
@@ -567,7 +569,7 @@ func NewServer(cfg ServerConfig) *Server {
 		Revisions:   revisions,
 		Projections: mapProjectionStoreFromIssueStore(baseStore),
 	}
-	regionsLoader := &regions.Loader{Store: store, Revisions: revisions}
+	regionsLoader := &regions.Loader{Store: store, Tags: catalog, Revisions: revisions}
 	regionsHandler := &regions.Handler{Loader: regionsLoader}
 
 	return &Server{

@@ -21,6 +21,13 @@ type Store interface {
 	ListLifecycleEvents(ctx context.Context, kinds []string, start, end time.Time) ([]issues.Event, error)
 }
 
+// TagReader supplies the catalog snapshot used by ComputeCorpusOrphans
+// to find each issue's nearest tag in embedding space. The CatalogService
+// satisfies this interface via its StoredTags method.
+type TagReader interface {
+	StoredTags(ctx context.Context) ([]issues.Tag, error)
+}
+
 // RevisionSource is the optional capability for revision-based cache
 // invalidation. When wired, the loader caches results until the revision
 // changes.

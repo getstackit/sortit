@@ -14,6 +14,7 @@ import { useRegions } from "@/hooks/use-regions";
 import { tagHref } from "@/lib/tags";
 import type {
   AgeBucket,
+  CorpusOrphans,
   Rate,
   RegionWindow,
   RegionWithMetrics,
@@ -143,6 +144,10 @@ export function RegionsPage() {
             </p>
           )}
 
+          {data?.orphans && data.orphans.total > 0 && urlState.view === "list" && (
+            <OrphansCard orphans={data.orphans} />
+          )}
+
           {sortedRegions.length > 0 && urlState.view === "list" && (
             <div className="grid grid-cols-1 gap-4 lg:grid-cols-2 xl:grid-cols-3">
               {sortedRegions.map((entry) => (
@@ -200,6 +205,28 @@ function RegionTile({ entry }: { entry: RegionWithMetrics }) {
         <FlowCell label={`Churn (${metrics.window.label})`} rate={metrics.churn} />
       </div>
     </Link>
+  );
+}
+
+function OrphansCard({ orphans }: { orphans: CorpusOrphans }) {
+  const pct = Math.round(orphans.fraction * 100);
+  return (
+    <section className="app-surface rounded-[1.5rem] border-amber-300/40 bg-amber-50/40 p-5 dark:border-amber-500/20 dark:bg-amber-950/20">
+      <div className="flex items-start justify-between gap-3">
+        <div>
+          <p className="text-[11px] font-medium uppercase tracking-[0.16em] text-amber-700 dark:text-amber-300">
+            Dead zones
+          </p>
+          <h3 className="mt-1 text-base font-semibold">
+            {orphans.total} issue{orphans.total === 1 ? "" : "s"} don&apos;t fit any region
+          </h3>
+          <p className="mt-1 text-xs text-muted-foreground">
+            {orphans.open} currently open · {pct}% of the embedded corpus. These issues
+            have no tag at relevance &ge; 0.4 and no nearby tag in embedding space.
+          </p>
+        </div>
+      </div>
+    </section>
   );
 }
 

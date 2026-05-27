@@ -82,11 +82,15 @@ function makeRegion(overrides: {
   };
 }
 
-function mockRegions(regions: ReturnType<typeof makeRegion>[]) {
+function mockRegions(
+  regions: ReturnType<typeof makeRegion>[],
+  orphans?: { total: number; open: number; fraction: number }
+) {
   vi.mocked(useRegions).mockReturnValue({
     data: {
       regions,
       window: { label: "30d", start: "", end: "" },
+      orphans: orphans ?? null,
     },
     error: undefined,
     isLoading: false,
@@ -152,6 +156,29 @@ describe("RegionsPage", () => {
     render(<RegionsPage />);
 
     expect(screen.getByText(/Failed to load regions/i)).toBeInTheDocument();
+  });
+
+  it("renders orphans card when corpus has dead zones", () => {
+    mockRegions(
+      [makeRegion({ id: "auth", mass: 5 })],
+      { total: 7, open: 4, fraction: 0.12 }
+    );
+
+    render(<RegionsPage />);
+
+    expect(screen.getByText(/Dead zones/i)).toBeInTheDocument();
+    expect(screen.getByText(/7 issues don't fit any region/i)).toBeInTheDocument();
+  });
+
+  it("hides orphans card when zero", () => {
+    mockRegions(
+      [makeRegion({ id: "auth", mass: 5 })],
+      { total: 0, open: 0, fraction: 0 }
+    );
+
+    render(<RegionsPage />);
+
+    expect(screen.queryByText(/Dead zones/i)).not.toBeInTheDocument();
   });
 
   it("renders cartography when view=map in URL", () => {

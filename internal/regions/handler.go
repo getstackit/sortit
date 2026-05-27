@@ -19,8 +19,9 @@ var ErrRegionNotFound = errors.New("region not found")
 
 // ListResponse is the payload for the list endpoint.
 type ListResponse struct {
-	Regions []RegionWithMetrics `json:"regions"`
-	Window  domain.TimeWindow   `json:"window"`
+	Regions []RegionWithMetrics   `json:"regions"`
+	Window  domain.TimeWindow     `json:"window"`
+	Orphans *domain.CorpusOrphans `json:"orphans,omitempty"`
 }
 
 // GetResponse is the payload for the single-region endpoint.
@@ -88,6 +89,26 @@ func (h *Handler) Get(ctx context.Context, kind, id, windowLabel string) (GetRes
 		Metrics: region.Metrics,
 		Window:  window,
 	}, nil
+}
+
+// Orphans returns the corpus-level orphan signal: count and fraction of
+// issues that belong to no region and have no nearby tag in embedding
+// space. Window is ignored (orphan-ness is a snapshot quantity).
+func (h *Handler) Orphans(ctx context.Context) (domain.CorpusOrphans, error) {
+	now := h.now()
+	// Reuse the 30d cached compute path so we don't re-walk issues here.
+	window, err := ParseTimeWindow(DefaultWindowLabel, now)
+	if err != nil {
+		return domain.CorpusOrphans{}, err
+	}
+	result, err := h.Loader.List(ctx, window, now)
+	if err != nil {
+		return domain.CorpusOrphans{}, err
+	}
+	if result.Orphans == nil {
+		return domain.CorpusOrphans{}, nil
+	}
+	return *result.Orphans, nil
 }
 
 func (h *Handler) now() time.Time {

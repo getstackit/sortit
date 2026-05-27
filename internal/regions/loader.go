@@ -11,14 +11,16 @@ import (
 
 // ListResult is the payload returned by the loader.
 type ListResult struct {
-	Regions []RegionWithMetrics `json:"regions"`
-	Window  domain.TimeWindow   `json:"window"`
+	Regions []RegionWithMetrics   `json:"regions"`
+	Window  domain.TimeWindow     `json:"window"`
+	Orphans *domain.CorpusOrphans `json:"orphans,omitempty"`
 }
 
 // Loader serves region metrics, caching results by (window, corpus
 // revision). When no RevisionSource is wired, every call recomputes.
 type Loader struct {
 	Store     Store
+	Tags      TagReader
 	Revisions RevisionSource
 
 	mu    sync.Mutex
@@ -56,9 +58,15 @@ func (l *Loader) List(ctx context.Context, window domain.TimeWindow, now time.Ti
 	if err != nil {
 		return ListResult{}, err
 	}
+	tags, err := l.listTags(ctx)
+	if err != nil {
+		return ListResult{}, err
+	}
+	orphans := ComputeCorpusOrphans(items, tags)
 	result := ListResult{
 		Regions: ListRegionsWithMetrics(items, events, window, now),
 		Window:  window,
+		Orphans: &orphans,
 	}
 
 	l.mu.Lock()
@@ -116,4 +124,14 @@ func (l *Loader) listEventsForWindow(ctx context.Context, window domain.TimeWind
 		return nil, nil
 	}
 	return l.Store.ListLifecycleEvents(ctx, ChurnKinds, window.Start, window.End)
+}
+
+// listTags returns the catalog snapshot used for orphan detection. When
+// no TagReader is wired (e.g., in unit tests), returns an empty slice so
+// orphan computation degrades gracefully.
+func (l *Loader) listTags(ctx context.Context) ([]issues.Tag, error) {
+	if l.Tags == nil {
+		return nil, nil
+	}
+	return l.Tags.StoredTags(ctx)
 }
