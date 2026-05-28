@@ -94,14 +94,15 @@ func (h *Handler) Get(ctx context.Context, kind, id, windowLabel string) (GetRes
 }
 
 // parseSupportedKind validates the wire-form kind against the kinds the
-// loader knows how to compute (tag and cluster). Returns
-// ErrUnsupportedKind otherwise.
+// loader knows how to compute (tag, cluster, custom).
 func parseSupportedKind(raw string) (domain.RegionKind, error) {
 	switch raw {
 	case string(domain.RegionKindTag):
 		return domain.RegionKindTag, nil
 	case string(domain.RegionKindCluster):
 		return domain.RegionKindCluster, nil
+	case string(domain.RegionKindCustom):
+		return domain.RegionKindCustom, nil
 	}
 	return "", fmt.Errorf("%w: %q", ErrUnsupportedKind, raw)
 }

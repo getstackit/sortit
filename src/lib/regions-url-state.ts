@@ -21,10 +21,8 @@ const SUPPORTED_SORTS: readonly RegionSortKey[] = [
 export type RegionsView = "list" | "map";
 const SUPPORTED_VIEWS: readonly RegionsView[] = ["list", "map"];
 
-// Only `tag` and `cluster` are user-selectable from the /regions page;
-// `custom` is still type-reserved and rejected by the backend.
-export type RegionsKindFilter = "tag" | "cluster";
-const SUPPORTED_KINDS: readonly RegionsKindFilter[] = ["tag", "cluster"];
+export type RegionsKindFilter = "tag" | "cluster" | "custom";
+const SUPPORTED_KINDS: readonly RegionsKindFilter[] = ["tag", "cluster", "custom"];
 
 export type RegionsURLState = {
   kind: RegionsKindFilter;

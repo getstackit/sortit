@@ -76,3 +76,37 @@ type CorpusOrphans struct {
 	Open     int     `json:"open"`
 	Fraction float64 `json:"fraction"`
 }
+
+// CustomRegionPredicate is a small intersection-of-conditions predicate.
+// Empty/zero fields are ignored; populated fields are AND-combined.
+//
+//   - Tags: at least one TagPredicate must match (OR semantics within
+//     the list).
+//   - Statuses: issue.Status must be in this set (when non-empty).
+//   - Authors: issue.CreatedBy must be in this set (when non-empty).
+//   - MaxAgeDays: (now − CreatedAt).Days must be <= this (when non-nil).
+type CustomRegionPredicate struct {
+	Tags       []TagPredicate `json:"tags,omitempty"`
+	Statuses   []string       `json:"statuses,omitempty"`
+	Authors    []string       `json:"authors,omitempty"`
+	MaxAgeDays *int           `json:"maxAgeDays,omitempty"`
+}
+
+// TagPredicate matches when an issue has the named tag at or above
+// MinRelevance.
+type TagPredicate struct {
+	Tag          string  `json:"tag"`
+	MinRelevance float64 `json:"minRelevance"`
+}
+
+// CustomRegion is a user-defined region. Stored in the custom_regions
+// table; resolved to a membership predicate at compute time.
+type CustomRegion struct {
+	ID          string                `json:"id"`
+	Label       string                `json:"label"`
+	Description string                `json:"description,omitempty"`
+	Definition  CustomRegionPredicate `json:"definition"`
+	CreatedBy   string                `json:"createdBy,omitempty"`
+	CreatedAt   time.Time             `json:"createdAt"`
+	UpdatedAt   time.Time             `json:"updatedAt"`
+}

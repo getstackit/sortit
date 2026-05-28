@@ -97,12 +97,24 @@ func TestRegionsListDefaultsToTagKindAnd30Day(t *testing.T) {
 func TestRegionsListRejectsUnsupportedKind(t *testing.T) {
 	server := newRegionsTestServer(t)
 
-	req := httptest.NewRequest(http.MethodGet, "/api/ui/regions?kind=custom", nil)
+	req := httptest.NewRequest(http.MethodGet, "/api/ui/regions?kind=bogus", nil)
 	rec := httptest.NewRecorder()
 	server.Handler().ServeHTTP(rec, req)
 
 	if rec.Code != http.StatusBadRequest {
 		t.Fatalf("expected 400, got %d: %s", rec.Code, rec.Body.String())
+	}
+}
+
+func TestRegionsListAcceptsCustomKind(t *testing.T) {
+	server := newRegionsTestServer(t)
+
+	req := httptest.NewRequest(http.MethodGet, "/api/ui/regions?kind=custom&window=30d", nil)
+	rec := httptest.NewRecorder()
+	server.Handler().ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200 for custom kind, got %d: %s", rec.Code, rec.Body.String())
 	}
 }
 
@@ -153,10 +165,10 @@ func TestRegionGetReturnsNotFound(t *testing.T) {
 	}
 }
 
-func TestRegionGetRejectsCustomKind(t *testing.T) {
+func TestRegionGetRejectsBogusKind(t *testing.T) {
 	server := newRegionsTestServer(t)
 
-	req := httptest.NewRequest(http.MethodGet, "/api/ui/regions/custom/anything", nil)
+	req := httptest.NewRequest(http.MethodGet, "/api/ui/regions/bogus/anything", nil)
 	rec := httptest.NewRecorder()
 	server.Handler().ServeHTTP(rec, req)
 

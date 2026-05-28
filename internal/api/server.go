@@ -82,6 +82,7 @@ type Server struct {
 	getPersonDetail      people.GetPersonDetailHandler
 	workCorrelations     people.WorkCorrelationsHandler
 	regions              *regions.Handler
+	customRegions        *regions.CustomHandler
 	cooccurrenceCache    *tagcooccurrence.Cache
 	issueXRay            *issuexray.Handler
 	authService          *auth.Service
@@ -263,6 +264,11 @@ func (s *Server) registerDedicatedAPIRoutes(r chi.Router) {
 		r.Get("/people/{person}/profile", s.handlePersonProfileRoute)
 		r.Get("/regions", s.handleRegionsList)
 		r.Get("/regions/orphans", s.handleRegionOrphans)
+		r.Get("/regions/custom", s.handleCustomRegionList)
+		r.Post("/regions/custom", s.handleCustomRegionCreate)
+		r.Put("/regions/custom/{id}", s.handleCustomRegionUpdate)
+		r.Delete("/regions/custom/{id}", s.handleCustomRegionDelete)
+		r.Get("/regions/custom/{id}/definition", s.handleCustomRegionGet)
 		r.Get("/regions/{kind}/{id}", s.handleRegionGet)
 		r.Route("/debug", func(r chi.Router) {
 			r.Use(middleware.Timeout(debugRequestTimeout))
@@ -298,6 +304,11 @@ func (s *Server) registerUIRoutes(r chi.Router) {
 		r.Get("/people/{person}/profile", s.handlePersonProfileRoute)
 		r.Get("/regions", s.handleRegionsList)
 		r.Get("/regions/orphans", s.handleRegionOrphans)
+		r.Get("/regions/custom", s.handleCustomRegionList)
+		r.Post("/regions/custom", s.handleCustomRegionCreate)
+		r.Put("/regions/custom/{id}", s.handleCustomRegionUpdate)
+		r.Delete("/regions/custom/{id}", s.handleCustomRegionDelete)
+		r.Get("/regions/custom/{id}/definition", s.handleCustomRegionGet)
 		r.Get("/regions/{kind}/{id}", s.handleRegionGet)
 		r.Route("/debug", func(r chi.Router) {
 			r.Use(middleware.Timeout(debugRequestTimeout))
@@ -581,13 +592,17 @@ func NewServer(cfg ServerConfig) *Server {
 		Store:     store,
 		Revisions: revisions,
 	}
+	var customRegionStore regions.CustomRegionStore = store
+	var customRegionWriter regions.CustomRegionWriter = store
 	regionsLoader := &regions.Loader{
 		Store:         store,
 		Tags:          catalog,
 		MapProjection: mapProjectionLoader,
+		CustomStore:   customRegionStore,
 		Revisions:     revisions,
 	}
 	regionsHandler := &regions.Handler{Loader: regionsLoader}
+	customRegionHandler := &regions.CustomHandler{Store: customRegionWriter}
 
 	return &Server{
 		config:              cfg,
@@ -672,6 +687,7 @@ func NewServer(cfg ServerConfig) *Server {
 		getPersonDetail:      people.GetPersonDetailHandler{Store: store, Catalog: catalog},
 		workCorrelations:     people.WorkCorrelationsHandler{Store: store, Catalog: catalog},
 		regions:              regionsHandler,
+		customRegions:        customRegionHandler,
 		cooccurrenceCache:    cooccurrenceCache,
 		issueXRay: &issuexray.Handler{
 			Issues:       store,

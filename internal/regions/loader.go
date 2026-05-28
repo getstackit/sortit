@@ -24,6 +24,7 @@ type Loader struct {
 	Store         Store
 	Tags          TagReader
 	MapProjection MapProjectionReader
+	CustomStore   CustomRegionStore
 	Revisions     RevisionSource
 
 	mu    sync.Mutex
@@ -84,6 +85,12 @@ func (l *Loader) List(ctx context.Context, kind domain.RegionKind, window domain
 			return ListResult{}, err
 		}
 		regions = ListClusterRegionsWithMetrics(clusters, items, events, window, now)
+	case domain.RegionKindCustom:
+		customs, err := l.listCustomRegions(ctx)
+		if err != nil {
+			return ListResult{}, err
+		}
+		regions = ListCustomRegionsWithMetrics(customs, items, events, window, now)
 	default:
 		return ListResult{Window: window}, nil
 	}
@@ -122,6 +129,17 @@ func (l *Loader) Get(ctx context.Context, key domain.RegionKey, window domain.Ti
 		return RegionWithMetrics{}, false, nil
 	case domain.RegionKindCluster:
 		result, err := l.List(ctx, domain.RegionKindCluster, window, now)
+		if err != nil {
+			return RegionWithMetrics{}, false, err
+		}
+		for _, r := range result.Regions {
+			if r.Region.Key.ID == key.ID {
+				return r, true, nil
+			}
+		}
+		return RegionWithMetrics{}, false, nil
+	case domain.RegionKindCustom:
+		result, err := l.List(ctx, domain.RegionKindCustom, window, now)
 		if err != nil {
 			return RegionWithMetrics{}, false, err
 		}
@@ -189,4 +207,14 @@ func (l *Loader) listClusters(ctx context.Context) ([]issuemap.Cluster, error) {
 		return nil, err
 	}
 	return projection.Clusters, nil
+}
+
+// listCustomRegions returns the saved custom-region definitions. When
+// no CustomStore is wired, returns nil so the kind degrades to an
+// empty list.
+func (l *Loader) listCustomRegions(ctx context.Context) ([]domain.CustomRegion, error) {
+	if l.CustomStore == nil {
+		return nil, nil
+	}
+	return l.CustomStore.ListCustomRegions(ctx)
 }

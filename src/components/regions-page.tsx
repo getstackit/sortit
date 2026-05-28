@@ -53,11 +53,12 @@ const VIEW_LABELS: Record<RegionsView, string> = {
   map: "Cartography",
 };
 
-const KIND_OPTIONS: readonly RegionsKindFilter[] = ["tag", "cluster"];
+const KIND_OPTIONS: readonly RegionsKindFilter[] = ["tag", "cluster", "custom"];
 
 const KIND_LABELS: Record<RegionsKindFilter, string> = {
   tag: "Tags",
   cluster: "Clusters",
+  custom: "Custom",
 };
 
 const BUCKET_ORDER = ["<1w", "1-4w", "1-3m", "3m+"] as const;
@@ -129,16 +130,26 @@ export function RegionsPage() {
       <div className="app-scrollarea min-h-0 flex-1 overflow-y-auto">
         <div className="flex w-full flex-col gap-6 px-4 py-6 lg:px-6 xl:px-8">
           {urlState.view === "list" && (
-            <div className="flex flex-wrap items-center gap-2">
-              <p className="text-[11px] font-medium uppercase tracking-[0.14em] text-muted-foreground">
-                Sort by
-              </p>
-              <FilterToggleGroup<RegionSortKey>
-                options={SORT_OPTIONS}
-                value={urlState.sort}
-                onChange={(sort) => updateURL({ sort })}
-                formatLabel={(value) => SORT_LABELS[value]}
-              />
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <div className="flex flex-wrap items-center gap-2">
+                <p className="text-[11px] font-medium uppercase tracking-[0.14em] text-muted-foreground">
+                  Sort by
+                </p>
+                <FilterToggleGroup<RegionSortKey>
+                  options={SORT_OPTIONS}
+                  value={urlState.sort}
+                  onChange={(sort) => updateURL({ sort })}
+                  formatLabel={(value) => SORT_LABELS[value]}
+                />
+              </div>
+              {urlState.kind === "custom" && (
+                <Link
+                  href="/regions/new"
+                  className="rounded-md border border-border bg-background px-3 py-1.5 text-xs font-medium text-foreground transition-colors hover:bg-muted"
+                >
+                  + New custom region
+                </Link>
+              )}
             </div>
           )}
 
@@ -186,9 +197,12 @@ export function RegionsPage() {
 function RegionTile({ entry }: { entry: RegionWithMetrics }) {
   const { region, metrics } = entry;
   const isCluster = region.key.kind === "cluster";
+  const isCustom = region.key.kind === "custom";
   const href = isCluster
     ? `/regions/cluster/${encodeURIComponent(region.key.id)}`
-    : tagHref(region.key.id);
+    : isCustom
+      ? `/regions/custom/${encodeURIComponent(region.key.id)}`
+      : tagHref(region.key.id);
   const orderedBuckets = BUCKET_ORDER.map(
     (label) => metrics.ageBuckets?.find((b) => b.label === label) ?? { label, count: 0 }
   );
@@ -201,6 +215,8 @@ function RegionTile({ entry }: { entry: RegionWithMetrics }) {
       <div className="flex items-center justify-between gap-2">
         {isCluster ? (
           <ClusterTileHeader label={region.label} id={region.key.id} />
+        ) : isCustom ? (
+          <span className="text-sm font-medium">{region.label}</span>
         ) : (
           <TagBadge tag={region.label} />
         )}
