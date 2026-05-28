@@ -26,6 +26,7 @@ import (
 	"sortit/internal/people"
 	"sortit/internal/regions"
 	"sortit/internal/search"
+	"sortit/internal/tagcooccurrence"
 	"sortit/internal/tags"
 	"sortit/internal/tracing"
 )
@@ -79,6 +80,7 @@ type Server struct {
 	getPersonDetail      people.GetPersonDetailHandler
 	workCorrelations     people.WorkCorrelationsHandler
 	regions              *regions.Handler
+	cooccurrenceCache    *tagcooccurrence.Cache
 	authService          *auth.Service
 	catalog              *tags.CatalogService
 }
@@ -569,6 +571,10 @@ func NewServer(cfg ServerConfig) *Server {
 		Revisions:   revisions,
 		Projections: mapProjectionStoreFromIssueStore(baseStore),
 	}
+	cooccurrenceCache := &tagcooccurrence.Cache{
+		Store:     store,
+		Revisions: revisions,
+	}
 	regionsLoader := &regions.Loader{
 		Store:         store,
 		Tags:          catalog,
@@ -653,11 +659,12 @@ func NewServer(cfg ServerConfig) *Server {
 		debugEvalTags:        diagnostics.DebugEvalTagsHandler{Analyzer: cfg.Analyzer, Catalog: catalog, Enricher: enricher},
 		debugFactorWeights:   diagnostics.DebugFactorWeightsHandler{Store: store, Catalog: catalog},
 		debugIssueR2:         diagnostics.DebugIssueR2Handler{Store: store, Catalog: catalog},
-		debugTagCooccurrence: diagnostics.DebugTagCooccurrenceHandler{Store: store},
+		debugTagCooccurrence: diagnostics.DebugTagCooccurrenceHandler{Store: store, Cache: cooccurrenceCache},
 		getPersonProfile:     people.GetPersonProfileHandler{Store: store, Catalog: catalog},
 		getPersonDetail:      people.GetPersonDetailHandler{Store: store, Catalog: catalog},
 		workCorrelations:     people.WorkCorrelationsHandler{Store: store, Catalog: catalog},
 		regions:              regionsHandler,
+		cooccurrenceCache:    cooccurrenceCache,
 		authService:          cfg.Auth,
 		catalog:              catalog,
 	}
