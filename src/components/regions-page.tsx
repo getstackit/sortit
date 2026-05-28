@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { usePathname, useSearchParams } from "next/navigation";
+import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { useCallback, useMemo } from "react";
 
 import { AppShell } from "@/components/app-shell";
@@ -63,6 +63,7 @@ const KIND_LABELS: Record<RegionsKindFilter, string> = {
 const BUCKET_ORDER = ["<1w", "1-4w", "1-3m", "3m+"] as const;
 
 export function RegionsPage() {
+  const router = useRouter();
   const pathname = usePathname();
   const searchParams = useSearchParams();
   const searchParamsString = searchParams?.toString() ?? "";
@@ -79,9 +80,9 @@ export function RegionsPage() {
       const merged = { ...urlState, ...next };
       const query = regionsURLQuery(merged);
       const target = query ? `${pathname}?${query}` : pathname;
-      window.history.replaceState(window.history.state, "", target);
+      router.replace(target, { scroll: false });
     },
-    [pathname, urlState]
+    [pathname, router, urlState]
   );
 
   const sortedRegions = useMemo(

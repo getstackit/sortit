@@ -5,10 +5,12 @@ import { RegionsPage } from "@/components/regions-page";
 import { useRegions } from "@/hooks/use-regions";
 
 const searchParamsBag = { value: new URLSearchParams() };
+const routerReplace = vi.fn();
 
 vi.mock("next/navigation", () => ({
   usePathname: () => "/regions",
   useSearchParams: () => searchParamsBag.value,
+  useRouter: () => ({ replace: routerReplace }),
 }));
 
 vi.mock("@/components/app-shell", () => ({
@@ -41,8 +43,6 @@ vi.mock("@/hooks/use-regions", () => ({
   useRegions: vi.fn(),
 }));
 
-const replaceState = vi.fn();
-
 function setLocation(search: string) {
   searchParamsBag.value = new URLSearchParams(search);
 }
@@ -50,8 +50,7 @@ function setLocation(search: string) {
 beforeEach(() => {
   setLocation("");
   vi.mocked(useRegions).mockReset();
-  replaceState.mockReset();
-  window.history.replaceState = replaceState;
+  routerReplace.mockReset();
 });
 
 function makeRegion(overrides: {
@@ -226,8 +225,8 @@ describe("RegionsPage", () => {
     if (!sevenDay) throw new Error("7d toggle not found");
     fireEvent.click(sevenDay);
 
-    expect(replaceState).toHaveBeenCalled();
-    const lastCall = replaceState.mock.calls.at(-1);
-    expect(lastCall?.[2]).toContain("window=7d");
+    expect(routerReplace).toHaveBeenCalled();
+    const lastCall = routerReplace.mock.calls.at(-1);
+    expect(lastCall?.[0]).toContain("window=7d");
   });
 });
