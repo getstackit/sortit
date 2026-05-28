@@ -7,12 +7,19 @@ import (
 	"time"
 
 	"sortit/internal/ai"
+	"sortit/internal/domain"
 	issueenrichment "sortit/internal/issueenrichment"
 	"sortit/internal/issues"
 	issueviews "sortit/internal/issues/views"
 	issuemap "sortit/internal/map"
+	"sortit/internal/tagcooccurrence"
 	"sortit/internal/tags"
 )
+
+// regionSearchOptsTopK caps the number of anti-correlators the search
+// passes to the ranker. Going wider buys diminishing returns and risks
+// over-penalizing candidates that touch many unrelated tags.
+const regionSearchOptsTopK = 8
 
 type SearchIssues struct {
 	Query      string
@@ -25,9 +32,62 @@ type SearchIssues struct {
 }
 
 type SearchIssuesHandler struct {
-	Analyzer *ai.Analyzer
-	Catalog  *tags.CatalogService
-	Store    issues.Store
+	Analyzer     *ai.Analyzer
+	Catalog      *tags.CatalogService
+	Store        issues.Store
+	Cooccurrence *tagcooccurrence.Cache
+}
+
+// regionOpts inspects the query for an exact tag-name match. When found,
+// it returns options that boost in-region candidates and penalize
+// candidates carrying that region's strong anti-correlators. Returns
+// an empty slice when no tag matches or when the cooccurrence cache is
+// not wired.
+func (h SearchIssuesHandler) regionOpts(
+	ctx context.Context,
+	query string,
+	storeTags []issues.Tag,
+) ([]issuemap.SearchOption, error) {
+	normalized := domain.NormalizeTagName(query)
+	if normalized == "" {
+		return nil, nil
+	}
+	var match string
+	for _, tag := range storeTags {
+		if domain.NormalizeTagName(tag.Name) == normalized {
+			match = normalized
+			break
+		}
+	}
+	if match == "" {
+		return nil, nil
+	}
+
+	opts := []issuemap.SearchOption{issuemap.WithRegionTarget(match)}
+	if h.Cooccurrence == nil {
+		return opts, nil
+	}
+	stats, ok, err := h.Cooccurrence.LookupPairs(ctx, match)
+	if err != nil {
+		return nil, err
+	}
+	if !ok {
+		return opts, nil
+	}
+	anti := make(map[string]float64, regionSearchOptsTopK)
+	for _, pair := range stats.Pairs {
+		if pair.ImplicitNegative <= 0 {
+			continue
+		}
+		if len(anti) >= regionSearchOptsTopK {
+			break
+		}
+		anti[pair.Tag] = pair.ImplicitNegative
+	}
+	if len(anti) > 0 {
+		opts = append(opts, issuemap.WithAntiCorrelators(anti))
+	}
+	return opts, nil
 }
 
 func (h SearchIssuesHandler) Handle(ctx context.Context, input SearchIssues) (issuemap.SearchResponse, error) {
@@ -78,6 +138,16 @@ func (h SearchIssuesHandler) Handle(ctx context.Context, input SearchIssues) (is
 		detailReader, _ := h.Store.(issues.IssueDetailReader)
 		candidates = issueviews.HydrateIssuesWithVelocity(ctx, detailReader, candidates, time.Now().UTC())
 
+		regionExtras, err := h.regionOpts(ctx, searchOpts.Query, storeTags)
+		if err != nil {
+			return issuemap.SearchResponse{}, err
+		}
+
+		baseOpts := []issuemap.SearchOption{
+			issuemap.WithOffset(searchOpts.Offset),
+			issuemap.WithSortBy(searchOpts.SortBy),
+		}
+
 		return issuemap.SearchFromQueryWithTags(
 			candidates,
 			storeTags,
@@ -85,8 +155,7 @@ func (h SearchIssuesHandler) Handle(ctx context.Context, input SearchIssues) (is
 			searchOpts.QueryTags,
 			searchOpts.QueryEmbed,
 			searchOpts.Limit,
-			issuemap.WithOffset(searchOpts.Offset),
-			issuemap.WithSortBy(searchOpts.SortBy),
+			append(baseOpts, regionExtras...)...,
 		), nil
 	}
 
@@ -105,6 +174,16 @@ func (h SearchIssuesHandler) Handle(ctx context.Context, input SearchIssues) (is
 		return issuemap.SearchResponse{}, err
 	}
 
+	regionExtras, err := h.regionOpts(ctx, searchOpts.Query, storeTags)
+	if err != nil {
+		return issuemap.SearchResponse{}, err
+	}
+
+	baseOpts := []issuemap.SearchOption{
+		issuemap.WithOffset(searchOpts.Offset),
+		issuemap.WithSortBy(searchOpts.SortBy),
+	}
+
 	return issuemap.SearchFromQueryWithTags(
 		storeIssues,
 		storeTags,
@@ -112,7 +191,6 @@ func (h SearchIssuesHandler) Handle(ctx context.Context, input SearchIssues) (is
 		searchOpts.QueryTags,
 		searchOpts.QueryEmbed,
 		searchOpts.Limit,
-		issuemap.WithOffset(searchOpts.Offset),
-		issuemap.WithSortBy(searchOpts.SortBy),
+		append(baseOpts, regionExtras...)...,
 	), nil
 }

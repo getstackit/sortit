@@ -640,9 +640,10 @@ func NewServer(cfg ServerConfig) *Server {
 		getIssue:      issueviews.GetIssueHandler{Store: store, Logger: logger.With("query", "get_issue")},
 		compareIssues: issueviews.CompareIssuesHandler{Reader: store},
 		searchIssues: search.SearchIssuesHandler{
-			Analyzer: commandAnalyzer,
-			Catalog:  catalog,
-			Store:    baseStore,
+			Analyzer:     commandAnalyzer,
+			Catalog:      catalog,
+			Store:        baseStore,
+			Cooccurrence: cooccurrenceCache,
 		},
 		searchUnified: search.SearchUnifiedHandler{
 			Analyzer: commandAnalyzer,

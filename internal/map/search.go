@@ -31,6 +31,16 @@ type SearchOption func(*searchConfig)
 type searchConfig struct {
 	offset int
 	sortBy string
+	// regionTarget, when non-empty, identifies the tag whose region the
+	// query is asking about (typically the tag name parsed out of the
+	// query string). Candidates with relevance >= 0.4 on this tag get a
+	// small boost.
+	regionTarget string
+	// antiCorrelators are tags that the regionTarget structurally
+	// dis-occurs with, sourced from the co-occurrence projection. When
+	// a candidate has any of these tags at strong relevance, the score
+	// is penalized.
+	antiCorrelators map[string]float64
 }
 
 func WithOffset(offset int) SearchOption {
@@ -44,6 +54,28 @@ func WithOffset(offset int) SearchOption {
 func WithSortBy(sortBy string) SearchOption {
 	return func(c *searchConfig) {
 		c.sortBy = sortBy
+	}
+}
+
+// WithRegionTarget marks `tag` as the query's target region. The search
+// applies a small boost (scoring.RegionMatchBoost) to candidates that
+// are members of the region (relevance >= MembershipFloor).
+func WithRegionTarget(tag string) SearchOption {
+	return func(c *searchConfig) {
+		c.regionTarget = strings.TrimSpace(tag)
+	}
+}
+
+// WithAntiCorrelators supplies the set of tags that the target region
+// dis-occurs with along with their per-pair implicit-negative weight.
+// Candidates carrying any of these tags at strong relevance get
+// penalized by weight * scoring.RegionAntiCorrelationPenalty.
+func WithAntiCorrelators(tags map[string]float64) SearchOption {
+	return func(c *searchConfig) {
+		if len(tags) == 0 {
+			return
+		}
+		c.antiCorrelators = tags
 	}
 }
 
@@ -173,6 +205,12 @@ func SearchFromQueryWithTags(
 		combined -= issueSpecificityPenalty(candidateSummary.Tags, tagSpecificity)
 		if genericQuery {
 			combined += specificCooccurrenceBoost(candidateSummary.Tags, tagSpecificity)
+		}
+		if cfg.regionTarget != "" && candidateInRegion(candidateSummary.Tags, cfg.regionTarget) {
+			combined += scoring.RegionMatchBoost
+		}
+		if len(cfg.antiCorrelators) > 0 {
+			combined -= candidateAntiCorrelationPenalty(candidateSummary.Tags, cfg.antiCorrelators)
 		}
 		sharedTags := sharedRelevantTags(querySummary.Tags, candidateSummary.Tags, scoring.SharedTagsLimit)
 
@@ -436,4 +474,42 @@ func searchQueryTags(tags []issues.TagRelevance) []TagRelevance {
 	})
 
 	return queryTags
+}
+
+// candidateInRegion reports whether the candidate's tag scores include
+// the target tag at or above scoring.RegionMembershipFloor.
+func candidateInRegion(candidateTags []TagRelevance, target string) bool {
+	target = strings.ToLower(strings.TrimSpace(target))
+	if target == "" {
+		return false
+	}
+	for _, tag := range candidateTags {
+		if strings.ToLower(strings.TrimSpace(tag.Tag)) == target &&
+			tag.Relevance >= scoring.RegionMembershipFloor {
+			return true
+		}
+	}
+	return false
+}
+
+// candidateAntiCorrelationPenalty returns the penalty to subtract from
+// the combined score when a candidate's strong tags structurally
+// dis-occur with the query's target region.
+func candidateAntiCorrelationPenalty(
+	candidateTags []TagRelevance,
+	antiCorrelators map[string]float64,
+) float64 {
+	penalty := 0.0
+	for _, tag := range candidateTags {
+		if tag.Relevance < scoring.RegionAntiCorrelationStrongTag {
+			continue
+		}
+		name := strings.ToLower(strings.TrimSpace(tag.Tag))
+		weight, ok := antiCorrelators[name]
+		if !ok {
+			continue
+		}
+		penalty += weight * scoring.RegionAntiCorrelationPenalty
+	}
+	return penalty
 }

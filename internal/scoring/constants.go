@@ -83,6 +83,15 @@ const (
 	MinDecompositionIssues    = 5    // below this, fall back to hardcoded weights
 )
 
+// Region-aware search. Applied when a search query identifies a target
+// tag-region (e.g., the query string matches a known tag name).
+const (
+	RegionMembershipFloor          = 0.4  // mirrors regions.MembershipFloor
+	RegionMatchBoost               = 0.08 // additive boost for in-region candidates
+	RegionAntiCorrelationPenalty   = 0.12 // multiplier for the implicit-negative weight
+	RegionAntiCorrelationStrongTag = 0.4  // ignore anti-correlators on weakly-tagged candidates
+)
+
 // Projection weighting.
 const (
 	ProjectionWeightFloor = 0.1 // minimum per-issue weight in PCA covariance
