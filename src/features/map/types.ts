@@ -21,6 +21,9 @@ export type MapEdge = {
 };
 
 export type MapCluster = {
+  /** Stable, content-hash-based identifier introduced in Phase 4.
+   *  Optional to tolerate older cached projections that pre-date it. */
+  id?: string;
   label: string;
   centerX: number;
   centerY: number;

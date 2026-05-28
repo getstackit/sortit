@@ -187,6 +187,15 @@ export function ClusterRegionDetailPage({ id }: Props) {
                   projection. The cluster ID is a hash of its members — when the
                   membership shifts, the ID changes and old URLs stop resolving.
                 </p>
+
+                <div className="mt-4">
+                  <Link
+                    href={`/map?cluster=${encodeURIComponent(id)}`}
+                    className="inline-flex items-center gap-1 rounded-md border border-border px-3 py-1 text-xs font-medium text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+                  >
+                    View on map →
+                  </Link>
+                </div>
               </section>
 
               {candidateIssues.length > 0 && (
