@@ -76,6 +76,7 @@ type Server struct {
 	debugFactorWeights   diagnostics.DebugFactorWeightsHandler
 	debugIssueR2         diagnostics.DebugIssueR2Handler
 	debugTagCooccurrence diagnostics.DebugTagCooccurrenceHandler
+	debugRidgeScore      diagnostics.DebugRidgeScoreHandler
 	exploreIssue         mapview.ExploreIssueHandler
 	getPersonProfile     people.GetPersonProfileHandler
 	getPersonDetail      people.GetPersonDetailHandler
@@ -269,6 +270,7 @@ func (s *Server) registerDedicatedAPIRoutes(r chi.Router) {
 			r.Get("/factor-weights", s.handleDebugFactorWeights)
 			r.Get("/issues/{id}/r2", s.handleDebugIssueR2)
 			r.Get("/tag-cooccurrence", s.handleDebugTagCooccurrence)
+			r.Get("/issues/{id}/ridge", s.handleDebugRidgeScore)
 		})
 	})
 }
@@ -306,6 +308,7 @@ func (s *Server) registerUIRoutes(r chi.Router) {
 			r.Get("/factor-weights", s.handleDebugFactorWeights)
 			r.Get("/issues/{id}/r2", s.handleDebugIssueR2)
 			r.Get("/tag-cooccurrence", s.handleDebugTagCooccurrence)
+			r.Get("/issues/{id}/ridge", s.handleDebugRidgeScore)
 		})
 	})
 }
@@ -664,6 +667,7 @@ func NewServer(cfg ServerConfig) *Server {
 		debugFactorWeights:   diagnostics.DebugFactorWeightsHandler{Store: store, Catalog: catalog},
 		debugIssueR2:         diagnostics.DebugIssueR2Handler{Store: store, Catalog: catalog},
 		debugTagCooccurrence: diagnostics.DebugTagCooccurrenceHandler{Store: store, Cache: cooccurrenceCache},
+		debugRidgeScore:      diagnostics.DebugRidgeScoreHandler{Store: store, Catalog: catalog},
 		getPersonProfile:     people.GetPersonProfileHandler{Store: store, Catalog: catalog},
 		getPersonDetail:      people.GetPersonDetailHandler{Store: store, Catalog: catalog},
 		workCorrelations:     people.WorkCorrelationsHandler{Store: store, Catalog: catalog},
