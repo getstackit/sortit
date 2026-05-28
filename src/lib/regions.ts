@@ -41,6 +41,8 @@ export type RegionMetrics = {
   growth?: Rate | null;
   closure?: Rate | null;
   churn?: Rate | null;
+  authorityLinks?: number;
+  authority?: number | null;
 };
 
 export type RegionWithMetrics = {

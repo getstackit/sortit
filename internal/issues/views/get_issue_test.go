@@ -70,8 +70,8 @@ func TestGetIssueHandlerIncludesLifecycleMetricsFromSnapshots(t *testing.T) {
 	if loaded.LifecycleMetrics.TransitionCount != 1 {
 		t.Fatalf("expected 1 transition, got %#v", loaded.LifecycleMetrics)
 	}
-	if loaded.LifecycleMetrics.Churn == nil || loaded.LifecycleMetrics.Stability == nil {
-		t.Fatalf("expected non-nil churn/stability, got %#v", loaded.LifecycleMetrics)
+	if loaded.LifecycleMetrics.Churn == nil {
+		t.Fatalf("expected non-nil churn, got %#v", loaded.LifecycleMetrics)
 	}
 	if *loaded.LifecycleMetrics.Churn <= 0 {
 		t.Fatalf("expected positive churn, got %#v", loaded.LifecycleMetrics)

@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"sortit/internal/domain"
+	"sortit/internal/issueanalytics"
 	"sortit/internal/issues"
 	"sortit/internal/vectors"
 )
@@ -303,6 +304,33 @@ func filterMembers(items []issues.Issue, key domain.RegionKey) []issues.Issue {
 	return out
 }
 
+// ComputeAuthorityMembers totals inbound canonical (duplicate_of /
+// merged_into) link counts across the member set, plus a normalized
+// mean derived from the per-issue Authority signal in issueanalytics.
+// AuthorityLinks is the raw count of inbound canonical links (a region-
+// level "how many landing-points worth of authority"); Authority is the
+// mean per-issue value (range [0, 1]), nil for empty regions.
+func ComputeAuthorityMembers(members []issues.Issue) (links int, mean *float64) {
+	if len(members) == 0 {
+		return 0, nil
+	}
+	sum := 0.0
+	for _, issue := range members {
+		for _, link := range issue.Links {
+			if link.TargetIssueID != issue.ID {
+				continue
+			}
+			if link.Type == issues.IssueLinkTypeDuplicateOf || link.Type == issues.IssueLinkTypeMergedInto {
+				links++
+			}
+		}
+		sum += issueanalytics.IssueAuthority(issue)
+	}
+	avg := sum / float64(len(members))
+	avg = math.Round(avg*1000) / 1000
+	return links, &avg
+}
+
 // ComputeMetricsForMembers builds RegionMetrics from a pre-filtered
 // member set. Cluster regions use this directly; tag regions go through
 // ComputeMetrics, which filters and then calls this.
@@ -311,17 +339,20 @@ func ComputeMetricsForMembers(key domain.RegionKey, members []issues.Issue, even
 	if mass == 0 {
 		return domain.RegionMetrics{}, false
 	}
+	authorityLinks, authorityMean := ComputeAuthorityMembers(members)
 	return domain.RegionMetrics{
-		Key:        key,
-		Window:     window,
-		Mass:       mass,
-		MassOpen:   open,
-		MassClosed: closed,
-		AgeBuckets: ComputeAgeBucketsMembers(members, now),
-		Density:    ComputeDensityMembers(members),
-		Growth:     ComputeGrowthMembers(members, window),
-		Closure:    ComputeClosureMembers(members, window),
-		Churn:      ComputeChurnMembers(events, members, window),
+		Key:            key,
+		Window:         window,
+		Mass:           mass,
+		MassOpen:       open,
+		MassClosed:     closed,
+		AgeBuckets:     ComputeAgeBucketsMembers(members, now),
+		Density:        ComputeDensityMembers(members),
+		Growth:         ComputeGrowthMembers(members, window),
+		Closure:        ComputeClosureMembers(members, window),
+		Churn:          ComputeChurnMembers(events, members, window),
+		AuthorityLinks: authorityLinks,
+		Authority:      authorityMean,
 	}, true
 }
 

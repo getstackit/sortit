@@ -975,12 +975,15 @@ export function IssueDetailPage({ issueID }: { issueID: string }) {
       });
     }
 
-    if (typeof issue.lifecycleMetrics?.stability === "number" && typeof issue.lifecycleMetrics?.churn === "number") {
+    if (typeof issue.lifecycleMetrics?.churn === "number") {
       const transitions = issue.lifecycleMetrics.transitionCount ?? 0;
       const snapshots = issue.lifecycleMetrics.snapshotCount ?? transitions + 1;
+      // Stability is the inverse of churn; derive it here rather than
+      // shipping a redundant field.
+      const stability = Math.max(0, Math.min(1, 1 - issue.lifecycleMetrics.churn));
       entries.push({
         label: "Stability",
-        value: formatPercent(issue.lifecycleMetrics.stability),
+        value: formatPercent(stability),
         meta: `${formatPercent(issue.lifecycleMetrics.churn)} churn across ${transitions} transition${transitions === 1 ? "" : "s"} from ${snapshots} snapshot${snapshots === 1 ? "" : "s"}`,
       });
     }

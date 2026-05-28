@@ -55,16 +55,18 @@ type Rate struct {
 // are pointer / slice-nil so phase 1 can ship Mass and AgeBuckets without
 // changing the wire shape when later phases populate the rest.
 type RegionMetrics struct {
-	Key        RegionKey   `json:"key"`
-	Window     TimeWindow  `json:"window"`
-	Mass       int         `json:"mass"`
-	MassOpen   int         `json:"massOpen"`
-	MassClosed int         `json:"massClosed"`
-	AgeBuckets []AgeBucket `json:"ageBuckets,omitempty"`
-	Density    *float64    `json:"density,omitempty"`
-	Growth     *Rate       `json:"growth,omitempty"`
-	Closure    *Rate       `json:"closure,omitempty"`
-	Churn      *Rate       `json:"churn,omitempty"`
+	Key            RegionKey   `json:"key"`
+	Window         TimeWindow  `json:"window"`
+	Mass           int         `json:"mass"`
+	MassOpen       int         `json:"massOpen"`
+	MassClosed     int         `json:"massClosed"`
+	AgeBuckets     []AgeBucket `json:"ageBuckets,omitempty"`
+	Density        *float64    `json:"density,omitempty"`
+	Growth         *Rate       `json:"growth,omitempty"`
+	Closure        *Rate       `json:"closure,omitempty"`
+	Churn          *Rate       `json:"churn,omitempty"`
+	AuthorityLinks int         `json:"authorityLinks,omitempty"`
+	Authority      *float64    `json:"authority,omitempty"`
 }
 
 // CorpusOrphans is the corpus-level "dead zones" signal. Not per-region by
