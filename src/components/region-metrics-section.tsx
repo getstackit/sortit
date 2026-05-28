@@ -2,18 +2,38 @@
 
 import { ActivityIcon } from "lucide-react";
 
+import { FilterToggleGroup } from "@/components/filter-toggle";
 import { useRegion } from "@/hooks/use-region";
-import type { Rate, RegionKind } from "@/lib/regions";
+import {
+  DEFAULT_REGION_WINDOW,
+  type Rate,
+  type RegionKind,
+  type RegionWindow,
+} from "@/lib/regions";
 
 type Props = {
   kind: RegionKind;
   id: string;
+  /** Optional window override. When omitted, defaults to 30d. */
+  window?: RegionWindow;
+  /** Optional change handler. When provided, the card renders a window selector. */
+  onWindowChange?: (window: RegionWindow) => void;
 };
 
 const BUCKET_ORDER = ["<1w", "1-4w", "1-3m", "3m+"] as const;
 
-export function RegionMetricsSection({ kind, id }: Props) {
-  const { data, error, isLoading } = useRegion(kind, id);
+const WINDOW_OPTIONS: readonly RegionWindow[] = [
+  "7d",
+  "30d",
+  "90d",
+  "180d",
+  "365d",
+  "all",
+];
+
+export function RegionMetricsSection({ kind, id, window, onWindowChange }: Props) {
+  const effectiveWindow = window ?? DEFAULT_REGION_WINDOW;
+  const { data, error, isLoading } = useRegion(kind, id, effectiveWindow);
 
   if (isLoading) {
     return (
@@ -48,7 +68,7 @@ export function RegionMetricsSection({ kind, id }: Props) {
 
   return (
     <section className="app-surface rounded-[1.5rem] p-5">
-      <div className="flex items-center justify-between gap-2">
+      <div className="flex flex-wrap items-center justify-between gap-2">
         <RegionMetricsHeader />
         {metrics.density != null && (
           <span
@@ -59,6 +79,16 @@ export function RegionMetricsSection({ kind, id }: Props) {
           </span>
         )}
       </div>
+
+      {onWindowChange && (
+        <div className="mt-3">
+          <FilterToggleGroup<RegionWindow>
+            options={WINDOW_OPTIONS}
+            value={effectiveWindow}
+            onChange={onWindowChange}
+          />
+        </div>
+      )}
 
       <div className="mt-4 grid grid-cols-2 gap-3">
         <div className="app-subtle-surface rounded-[1.25rem] px-3 py-2.5">
