@@ -21,6 +21,7 @@ import (
 	"sortit/internal/issues"
 	issuecmd "sortit/internal/issues/commands"
 	issueviews "sortit/internal/issues/views"
+	"sortit/internal/issuexray"
 	"sortit/internal/mapview"
 	mcpserver "sortit/internal/mcp"
 	"sortit/internal/people"
@@ -81,6 +82,7 @@ type Server struct {
 	workCorrelations     people.WorkCorrelationsHandler
 	regions              *regions.Handler
 	cooccurrenceCache    *tagcooccurrence.Cache
+	issueXRay            *issuexray.Handler
 	authService          *auth.Service
 	catalog              *tags.CatalogService
 }
@@ -320,6 +322,7 @@ func (s *Server) registerIssueRoutes(r chi.Router) {
 	r.Post("/issues/close", s.handleIssueCloseBatch)
 	r.Post("/issues/assign", s.handleIssueAssignBatch)
 	r.Get("/issues/{id}", s.handleGetIssue)
+	r.Get("/issues/{id}/xray", s.handleIssueXRay)
 	r.Post("/issues/{id}/close", s.handleCloseIssue)
 	r.Post("/issues/{id}/refine", s.handleRefineIssue)
 	r.Get("/issues/{id}/explore", s.handleExploreIssue)
@@ -665,8 +668,13 @@ func NewServer(cfg ServerConfig) *Server {
 		workCorrelations:     people.WorkCorrelationsHandler{Store: store, Catalog: catalog},
 		regions:              regionsHandler,
 		cooccurrenceCache:    cooccurrenceCache,
-		authService:          cfg.Auth,
-		catalog:              catalog,
+		issueXRay: &issuexray.Handler{
+			Issues:       store,
+			Tags:         catalog,
+			Cooccurrence: cooccurrenceCache,
+		},
+		authService: cfg.Auth,
+		catalog:     catalog,
 	}
 }
 

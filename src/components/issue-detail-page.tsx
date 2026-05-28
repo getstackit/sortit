@@ -22,6 +22,7 @@ import {
   type IssueMapCanvasNode,
 } from "@/components/issue-map-canvas";
 import { AppSidebar } from "@/components/app-sidebar";
+import { IssueXRayCard } from "@/components/issue-xray-card";
 import { SiteHeader } from "@/components/site-header";
 import {
   Breadcrumb,
@@ -1693,6 +1694,8 @@ export function IssueDetailPage({ issueID }: { issueID: string }) {
                 {issue.tagScores && issue.tagScores.length > 0 && (
                   <ContestedTags raw={issue.raw} tagScores={issue.tagScores} />
                 )}
+
+                <IssueXRayCard issueId={issue.id} />
 
                 {r2Data && !r2Data.skipped && (
                   <section className="app-surface rounded-[1.5rem] p-5">
