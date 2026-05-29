@@ -402,6 +402,47 @@ func TestComputeCorpusOrphansSkipsIssuesWithoutEmbedding(t *testing.T) {
 	}
 }
 
+func TestComputeAuthorityMembersCountsCanonicalLinks(t *testing.T) {
+	members := []issues.Issue{
+		{
+			ID: "i1",
+			Links: []issues.IssueLink{
+				{Type: issues.IssueLinkTypeDuplicateOf, TargetIssueID: "i1"},
+				{Type: issues.IssueLinkTypeMergedInto, TargetIssueID: "i1"},
+				{Type: issues.IssueLinkTypeRelatedTo, TargetIssueID: "i1"}, // not canonical
+			},
+		},
+		{ID: "i2"},
+		{
+			ID: "i3",
+			Links: []issues.IssueLink{
+				{Type: issues.IssueLinkTypeDuplicateOf, TargetIssueID: "other"}, // not inbound
+				{Type: issues.IssueLinkTypeDuplicateOf, TargetIssueID: "i3"},
+			},
+		},
+	}
+	links, mean := ComputeAuthorityMembers(members)
+	if links != 3 {
+		t.Fatalf("expected 3 inbound canonical links, got %d", links)
+	}
+	if mean == nil {
+		t.Fatal("expected non-nil mean")
+	}
+	if *mean <= 0 {
+		t.Fatalf("expected positive mean, got %v", *mean)
+	}
+}
+
+func TestComputeAuthorityMembersEmpty(t *testing.T) {
+	links, mean := ComputeAuthorityMembers(nil)
+	if links != 0 {
+		t.Fatalf("expected 0, got %d", links)
+	}
+	if mean != nil {
+		t.Fatalf("expected nil mean, got %+v", mean)
+	}
+}
+
 func TestComputeChurnCountsInRegionEvents(t *testing.T) {
 	now := time.Date(2026, 5, 25, 12, 0, 0, 0, time.UTC)
 	auth := domain.RegionKey{Kind: domain.RegionKindTag, ID: "auth"}

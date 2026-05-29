@@ -45,12 +45,13 @@ type DebugTagCooccurrenceTagSummary struct {
 	Count int    `json:"count"`
 }
 
-// DebugTagCooccurrenceHandler computes the corpus-wide co-occurrence
-// projection on demand. The plan persists a projection table for future
-// refresh-worker use; for now we recompute on each request because the
-// projection is debug-only and not consumed on the hot path.
+// DebugTagCooccurrenceHandler returns the corpus-wide co-occurrence
+// projection. When a *tagcooccurrence.Cache is wired, the projection is
+// served from the cache (recomputed only on corpus revision bumps);
+// otherwise the handler falls back to walking issues directly each call.
 type DebugTagCooccurrenceHandler struct {
 	Store issues.Store
+	Cache *tagcooccurrence.Cache
 	TopK  int
 }
 
@@ -60,16 +61,25 @@ const defaultDebugTagCooccurrenceTopK = 10
 // per-tag detail plus top-K anti-correlated neighbors. If tag is empty, the
 // response lists every tag's count so the caller can choose a target.
 func (h DebugTagCooccurrenceHandler) Handle(ctx context.Context, tag string) (DebugTagCooccurrenceResult, error) {
-	var storeIssues []issues.Issue
-	if h.Store != nil {
-		items, err := h.Store.List(ctx)
+	var stats tagcooccurrence.Stats
+	if h.Cache != nil {
+		cached, err := h.Cache.Current(ctx)
 		if err != nil {
 			return DebugTagCooccurrenceResult{}, err
 		}
-		storeIssues = items
+		stats = cached
+	} else {
+		var storeIssues []issues.Issue
+		if h.Store != nil {
+			items, err := h.Store.List(ctx)
+			if err != nil {
+				return DebugTagCooccurrenceResult{}, err
+			}
+			storeIssues = items
+		}
+		stats = tagcooccurrence.Compute(storeIssues)
 	}
 
-	stats := tagcooccurrence.Compute(storeIssues)
 	topK := h.TopK
 	if topK <= 0 {
 		topK = defaultDebugTagCooccurrenceTopK

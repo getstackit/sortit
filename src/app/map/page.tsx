@@ -379,6 +379,28 @@ function MapPageContent() {
   const issues = mapData?.issues ?? EMPTY_ISSUES;
   const edges = mapData?.edges ?? EMPTY_EDGES;
   const clusters = mapData?.clusters ?? EMPTY_CLUSTERS;
+
+  // When the URL points at /map?cluster=<id>, center the viewport on that
+  // cluster once it lands in the loaded data.
+  const focusedClusterID = searchParams.get("cluster");
+  const [appliedClusterID, setAppliedClusterID] = useState<string | null>(null);
+  // Adjust the viewport during render when the focused cluster lands in the
+  // loaded data. Tracking the applied cluster in state makes this idempotent,
+  // so the render-time setState fires once per cluster rather than looping.
+  // Doing this in an effect would trigger a cascading render (and a lint error).
+  if (focusedClusterID && mapData && appliedClusterID !== focusedClusterID) {
+    const target = mapData.clusters.find((c) => c.id === focusedClusterID);
+    if (target) {
+      const padding = Math.max(target.radius * 1.6, 0.25);
+      setAppliedClusterID(focusedClusterID);
+      setViewport({
+        xMin: target.centerX - padding,
+        xMax: target.centerX + padding,
+        yMin: target.centerY - padding,
+        yMax: target.centerY + padding,
+      });
+    }
+  }
   const edgeDataKey = useMemo(
     () => edgeDataKeyForViewport(issues, viewport, edgeThreshold, showClosed),
     [edgeThreshold, issues, showClosed, viewport]
@@ -1624,9 +1646,11 @@ function MapPageContent() {
 
           <div className="pointer-events-none absolute bottom-5 left-5 z-10 flex max-w-[min(42rem,calc(100%-10rem))] flex-wrap gap-2">
             {visibleTagLegend.map(({ tag, count, color }) => (
-              <span
+              <Link
                 key={tag}
-                className="inline-flex items-center gap-2 rounded-full border border-border/50 bg-background/82 px-3 py-1.5 text-[11px] font-medium text-foreground shadow-sm backdrop-blur-sm"
+                href={`/tags/${encodeURIComponent(tag)}`}
+                className="pointer-events-auto inline-flex items-center gap-2 rounded-full border border-border/50 bg-background/82 px-3 py-1.5 text-[11px] font-medium text-foreground shadow-sm backdrop-blur-sm transition-colors hover:bg-muted"
+                title={`Open ${tag} region`}
               >
                 <span
                   className="h-2.5 w-2.5 rounded-full"
@@ -1634,7 +1658,7 @@ function MapPageContent() {
                 />
                 {tag}
                 <span className="text-muted-foreground">{count}</span>
-              </span>
+              </Link>
             ))}
             <span className="inline-flex items-center rounded-full border border-border/50 bg-background/82 px-3 py-1.5 text-[11px] text-muted-foreground shadow-sm backdrop-blur-sm">
               {selectedBatch.size > 1

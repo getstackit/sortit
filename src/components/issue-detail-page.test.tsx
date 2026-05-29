@@ -318,10 +318,9 @@ describe("IssueDetailPage", () => {
     expect(bars).toHaveLength(1); // Only the one in Contested
   });
 
-  it("shows lifecycle stability when metrics are present", async () => {
+  it("shows lifecycle stability derived from churn when metrics are present", async () => {
     vi.mocked(fetchIssue).mockResolvedValue(makeIssue({
       lifecycleMetrics: {
-        stability: 0.84,
         churn: 0.16,
         snapshotCount: 3,
         transitionCount: 2,

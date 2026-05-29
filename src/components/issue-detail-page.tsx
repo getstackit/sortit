@@ -22,6 +22,7 @@ import {
   type IssueMapCanvasNode,
 } from "@/components/issue-map-canvas";
 import { AppSidebar } from "@/components/app-sidebar";
+import { IssueXRayCard } from "@/components/issue-xray-card";
 import { SiteHeader } from "@/components/site-header";
 import {
   Breadcrumb,
@@ -975,12 +976,15 @@ export function IssueDetailPage({ issueID }: { issueID: string }) {
       });
     }
 
-    if (typeof issue.lifecycleMetrics?.stability === "number" && typeof issue.lifecycleMetrics?.churn === "number") {
+    if (typeof issue.lifecycleMetrics?.churn === "number") {
       const transitions = issue.lifecycleMetrics.transitionCount ?? 0;
       const snapshots = issue.lifecycleMetrics.snapshotCount ?? transitions + 1;
+      // Stability is the inverse of churn; derive it here rather than
+      // shipping a redundant field.
+      const stability = Math.max(0, Math.min(1, 1 - issue.lifecycleMetrics.churn));
       entries.push({
         label: "Stability",
-        value: formatPercent(issue.lifecycleMetrics.stability),
+        value: formatPercent(stability),
         meta: `${formatPercent(issue.lifecycleMetrics.churn)} churn across ${transitions} transition${transitions === 1 ? "" : "s"} from ${snapshots} snapshot${snapshots === 1 ? "" : "s"}`,
       });
     }
@@ -1690,6 +1694,8 @@ export function IssueDetailPage({ issueID }: { issueID: string }) {
                 {issue.tagScores && issue.tagScores.length > 0 && (
                   <ContestedTags raw={issue.raw} tagScores={issue.tagScores} />
                 )}
+
+                <IssueXRayCard issueId={issue.id} />
 
                 {r2Data && !r2Data.skipped && (
                   <section className="app-surface rounded-[1.5rem] p-5">

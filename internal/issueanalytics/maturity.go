@@ -58,8 +58,11 @@ func computeIssueMaturity(contentConfidence float64, refinementCount int, progre
 }
 
 func issueStabilitySignal(metrics *issues.IssueLifecycleMetrics) float64 {
-	if metrics != nil && metrics.Stability != nil {
-		return clamp01(*metrics.Stability)
+	// Stability is the inverse of churn. The Stability field used to be
+	// stored alongside Churn but was redundant; this consumer computes it
+	// inline.
+	if metrics != nil && metrics.Churn != nil {
+		return clamp01(1 - clamp01(*metrics.Churn))
 	}
 	return 0.35
 }

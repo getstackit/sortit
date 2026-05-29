@@ -10,9 +10,9 @@ import (
 
 const lifecycleRecencyDecay = 0.25
 
-// ComputeIssueLifecycleMetrics derives churn and stability from persisted
-// canonical snapshots. Higher churn means an issue's meaning is still moving;
-// higher stability means it has converged.
+// ComputeIssueLifecycleMetrics derives churn from persisted canonical
+// snapshots. Higher churn means an issue's meaning is still moving;
+// callers needing "stability" derive it inline as (1 - churn).
 func ComputeIssueLifecycleMetrics(snapshots []IssueSnapshot) *IssueLifecycleMetrics {
 	if len(snapshots) < 2 {
 		return nil
@@ -45,9 +45,7 @@ func ComputeIssueLifecycleMetrics(snapshots []IssueSnapshot) *IssueLifecycleMetr
 	}
 
 	churn := clamp01(weightedTotal / weightSum)
-	stability := clamp01(1 - churn)
 	return &IssueLifecycleMetrics{
-		Stability:       cloneFloat64Ptr(&stability),
 		Churn:           cloneFloat64Ptr(&churn),
 		SnapshotCount:   len(items),
 		TransitionCount: transitions,
