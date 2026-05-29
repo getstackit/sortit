@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { usePathname, useSearchParams } from "next/navigation";
+import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { useCallback, useMemo } from "react";
 
 import { AppShell } from "@/components/app-shell";
@@ -23,6 +23,7 @@ import {
   parseRegionsURLState,
   regionsURLQuery,
   type RegionSortKey,
+  type RegionsKindFilter,
   type RegionsView,
 } from "@/lib/regions-url-state";
 
@@ -52,9 +53,18 @@ const VIEW_LABELS: Record<RegionsView, string> = {
   map: "Cartography",
 };
 
+const KIND_OPTIONS: readonly RegionsKindFilter[] = ["tag", "cluster", "custom"];
+
+const KIND_LABELS: Record<RegionsKindFilter, string> = {
+  tag: "Tags",
+  cluster: "Clusters",
+  custom: "Custom",
+};
+
 const BUCKET_ORDER = ["<1w", "1-4w", "1-3m", "3m+"] as const;
 
 export function RegionsPage() {
+  const router = useRouter();
   const pathname = usePathname();
   const searchParams = useSearchParams();
   const searchParamsString = searchParams?.toString() ?? "";
@@ -64,16 +74,16 @@ export function RegionsPage() {
     [searchParamsString]
   );
 
-  const { data, error, isLoading } = useRegions("tag", urlState.window);
+  const { data, error, isLoading } = useRegions(urlState.kind, urlState.window);
 
   const updateURL = useCallback(
     (next: Partial<typeof urlState>) => {
       const merged = { ...urlState, ...next };
       const query = regionsURLQuery(merged);
       const target = query ? `${pathname}?${query}` : pathname;
-      window.history.replaceState(window.history.state, "", target);
+      router.replace(target, { scroll: false });
     },
-    [pathname, urlState]
+    [pathname, router, urlState]
   );
 
   const sortedRegions = useMemo(
@@ -96,6 +106,12 @@ export function RegionsPage() {
         }
         actions={
           <div className="flex flex-wrap items-center gap-2">
+            <FilterToggleGroup<RegionsKindFilter>
+              options={KIND_OPTIONS}
+              value={urlState.kind}
+              onChange={(kind) => updateURL({ kind })}
+              formatLabel={(value) => KIND_LABELS[value]}
+            />
             <FilterToggleGroup<RegionsView>
               options={VIEW_OPTIONS}
               value={urlState.view}
@@ -114,16 +130,26 @@ export function RegionsPage() {
       <div className="app-scrollarea min-h-0 flex-1 overflow-y-auto">
         <div className="flex w-full flex-col gap-6 px-4 py-6 lg:px-6 xl:px-8">
           {urlState.view === "list" && (
-            <div className="flex flex-wrap items-center gap-2">
-              <p className="text-[11px] font-medium uppercase tracking-[0.14em] text-muted-foreground">
-                Sort by
-              </p>
-              <FilterToggleGroup<RegionSortKey>
-                options={SORT_OPTIONS}
-                value={urlState.sort}
-                onChange={(sort) => updateURL({ sort })}
-                formatLabel={(value) => SORT_LABELS[value]}
-              />
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <div className="flex flex-wrap items-center gap-2">
+                <p className="text-[11px] font-medium uppercase tracking-[0.14em] text-muted-foreground">
+                  Sort by
+                </p>
+                <FilterToggleGroup<RegionSortKey>
+                  options={SORT_OPTIONS}
+                  value={urlState.sort}
+                  onChange={(sort) => updateURL({ sort })}
+                  formatLabel={(value) => SORT_LABELS[value]}
+                />
+              </div>
+              {urlState.kind === "custom" && (
+                <Link
+                  href="/regions/new"
+                  className="rounded-md border border-border bg-background px-3 py-1.5 text-xs font-medium text-foreground transition-colors hover:bg-muted"
+                >
+                  + New custom region
+                </Link>
+              )}
             </div>
           )}
 
@@ -170,19 +196,35 @@ export function RegionsPage() {
 
 function RegionTile({ entry }: { entry: RegionWithMetrics }) {
   const { region, metrics } = entry;
+  const isCluster = region.key.kind === "cluster";
+  const isCustom = region.key.kind === "custom";
+  const href = isCluster
+    ? `/regions/cluster/${encodeURIComponent(region.key.id)}`
+    : isCustom
+      ? `/regions/custom/${encodeURIComponent(region.key.id)}`
+      : tagHref(region.key.id);
   const orderedBuckets = BUCKET_ORDER.map(
     (label) => metrics.ageBuckets?.find((b) => b.label === label) ?? { label, count: 0 }
   );
 
   return (
     <Link
-      href={tagHref(region.key.id)}
+      href={href}
       className="app-surface block rounded-[1.5rem] p-5 transition-colors hover:bg-accent/30"
     >
       <div className="flex items-center justify-between gap-2">
-        <TagBadge tag={region.label} />
+        {isCluster ? (
+          <ClusterTileHeader label={region.label} id={region.key.id} />
+        ) : isCustom ? (
+          <span className="text-sm font-medium">{region.label}</span>
+        ) : (
+          <TagBadge tag={region.label} />
+        )}
         <div className="flex items-center gap-2">
           {metrics.density != null && <DensityChip value={metrics.density} />}
+          {(metrics.authorityLinks ?? 0) > 0 && (
+            <AuthorityChip links={metrics.authorityLinks ?? 0} mean={metrics.authority ?? null} />
+          )}
           <span className="text-[11px] tabular-nums text-muted-foreground">
             {metrics.mass} total
           </span>
@@ -205,6 +247,22 @@ function RegionTile({ entry }: { entry: RegionWithMetrics }) {
         <FlowCell label={`Churn (${metrics.window.label})`} rate={metrics.churn} />
       </div>
     </Link>
+  );
+}
+
+function ClusterTileHeader({ label, id }: { label: string; id: string }) {
+  const tags = label.split(/[+,/]/).map((t) => t.trim()).filter(Boolean);
+  return (
+    <div className="flex min-w-0 flex-col gap-1">
+      <div className="flex flex-wrap items-center gap-1">
+        {tags.length > 0 ? (
+          tags.map((tag) => <TagBadge key={tag} tag={tag} />)
+        ) : (
+          <span className="text-sm font-medium">{label}</span>
+        )}
+      </div>
+      <span className="font-mono text-[10px] text-muted-foreground">{id}</span>
+    </div>
   );
 }
 
@@ -238,6 +296,21 @@ function DensityChip({ value }: { value: number }) {
       className="rounded-full border border-border bg-muted/40 px-2 py-0.5 text-[10px] font-medium tabular-nums text-muted-foreground"
     >
       density {pct}%
+    </span>
+  );
+}
+
+function AuthorityChip({ links, mean }: { links: number; mean: number | null }) {
+  const tooltip =
+    mean != null
+      ? `${links} inbound canonical link${links === 1 ? "" : "s"} · mean per-issue authority ${mean.toFixed(2)}`
+      : `${links} inbound canonical link${links === 1 ? "" : "s"}`;
+  return (
+    <span
+      title={tooltip}
+      className="rounded-full border border-border bg-muted/40 px-2 py-0.5 text-[10px] font-medium tabular-nums text-muted-foreground"
+    >
+      ↘ {links}
     </span>
   );
 }

@@ -1,5 +1,5 @@
 import type { ReactNode } from "react";
-import { render, screen } from "@testing-library/react";
+import { fireEvent, render, screen } from "@testing-library/react";
 import { TagDetailPage } from "@/components/tag-detail-page";
 import { useIssues } from "@/hooks/use-issues";
 import { useRegion } from "@/hooks/use-region";
@@ -10,6 +10,15 @@ import {
 import { useTags } from "@/hooks/use-tags";
 import type { IssueRecord } from "@/lib/issues";
 import type { TagRecord } from "@/lib/tags";
+
+const searchParamsBag = { value: new URLSearchParams() };
+const routerReplace = vi.fn();
+
+vi.mock("next/navigation", () => ({
+  usePathname: () => "/tags/billing",
+  useSearchParams: () => searchParamsBag.value,
+  useRouter: () => ({ replace: routerReplace }),
+}));
 
 vi.mock("@/components/app-shell", () => ({
   AppShell: ({ children }: { children: ReactNode }) => <div>{children}</div>,
@@ -90,6 +99,8 @@ describe("TagDetailPage", () => {
       error: undefined,
       isLoading: true,
     } as ReturnType<typeof useRegion>);
+    searchParamsBag.value = new URLSearchParams();
+    routerReplace.mockReset();
     clearRecentHistory();
   });
 
@@ -213,6 +224,44 @@ describe("TagDetailPage", () => {
     expect(screen.getByText("Closure (30d)")).toBeInTheDocument();
     expect(screen.getByText("0.40/day")).toBeInTheDocument();
     expect(screen.getByText("0.17/day")).toBeInTheDocument();
+  });
+
+  it("updates the URL when the region window selector changes", () => {
+    vi.mocked(useTags).mockReturnValue({
+      data: [makeTag({ name: "billing" })],
+      error: undefined,
+      isLoading: false,
+    } as ReturnType<typeof useTags>);
+    vi.mocked(useIssues).mockReturnValue({
+      data: [],
+      error: undefined,
+      isLoading: false,
+    } as ReturnType<typeof useIssues>);
+    vi.mocked(useRegion).mockReturnValue({
+      data: {
+        region: { key: { kind: "tag", id: "billing" }, label: "billing" },
+        metrics: {
+          key: { kind: "tag", id: "billing" },
+          window: { label: "30d", start: "", end: "" },
+          mass: 1,
+          massOpen: 1,
+          massClosed: 0,
+        },
+        window: { label: "30d", start: "", end: "" },
+      },
+      error: undefined,
+      isLoading: false,
+    } as ReturnType<typeof useRegion>);
+
+    render(<TagDetailPage tagName="billing" />);
+
+    const sevenDay = screen.getAllByRole("button").find((el) => el.textContent === "7d");
+    if (!sevenDay) throw new Error("7d toggle not found");
+    fireEvent.click(sevenDay);
+
+    expect(routerReplace).toHaveBeenCalled();
+    const lastCall = routerReplace.mock.calls.at(-1);
+    expect(lastCall?.[0]).toContain("regionWindow=7d");
   });
 
   it("records the viewed tag in recent history", () => {

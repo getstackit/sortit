@@ -199,6 +199,24 @@ func (s *Server) handleDebugTagCooccurrence(w http.ResponseWriter, r *http.Reque
 	writeJSON(w, http.StatusOK, result)
 }
 
+func (s *Server) handleDebugRidgeScore(w http.ResponseWriter, r *http.Request) {
+	id := chi.URLParam(r, "id")
+	if id == "" {
+		writeError(w, http.StatusBadRequest, "missing issue id")
+		return
+	}
+	result, err := s.debugRidgeScore.Handle(r.Context(), id)
+	if err != nil {
+		if errors.Is(err, issues.ErrNotFound) {
+			writeError(w, http.StatusNotFound, "issue not found")
+			return
+		}
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, result)
+}
+
 func decodeDebugIssueAnalyzeRequest(r *http.Request) (debugIssueAnalyzeRequest, error) {
 	request, err := decodeJSON[debugIssueAnalyzeRequest](r)
 	if err != nil {

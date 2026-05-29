@@ -57,7 +57,6 @@ type Issue struct {
 }
 
 type IssueLifecycleMetrics struct {
-	Stability           *float64 `json:"stability,omitempty"`
 	Churn               *float64 `json:"churn,omitempty"`
 	Maturity            *float64 `json:"maturity,omitempty"`
 	Velocity            *float64 `json:"velocity,omitempty"`
@@ -435,6 +434,7 @@ type InMemoryStore struct {
 	operations     []IssueOperation
 	events         []Event
 	enrichmentJobs map[string]inMemoryEnrichmentJob
+	customRegions  map[string]domain.CustomRegion
 }
 
 type inMemoryEnrichmentJob struct {
@@ -448,6 +448,7 @@ func NewInMemoryStore(seed []Issue) *InMemoryStore {
 		discussion:     make(map[string][]IssuePost, len(seed)),
 		snapshots:      make(map[string][]IssueSnapshot, len(seed)),
 		enrichmentJobs: make(map[string]inMemoryEnrichmentJob),
+		customRegions:  make(map[string]domain.CustomRegion),
 	}
 
 	for _, issue := range store.issues {
@@ -788,7 +789,6 @@ func cloneIssueLifecycleMetrics(value *IssueLifecycleMetrics) *IssueLifecycleMet
 	}
 
 	return &IssueLifecycleMetrics{
-		Stability:           cloneFloat64Ptr(value.Stability),
 		Churn:               cloneFloat64Ptr(value.Churn),
 		Maturity:            cloneFloat64Ptr(value.Maturity),
 		Velocity:            cloneFloat64Ptr(value.Velocity),

@@ -98,7 +98,6 @@ export type IssueOperationRecord = {
 };
 
 export type IssueLifecycleMetricsRecord = {
-  stability?: number;
   churn?: number;
   maturity?: number;
   velocity?: number;

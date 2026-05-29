@@ -6,6 +6,8 @@ import (
 	"sync"
 	"sync/atomic"
 	"time"
+
+	"sortit/internal/domain"
 )
 
 // RevisionTracker is the in-process implementation of RevisionBus. It holds an
@@ -131,6 +133,42 @@ func (s *ObservedStore) ListLifecycleEvents(ctx context.Context, kinds []string,
 		return nil, nil
 	}
 	return s.eventStore.ListLifecycleEvents(ctx, kinds, start, end)
+}
+
+func (s *ObservedStore) ListCustomRegions(ctx context.Context) ([]domain.CustomRegion, error) {
+	if cr, ok := s.base.(CustomRegionStore); ok {
+		return cr.ListCustomRegions(ctx)
+	}
+	return nil, nil
+}
+
+func (s *ObservedStore) GetCustomRegion(ctx context.Context, id string) (domain.CustomRegion, error) {
+	if cr, ok := s.base.(CustomRegionStore); ok {
+		return cr.GetCustomRegion(ctx, id)
+	}
+	return domain.CustomRegion{}, ErrCustomRegionNotFound
+}
+
+func (s *ObservedStore) UpsertCustomRegion(ctx context.Context, region domain.CustomRegion) error {
+	if cr, ok := s.base.(CustomRegionStore); ok {
+		if err := cr.UpsertCustomRegion(ctx, region); err != nil {
+			return err
+		}
+		s.tracker.Bump()
+		return nil
+	}
+	return ErrCustomRegionNotFound
+}
+
+func (s *ObservedStore) DeleteCustomRegion(ctx context.Context, id string) error {
+	if cr, ok := s.base.(CustomRegionStore); ok {
+		if err := cr.DeleteCustomRegion(ctx, id); err != nil {
+			return err
+		}
+		s.tracker.Bump()
+		return nil
+	}
+	return nil
 }
 
 func (s *ObservedStore) List(ctx context.Context) ([]Issue, error) {

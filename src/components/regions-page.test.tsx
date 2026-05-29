@@ -5,10 +5,12 @@ import { RegionsPage } from "@/components/regions-page";
 import { useRegions } from "@/hooks/use-regions";
 
 const searchParamsBag = { value: new URLSearchParams() };
+const routerReplace = vi.fn();
 
 vi.mock("next/navigation", () => ({
   usePathname: () => "/regions",
   useSearchParams: () => searchParamsBag.value,
+  useRouter: () => ({ replace: routerReplace }),
 }));
 
 vi.mock("@/components/app-shell", () => ({
@@ -41,8 +43,6 @@ vi.mock("@/hooks/use-regions", () => ({
   useRegions: vi.fn(),
 }));
 
-const replaceState = vi.fn();
-
 function setLocation(search: string) {
   searchParamsBag.value = new URLSearchParams(search);
 }
@@ -50,8 +50,7 @@ function setLocation(search: string) {
 beforeEach(() => {
   setLocation("");
   vi.mocked(useRegions).mockReset();
-  replaceState.mockReset();
-  window.history.replaceState = replaceState;
+  routerReplace.mockReset();
 });
 
 function makeRegion(overrides: {
@@ -61,11 +60,14 @@ function makeRegion(overrides: {
   massClosed?: number;
   growth?: number | null;
   closure?: number | null;
+  kind?: "tag" | "cluster";
+  label?: string;
 }) {
+  const kind = overrides.kind ?? "tag";
   return {
-    region: { key: { kind: "tag" as const, id: overrides.id }, label: overrides.id },
+    region: { key: { kind, id: overrides.id }, label: overrides.label ?? overrides.id },
     metrics: {
-      key: { kind: "tag" as const, id: overrides.id },
+      key: { kind, id: overrides.id },
       window: { label: "30d", start: "", end: "" },
       mass: overrides.mass ?? 1,
       massOpen: overrides.massOpen ?? 1,
@@ -181,6 +183,28 @@ describe("RegionsPage", () => {
     expect(screen.queryByText(/Dead zones/i)).not.toBeInTheDocument();
   });
 
+  it("renders cluster tile when kind=cluster", () => {
+    setLocation("kind=cluster");
+    mockRegions([
+      makeRegion({
+        id: "c-deadbeef",
+        kind: "cluster",
+        label: "auth + tokens",
+        mass: 7,
+        massOpen: 4,
+        massClosed: 3,
+      }),
+    ]);
+
+    render(<RegionsPage />);
+
+    // Cluster tile shows the ID as a font-mono caption.
+    expect(screen.getByText("c-deadbeef")).toBeInTheDocument();
+    // Linked to the cluster detail page.
+    const link = screen.getByRole("link", { name: /auth/ });
+    expect(link.getAttribute("href")).toBe("/regions/cluster/c-deadbeef");
+  });
+
   it("renders cartography when view=map in URL", () => {
     setLocation("view=map");
     mockRegions([
@@ -201,8 +225,8 @@ describe("RegionsPage", () => {
     if (!sevenDay) throw new Error("7d toggle not found");
     fireEvent.click(sevenDay);
 
-    expect(replaceState).toHaveBeenCalled();
-    const lastCall = replaceState.mock.calls.at(-1);
-    expect(lastCall?.[2]).toContain("window=7d");
+    expect(routerReplace).toHaveBeenCalled();
+    const lastCall = routerReplace.mock.calls.at(-1);
+    expect(lastCall?.[0]).toContain("window=7d");
   });
 });

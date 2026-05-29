@@ -46,7 +46,7 @@ func TestLoaderCachesByRevision(t *testing.T) {
 	loader := &Loader{Store: store, Revisions: rev}
 
 	for range 3 {
-		if _, err := loader.List(context.Background(), window, now); err != nil {
+		if _, err := loader.List(context.Background(), domain.RegionKindTag, window, now); err != nil {
 			t.Fatalf("List: %v", err)
 		}
 	}
@@ -55,7 +55,7 @@ func TestLoaderCachesByRevision(t *testing.T) {
 	}
 
 	rev.v = 2
-	if _, err := loader.List(context.Background(), window, now); err != nil {
+	if _, err := loader.List(context.Background(), domain.RegionKindTag, window, now); err != nil {
 		t.Fatalf("List: %v", err)
 	}
 	if got := atomic.LoadInt32(&store.calls); got != 2 {
@@ -71,11 +71,11 @@ func TestLoaderInvalidateClearsCache(t *testing.T) {
 	}}
 	loader := &Loader{Store: store, Revisions: &stubRevision{v: 1}}
 
-	if _, err := loader.List(context.Background(), window, now); err != nil {
+	if _, err := loader.List(context.Background(), domain.RegionKindTag, window, now); err != nil {
 		t.Fatalf("List: %v", err)
 	}
 	loader.Invalidate()
-	if _, err := loader.List(context.Background(), window, now); err != nil {
+	if _, err := loader.List(context.Background(), domain.RegionKindTag, window, now); err != nil {
 		t.Fatalf("List: %v", err)
 	}
 	if got := atomic.LoadInt32(&store.calls); got != 2 {
@@ -117,7 +117,7 @@ func TestLoaderGetRejectsUnsupportedKind(t *testing.T) {
 func TestLoaderListPropagatesStoreError(t *testing.T) {
 	boom := errors.New("boom")
 	loader := &Loader{Store: &stubStore{err: boom}}
-	_, err := loader.List(context.Background(), domain.TimeWindow{Label: "30d"}, time.Now())
+	_, err := loader.List(context.Background(), domain.RegionKindTag, domain.TimeWindow{Label: "30d"}, time.Now())
 	if !errors.Is(err, boom) {
 		t.Fatalf("expected boom, got %v", err)
 	}

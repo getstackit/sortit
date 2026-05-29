@@ -1,7 +1,8 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useMemo } from "react";
+import { usePathname, useRouter, useSearchParams } from "next/navigation";
+import { useCallback, useEffect, useMemo } from "react";
 import {
   AlertTriangleIcon,
   ArrowDownIcon,
@@ -25,8 +26,25 @@ import { useTags } from "@/hooks/use-tags";
 import { rememberRecentTag } from "@/hooks/use-recent-history";
 
 import type { IssueRecord } from "@/lib/issues";
+import { DEFAULT_REGION_WINDOW, type RegionWindow } from "@/lib/regions";
 import { Badge } from "@/components/ui/badge";
 import { tagHref } from "@/lib/tags";
+
+const SUPPORTED_REGION_WINDOWS: readonly RegionWindow[] = [
+  "7d",
+  "30d",
+  "90d",
+  "180d",
+  "365d",
+  "all",
+];
+
+function parseRegionWindow(raw: string | null | undefined): RegionWindow {
+  if (raw && (SUPPORTED_REGION_WINDOWS as readonly string[]).includes(raw)) {
+    return raw as RegionWindow;
+  }
+  return DEFAULT_REGION_WINDOW;
+}
 import {
   normalizeTagName,
   cosineSimilarity,
@@ -63,6 +81,28 @@ function compareIssuesByTag(left: IssueRecord, right: IssueRecord, tagName: stri
 
 export function TagDetailPage({ tagName }: { tagName: string }) {
   const normalizedTag = normalizeTagName(tagName);
+  const router = useRouter();
+  const pathname = usePathname();
+  const searchParams = useSearchParams();
+  const searchParamsString = searchParams?.toString() ?? "";
+  const regionWindow = useMemo(
+    () => parseRegionWindow(new URLSearchParams(searchParamsString).get("regionWindow")),
+    [searchParamsString],
+  );
+  const handleRegionWindowChange = useCallback(
+    (next: RegionWindow) => {
+      const params = new URLSearchParams(searchParamsString);
+      if (next === DEFAULT_REGION_WINDOW) {
+        params.delete("regionWindow");
+      } else {
+        params.set("regionWindow", next);
+      }
+      const query = params.toString();
+      router.replace(query ? `${pathname}?${query}` : pathname, { scroll: false });
+    },
+    [pathname, router, searchParamsString],
+  );
+
   const { data: tags = [], error: tagsError, isLoading: tagsLoading } = useTags();
   const {
     data: issues = [],
@@ -213,7 +253,12 @@ export function TagDetailPage({ tagName }: { tagName: string }) {
           <DetailPageGrid
             sidebar={
               <>
-                <RegionMetricsSection kind="tag" id={tag.name} />
+                <RegionMetricsSection
+                  kind="tag"
+                  id={tag.name}
+                  window={regionWindow}
+                  onWindowChange={handleRegionWindowChange}
+                />
 
                 <section id="related" className="app-surface rounded-[1.5rem] p-5">
                   <div className="flex items-center gap-2">

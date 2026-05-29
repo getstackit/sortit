@@ -21,11 +21,13 @@ import (
 	"sortit/internal/issues"
 	issuecmd "sortit/internal/issues/commands"
 	issueviews "sortit/internal/issues/views"
+	"sortit/internal/issuexray"
 	"sortit/internal/mapview"
 	mcpserver "sortit/internal/mcp"
 	"sortit/internal/people"
 	"sortit/internal/regions"
 	"sortit/internal/search"
+	"sortit/internal/tagcooccurrence"
 	"sortit/internal/tags"
 	"sortit/internal/tracing"
 )
@@ -74,11 +76,15 @@ type Server struct {
 	debugFactorWeights   diagnostics.DebugFactorWeightsHandler
 	debugIssueR2         diagnostics.DebugIssueR2Handler
 	debugTagCooccurrence diagnostics.DebugTagCooccurrenceHandler
+	debugRidgeScore      diagnostics.DebugRidgeScoreHandler
 	exploreIssue         mapview.ExploreIssueHandler
 	getPersonProfile     people.GetPersonProfileHandler
 	getPersonDetail      people.GetPersonDetailHandler
 	workCorrelations     people.WorkCorrelationsHandler
 	regions              *regions.Handler
+	customRegions        *regions.CustomHandler
+	cooccurrenceCache    *tagcooccurrence.Cache
+	issueXRay            *issuexray.Handler
 	authService          *auth.Service
 	catalog              *tags.CatalogService
 }
@@ -258,6 +264,11 @@ func (s *Server) registerDedicatedAPIRoutes(r chi.Router) {
 		r.Get("/people/{person}/profile", s.handlePersonProfileRoute)
 		r.Get("/regions", s.handleRegionsList)
 		r.Get("/regions/orphans", s.handleRegionOrphans)
+		r.Get("/regions/custom", s.handleCustomRegionList)
+		r.Post("/regions/custom", s.handleCustomRegionCreate)
+		r.Put("/regions/custom/{id}", s.handleCustomRegionUpdate)
+		r.Delete("/regions/custom/{id}", s.handleCustomRegionDelete)
+		r.Get("/regions/custom/{id}/definition", s.handleCustomRegionGet)
 		r.Get("/regions/{kind}/{id}", s.handleRegionGet)
 		r.Route("/debug", func(r chi.Router) {
 			r.Use(middleware.Timeout(debugRequestTimeout))
@@ -265,6 +276,7 @@ func (s *Server) registerDedicatedAPIRoutes(r chi.Router) {
 			r.Get("/factor-weights", s.handleDebugFactorWeights)
 			r.Get("/issues/{id}/r2", s.handleDebugIssueR2)
 			r.Get("/tag-cooccurrence", s.handleDebugTagCooccurrence)
+			r.Get("/issues/{id}/ridge", s.handleDebugRidgeScore)
 		})
 	})
 }
@@ -292,6 +304,11 @@ func (s *Server) registerUIRoutes(r chi.Router) {
 		r.Get("/people/{person}/profile", s.handlePersonProfileRoute)
 		r.Get("/regions", s.handleRegionsList)
 		r.Get("/regions/orphans", s.handleRegionOrphans)
+		r.Get("/regions/custom", s.handleCustomRegionList)
+		r.Post("/regions/custom", s.handleCustomRegionCreate)
+		r.Put("/regions/custom/{id}", s.handleCustomRegionUpdate)
+		r.Delete("/regions/custom/{id}", s.handleCustomRegionDelete)
+		r.Get("/regions/custom/{id}/definition", s.handleCustomRegionGet)
 		r.Get("/regions/{kind}/{id}", s.handleRegionGet)
 		r.Route("/debug", func(r chi.Router) {
 			r.Use(middleware.Timeout(debugRequestTimeout))
@@ -302,6 +319,7 @@ func (s *Server) registerUIRoutes(r chi.Router) {
 			r.Get("/factor-weights", s.handleDebugFactorWeights)
 			r.Get("/issues/{id}/r2", s.handleDebugIssueR2)
 			r.Get("/tag-cooccurrence", s.handleDebugTagCooccurrence)
+			r.Get("/issues/{id}/ridge", s.handleDebugRidgeScore)
 		})
 	})
 }
@@ -318,6 +336,7 @@ func (s *Server) registerIssueRoutes(r chi.Router) {
 	r.Post("/issues/close", s.handleIssueCloseBatch)
 	r.Post("/issues/assign", s.handleIssueAssignBatch)
 	r.Get("/issues/{id}", s.handleGetIssue)
+	r.Get("/issues/{id}/xray", s.handleIssueXRay)
 	r.Post("/issues/{id}/close", s.handleCloseIssue)
 	r.Post("/issues/{id}/refine", s.handleRefineIssue)
 	r.Get("/issues/{id}/explore", s.handleExploreIssue)
@@ -569,8 +588,21 @@ func NewServer(cfg ServerConfig) *Server {
 		Revisions:   revisions,
 		Projections: mapProjectionStoreFromIssueStore(baseStore),
 	}
-	regionsLoader := &regions.Loader{Store: store, Tags: catalog, Revisions: revisions}
+	cooccurrenceCache := &tagcooccurrence.Cache{
+		Store:     store,
+		Revisions: revisions,
+	}
+	var customRegionStore regions.CustomRegionStore = store
+	var customRegionWriter regions.CustomRegionWriter = store
+	regionsLoader := &regions.Loader{
+		Store:         store,
+		Tags:          catalog,
+		MapProjection: mapProjectionLoader,
+		CustomStore:   customRegionStore,
+		Revisions:     revisions,
+	}
 	regionsHandler := &regions.Handler{Loader: regionsLoader}
+	customRegionHandler := &regions.CustomHandler{Store: customRegionWriter}
 
 	return &Server{
 		config:              cfg,
@@ -626,9 +658,10 @@ func NewServer(cfg ServerConfig) *Server {
 		getIssue:      issueviews.GetIssueHandler{Store: store, Logger: logger.With("query", "get_issue")},
 		compareIssues: issueviews.CompareIssuesHandler{Reader: store},
 		searchIssues: search.SearchIssuesHandler{
-			Analyzer: commandAnalyzer,
-			Catalog:  catalog,
-			Store:    baseStore,
+			Analyzer:     commandAnalyzer,
+			Catalog:      catalog,
+			Store:        baseStore,
+			Cooccurrence: cooccurrenceCache,
 		},
 		searchUnified: search.SearchUnifiedHandler{
 			Analyzer: commandAnalyzer,
@@ -648,13 +681,21 @@ func NewServer(cfg ServerConfig) *Server {
 		debugEvalTags:        diagnostics.DebugEvalTagsHandler{Analyzer: cfg.Analyzer, Catalog: catalog, Enricher: enricher},
 		debugFactorWeights:   diagnostics.DebugFactorWeightsHandler{Store: store, Catalog: catalog},
 		debugIssueR2:         diagnostics.DebugIssueR2Handler{Store: store, Catalog: catalog},
-		debugTagCooccurrence: diagnostics.DebugTagCooccurrenceHandler{Store: store},
+		debugTagCooccurrence: diagnostics.DebugTagCooccurrenceHandler{Store: store, Cache: cooccurrenceCache},
+		debugRidgeScore:      diagnostics.DebugRidgeScoreHandler{Store: store, Catalog: catalog},
 		getPersonProfile:     people.GetPersonProfileHandler{Store: store, Catalog: catalog},
 		getPersonDetail:      people.GetPersonDetailHandler{Store: store, Catalog: catalog},
 		workCorrelations:     people.WorkCorrelationsHandler{Store: store, Catalog: catalog},
 		regions:              regionsHandler,
-		authService:          cfg.Auth,
-		catalog:              catalog,
+		customRegions:        customRegionHandler,
+		cooccurrenceCache:    cooccurrenceCache,
+		issueXRay: &issuexray.Handler{
+			Issues:       store,
+			Tags:         catalog,
+			Cooccurrence: cooccurrenceCache,
+		},
+		authService: cfg.Auth,
+		catalog:     catalog,
 	}
 }
 

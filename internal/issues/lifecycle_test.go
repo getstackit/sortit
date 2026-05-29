@@ -29,9 +29,6 @@ func TestComputeIssueLifecycleMetricsPrefersConvergedIssue(t *testing.T) {
 	if *converged.Churn >= *churny.Churn {
 		t.Fatalf("expected converged churn %v < churny churn %v", *converged.Churn, *churny.Churn)
 	}
-	if *converged.Stability <= *churny.Stability {
-		t.Fatalf("expected converged stability %v > churny stability %v", *converged.Stability, *churny.Stability)
-	}
 }
 
 func TestComputeIssueLifecycleMetricsWeightsRecentTransitionsMoreHeavily(t *testing.T) {

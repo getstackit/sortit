@@ -253,3 +253,32 @@ func TestSearchReportsRawSemanticSimilarityWhenDecompositionIsActive(t *testing.
 		t.Fatalf("expected semantic reason text, got %q", found.Reason)
 	}
 }
+
+func TestCandidateInRegionRespectsMembershipFloor(t *testing.T) {
+	tags := []TagRelevance{
+		{Tag: "auth", Relevance: 0.5},
+		{Tag: "billing", Relevance: 0.3},
+	}
+	if !candidateInRegion(tags, "auth") {
+		t.Fatal("expected auth at 0.5 to clear membership floor")
+	}
+	if candidateInRegion(tags, "billing") {
+		t.Fatal("expected billing at 0.3 to fall below membership floor")
+	}
+}
+
+func TestCandidateAntiCorrelationPenaltySumsStrongTagWeights(t *testing.T) {
+	tags := []TagRelevance{
+		{Tag: "ui", Relevance: 0.8},
+		{Tag: "ops", Relevance: 0.2}, // below strong-tag floor; ignored
+	}
+	anti := map[string]float64{
+		"ui":  0.5, // 0.5 * 0.12 = 0.06
+		"ops": 0.9, // ignored — relevance too low
+	}
+	penalty := candidateAntiCorrelationPenalty(tags, anti)
+	want := 0.06
+	if penalty <= want-0.0001 || penalty >= want+0.0001 {
+		t.Fatalf("penalty = %v, want %v", penalty, want)
+	}
+}
