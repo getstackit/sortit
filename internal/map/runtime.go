@@ -76,12 +76,13 @@ func BuildEdgeResponseFromIssuesWithTagsAndThreshold(storeIssues []issues.Issue,
 }
 
 func buildBaseMapDataFromIssues(storeIssues []issues.Issue, storeTags []issues.Tag, edgeThreshold float64) (mapBaseData, string, int, error) {
-	mapIssuesInput, tags, issueEmbeddings, tagEmbeddings := runtimeMapInputs(storeIssues, storeTags)
-	if unavailableReason := mapProjectionUnavailableReason(len(mapIssuesInput), len(tags)); unavailableReason != "" {
+	corpus := runtimeMapInputs(storeIssues, storeTags)
+	mapIssuesInput := corpus.issues
+	if unavailableReason := mapProjectionUnavailableReason(len(mapIssuesInput), len(corpus.tagNames)); unavailableReason != "" {
 		return mapBaseData{}, unavailableReason, len(mapIssuesInput), nil
 	}
 
-	positions, err := issuemath.ComputePositions(mapIssuesInput, tags, tagEmbeddings)
+	positions, err := issuemath.ComputePositions(mapIssuesInput, corpus.tagNames, corpus.tagEmbeddings)
 	if err != nil {
 		return mapBaseData{}, "", 0, err
 	}
@@ -108,7 +109,8 @@ func buildBaseMapDataFromIssues(storeIssues []issues.Issue, storeTags []issues.T
 		}
 	}
 
-	edges := ComputeEdgesWithEmbeddings(mapIssuesInput, issueEmbeddings, edgeThreshold)
+	// Edges intentionally use the uncentered embeddings — see runtimeCorpus.
+	edges := ComputeEdgesWithEmbeddings(mapIssuesInput, corpus.rawIssueEmbeddings, edgeThreshold)
 	sortEdgesBySimilarity(edges)
 	clusters := ComputeFactorClusters(mapIssuesInput, positions)
 
@@ -120,7 +122,36 @@ func buildBaseMapDataFromIssues(storeIssues []issues.Issue, storeTags []issues.T
 	}, "", len(mapIssuesInput), nil
 }
 
-func runtimeMapInputs(storeIssues []issues.Issue, storeTags []issues.Tag) ([]issues.Issue, []string, map[string][]float64, map[string][]float64) {
+// runtimeCorpus is the corpus-load boundary for the map and search math:
+// store data converted to runtime issues plus unit-normalized embeddings,
+// with corpus-mean centering applied once so every consumer (factor
+// decomposition, tag covariance, search blending) works in the same
+// centered space. Persisted embeddings are never rewritten.
+type runtimeCorpus struct {
+	issues   []issues.Issue
+	tagNames []string
+	// rawIssueEmbeddings are unit-normalized but uncentered. Map edges keep
+	// consuming these: edge similarity thresholds (minEdgeSimilarity) were
+	// tuned against raw cosines, and centering collapses that scale.
+	issueEmbeddings    map[string][]float64
+	rawIssueEmbeddings map[string][]float64
+	tagEmbeddings      map[string][]float64
+	// means are the corpus means the embeddings were centered with. Query
+	// embeddings arriving at search time must be centered with these same
+	// means, never with statistics derived from the query itself.
+	means issuemath.CorpusMeans
+}
+
+func runtimeMapInputs(storeIssues []issues.Issue, storeTags []issues.Tag) runtimeCorpus {
+	return runtimeMapInputsWithMeans(storeIssues, storeTags, nil)
+}
+
+// runtimeMapInputsWithMeans builds the runtime corpus, centering with the
+// supplied corpus means when non-nil. External means matter when storeIssues
+// is a retrieved subset (e.g. semantic-search candidates): the subset's own
+// mean points toward the query neighborhood, and centering with it would
+// subtract exactly the signal being searched for.
+func runtimeMapInputsWithMeans(storeIssues []issues.Issue, storeTags []issues.Tag, means *issuemath.CorpusMeans) runtimeCorpus {
 	tagNames := runtimeTagNames(storeIssues, storeTags)
 	tagEmbeddings := runtimeTagEmbeddings(tagNames, storeTags)
 
@@ -152,13 +183,42 @@ func runtimeMapInputs(storeIssues []issues.Issue, storeTags []issues.Tag) ([]iss
 		tagEmbeddings = nil
 	}
 
-	return prepared, tagNames, embeddings, tagEmbeddings
+	return centerRuntimeCorpus(prepared, tagNames, embeddings, tagEmbeddings, means)
+}
+
+// centerRuntimeCorpus applies corpus-mean centering to the runtime
+// embeddings. When means is nil, the means are derived from the corpus
+// itself (appropriate when the issue set is the full corpus).
+func centerRuntimeCorpus(
+	prepared []issues.Issue,
+	tagNames []string,
+	embeddings map[string][]float64,
+	tagEmbeddings map[string][]float64,
+	means *issuemath.CorpusMeans,
+) runtimeCorpus {
+	var centeredIssues, centeredTags map[string][]float64
+	var usedMeans issuemath.CorpusMeans
+	if means != nil {
+		usedMeans = *means
+		centeredIssues, centeredTags = issuemath.CenterEmbeddingsWith(usedMeans, embeddings, tagEmbeddings)
+	} else {
+		centeredIssues, centeredTags, usedMeans = issuemath.CenterEmbeddings(embeddings, tagEmbeddings)
+	}
+
+	return runtimeCorpus{
+		issues:             prepared,
+		tagNames:           tagNames,
+		issueEmbeddings:    centeredIssues,
+		rawIssueEmbeddings: embeddings,
+		tagEmbeddings:      centeredTags,
+		means:              usedMeans,
+	}
 }
 
 func runtimeProjectionInputs(
 	storeIssues []issues.MapProjectionIssue,
 	storeTags []issues.Tag,
-) ([]issues.Issue, []string, map[string][]float64, map[string][]float64) {
+) runtimeCorpus {
 	prepared := make([]issues.Issue, len(storeIssues))
 	for i, storeIssue := range storeIssues {
 		tagScores := copyProjectionTagScores(storeIssue.TagScores)
@@ -196,7 +256,7 @@ func runtimeProjectionInputs(
 		tagEmbeddings = nil
 	}
 
-	return prepared, tagNames, embeddings, tagEmbeddings
+	return centerRuntimeCorpus(prepared, tagNames, embeddings, tagEmbeddings, nil)
 }
 
 func copyProjectionTagScores(input []issues.TagRelevance) []issues.TagRelevance {

@@ -97,7 +97,8 @@ func BuildMapProjectionProfiled(
 	})
 
 	stepStartedAt = time.Now()
-	runtimeIssues, tagNames, issueEmbeddings, tagEmbeddings := runtimeProjectionInputs(storeIssues, storeTags)
+	corpus := runtimeProjectionInputs(storeIssues, storeTags)
+	runtimeIssues, tagNames := corpus.issues, corpus.tagNames
 	profile.RuntimeIssueCount = len(runtimeIssues)
 	profile.TagNameCount = len(tagNames)
 	profile.Steps = append(profile.Steps, BuildMapProjectionStep{
@@ -106,7 +107,7 @@ func BuildMapProjectionProfiled(
 	})
 
 	stepStartedAt = time.Now()
-	_ = runtimeFactorVectors(runtimeIssues, tagNames, tagEmbeddings)
+	_ = runtimeFactorVectors(runtimeIssues, tagNames, corpus.tagEmbeddings)
 	profile.Steps = append(profile.Steps, BuildMapProjectionStep{
 		Name:     "runtime_factor_vectors",
 		Duration: time.Since(stepStartedAt),
@@ -135,7 +136,7 @@ func BuildMapProjectionProfiled(
 
 	if len(runtimeIssues) > 0 {
 		stepStartedAt = time.Now()
-		computedPositions, err := issuemath.ComputePositions(runtimeIssues, tagNames, tagEmbeddings)
+		computedPositions, err := issuemath.ComputePositions(runtimeIssues, tagNames, corpus.tagEmbeddings)
 		if err != nil {
 			return MapProjection{}, BuildMapProjectionProfile{}, err
 		}
@@ -167,7 +168,8 @@ func BuildMapProjectionProfiled(
 		})
 
 		stepStartedAt = time.Now()
-		allEdges = ComputeEdgesWithEmbeddings(runtimeIssues, issueEmbeddings, 0)
+		// Edges intentionally use the uncentered embeddings — see runtimeCorpus.
+		allEdges = ComputeEdgesWithEmbeddings(runtimeIssues, corpus.rawIssueEmbeddings, 0)
 		profile.EdgeCount = len(allEdges)
 		profile.Steps = append(profile.Steps, BuildMapProjectionStep{
 			Name:     "compute_edges",

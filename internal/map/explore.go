@@ -78,7 +78,9 @@ func ExploreFromIssuesWithTags(storeIssues []issues.Issue, storeTags []issues.Ta
 	}
 
 	canonical, visible, boosts := deriveRelationshipSemantics(candidateSet)
-	mapIssues, tagNames, issueEmbeddings, tagEmbeddings := runtimeMapInputs(candidateSet, storeTags)
+	corpus := runtimeMapInputs(candidateSet, storeTags)
+	mapIssues, tagNames := corpus.issues, corpus.tagNames
+	issueEmbeddings, tagEmbeddings := corpus.issueEmbeddings, corpus.tagEmbeddings
 	decomp := issuemath.ComputeFactorDecomposition(mapIssues, tagNames, issueEmbeddings, tagEmbeddings)
 
 	// Fall back to legacy factor vectors when decomposition didn't produce per-issue vectors.

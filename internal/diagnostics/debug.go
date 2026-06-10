@@ -251,6 +251,9 @@ func (h DebugFactorWeightsHandler) Handle(ctx context.Context) (DebugFactorWeigh
 			issueEmbeddings[issue.ID] = issue.Embedding
 		}
 	}
+	// Center against the corpus means so the diagnostic reflects the same
+	// space the runtime math operates in.
+	issueEmbeddings, tagEmbeddings, _ = issuemath.CenterEmbeddings(issueEmbeddings, tagEmbeddings)
 
 	decomp := issuemath.ComputeFactorDecomposition(storeIssues, tagNames, issueEmbeddings, tagEmbeddings)
 
@@ -397,6 +400,9 @@ func (h DebugIssueR2Handler) Handle(ctx context.Context, issueID string) (DebugI
 			issueEmbeddings[issue.ID] = issue.Embedding
 		}
 	}
+	// Center against the corpus means so per-issue R², residual norms, and
+	// residual-neighbor similarities match the runtime decomposition.
+	issueEmbeddings, tagEmbeddings, _ = issuemath.CenterEmbeddings(issueEmbeddings, tagEmbeddings)
 
 	result := DebugIssueR2Result{
 		ID:  target.ID,
