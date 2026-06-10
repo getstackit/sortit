@@ -138,6 +138,16 @@ func TestComputeExpectedJointFloor(t *testing.T) {
 	}
 }
 
+func TestRound2RoundsNegativesAwayFromZero(t *testing.T) {
+	// The previous int-truncation implementation rounded -0.125 to -0.12.
+	if got := round2(-0.125); got != -0.13 {
+		t.Fatalf("round2(-0.125) = %v, want -0.13", got)
+	}
+	if got := round2(0.125); got != 0.13 {
+		t.Fatalf("round2(0.125) = %v, want 0.13", got)
+	}
+}
+
 func TestComputeNormalizesTagNames(t *testing.T) {
 	items := []issues.Issue{
 		{TagScores: []issues.TagRelevance{{Tag: " Bug ", Relevance: 0.9}}},

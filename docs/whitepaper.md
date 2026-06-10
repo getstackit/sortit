@@ -587,7 +587,7 @@ fallback behavior itself is unchanged.
 |---|----------------------------------------------------------------|--------------------------------------------------------------|
 | 1 | Single-direction "factor model" is oversold                    | Either embrace multi-direction (top-k tags as basis vectors) or rename to "tag-direction projection". |
 | 2 | Shrinkage `α = 1 − mean(off-diag²)` is heuristic               | Replace with Ledoit-Wolf or document explicitly as a stability hack. |
-| 3 | Map sign-convention depends on first issue                     | Use a global property (e.g., largest absolute tag loading on PC1 is positive). |
+| 3 | Map sign-convention depends on first issue                     | Addressed: deterministic largest-absolute-loading sign convention plus Procrustes alignment against the previous layout (§3.3). |
 | 4 | Hash-based "embedding" fallback hides degradation              | Addressed: per-kind counters plus rate-limited warning logs, exposed via `/api/v1/debug/embedding-fallbacks` (§9). Making search return an error instead remains open. |
 | 5 | Inconsistent recency exponents (`freshness` vs `√freshness`)   | Pick one and document it. |
 | 6 | Mixed additive/multiplicative composition in `combined`        | Either go fully multiplicative (boosts as multipliers in `[1, 1+ε]`) or fully additive and clamp the range. |
@@ -597,7 +597,30 @@ fallback behavior itself is unchanged.
 | 10 | `k = 8` in specificity is fixed                                | Make adaptive (`min(8, ⌈√n⌉)` or similar). |
 | 11 | Embedding anisotropy inflated every cosine-derived quantity   | Addressed: runtime corpus-mean centering at the corpus-load boundary (§2.0), with revision-cached means; map edges deliberately excluded (§3.2). |
 
-### 10.3 Things to leave alone
+### 10.3 Already landed from the evolution plan
+
+This paper describes the *current* math; [math-evolution.md](./math-evolution.md)
+describes where it is heading. Two pieces of that plan have since shipped
+and are part of the current system:
+
+- **Signed relevance (`r⁻`) is end-to-end.** The analyzer emits
+  `negated_tags` with verbatim evidence quotes
+  (`internal/ai/openai.go`), the verifier cross-checks the quotes against
+  the source text before applying them
+  (`internal/issueenrichment/verify.go` `applyAnalyzerNegations`), and the
+  result persists as `Negation` / `NegationProvenance` /
+  `NegationEvidence` on `TagRelevance`. Verifier dominance also emits a
+  negation instead of only multiplying relevance down.
+- **Anchored ridge regression exists in shadow mode.** The
+  `f = (TTᵀ + Λ)⁻¹(Te + Λr)` solve with per-tag anchors
+  (`internal/issuemath/ridgescore.go`) is computed on demand behind
+  `GET /api/v1/debug/issues/{id}/ridge`, anchored on signed `r⁺ − r⁻`,
+  along with a drift cosine between anchor and refined scores. It is not
+  persisted and not consumed by ranking.
+
+See math-evolution.md §10.1 for the full phase-by-phase status.
+
+### 10.4 Things to leave alone
 
 - The decision to keep edges on the map driven by raw embedding similarity
   while positions come from tag-factor PCA. This is a clean separation of
