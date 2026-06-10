@@ -517,7 +517,7 @@ A worthwhile defensive measure: surface a warning metric whenever
 | 6 | Mixed additive/multiplicative composition in `combined`        | Either go fully multiplicative (boosts as multipliers in `[1, 1+ε]`) or fully additive and clamp the range. |
 | 7 | Velocity hard window at 30 days                                | Drop the window; pure exponential decay is smoother. |
 | 8 | Authority and hubness slopes (0.25 vs 0.15) are asymmetric     | Pick from a deliberate utility argument, or unify them. |
-| 9 | Hyperparameters everywhere with no evaluation harness          | Build a small held-out judgment set (10–50 query/result pairs) and run it on every constant change. |
+| 9 | Hyperparameters everywhere with no evaluation harness          | Addressed: [`internal/matheval`](./math-eval.md) runs a labeled judgment set (32 queries over a 48-issue fixture corpus) against a golden baseline on every test run. |
 | 10 | `k = 8` in specificity is fixed                                | Make adaptive (`min(8, ⌈√n⌉)` or similar). |
 
 ### 10.3 Things to leave alone
@@ -550,8 +550,10 @@ None of this is wrong; much of it is well-shaped for the size and shape of
 data Sortit handles. The biggest risk is **drift from these defaults
 without measurement**: any future tuning of constants in
 `internal/scoring/constants.go` should be backed by an evaluation harness,
-not by hand-feel, before it lands. Adding such a harness is the single
-highest-leverage improvement on the math side.
+not by hand-feel, before it lands. That harness now exists: see
+[Math Evaluation Harness](./math-eval.md) (`internal/matheval`), which runs
+NDCG@8/Recall@8 over a labeled judgment set plus per-issue R² distribution
+checks against a golden baseline as part of the normal test suite.
 
 ---
 
