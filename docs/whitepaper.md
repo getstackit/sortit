@@ -263,12 +263,22 @@ similarities, `minEdgeSimilarity` must be re-derived at the same time.
   dominant axes of *smeared tag loadings*, not the principal directions of
   issue embeddings. As Σ → I (which the shrinkage drives in poorly-correlated
   catalogs), this reduces to PCA on plain `X`.
-- **Sign convention is unstable.** If the *first* issue in the input has a
-  negative pre-normalization X projection, the axis is flipped. Adding or
-  removing a single issue at the head of the input can invert the entire map
-  layout. A property-of-the-whole-set convention (e.g., "the tag with
-  largest absolute loading on PC1 must lie at positive X") would be more
-  stable.
+- **Orientation is stabilized in two layers.** Eigenvector signs are
+  arbitrary, and when the top two eigenvalues are close, PC1/PC2 can swap
+  between recomputes. First, a deterministic loading-sign convention is
+  applied: the tag with the largest absolute loading on each principal axis
+  must load positively, making orientation a property of the data rather
+  than input order (an earlier version flipped axes based on whichever
+  issue happened to be first in the input). Second, when a previous layout
+  exists with ≥ 3 shared issues, the raw projected coordinates are aligned
+  to it by orthogonal Procrustes: `Q = UVᵀ` from the SVD of the 2×2
+  cross-covariance of the centered shared points, with reflections allowed
+  so both sign flips and component swaps are corrected. The reference is
+  the previous *normalized* layout (what users saw); only the orthogonal
+  part is kept, since the per-axis robust normalization re-establishes
+  translation and scale. The previous layout is held in an in-memory
+  last-layout cache on the projection loader and seeded from persisted
+  projections on load.
 - **Robust normalization is conditionally robust.** If the IQR collapses to
   zero, the function falls back to min-max — which is *not* robust. With
   highly clustered loadings (most issues sharing the same two tags) this
