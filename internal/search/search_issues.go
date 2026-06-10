@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"sortit/internal/ai"
+	"sortit/internal/centering"
 	"sortit/internal/domain"
 	issueenrichment "sortit/internal/issueenrichment"
 	"sortit/internal/issues"
@@ -36,6 +37,11 @@ type SearchIssuesHandler struct {
 	Catalog      *tags.CatalogService
 	Store        issues.Store
 	Cooccurrence *tagcooccurrence.Cache
+	// Centering provides revision-cached full-corpus embedding means.
+	// Critical on the semantic-search path: candidates are a retrieved
+	// subset, and centering them with their own mean would subtract the
+	// query signal itself.
+	Centering *centering.Cache
 }
 
 // regionOpts inspects the query for an exact tag-name match. When found,
@@ -118,6 +124,11 @@ func (h SearchIssuesHandler) Handle(ctx context.Context, input SearchIssues) (is
 		SortBy:     input.SortBy,
 	}
 
+	corpusMeans, err := h.Centering.Current(ctx)
+	if err != nil {
+		return issuemap.SearchResponse{}, err
+	}
+
 	if searcher, ok := semanticSearchStore(h.Store); ok {
 		storeTags, err := h.Catalog.StoredTags(ctx)
 		if err != nil {
@@ -146,6 +157,7 @@ func (h SearchIssuesHandler) Handle(ctx context.Context, input SearchIssues) (is
 		baseOpts := []issuemap.SearchOption{
 			issuemap.WithOffset(searchOpts.Offset),
 			issuemap.WithSortBy(searchOpts.SortBy),
+			issuemap.WithCorpusMeans(corpusMeans),
 		}
 
 		return issuemap.SearchFromQueryWithTags(
@@ -182,6 +194,7 @@ func (h SearchIssuesHandler) Handle(ctx context.Context, input SearchIssues) (is
 	baseOpts := []issuemap.SearchOption{
 		issuemap.WithOffset(searchOpts.Offset),
 		issuemap.WithSortBy(searchOpts.SortBy),
+		issuemap.WithCorpusMeans(corpusMeans),
 	}
 
 	return issuemap.SearchFromQueryWithTags(

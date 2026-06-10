@@ -4,6 +4,7 @@ import (
 	"context"
 	"sort"
 
+	"sortit/internal/centering"
 	"sortit/internal/domain"
 	"sortit/internal/issuemath"
 	"sortit/internal/issues"
@@ -39,6 +40,10 @@ type DebugRidgeScoreHandler struct {
 	Store   issues.Store
 	Catalog *tags.CatalogService
 	Lambda  float64
+	// Centering provides the revision-cached corpus means; the ridge solve
+	// runs in the same centered space as the rest of the math layer. Nil
+	// leaves the vectors uncentered (unit-normalized only).
+	Centering *centering.Cache
 }
 
 // Handle computes the refined scores. Returns an empty result when the
@@ -80,16 +85,23 @@ func (h DebugRidgeScoreHandler) Handle(ctx context.Context, issueID string) (Deb
 		return out, nil
 	}
 
+	means, err := h.Centering.Current(ctx)
+	if err != nil {
+		return DebugRidgeScoreResult{}, err
+	}
+
 	// Anchor: signed tag relevance (positive minus negation magnitude).
+	// Tag rows and the issue embedding are centered with the corpus means
+	// and unit-normalized, as ComputeRidgeScores expects.
 	anchorByTag := signedAnchorByTag(issue.TagScores)
 	tagEmbeddings := make([][]float64, len(keep))
 	anchor := make([]float64, len(keep))
 	for i, t := range keep {
-		tagEmbeddings[i] = t.Embedding
+		tagEmbeddings[i] = issuemath.CenterVector(t.Embedding, means.Tag)
 		anchor[i] = anchorByTag[domain.NormalizeTagName(t.Name)]
 	}
 
-	refined := issuemath.ComputeRidgeScores(tagEmbeddings, issue.Embedding, anchor, lambda)
+	refined := issuemath.ComputeRidgeScores(tagEmbeddings, issuemath.CenterVector(issue.Embedding, means.Issue), anchor, lambda)
 	if refined == nil {
 		return out, nil
 	}

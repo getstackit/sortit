@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"sortit/internal/ai"
+	"sortit/internal/centering"
 	issueenrichment "sortit/internal/issueenrichment"
 	"sortit/internal/issues"
 	issueviews "sortit/internal/issues/views"
@@ -29,6 +30,9 @@ type SearchUnifiedHandler struct {
 	Analyzer *ai.Analyzer
 	Catalog  *tags.CatalogService
 	Store    issues.Store
+	// Centering provides revision-cached full-corpus embedding means —
+	// see SearchIssuesHandler.Centering.
+	Centering *centering.Cache
 }
 
 func (h SearchUnifiedHandler) Handle(ctx context.Context, input SearchUnified) (SearchUnifiedResponse, error) {
@@ -50,6 +54,11 @@ func (h SearchUnifiedHandler) Handle(ctx context.Context, input SearchUnified) (
 	}
 	queryEmbedding := issueenrichment.Float32VectorToFloat64(analyzed.Embedding.Vector)
 	queryTags := issueenrichment.IssueTagScoresFromAnalysis(analyzed.Tags)
+
+	corpusMeans, err := h.Centering.Current(ctx)
+	if err != nil {
+		return SearchUnifiedResponse{}, err
+	}
 
 	if searcher, ok := semanticSearchStore(h.Store); ok {
 		storeTags, err := h.Catalog.StoredTags(ctx)
@@ -75,6 +84,7 @@ func (h SearchUnifiedHandler) Handle(ctx context.Context, input SearchUnified) (
 			queryTags,
 			queryEmbedding,
 			limit,
+			issuemap.WithCorpusMeans(corpusMeans),
 		)
 		relatedTags := issuemap.SearchTags(storeTags, queryEmbedding, limit)
 
@@ -105,6 +115,7 @@ func (h SearchUnifiedHandler) Handle(ctx context.Context, input SearchUnified) (
 		queryTags,
 		queryEmbedding,
 		limit,
+		issuemap.WithCorpusMeans(corpusMeans),
 	)
 
 	relatedTags := issuemap.SearchTags(storeTags, queryEmbedding, limit)

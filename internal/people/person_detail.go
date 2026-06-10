@@ -143,6 +143,12 @@ func (h GetPersonDetailHandler) recommendOpenIssues(
 			issueEmbeddings[issue.ID] = issue.Embedding
 		}
 	}
+	// Center against the corpus means. The open set is the corpus being
+	// scored (not a similarity-retrieved subset), so self-derived means are
+	// unbiased here. The person embedding is centered with the same issue
+	// mean, never with its own statistics.
+	issueEmbeddings, tagEmbeddings, corpusMeans := issuemath.CenterEmbeddings(issueEmbeddings, tagEmbeddings)
+	personEmbedding = issuemath.CenterVector(personEmbedding, corpusMeans.Issue)
 	decomp := issuemath.ComputeFactorDecomposition(openIssues, tagNames, issueEmbeddings, tagEmbeddings)
 
 	// Decompose person embedding.
@@ -168,7 +174,7 @@ func (h GetPersonDetailHandler) recommendOpenIssues(
 			)
 		} else {
 			factorScore = issuemath.TagProfileSimilarity(profile, issueTags)
-			semanticScore = vectors.CosineSimilarity(personEmbedding, issue.Embedding)
+			semanticScore = vectors.CosineSimilarity(personEmbedding, issueEmbeddings[issue.ID])
 			combinedScore = scoring.PersonRecommendFactor*factorScore + scoring.PersonRecommendSemantic*semanticScore
 		}
 

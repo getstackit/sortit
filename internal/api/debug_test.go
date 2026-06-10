@@ -546,10 +546,18 @@ func TestDebugFactorWeightsEndpointReturnsReviewQueue(t *testing.T) {
 
 	store := newPostgresIssueStore(t, nil)
 	if err := store.Replace(context.Background(), []issues.Issue{
+		// Closed ballast issues balance the open fixtures so the corpus mean
+		// is zero and runtime centering is a no-op (the review queue only
+		// considers open issues, so the ballast stays out of assertions).
 		{ID: "issue-a", Raw: "a", Status: issues.StatusOpen, TagScores: []issues.TagRelevance{{Tag: "alpha", Relevance: 1}}, Embedding: []float64{1, 0}, CreatedBy: "Casey", CreatedAt: issues.FixtureIssues()[0].CreatedAt},
 		{ID: "issue-b", Raw: "b", Status: issues.StatusOpen, TagScores: []issues.TagRelevance{{Tag: "alpha", Relevance: 1}}, Embedding: []float64{1, 0}, CreatedBy: "Casey", CreatedAt: issues.FixtureIssues()[1].CreatedAt},
 		{ID: "issue-c", Raw: "c", Status: issues.StatusOpen, TagScores: []issues.TagRelevance{{Tag: "alpha", Relevance: 1}}, Embedding: []float64{1, 0}, CreatedBy: "Casey", CreatedAt: issues.FixtureIssues()[2].CreatedAt},
 		{ID: "issue-d", Raw: "d", Status: issues.StatusOpen, TagScores: []issues.TagRelevance{{Tag: "alpha", Relevance: 1}}, Embedding: []float64{1, 0}, CreatedBy: "Casey", CreatedAt: issues.FixtureIssues()[3].CreatedAt},
+		{ID: "issue-ballast-a", Raw: "ballast", Status: issues.StatusClosed, TagScores: []issues.TagRelevance{{Tag: "alpha", Relevance: 1}}, Embedding: []float64{-1, 0}, CreatedBy: "Casey", CreatedAt: issues.FixtureIssues()[0].CreatedAt},
+		{ID: "issue-ballast-b", Raw: "ballast", Status: issues.StatusClosed, TagScores: []issues.TagRelevance{{Tag: "alpha", Relevance: 1}}, Embedding: []float64{-1, 0}, CreatedBy: "Casey", CreatedAt: issues.FixtureIssues()[1].CreatedAt},
+		{ID: "issue-ballast-c", Raw: "ballast", Status: issues.StatusClosed, TagScores: []issues.TagRelevance{{Tag: "alpha", Relevance: 1}}, Embedding: []float64{-1, 0}, CreatedBy: "Casey", CreatedAt: issues.FixtureIssues()[2].CreatedAt},
+		{ID: "issue-ballast-d", Raw: "ballast", Status: issues.StatusClosed, TagScores: []issues.TagRelevance{{Tag: "alpha", Relevance: 1}}, Embedding: []float64{-1, 0}, CreatedBy: "Casey", CreatedAt: issues.FixtureIssues()[3].CreatedAt},
+		{ID: "issue-ballast-e", Raw: "ballast", Status: issues.StatusClosed, TagScores: []issues.TagRelevance{{Tag: "alpha", Relevance: 1}}, Embedding: []float64{0, -1}, CreatedBy: "Casey", CreatedAt: issues.FixtureIssues()[4].CreatedAt},
 		{
 			ID:        reviewIssueID,
 			Raw:       "beta concept hidden behind alpha tag",

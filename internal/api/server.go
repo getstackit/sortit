@@ -15,6 +15,7 @@ import (
 
 	"sortit/internal/ai"
 	"sortit/internal/auth"
+	"sortit/internal/centering"
 	"sortit/internal/diagnostics"
 	issueenrichment "sortit/internal/issueenrichment"
 	"sortit/internal/issueevents"
@@ -592,6 +593,11 @@ func NewServer(cfg ServerConfig) *Server {
 		Store:     store,
 		Revisions: revisions,
 	}
+	centeringCache := &centering.Cache{
+		Store:     store,
+		Tags:      catalog,
+		Revisions: revisions,
+	}
 	var customRegionStore regions.CustomRegionStore = store
 	var customRegionWriter regions.CustomRegionWriter = store
 	regionsLoader := &regions.Loader{
@@ -662,11 +668,13 @@ func NewServer(cfg ServerConfig) *Server {
 			Catalog:      catalog,
 			Store:        baseStore,
 			Cooccurrence: cooccurrenceCache,
+			Centering:    centeringCache,
 		},
 		searchUnified: search.SearchUnifiedHandler{
-			Analyzer: commandAnalyzer,
-			Catalog:  catalog,
-			Store:    baseStore,
+			Analyzer:  commandAnalyzer,
+			Catalog:   catalog,
+			Store:     baseStore,
+			Centering: centeringCache,
 		},
 		exploreIssue: mapview.ExploreIssueHandler{
 			Reader:       store,
@@ -682,7 +690,7 @@ func NewServer(cfg ServerConfig) *Server {
 		debugFactorWeights:   diagnostics.DebugFactorWeightsHandler{Store: store, Catalog: catalog},
 		debugIssueR2:         diagnostics.DebugIssueR2Handler{Store: store, Catalog: catalog},
 		debugTagCooccurrence: diagnostics.DebugTagCooccurrenceHandler{Store: store, Cache: cooccurrenceCache},
-		debugRidgeScore:      diagnostics.DebugRidgeScoreHandler{Store: store, Catalog: catalog},
+		debugRidgeScore:      diagnostics.DebugRidgeScoreHandler{Store: store, Catalog: catalog, Centering: centeringCache},
 		getPersonProfile:     people.GetPersonProfileHandler{Store: store, Catalog: catalog},
 		getPersonDetail:      people.GetPersonDetailHandler{Store: store, Catalog: catalog},
 		workCorrelations:     people.WorkCorrelationsHandler{Store: store, Catalog: catalog},
