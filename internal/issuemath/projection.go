@@ -20,7 +20,27 @@ type Position struct {
 
 const minProjectionIssueCount = 5
 
+// minAlignmentSharedIssues is the minimum number of issues that must appear
+// in both the previous and current layouts before Procrustes alignment is
+// applied. Two points determine an orthogonal transform but degenerate too
+// easily; below three shared anchors the deterministic loading-sign
+// convention alone decides orientation.
+const minAlignmentSharedIssues = 3
+
+// ComputePositions lays out issues with no previous layout to align to:
+// orientation falls back to the deterministic loading-sign convention.
+// Callers that hold the previously rendered layout should prefer
+// ComputePositionsAligned so the map keeps its orientation across rebuilds.
 func ComputePositions(issues []issues.Issue, tags []string, tagEmbeddings map[string][]float64) (map[string]Position, error) {
+	return ComputePositionsAligned(issues, tags, tagEmbeddings, nil)
+}
+
+// ComputePositionsAligned computes the PCA layout and then aligns it to
+// `previous` — the positions of the last rendered layout (normalized
+// [0.05, 0.95] space, possibly empty) — via orthogonal Procrustes, so PCA
+// eigenvector sign flips and PC1/PC2 swaps between recomputes don't
+// reorient the map users have built spatial memory of.
+func ComputePositionsAligned(issues []issues.Issue, tags []string, tagEmbeddings map[string][]float64, previous map[string]Position) (map[string]Position, error) {
 	n := len(issues)
 	t := len(tags)
 	if n == 0 {
@@ -114,9 +134,17 @@ func ComputePositions(issues []issues.Issue, tags []string, tagEmbeddings map[st
 	}
 	V2 := mat.NewDense(t, 2, v2Data)
 
+	// Orientation is decided in two layers: a data-driven sign convention
+	// makes the layout independent of input order, then (when a previous
+	// layout exists) Procrustes alignment overrides it with whatever
+	// orientation users last saw.
+	enforceLoadingSignConvention(V2)
+
 	// Project: P = X' * V2
 	var P mat.Dense
 	P.Mul(&Xprime, V2)
+
+	alignToPreviousLayout(&P, issues, previous)
 
 	// Normalize to [0.05, 0.95] with outlier clipping so new extremes
 	// are less likely to rescale the entire map.
@@ -131,24 +159,115 @@ func ComputePositions(issues []issues.Issue, tags []string, tagEmbeddings map[st
 	normalizeRobust(xs, 0.05, 0.95)
 	normalizeRobust(ys, 0.05, 0.95)
 
-	// Sign convention: if first point has negative projected x before normalization, flip
-	// We apply after normalize by checking if the order looks inverted
-	if n > 1 && P.At(0, 0) < 0 {
-		for i := range xs {
-			xs[i] = 1.0 - xs[i]
-		}
-	}
-	if n > 1 && P.At(0, 1) < 0 {
-		for i := range ys {
-			ys[i] = 1.0 - ys[i]
-		}
-	}
-
 	for i, issue := range issues {
 		positions[issue.ID] = Position{X: xs[i], Y: ys[i]}
 	}
 
 	return positions, nil
+}
+
+// enforceLoadingSignConvention fixes each principal axis to a property of
+// the data instead of the input order: the tag with the largest absolute
+// loading on the axis must load positively. Eigenvector signs are arbitrary,
+// so without a convention the same corpus can come back mirrored.
+func enforceLoadingSignConvention(loadings *mat.Dense) {
+	rows, cols := loadings.Dims()
+	for c := range cols {
+		maxIdx, maxAbs := 0, 0.0
+		for i := range rows {
+			if a := math.Abs(loadings.At(i, c)); a > maxAbs {
+				maxAbs = a
+				maxIdx = i
+			}
+		}
+		if loadings.At(maxIdx, c) < 0 {
+			for i := range rows {
+				loadings.Set(i, c, -loadings.At(i, c))
+			}
+		}
+	}
+}
+
+// alignToPreviousLayout rotates/reflects the raw projected coordinates P
+// (n×2, row i belongs to items[i]) so issues present in both layouts land
+// as close as possible to where they were. The reference is the previous
+// layout's normalized [0.05, 0.95] coordinates — the layout users actually
+// saw — with no un-mapping: orthogonal Procrustes is invariant to the
+// reference's translation (both point sets are centered) and its scale only
+// multiplies the cross-covariance, so the optimal transform is unchanged,
+// and the robust normalization afterwards re-establishes position and range.
+// The transform is the full orthogonal solution Q = UVᵀ from the SVD of the
+// 2×2 cross-covariance of the centered shared points — reflections are
+// deliberately allowed so eigenvector sign flips and PC1/PC2 swaps are both
+// corrected.
+func alignToPreviousLayout(pts *mat.Dense, items []issues.Issue, previous map[string]Position) {
+	if len(previous) == 0 {
+		return
+	}
+
+	type pointPair struct {
+		newX, newY, oldX, oldY float64
+	}
+	shared := make([]pointPair, 0, len(previous))
+	for i, item := range items {
+		prev, ok := previous[item.ID]
+		if !ok {
+			continue
+		}
+		shared = append(shared, pointPair{
+			newX: pts.At(i, 0), newY: pts.At(i, 1),
+			oldX: prev.X, oldY: prev.Y,
+		})
+	}
+	if len(shared) < minAlignmentSharedIssues {
+		return
+	}
+
+	k := float64(len(shared))
+	var newCX, newCY, oldCX, oldCY float64
+	for _, p := range shared {
+		newCX += p.newX
+		newCY += p.newY
+		oldCX += p.oldX
+		oldCY += p.oldY
+	}
+	newCX /= k
+	newCY /= k
+	oldCX /= k
+	oldCY /= k
+
+	// Cross-covariance M = AᵀB of centered shared points (A new, B old).
+	var m00, m01, m10, m11 float64
+	for _, p := range shared {
+		ax, ay := p.newX-newCX, p.newY-newCY
+		bx, by := p.oldX-oldCX, p.oldY-oldCY
+		m00 += ax * bx
+		m01 += ax * by
+		m10 += ay * bx
+		m11 += ay * by
+	}
+	crossCov := mat.NewDense(2, 2, []float64{m00, m01, m10, m11})
+
+	var svd mat.SVD
+	if !svd.Factorize(crossCov, mat.SVDFull) {
+		return
+	}
+	// Coincident or collinear-degenerate anchors carry no orientation
+	// signal; keep the sign-convention orientation rather than applying
+	// an arbitrary transform.
+	if values := svd.Values(nil); values[0] <= 1e-12 {
+		return
+	}
+
+	var u, v mat.Dense
+	svd.UTo(&u)
+	svd.VTo(&v)
+	var q mat.Dense
+	q.Mul(&u, v.T())
+
+	var aligned mat.Dense
+	aligned.Mul(pts, &q)
+	pts.Copy(&aligned)
 }
 
 func normalizeRobust(vals []float64, lo, hi float64) {

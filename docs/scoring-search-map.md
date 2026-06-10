@@ -19,9 +19,11 @@ Each issue stores tag scores as continuous relevance values. An issue can be hig
 ]
 ```
 
-Tag scores may also carry provenance and verifier metadata, including whether the tag was suggested, which candidate source selected it, alignment with the issue embedding, specificity, evidence ranges, verification verdict, and domination by a nearby unassigned tag.
+Tag scores may also carry provenance and verifier metadata, including whether the tag was suggested, which candidate source selected it, alignment with the issue embedding, specificity, evidence ranges, verification verdict, and domination by a nearby unassigned tag. Tags can additionally carry a negation score (an explicit "this tag does not apply" signal with its own provenance and evidence).
 
 Display tags are selected from explicit tags or from the highest ranked tag scores. When specificity is available, display ranking blends relevance and specificity so cards emphasize more discriminative tags.
+
+Note that tag-region membership (`internal/regions` `BelongsTo`) currently considers only positive relevance: an issue with relevance 0.5 and negation 0.7 — net signed relevance −0.2 — still counts as a region member. This is intentional for now (relevance and negation are treated as independent signals), but it is a candidate for switching to net-relevance membership (`relevance − negation ≥ floor`) once the math layer consumes signed scores.
 
 ## Tag Candidate Selection
 

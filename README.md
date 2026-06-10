@@ -69,6 +69,11 @@ The blended similarity matrix is projected to 2D using **PCA** (principal compon
 
 We chose PCA over alternatives (UMAP, t-SNE, MDS) for one reason: **stability**. Adding or removing an issue shouldn't reshuffle the entire map. PCA is deterministic and changes incrementally — existing issues stay roughly where they were. This matters for a tool people use daily; spatial memory is valuable.
 
+Raw PCA alone doesn't deliver that stability: eigenvector signs are arbitrary, and when the top two eigenvalues are close, PC1 and PC2 can swap between recomputes — either flips or rotates the whole map. Two mechanisms make stability real:
+
+1. **Procrustes alignment.** Each rebuild is aligned to the previous layout: the optimal 2D rotation/reflection (orthogonal Procrustes, via SVD of the cross-covariance of issues present in both layouts) is applied to the new coordinates before normalization, so issues that didn't change stay where users last saw them.
+2. **Deterministic orientation fallback.** When there is no previous layout (or fewer than 3 shared issues), each principal axis is oriented so the tag with the largest absolute loading points positive — a property of the data, not of input order.
+
 The tradeoff is that PCA is linear, so it can collapse clusters that are distinct in high dimensions. In practice, the factor model's tag structure provides enough separation that this isn't a major issue.
 
 ### Edges
