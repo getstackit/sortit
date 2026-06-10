@@ -42,6 +42,58 @@ The central trick in Sortit is to split each issue's embedding into:
   from the issue's tags.
 - A **residual** component — what's left over, the embedding-only signal.
 
+### 2.0 Anisotropy and corpus-mean centering
+
+Everything in this section operates on **corpus-mean centered** embeddings,
+not the raw vectors the embedding service returns. The reason is a
+well-known property of text embedding models (including
+`text-embedding-3-small`): over a topically homogeneous corpus — and a
+Sortit workspace is, by construction, all software-issue text — every
+vector shares a large common direction. Raw cosines therefore cluster in a
+narrow, high band: ~0.7 between two *unrelated* issues is typical. That
+shared component is anisotropy, not signal, and before centering it
+inflated every quantity built from these cosines: the tag covariance Σ
+(§2.1), per-issue `R²` and the factor weight `w_F` (§2.3–2.4), and the
+factor similarities used in search ranking (§7).
+
+The fix (in the spirit of "All-but-the-Top", Mu & Viswanath 2018) is
+applied at the corpus-load boundary, before any of the math below runs:
+
+```
+e_centered = unit(e − mean(issue corpus))
+t_centered = unit(t − mean(tag catalog))
+```
+
+Issue embeddings are centered against the issue-corpus mean and tag
+embeddings against the tag-catalog mean, then re-normalized
+(`internal/issuemath/centering.go`). Details that matter:
+
+- **Centering is a runtime transform.** Persisted embeddings are never
+  rewritten. The means are recomputed from the store and cached keyed by
+  corpus revision (`internal/centering`), the same mechanics as the tag
+  co-occurrence cache.
+- **External vectors are centered with the stored corpus means, never
+  their own.** A search query embedding (and a person embedding) is
+  centered with the cached issue-corpus mean. This is load-bearing on the
+  semantic-search path: the candidate set is a similarity-retrieved
+  subset, and that subset's own mean points toward the query
+  neighborhood — subtracting it would remove exactly the signal being
+  searched for.
+- **Degenerate corpora skip centering.** Populations smaller than
+  `MinCenteringVectors` keep their raw (unit-normalized) vectors — a mean
+  over a handful of vectors is noise, and subtracting it makes
+  near-parallel vectors antipodal. A vector that becomes zero after
+  centering (e.g. a single-vector corpus, where the mean is the vector
+  itself) falls back to its uncentered form.
+- **Aggregate `R²` dropped when centering landed, and that is correct.**
+  Pre-centering `R²` counted the shared anisotropic direction as "variance
+  explained by tags," because both the issue embedding and the synthesized
+  factor direction contained it. Post-centering numbers are smaller and
+  honest; the matheval baseline records the drop, alongside an improvement
+  in ranking quality (NDCG@8 0.823 → 0.874, Recall@8 0.855 → 0.927 on the
+  fixture corpus).
+- **Map edges are the one deliberate exception** — see §3.2.
+
 ### 2.1 Tag covariance Σ
 
 Each tag in the catalog has its own embedding (the analyzer embedding of
@@ -195,6 +247,15 @@ This makes position (tag-factor structure) and edges (raw semantic
 similarity) **complementary**. Two issues can be far apart in the layout
 because they have different tags but still be connected by a strong
 edge if their language is similar.
+
+Edges are also the one consumer that deliberately keeps the **uncentered**
+embeddings (see §2.0): the `minEdgeSimilarity` threshold and the UI's edge
+density were tuned against the raw cosine scale, and centering collapses
+that scale (typical same-corpus cosines drop from ~0.7–0.9 to ~0–0.3),
+which would silently disconnect most of the map. The eval harness in
+`internal/matheval` does not cover edge quality, so there was no evidence
+to justify re-tuning the threshold; if edges are ever moved to centered
+similarities, `minEdgeSimilarity` must be re-derived at the same time.
 
 ### 3.3 Critical notes on the projection
 
@@ -519,6 +580,7 @@ A worthwhile defensive measure: surface a warning metric whenever
 | 8 | Authority and hubness slopes (0.25 vs 0.15) are asymmetric     | Pick from a deliberate utility argument, or unify them. |
 | 9 | Hyperparameters everywhere with no evaluation harness          | Addressed: [`internal/matheval`](./math-eval.md) runs a labeled judgment set (32 queries over a 48-issue fixture corpus) against a golden baseline on every test run. |
 | 10 | `k = 8` in specificity is fixed                                | Make adaptive (`min(8, ⌈√n⌉)` or similar). |
+| 11 | Embedding anisotropy inflated every cosine-derived quantity   | Addressed: runtime corpus-mean centering at the corpus-load boundary (§2.0), with revision-cached means; map edges deliberately excluded (§3.2). |
 
 ### 10.3 Things to leave alone
 
@@ -576,6 +638,8 @@ checks against a golden baseline as part of the normal test suite.
 | Verifier rules                         | [`internal/issueenrichment/verify.go`](../internal/issueenrichment/verify.go) |
 | All tunable constants                  | [`internal/scoring/constants.go`](../internal/scoring/constants.go) |
 | Cosine helpers                         | [`internal/vectors/cosine.go`](../internal/vectors/cosine.go) |
+| Corpus-mean centering                  | [`internal/issuemath/centering.go`](../internal/issuemath/centering.go), [`internal/vectors/centering.go`](../internal/vectors/centering.go) |
+| Revision-cached corpus means           | [`internal/centering/cache.go`](../internal/centering/cache.go) |
 
 ## Appendix B: Notation
 
