@@ -1,0 +1,320 @@
+[
+  {
+    "query": "q-double-charge",
+    "expected": {
+      "bill-01": 3,
+      "pay-01": 2,
+      "bill-02": 2,
+      "pay-02": 2,
+      "bill-03": 1,
+      "bill-04": 1
+    }
+  },
+  {
+    "query": "q-refund-unpaid",
+    "expected": {
+      "bill-02": 3,
+      "bill-01": 2,
+      "pay-02": 1,
+      "bill-03": 1,
+      "bill-04": 1
+    }
+  },
+  {
+    "query": "q-checkout-3ds",
+    "expected": {
+      "pay-01": 3,
+      "bill-01": 2,
+      "pay-02": 2,
+      "pay-03": 1
+    }
+  },
+  {
+    "query": "q-tag-billing",
+    "notes": "Bare tag-name query; exercises the tag-correlation factor nudge.",
+    "expected": {
+      "bill-01": 3,
+      "bill-02": 3,
+      "bill-03": 3,
+      "bill-04": 3,
+      "pay-01": 2,
+      "pay-02": 2,
+      "pay-03": 1
+    }
+  },
+  {
+    "query": "q-past-due",
+    "expected": {
+      "pay-02": 3,
+      "pay-01": 2,
+      "bill-01": 2,
+      "bill-02": 1
+    }
+  },
+  {
+    "query": "q-google-500",
+    "expected": {
+      "auth-02": 3,
+      "login-01": 2,
+      "login-02": 2,
+      "auth-04": 2,
+      "auth-01": 1,
+      "auth-03": 1
+    }
+  },
+  {
+    "query": "q-parallel-logout",
+    "expected": {
+      "auth-04": 3,
+      "auth-01": 2,
+      "login-01": 2,
+      "auth-02": 1,
+      "login-02": 1
+    }
+  },
+  {
+    "query": "q-reset-expiry",
+    "expected": {
+      "auth-03": 3,
+      "auth-02": 1,
+      "login-02": 1,
+      "email-03": 1
+    }
+  },
+  {
+    "query": "q-2fa-rejected",
+    "expected": {
+      "login-02": 3,
+      "auth-02": 2,
+      "login-01": 2,
+      "auth-04": 1
+    }
+  },
+  {
+    "query": "q-pdf-blank",
+    "expected": {
+      "exp-01": 3,
+      "pdf-01": 2,
+      "pdf-02": 2,
+      "exp-03": 2,
+      "exp-02": 1,
+      "exp-04": 1
+    }
+  },
+  {
+    "query": "q-export-timeout",
+    "expected": {
+      "exp-03": 3,
+      "exp-01": 2,
+      "exp-02": 2,
+      "pdf-01": 1,
+      "perf-01": 1
+    }
+  },
+  {
+    "query": "q-pdf-font",
+    "expected": {
+      "pdf-01": 3,
+      "exp-01": 2,
+      "pdf-02": 2,
+      "exp-03": 1
+    }
+  },
+  {
+    "query": "q-csv-rows",
+    "expected": {
+      "exp-02": 3,
+      "exp-01": 2,
+      "exp-03": 2,
+      "exp-04": 2,
+      "pdf-01": 1
+    }
+  },
+  {
+    "query": "q-stale-search",
+    "expected": {
+      "srch-01": 3,
+      "srch-02": 2,
+      "srch-03": 2,
+      "perf-02": 1,
+      "db-03": 1
+    }
+  },
+  {
+    "query": "q-search-freeze",
+    "expected": {
+      "srch-03": 3,
+      "perf-01": 2,
+      "perf-02": 2,
+      "srch-01": 1,
+      "srch-02": 1
+    }
+  },
+  {
+    "query": "q-fuzzy-rank",
+    "expected": {
+      "srch-02": 3,
+      "srch-01": 2,
+      "srch-03": 2
+    }
+  },
+  {
+    "query": "q-slow-dashboard",
+    "expected": {
+      "perf-01": 3,
+      "db-03": 2,
+      "perf-03": 2,
+      "srch-03": 2,
+      "db-04": 1,
+      "perf-02": 1
+    }
+  },
+  {
+    "query": "q-nplus1",
+    "expected": {
+      "perf-03": 3,
+      "db-01": 2,
+      "perf-01": 2,
+      "db-03": 1
+    }
+  },
+  {
+    "query": "q-ios-crash",
+    "expected": {
+      "mob-01": 3,
+      "ios-01": 2,
+      "ios-02": 2,
+      "mob-02": 2,
+      "mob-03": 1
+    }
+  },
+  {
+    "query": "q-push-wrong",
+    "expected": {
+      "ios-01": 3,
+      "notif-01": 2,
+      "notif-03": 2,
+      "mob-01": 1,
+      "notif-02": 1
+    }
+  },
+  {
+    "query": "q-keyboard-covers",
+    "expected": {
+      "ios-02": 3,
+      "mob-02": 2,
+      "mob-01": 2,
+      "mob-04": 1
+    }
+  },
+  {
+    "query": "q-offline-lost",
+    "expected": {
+      "mob-03": 3,
+      "mob-02": 2,
+      "mob-04": 2,
+      "mob-01": 2,
+      "ios-01": 1
+    }
+  },
+  {
+    "query": "q-dup-push",
+    "expected": {
+      "notif-01": 3,
+      "notif-03": 2,
+      "notif-02": 2,
+      "ios-01": 2
+    }
+  },
+  {
+    "query": "q-outlook-dark",
+    "expected": {
+      "email-01": 3,
+      "email-03": 2,
+      "email-02": 2,
+      "gen-03": 1,
+      "exp-04": 1
+    }
+  },
+  {
+    "query": "q-invite-spam",
+    "expected": {
+      "email-03": 3,
+      "email-01": 2,
+      "email-02": 2,
+      "exp-04": 1
+    }
+  },
+  {
+    "query": "q-deadlock",
+    "expected": {
+      "db-01": 3,
+      "db-04": 2,
+      "perf-03": 2,
+      "db-03": 2,
+      "db-02": 1
+    }
+  },
+  {
+    "query": "q-migration-fail",
+    "expected": {
+      "db-02": 3,
+      "mig-01": 2,
+      "db-01": 2,
+      "db-04": 1
+    }
+  },
+  {
+    "query": "q-replica-lag",
+    "expected": {
+      "db-03": 3,
+      "perf-01": 2,
+      "db-04": 2,
+      "srch-01": 1,
+      "db-01": 1
+    }
+  },
+  {
+    "query": "q-tag-ui",
+    "notes": "Generic tag query; specific co-occurring tags should outrank generic-only issues.",
+    "expected": {
+      "gen-03": 3,
+      "gen-01": 2,
+      "email-01": 2,
+      "mob-02": 1,
+      "notif-03": 1,
+      "ios-02": 1
+    }
+  },
+  {
+    "query": "q-tag-backend",
+    "notes": "Generic tag query for the backend bucket.",
+    "expected": {
+      "gen-02": 3,
+      "db-01": 2,
+      "pay-02": 2,
+      "perf-02": 1,
+      "email-02": 1,
+      "auth-04": 1
+    }
+  },
+  {
+    "query": "q-badge-count",
+    "expected": {
+      "notif-03": 3,
+      "notif-01": 2,
+      "notif-02": 2,
+      "ios-01": 1
+    }
+  },
+  {
+    "query": "q-export-email",
+    "expected": {
+      "exp-04": 3,
+      "exp-02": 2,
+      "email-02": 2,
+      "exp-01": 1,
+      "email-03": 1
+    }
+  }
+]

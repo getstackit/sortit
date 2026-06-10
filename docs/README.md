@@ -14,6 +14,7 @@ These docs describe the current product and implementation. Historical planning 
 - [Planning](./planning.md): forward-looking design sketch for the quantitative project management layer.
 - [White Paper](./whitepaper.md): the math behind enrichment, search, and map — with critical notes on where the implementation diverges from textbook.
 - [Math Evolution](./math-evolution.md): forward-looking design for signed tag loadings, ridge regression, and the quantitative planning layer.
+- [Math Evaluation Harness](./math-eval.md): the offline NDCG/Recall/R² harness that makes scoring-math changes measurable.
 
 ## Quick Start
 
