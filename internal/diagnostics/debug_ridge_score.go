@@ -2,6 +2,7 @@ package diagnostics
 
 import (
 	"context"
+	"math"
 	"sort"
 
 	"sortit/internal/centering"
@@ -151,5 +152,5 @@ func absFloat(v float64) float64 {
 }
 
 func round3(v float64) float64 {
-	return float64(int(v*1000+0.5)) / 1000
+	return math.Round(v*1000) / 1000
 }
