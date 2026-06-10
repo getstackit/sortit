@@ -1,11 +1,23 @@
 // Package tagcooccurrence computes pairwise tag co-occurrence statistics
-// across a corpus of issues. The output powers a structural anti-correlation
-// signal that math-evolution.md §4.1 calls out as a third source of r_i⁻
-// once the corpus is large enough to be meaningful.
+// across a corpus of issues. The output powers the structural
+// anti-correlation signal that math-evolution.md §4.1 calls out as a third
+// source of r_i⁻ once the corpus is large enough to be meaningful.
 //
-// This package is wired up but not consumed on the hot path. The math layer
-// is expected to opt in once a held-out evaluation confirms the signal is
-// predictive. Until then the projection exists as a debug-only metric.
+// This signal is consumed on the hot path: internal/search feeds the top
+// anti-correlated pairs of a query's target tag into the live search
+// ranking as a penalty (internal/map candidateAntiCorrelationPenalty,
+// weighted by scoring.RegionAntiCorrelationPenalty). It also backs the
+// debug diagnostics endpoint.
+//
+// Because it shapes user-facing rankings, ImplicitNegative is statistically
+// guarded: a pair only emits a non-zero score when the conditioning tag's
+// presence count and the pair's expected joint count under independence
+// clear the floors in internal/scoring (AntiCorrelationMinPresence,
+// AntiCorrelationMinExpectedJoint). Above the floors the score is a shrunk
+// lift, 1 − (joint + s) / (presenceCount × baseProb + s) with smoothing
+// s = scoring.AntiCorrelationSmoothing, clamped to [0, 1] — so small
+// corpora and base-rate-dominated pairs read as zero rather than as
+// spurious anti-correlation.
 package tagcooccurrence
 
 import (
@@ -14,6 +26,7 @@ import (
 
 	"sortit/internal/domain"
 	"sortit/internal/issues"
+	"sortit/internal/scoring"
 )
 
 // defaultRelevanceFloor mirrors the enrichment-side floor: a tag is
@@ -26,10 +39,16 @@ const defaultRelevanceFloor = 0.08
 // reads as: "given tag i is present, how much less likely is tag j than the
 // base rate?" — a positive number indicates structural anti-correlation.
 type PairStats struct {
-	Tag              string  `json:"tag"`
-	JointCount       int     `json:"jointCount"`
-	ConditionalProb  float64 `json:"conditionalProb"`
-	BaseProb         float64 `json:"baseProb"`
+	Tag             string  `json:"tag"`
+	JointCount      int     `json:"jointCount"`
+	ConditionalProb float64 `json:"conditionalProb"`
+	BaseProb        float64 `json:"baseProb"`
+	// ImplicitNegative is a shrunk lift score in [0, 1]:
+	// 1 − (joint + s) / (count(i) × baseProb(j) + s), with smoothing
+	// s = scoring.AntiCorrelationSmoothing. It is forced to zero unless
+	// count(i) ≥ scoring.AntiCorrelationMinPresence and the expected joint
+	// count count(i) × baseProb(j) ≥ scoring.AntiCorrelationMinExpectedJoint,
+	// so sparse corpora produce no anti-correlation signal.
 	ImplicitNegative float64 `json:"implicitNegative"`
 }
 
@@ -120,10 +139,7 @@ func ComputeWithFloor(items []issues.Issue, relevanceFloor float64) Stats {
 			if count > 0 {
 				conditional = float64(joint) / float64(count)
 			}
-			implicit := baseProb - conditional
-			if implicit < 0 {
-				implicit = 0
-			}
+			implicit := implicitNegative(count, joint, baseProb)
 			pairs = append(pairs, PairStats{
 				Tag:              other,
 				JointCount:       joint,
@@ -169,6 +185,26 @@ func (s Stats) LookupTag(name string) (TagStats, bool) {
 		}
 	}
 	return TagStats{}, false
+}
+
+// implicitNegative scores how anti-correlated tag j is with conditioning
+// tag i, given count(i), the observed joint count, and baseProb(j). It
+// returns the shrunk lift 1 − (joint + s) / (expected + s) clamped to
+// [0, 1], where expected = count(i) × baseProb(j) is the joint count
+// independence predicts. The scoring floors gate the signal entirely:
+// below them, an observed joint of zero is indistinguishable from a
+// corpus too small to have produced a co-occurrence yet.
+func implicitNegative(presenceCount, jointCount int, baseProb float64) float64 {
+	if presenceCount < scoring.AntiCorrelationMinPresence {
+		return 0
+	}
+	expected := float64(presenceCount) * baseProb
+	if expected < scoring.AntiCorrelationMinExpectedJoint {
+		return 0
+	}
+	s := scoring.AntiCorrelationSmoothing
+	lift := 1 - (float64(jointCount)+s)/(expected+s)
+	return min(max(lift, 0), 1)
 }
 
 func round2(v float64) float64 {
