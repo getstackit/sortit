@@ -93,6 +93,28 @@ const (
 	RegionAntiCorrelationStrongTag = 0.4  // ignore anti-correlators on weakly-tagged candidates
 )
 
+// Co-occurrence anti-correlation guards. The implicit-negative signal
+// (internal/tagcooccurrence) feeds the live search ranking as a penalty,
+// so it must not fire on statistical noise. math-evolution.md §4.1 gates
+// this source of r_i⁻ on the corpus being large enough to be meaningful.
+const (
+	// AntiCorrelationMinPresence is the minimum number of issues the
+	// conditioning tag must appear on before any of its pairs can emit a
+	// non-zero implicit-negative. Below this, "never co-occurred" is far
+	// more likely to mean "corpus too small" than "structurally exclusive".
+	AntiCorrelationMinPresence = 20
+	// AntiCorrelationMinExpectedJoint is the minimum expected joint count
+	// under independence (presenceCount × baseProb) for a pair to emit a
+	// non-zero implicit-negative. If independence predicts fewer than this
+	// many co-occurrences, observing zero carries almost no evidence.
+	AntiCorrelationMinExpectedJoint = 5.0
+	// AntiCorrelationSmoothing is the additive smoothing s in the shrunk
+	// lift score 1 − (joint + s) / (expected + s). It pulls scores toward
+	// zero when expected counts are modest, so weak evidence never produces
+	// a maximal penalty.
+	AntiCorrelationSmoothing = 1.0
+)
+
 // Projection weighting.
 const (
 	ProjectionWeightFloor = 0.1 // minimum per-issue weight in PCA covariance
