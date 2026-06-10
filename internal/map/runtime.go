@@ -353,6 +353,7 @@ func runtimeTagEmbeddings(tags []string, storeTags []issues.Tag) map[string][]fl
 			continue
 		}
 
+		recordEmbeddingFallback(EmbeddingFallbackKindTag, tag)
 		descriptor := tag
 		if description := definitions[tag]; description != "" {
 			descriptor += " " + description
@@ -430,6 +431,7 @@ func runtimeStoredEmbedding(storeIssue issues.Issue, prepared issues.Issue, tagE
 		}
 	}
 
+	recordEmbeddingFallback(EmbeddingFallbackKindIssue, storeIssue.ID)
 	return runtimeIssueEmbedding(prepared, tagEmbeddings)
 }
 

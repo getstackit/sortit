@@ -555,8 +555,13 @@ correctness risk**: if persisted embeddings silently disappear for any
 reason, search and map quality will degrade in a way that's hard to detect
 because the system keeps producing results.
 
-A worthwhile defensive measure: surface a warning metric whenever
-`embeddingFromText` is used in a non-test code path.
+The fallback is therefore instrumented: each time a hash pseudo-embedding
+stands in for a missing persisted embedding, an in-process counter is
+incremented by kind (issue vs tag) and a rate-limited warning (once per
+minute per kind) is logged. Cumulative counts are exposed via
+`GET /api/v1/debug/embedding-fallbacks` — non-zero values on a production
+install mean embeddings are silently missing and quality is degraded. The
+fallback behavior itself is unchanged.
 
 ---
 
@@ -583,7 +588,7 @@ A worthwhile defensive measure: surface a warning metric whenever
 | 1 | Single-direction "factor model" is oversold                    | Either embrace multi-direction (top-k tags as basis vectors) or rename to "tag-direction projection". |
 | 2 | Shrinkage `α = 1 − mean(off-diag²)` is heuristic               | Replace with Ledoit-Wolf or document explicitly as a stability hack. |
 | 3 | Map sign-convention depends on first issue                     | Use a global property (e.g., largest absolute tag loading on PC1 is positive). |
-| 4 | Hash-based "embedding" fallback hides degradation              | Emit a metric and a log when it fires; consider making search return an error instead. |
+| 4 | Hash-based "embedding" fallback hides degradation              | Addressed: per-kind counters plus rate-limited warning logs, exposed via `/api/v1/debug/embedding-fallbacks` (§9). Making search return an error instead remains open. |
 | 5 | Inconsistent recency exponents (`freshness` vs `√freshness`)   | Pick one and document it. |
 | 6 | Mixed additive/multiplicative composition in `combined`        | Either go fully multiplicative (boosts as multipliers in `[1, 1+ε]`) or fully additive and clamp the range. |
 | 7 | Velocity hard window at 30 days                                | Drop the window; pure exponential decay is smoother. |
