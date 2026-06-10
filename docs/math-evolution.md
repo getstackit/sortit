@@ -87,7 +87,7 @@ These are non-negotiables established in design discussion:
                        ▼                              ▼
                    embedding e_i ∈ ℝ^D     ┌────────────────────────────┐
                        │                   │ Anchored ridge regression  │
-                       └─────────────────► │ f_i = (TᵀT + λI)⁻¹(Te + λr)│
+                       └─────────────────► │ f_i = (TTᵀ + λI)⁻¹(Te + λr)│
                                            │     ∈ ℝ^T                  │
                                            └────────────────────────────┘
                                                        │
@@ -149,7 +149,7 @@ the closed-form solution:
 
 ```
 f_i = argmin_{f}  ||e_i − Tᵀ f||² + λ ||f − r_i||²
-    = (Tᵀ T + λ I)⁻¹ (T e_i + λ r_i)
+    = (T Tᵀ + λ I)⁻¹ (T e_i + λ r_i)
 ```
 
 Interpretation:
@@ -171,7 +171,9 @@ constraint handling.**
 
 ### 5.2 Computational shape
 
-- Precompute `G = TᵀT + λI ∈ ℝ^(K×K)` once per catalog refresh.
+- Precompute `G = T Tᵀ + λI ∈ ℝ^(K×K)` once per catalog refresh. (With
+  `T ∈ ℝ^(K×D)` — rows are tag embeddings — the K×K Gram matrix is `T Tᵀ`,
+  not `TᵀT`; this is what `internal/issuemath/ridgescore.go` implements.)
 - Per-issue solve: `f_i = G⁻¹ (T e_i + λ r_i)`. Cost: `O(K²)` matrix-vector
   + `O(K)` add + one already-cached inverse.
 - At `K ≈ 200`, each issue is microseconds.
@@ -439,7 +441,7 @@ Listed in dependency order. Each item is a small, reviewable PR.
 
 | # | Change | Files |
 |---|---|---|
-| 1 | Tighten `Σ` to non-negative via `max(0, cos)` | `internal/issuemath/projection.go` |
+| 1 | ~~Tighten `Σ` to non-negative via `max(0, cos)`~~ **Dropped.** Corpus-mean centering landed first (whitepaper §2.0; `internal/issuemath/centering.go`, applied to tag embeddings at the corpus-load boundary before `buildTagCovariance`). Centered cosines are legitimately signed — negative entries now encode genuine anti-correlation between tag directions, and clamping them to zero would destroy that signal. | — |
 | 2 | Add `Negation` and `Provenance` to `TagRelevance` domain type | `internal/issues/*`, migrations |
 | 3 | Analyzer prompt update; structured `negated_tags` parsing | `internal/ai/*`, `internal/issueenrichment/analyze_text.go` |
 | 4 | Cross-verify negation evidence (reuse `resolveEvidenceRanges`) | `internal/issueenrichment/verify.go` |
@@ -483,6 +485,20 @@ Keep the old projection available behind a debug flag for comparison.
 
 Phases 0–3 are the math core. Phase 4 unlocks the planning vision. Phases
 5–6 are product polish that consumes the math.
+
+### 10.1 Implementation status
+
+What is actually in the tree, verified against the code:
+
+| Phase | Status | Where |
+|---|---|---|
+| **Phase 0** | Σ tightening **dropped** (see §9 item 1 — corpus-mean centering made signed cosines legitimate). Drift metric shipped as a restricted cosine (`DriftCosine`, zero-zero components excluded) rather than the `‖f − r‖` norm. | `internal/issuemath/centering.go`, `internal/issuemath/ridgescore.go` |
+| **Phase 1** | **Shipped end-to-end.** Analyzer emits `negated_tags` with evidence; verifier cross-checks quotes before applying; persisted as `Negation` / `NegationProvenance` / `NegationEvidence` / `NegationReason` on `TagRelevance`. Emitting provenances today: `analyzer-negation` and `verifier-dominance` (the §9 item 5 DownRank conversion). `dismiss` and `cooccurrence` provenances are defined but not yet emitted. | `internal/ai/openai.go`, `internal/ai/service.go` (`normalizeNegated`), `internal/issueenrichment/verify.go` (`applyAnalyzerNegations`), `internal/domain/tags.go` |
+| **Phase 2** | **Shadow mode, on demand.** Anchored ridge with per-tag diagonal penalties (scored vs unscored anchors) computed per request behind `GET /api/v1/debug/issues/{id}/ridge`, anchored on signed `r⁺ − r⁻`. Not persisted, not consumed by ranking. | `internal/issuemath/ridgescore.go`, `internal/diagnostics/debug_ridge_score.go`, `internal/scoring/constants.go` (`RidgeAnchorLambda*`) |
+| **Phase 3** | Not started — `factor_model.go` and `synthesizeFactorEmbedding` still power similarity blending. | `internal/issuemath/factor_model.go` |
+| **Phase 4** | Not started — no NMF, no `internal/issuefactors` / themes package. | — |
+| **Phase 5** | Not started. The existing person profile/correlation endpoints predate this design and aggregate `r_i`, not `f_i`. | — |
+| **Phase 6** | Not started — the map still projects PCA-on-X′ (now with Procrustes alignment against the previous layout for orientation stability; see whitepaper §3.3). | `internal/issuemath/projection.go` |
 
 ---
 
@@ -540,7 +556,7 @@ that the question becomes "why not?" rather than "why?"
 | `ê_i` | `Tᵀ Σ r_i`, used for projection direction | Deprecated |
 | `factor_i` | Rank-1 projection of `e_i` onto `û_i` | Deprecated |
 | `residual_i` | `e_i − factor_i`, 1-D orthogonal complement | Deprecated |
-| `f_i` | — | Ridge regression solution `(TᵀT + λI)⁻¹(Te + λr)`, ℝ^T |
+| `f_i` | — | Ridge regression solution `(TTᵀ + λI)⁻¹(Te + λr)`, ℝ^T |
 | `R²_i` | `1 − ‖residual_i‖² / ‖e_i‖²` (rank-1) | `1 − ‖e − Tᵀf‖² / ‖e‖²` (full rank) |
 | `drift(i)` | — | `‖f_i − r_i‖` |
 | `W` | — | NMF issue-by-theme score matrix `∈ ℝ_+^(N×K)` |

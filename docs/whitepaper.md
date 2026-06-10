@@ -263,12 +263,22 @@ similarities, `minEdgeSimilarity` must be re-derived at the same time.
   dominant axes of *smeared tag loadings*, not the principal directions of
   issue embeddings. As Σ → I (which the shrinkage drives in poorly-correlated
   catalogs), this reduces to PCA on plain `X`.
-- **Sign convention is unstable.** If the *first* issue in the input has a
-  negative pre-normalization X projection, the axis is flipped. Adding or
-  removing a single issue at the head of the input can invert the entire map
-  layout. A property-of-the-whole-set convention (e.g., "the tag with
-  largest absolute loading on PC1 must lie at positive X") would be more
-  stable.
+- **Orientation is stabilized in two layers.** Eigenvector signs are
+  arbitrary, and when the top two eigenvalues are close, PC1/PC2 can swap
+  between recomputes. First, a deterministic loading-sign convention is
+  applied: the tag with the largest absolute loading on each principal axis
+  must load positively, making orientation a property of the data rather
+  than input order (an earlier version flipped axes based on whichever
+  issue happened to be first in the input). Second, when a previous layout
+  exists with ≥ 3 shared issues, the raw projected coordinates are aligned
+  to it by orthogonal Procrustes: `Q = UVᵀ` from the SVD of the 2×2
+  cross-covariance of the centered shared points, with reflections allowed
+  so both sign flips and component swaps are corrected. The reference is
+  the previous *normalized* layout (what users saw); only the orthogonal
+  part is kept, since the per-axis robust normalization re-establishes
+  translation and scale. The previous layout is held in an in-memory
+  last-layout cache on the projection loader and seeded from persisted
+  projections on load.
 - **Robust normalization is conditionally robust.** If the IQR collapses to
   zero, the function falls back to min-max — which is *not* robust. With
   highly clustered loadings (most issues sharing the same two tags) this
@@ -545,8 +555,13 @@ correctness risk**: if persisted embeddings silently disappear for any
 reason, search and map quality will degrade in a way that's hard to detect
 because the system keeps producing results.
 
-A worthwhile defensive measure: surface a warning metric whenever
-`embeddingFromText` is used in a non-test code path.
+The fallback is therefore instrumented: each time a hash pseudo-embedding
+stands in for a missing persisted embedding, an in-process counter is
+incremented by kind (issue vs tag) and a rate-limited warning (once per
+minute per kind) is logged. Cumulative counts are exposed via
+`GET /api/v1/debug/embedding-fallbacks` — non-zero values on a production
+install mean embeddings are silently missing and quality is degraded. The
+fallback behavior itself is unchanged.
 
 ---
 
@@ -572,8 +587,8 @@ A worthwhile defensive measure: surface a warning metric whenever
 |---|----------------------------------------------------------------|--------------------------------------------------------------|
 | 1 | Single-direction "factor model" is oversold                    | Either embrace multi-direction (top-k tags as basis vectors) or rename to "tag-direction projection". |
 | 2 | Shrinkage `α = 1 − mean(off-diag²)` is heuristic               | Replace with Ledoit-Wolf or document explicitly as a stability hack. |
-| 3 | Map sign-convention depends on first issue                     | Use a global property (e.g., largest absolute tag loading on PC1 is positive). |
-| 4 | Hash-based "embedding" fallback hides degradation              | Emit a metric and a log when it fires; consider making search return an error instead. |
+| 3 | Map sign-convention depends on first issue                     | Addressed: deterministic largest-absolute-loading sign convention plus Procrustes alignment against the previous layout (§3.3). |
+| 4 | Hash-based "embedding" fallback hides degradation              | Addressed: per-kind counters plus rate-limited warning logs, exposed via `/api/v1/debug/embedding-fallbacks` (§9). Making search return an error instead remains open. |
 | 5 | Inconsistent recency exponents (`freshness` vs `√freshness`)   | Pick one and document it. |
 | 6 | Mixed additive/multiplicative composition in `combined`        | Either go fully multiplicative (boosts as multipliers in `[1, 1+ε]`) or fully additive and clamp the range. |
 | 7 | Velocity hard window at 30 days                                | Drop the window; pure exponential decay is smoother. |
@@ -582,7 +597,30 @@ A worthwhile defensive measure: surface a warning metric whenever
 | 10 | `k = 8` in specificity is fixed                                | Make adaptive (`min(8, ⌈√n⌉)` or similar). |
 | 11 | Embedding anisotropy inflated every cosine-derived quantity   | Addressed: runtime corpus-mean centering at the corpus-load boundary (§2.0), with revision-cached means; map edges deliberately excluded (§3.2). |
 
-### 10.3 Things to leave alone
+### 10.3 Already landed from the evolution plan
+
+This paper describes the *current* math; [math-evolution.md](./math-evolution.md)
+describes where it is heading. Two pieces of that plan have since shipped
+and are part of the current system:
+
+- **Signed relevance (`r⁻`) is end-to-end.** The analyzer emits
+  `negated_tags` with verbatim evidence quotes
+  (`internal/ai/openai.go`), the verifier cross-checks the quotes against
+  the source text before applying them
+  (`internal/issueenrichment/verify.go` `applyAnalyzerNegations`), and the
+  result persists as `Negation` / `NegationProvenance` /
+  `NegationEvidence` on `TagRelevance`. Verifier dominance also emits a
+  negation instead of only multiplying relevance down.
+- **Anchored ridge regression exists in shadow mode.** The
+  `f = (TTᵀ + Λ)⁻¹(Te + Λr)` solve with per-tag anchors
+  (`internal/issuemath/ridgescore.go`) is computed on demand behind
+  `GET /api/v1/debug/issues/{id}/ridge`, anchored on signed `r⁺ − r⁻`,
+  along with a drift cosine between anchor and refined scores. It is not
+  persisted and not consumed by ranking.
+
+See math-evolution.md §10.1 for the full phase-by-phase status.
+
+### 10.4 Things to leave alone
 
 - The decision to keep edges on the map driven by raw embedding similarity
   while positions come from tag-factor PCA. This is a clean separation of

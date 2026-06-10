@@ -1,6 +1,7 @@
 package issuemath
 
 import (
+	"fmt"
 	"math"
 	"testing"
 
@@ -88,6 +89,136 @@ func TestWeightedPCAProducesValidPositions(t *testing.T) {
 		}
 		if pos.X < 0 || pos.X > 1 || pos.Y < 0 || pos.Y > 1 {
 			t.Fatalf("position out of range for %s: %+v", item.ID, pos)
+		}
+	}
+}
+
+// stabilityFixtureTags and stabilityFixture build a deterministic corpus
+// with three well-separated tag clusters, so the top two eigenvalues are
+// clearly separated and layout differences come from the pipeline rather
+// than near-degenerate PCA.
+var stabilityFixtureTags = []string{"search", "backend", "bug", "frontend", "perf", "infra"}
+
+func stabilityFixture() []issues.Issue {
+	clusters := [][2]string{
+		{"search", "backend"},
+		{"bug", "frontend"},
+		{"perf", "infra"},
+	}
+	items := make([]issues.Issue, 0, 12)
+	for i := range 12 {
+		pair := clusters[i%3]
+		jitter := float64(i) * 0.02
+		items = append(items, issues.Issue{
+			ID:  fmt.Sprintf("issue-%d", i),
+			Raw: fmt.Sprintf("A reasonably detailed description of issue number %d touching %s and %s.", i, pair[0], pair[1]),
+			TagScores: []issues.TagRelevance{
+				{Tag: pair[0], Relevance: 0.9 - jitter},
+				{Tag: pair[1], Relevance: 0.6 + jitter},
+			},
+		})
+	}
+	return items
+}
+
+func TestComputePositionsDeterministic(t *testing.T) {
+	items := stabilityFixture()
+	first, err := ComputePositions(items, stabilityFixtureTags, nil)
+	if err != nil {
+		t.Fatalf("ComputePositions: %v", err)
+	}
+	second, err := ComputePositions(items, stabilityFixtureTags, nil)
+	if err != nil {
+		t.Fatalf("ComputePositions: %v", err)
+	}
+	for id, a := range first {
+		b := second[id]
+		if a != b {
+			t.Fatalf("same input produced different positions for %s: %+v vs %+v", id, a, b)
+		}
+	}
+}
+
+func TestComputePositionsOrderInvariant(t *testing.T) {
+	items := stabilityFixture()
+	reversed := make([]issues.Issue, len(items))
+	for i, item := range items {
+		reversed[len(items)-1-i] = item
+	}
+
+	forward, err := ComputePositions(items, stabilityFixtureTags, nil)
+	if err != nil {
+		t.Fatalf("ComputePositions: %v", err)
+	}
+	backward, err := ComputePositions(reversed, stabilityFixtureTags, nil)
+	if err != nil {
+		t.Fatalf("ComputePositions: %v", err)
+	}
+
+	const tolerance = 1e-6 // floating-point summation order differs
+	for id, a := range forward {
+		b := backward[id]
+		if math.Abs(a.X-b.X) > tolerance || math.Abs(a.Y-b.Y) > tolerance {
+			t.Errorf("reversed input moved %s: %+v vs %+v", id, a, b)
+		}
+	}
+}
+
+func TestComputePositionsAlignedAppendedIssueBarelyMovesExisting(t *testing.T) {
+	items := stabilityFixture()
+	previous, err := ComputePositions(items, stabilityFixtureTags, nil)
+	if err != nil {
+		t.Fatalf("ComputePositions: %v", err)
+	}
+
+	extended := append(append([]issues.Issue(nil), items...), issues.Issue{
+		ID:  "issue-new",
+		Raw: "A freshly filed issue about backend search latency regressions.",
+		TagScores: []issues.TagRelevance{
+			{Tag: "search", Relevance: 0.8},
+			{Tag: "perf", Relevance: 0.5},
+		},
+	})
+
+	aligned, err := ComputePositionsAligned(extended, stabilityFixtureTags, nil, previous)
+	if err != nil {
+		t.Fatalf("ComputePositionsAligned: %v", err)
+	}
+
+	const epsilon = 0.05
+	for _, item := range items {
+		before, after := previous[item.ID], aligned[item.ID]
+		if math.Abs(before.X-after.X) > epsilon || math.Abs(before.Y-after.Y) > epsilon {
+			t.Errorf("appending one issue moved %s by more than %v: %+v -> %+v", item.ID, epsilon, before, after)
+		}
+	}
+}
+
+func TestComputePositionsAlignedRecoversReflectedLayout(t *testing.T) {
+	// If the previous layout is a mirror image of what PCA would produce,
+	// the orthogonal Procrustes step must pick the reflection and land
+	// issues back on their previous positions.
+	items := stabilityFixture()
+	base, err := ComputePositions(items, stabilityFixtureTags, nil)
+	if err != nil {
+		t.Fatalf("ComputePositions: %v", err)
+	}
+
+	mirrored := make(map[string]Position, len(base))
+	for id, p := range base {
+		mirrored[id] = Position{X: 1 - p.X, Y: p.Y}
+	}
+
+	aligned, err := ComputePositionsAligned(items, stabilityFixtureTags, nil, mirrored)
+	if err != nil {
+		t.Fatalf("ComputePositionsAligned: %v", err)
+	}
+
+	const epsilon = 0.02
+	for id, want := range mirrored {
+		got := aligned[id]
+		if math.Abs(got.X-want.X) > epsilon || math.Abs(got.Y-want.Y) > epsilon {
+			t.Errorf("alignment failed to recover mirrored layout for %s: want %+v, got %+v", id, want, got)
 		}
 	}
 }

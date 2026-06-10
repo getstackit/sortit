@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"log/slog"
+	"math"
 	"testing"
 
 	"sortit/internal/issues"
@@ -140,6 +141,55 @@ func TestMapProjectionLoaderPersistsAndReloadsProjection(t *testing.T) {
 	}
 	if len(second.MapIssues) != len(first.MapIssues) {
 		t.Fatalf("expected reloaded corpus to match original issue count, got %d want %d", len(second.MapIssues), len(first.MapIssues))
+	}
+}
+
+func TestMapProjectionLoaderAlignsRebuildsToPreviousLayout(t *testing.T) {
+	ctx := context.Background()
+	store := issues.NewInMemoryStore(issues.FixtureIssues())
+	catalog := tags.NewCatalogService(nil, tags.FallbackAnalyzer(nil), slog.Default())
+
+	// No Projections persistence: every Current call rebuilds, exercising
+	// the in-memory previous-layout cache on its own.
+	loader := &MapProjectionLoader{
+		Store:     store,
+		Catalog:   catalog,
+		Revisions: issues.NewRevisionTracker(),
+	}
+
+	first, err := loader.Current(ctx)
+	if err != nil {
+		t.Fatalf("first current: %v", err)
+	}
+	if len(first.MapIssues) == 0 {
+		t.Fatal("expected map issues in first projection")
+	}
+	if len(loader.previousLayout()) != len(first.MapIssues) {
+		t.Fatalf("expected previous layout cache to hold %d positions, got %d", len(first.MapIssues), len(loader.previousLayout()))
+	}
+
+	// Replace the remembered layout with a mirror image. If the cache is
+	// threaded into the rebuild, Procrustes alignment must reproduce the
+	// mirrored orientation instead of the data-driven one.
+	mirrored := make(map[string]issuemap.Position, len(first.MapIssues))
+	for _, item := range first.MapIssues {
+		mirrored[item.ID] = issuemap.Position{X: 1 - item.X, Y: item.Y}
+	}
+	loader.prevMu.Lock()
+	loader.prevPositions = mirrored
+	loader.prevMu.Unlock()
+
+	second, err := loader.Current(ctx)
+	if err != nil {
+		t.Fatalf("second current: %v", err)
+	}
+
+	const epsilon = 0.05
+	for _, item := range second.MapIssues {
+		want := mirrored[item.ID]
+		if math.Abs(item.X-want.X) > epsilon || math.Abs(item.Y-want.Y) > epsilon {
+			t.Errorf("rebuild ignored previous layout for %s: want near (%v, %v), got (%v, %v)", item.ID, want.X, want.Y, item.X, item.Y)
+		}
 	}
 }
 

@@ -82,6 +82,18 @@ func BuildMapProjectionProfiled(
 	storeIssues []issues.MapProjectionIssue,
 	storeTags []issues.Tag,
 ) (MapProjection, BuildMapProjectionProfile, error) {
+	return BuildMapProjectionProfiledAligned(storeIssues, storeTags, nil)
+}
+
+// BuildMapProjectionProfiledAligned builds the projection and aligns the
+// computed layout to previousPositions (the last rendered layout, possibly
+// nil) so a rebuild doesn't reorient the map. See
+// issuemath.ComputePositionsAligned.
+func BuildMapProjectionProfiledAligned(
+	storeIssues []issues.MapProjectionIssue,
+	storeTags []issues.Tag,
+	previousPositions map[string]Position,
+) (MapProjection, BuildMapProjectionProfile, error) {
 	startedAt := time.Now()
 	profile := BuildMapProjectionProfile{
 		IssueCount:     len(storeIssues),
@@ -136,7 +148,7 @@ func BuildMapProjectionProfiled(
 
 	if len(runtimeIssues) > 0 {
 		stepStartedAt = time.Now()
-		computedPositions, err := issuemath.ComputePositions(runtimeIssues, tagNames, corpus.tagEmbeddings)
+		computedPositions, err := issuemath.ComputePositionsAligned(runtimeIssues, tagNames, corpus.tagEmbeddings, previousPositions)
 		if err != nil {
 			return MapProjection{}, BuildMapProjectionProfile{}, err
 		}

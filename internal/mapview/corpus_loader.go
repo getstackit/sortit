@@ -24,6 +24,37 @@ type MapProjectionLoader struct {
 	Projections issues.MapProjectionStorePersistence
 
 	mu sync.Mutex
+
+	// prevPositions is the layout from the most recent projection this
+	// loader produced or loaded, regardless of revision. It seeds the
+	// Procrustes alignment on the next rebuild so a revision bump doesn't
+	// reorient the map (in-memory only, mirroring the cache pattern in
+	// internal/tagcooccurrence: after a cold start the first rebuild has
+	// no reference and orientation falls back to the deterministic
+	// loading-sign convention).
+	prevMu        sync.Mutex
+	prevPositions map[string]issuemap.Position
+}
+
+// rememberLayout stashes a projection's positions as the alignment
+// reference for the next rebuild.
+func (l *MapProjectionLoader) rememberLayout(projection issuemap.MapProjection) {
+	if len(projection.MapIssues) == 0 {
+		return
+	}
+	positions := make(map[string]issuemap.Position, len(projection.MapIssues))
+	for _, item := range projection.MapIssues {
+		positions[item.ID] = issuemap.Position{X: item.X, Y: item.Y}
+	}
+	l.prevMu.Lock()
+	l.prevPositions = positions
+	l.prevMu.Unlock()
+}
+
+func (l *MapProjectionLoader) previousLayout() map[string]issuemap.Position {
+	l.prevMu.Lock()
+	defer l.prevMu.Unlock()
+	return l.prevPositions
 }
 
 type MapProjectionLoadStep struct {
@@ -78,6 +109,7 @@ func (l *MapProjectionLoader) current(ctx context.Context, captureProfile bool) 
 
 	stepStartedAt := time.Now()
 	if projection, err := l.loadProjection(ctx, revision); err == nil {
+		l.rememberLayout(projection)
 		if captureProfile {
 			profile.CacheHit = true
 			profile.Steps = append(profile.Steps, MapProjectionLoadStep{
@@ -101,6 +133,7 @@ func (l *MapProjectionLoader) current(ctx context.Context, captureProfile bool) 
 
 	stepStartedAt = time.Now()
 	if projection, err := l.loadProjection(ctx, revision); err == nil {
+		l.rememberLayout(projection)
 		if captureProfile {
 			profile.CacheHit = true
 			profile.Steps = append(profile.Steps, MapProjectionLoadStep{
@@ -123,6 +156,7 @@ func (l *MapProjectionLoader) current(ctx context.Context, captureProfile bool) 
 	if err != nil {
 		return issuemap.MapProjection{}, MapProjectionLoadProfile{}, err
 	}
+	l.rememberLayout(projection)
 	if captureProfile {
 		profile.DetailedLoad = rebuildProfile.load
 		profile.Build = rebuildProfile.build
@@ -194,7 +228,7 @@ func (l *MapProjectionLoader) rebuildProfiled(ctx context.Context) (issuemap.Map
 		return issuemap.MapProjection{}, rebuildProfile{}, err
 	}
 
-	projection, buildProfile, err := issuemap.BuildMapProjectionProfiled(items, tags)
+	projection, buildProfile, err := issuemap.BuildMapProjectionProfiledAligned(items, tags, l.previousLayout())
 	if err != nil {
 		return issuemap.MapProjection{}, rebuildProfile{}, err
 	}

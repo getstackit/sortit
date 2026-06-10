@@ -78,6 +78,7 @@ type Server struct {
 	debugIssueR2         diagnostics.DebugIssueR2Handler
 	debugTagCooccurrence diagnostics.DebugTagCooccurrenceHandler
 	debugRidgeScore      diagnostics.DebugRidgeScoreHandler
+	debugEmbeddingFalls  diagnostics.DebugEmbeddingFallbacksHandler
 	exploreIssue         mapview.ExploreIssueHandler
 	getPersonProfile     people.GetPersonProfileHandler
 	getPersonDetail      people.GetPersonDetailHandler
@@ -278,6 +279,7 @@ func (s *Server) registerDedicatedAPIRoutes(r chi.Router) {
 			r.Get("/issues/{id}/r2", s.handleDebugIssueR2)
 			r.Get("/tag-cooccurrence", s.handleDebugTagCooccurrence)
 			r.Get("/issues/{id}/ridge", s.handleDebugRidgeScore)
+			r.Get("/embedding-fallbacks", s.handleDebugEmbeddingFallbacks)
 		})
 	})
 }
@@ -321,6 +323,7 @@ func (s *Server) registerUIRoutes(r chi.Router) {
 			r.Get("/issues/{id}/r2", s.handleDebugIssueR2)
 			r.Get("/tag-cooccurrence", s.handleDebugTagCooccurrence)
 			r.Get("/issues/{id}/ridge", s.handleDebugRidgeScore)
+			r.Get("/embedding-fallbacks", s.handleDebugEmbeddingFallbacks)
 		})
 	})
 }
@@ -691,6 +694,7 @@ func NewServer(cfg ServerConfig) *Server {
 		debugIssueR2:         diagnostics.DebugIssueR2Handler{Store: store, Catalog: catalog},
 		debugTagCooccurrence: diagnostics.DebugTagCooccurrenceHandler{Store: store, Cache: cooccurrenceCache},
 		debugRidgeScore:      diagnostics.DebugRidgeScoreHandler{Store: store, Catalog: catalog, Centering: centeringCache},
+		debugEmbeddingFalls:  diagnostics.DebugEmbeddingFallbacksHandler{},
 		getPersonProfile:     people.GetPersonProfileHandler{Store: store, Catalog: catalog},
 		getPersonDetail:      people.GetPersonDetailHandler{Store: store, Catalog: catalog},
 		workCorrelations:     people.WorkCorrelationsHandler{Store: store, Catalog: catalog},

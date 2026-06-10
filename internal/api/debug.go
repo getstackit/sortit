@@ -199,6 +199,16 @@ func (s *Server) handleDebugTagCooccurrence(w http.ResponseWriter, r *http.Reque
 	writeJSON(w, http.StatusOK, result)
 }
 
+func (s *Server) handleDebugEmbeddingFallbacks(w http.ResponseWriter, r *http.Request) {
+	result, err := s.debugEmbeddingFalls.Handle(r.Context())
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+
+	writeJSON(w, http.StatusOK, result)
+}
+
 func (s *Server) handleDebugRidgeScore(w http.ResponseWriter, r *http.Request) {
 	id := chi.URLParam(r, "id")
 	if id == "" {
