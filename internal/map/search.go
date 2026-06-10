@@ -41,6 +41,10 @@ type searchConfig struct {
 	// a candidate has any of these tags at strong relevance, the score
 	// is penalized.
 	antiCorrelators map[string]float64
+	// corpusMeans, when non-nil, are the revision-cached full-corpus
+	// embedding means used for centering. Required when storeIssues is a
+	// retrieved subset, whose own mean would erase the query signal.
+	corpusMeans *issuemath.CorpusMeans
 }
 
 func WithOffset(offset int) SearchOption {
@@ -76,6 +80,18 @@ func WithAntiCorrelators(tags map[string]float64) SearchOption {
 			return
 		}
 		c.antiCorrelators = tags
+	}
+}
+
+// WithCorpusMeans supplies revision-cached full-corpus embedding means for
+// centering. Without this option the means are derived from the supplied
+// issue set, which is only correct when that set is the full corpus.
+func WithCorpusMeans(means issuemath.CorpusMeans) SearchOption {
+	return func(c *searchConfig) {
+		if means.IsZero() {
+			return
+		}
+		c.corpusMeans = &means
 	}
 }
 
@@ -117,7 +133,9 @@ func SearchFromQueryWithTags(
 	}
 
 	_, visible, _ := deriveRelationshipSemantics(storeIssues)
-	mapIssues, tagNames, issueEmbeddings, tagEmbeddings := runtimeMapInputs(storeIssues, storeTags)
+	corpus := runtimeMapInputsWithMeans(storeIssues, storeTags, cfg.corpusMeans)
+	mapIssues, tagNames := corpus.issues, corpus.tagNames
+	issueEmbeddings, tagEmbeddings := corpus.issueEmbeddings, corpus.tagEmbeddings
 	decomp := issuemath.ComputeFactorDecomposition(mapIssues, tagNames, issueEmbeddings, tagEmbeddings)
 
 	querySummary := SearchQuery{
@@ -133,6 +151,9 @@ func SearchFromQueryWithTags(
 			TagScores: querySummary.Tags,
 		}, tagEmbeddings)
 	}
+	// Center the query with the corpus means — never with statistics derived
+	// from the query or the candidate set itself.
+	queryVector = issuemath.CenterVector(queryVector, corpus.means.Issue)
 
 	// Fall back to legacy factor vectors when decomposition didn't produce per-issue vectors.
 	useDecomp := decomp.Decomposed()

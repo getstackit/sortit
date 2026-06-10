@@ -161,7 +161,10 @@ func computeMetrics(t *testing.T) Baseline {
 		recallSum += RecallAtK(ranked, judgment.Expected, evalK)
 	}
 
-	decomp := issuemath.ComputeFactorDecomposition(storeIssues, corpus.TagNames(), corpus.IssueEmbeddings(), corpus.TagEmbeddings())
+	// Mirror the runtime corpus-load boundary: the map/search layer centers
+	// issue and tag embeddings against the corpus means before decomposing.
+	issueEmbeddings, tagEmbeddings, _ := issuemath.CenterEmbeddings(corpus.IssueEmbeddings(), corpus.TagEmbeddings())
+	decomp := issuemath.ComputeFactorDecomposition(storeIssues, corpus.TagNames(), issueEmbeddings, tagEmbeddings)
 	if !decomp.Decomposed() {
 		t.Fatal("factor decomposition fell back to hardcoded weights; the corpus should always be large enough to decompose")
 	}

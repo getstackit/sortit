@@ -81,6 +81,7 @@ const (
 	MaxFactorWeight           = 0.95 // ceiling: never fully ignore residuals
 	TagCorrelationFactorNudge = 0.1  // additional factor weight when query matches a tag
 	MinDecompositionIssues    = 5    // below this, fall back to hardcoded weights
+	MinCenteringVectors       = 5    // below this, skip corpus-mean centering: the mean is noise
 )
 
 // Region-aware search. Applied when a search query identifies a target

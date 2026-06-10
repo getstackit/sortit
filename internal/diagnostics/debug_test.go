@@ -70,12 +70,14 @@ func TestDebugFactorWeightsReportsFallbackState(t *testing.T) {
 func TestDebugFactorWeightsIncludesLowR2IssueStatus(t *testing.T) {
 	ctx := context.Background()
 	store := issues.NewInMemoryStore([]issues.Issue{
+		// Embeddings sum to zero so runtime corpus-mean centering is a no-op
+		// and the test geometry holds exactly.
 		{ID: "issue-a", Raw: "a", Status: issues.StatusOpen, TagScores: []issues.TagRelevance{{Tag: "alpha", Relevance: 1}}, Embedding: unitVec64([]float64{1, 0, 0, 0})},
-		{ID: "issue-b", Raw: "b", Status: issues.StatusOpen, TagScores: []issues.TagRelevance{{Tag: "alpha", Relevance: 1}}, Embedding: unitVec64([]float64{1, 0, 0, 0})},
+		{ID: "issue-b", Raw: "b", Status: issues.StatusOpen, TagScores: []issues.TagRelevance{{Tag: "alpha", Relevance: 1}}, Embedding: unitVec64([]float64{-1, 0, 0, 0})},
 		{ID: "issue-c", Raw: "c", Status: issues.StatusOpen, TagScores: []issues.TagRelevance{{Tag: "alpha", Relevance: 1}}, Embedding: unitVec64([]float64{1, 0, 0, 0})},
-		{ID: "issue-d", Raw: "d", Status: issues.StatusOpen, TagScores: []issues.TagRelevance{{Tag: "alpha", Relevance: 1}}, Embedding: unitVec64([]float64{1, 0, 0, 0})},
+		{ID: "issue-d", Raw: "d", Status: issues.StatusOpen, TagScores: []issues.TagRelevance{{Tag: "alpha", Relevance: 1}}, Embedding: unitVec64([]float64{-1, 0, 0, 0})},
 		{ID: "issue-open-low", Raw: "open low", Status: issues.StatusOpen, TagScores: []issues.TagRelevance{{Tag: "alpha", Relevance: 1}}, Embedding: unitVec64([]float64{0, 1, 0, 0})},
-		{ID: "issue-closed-low", Raw: "closed low", Status: issues.StatusClosed, TagScores: []issues.TagRelevance{{Tag: "alpha", Relevance: 1}}, Embedding: unitVec64([]float64{0, 1, 0, 0})},
+		{ID: "issue-closed-low", Raw: "closed low", Status: issues.StatusClosed, TagScores: []issues.TagRelevance{{Tag: "alpha", Relevance: 1}}, Embedding: unitVec64([]float64{0, -1, 0, 0})},
 	})
 	tagStore := &debugTagStore{}
 	catalog := tags.NewCatalogService(tagStore, nil, nil)
@@ -107,10 +109,19 @@ func TestDebugFactorWeightsBuildsActionableReviewQueue(t *testing.T) {
 
 	ctx := context.Background()
 	store := issues.NewInMemoryStore([]issues.Issue{
+		// Closed ballast issues balance the open fixtures so the corpus mean
+		// is zero and runtime centering is a no-op (the review queue only
+		// considers open issues, so the ballast stays out of assertions).
 		{ID: "issue-a", Raw: "a", Status: issues.StatusOpen, TagScores: []issues.TagRelevance{{Tag: "alpha", Relevance: 1}}, Embedding: unitVec64([]float64{1, 0, 0, 0})},
 		{ID: "issue-b", Raw: "b", Status: issues.StatusOpen, TagScores: []issues.TagRelevance{{Tag: "alpha", Relevance: 1}}, Embedding: unitVec64([]float64{1, 0, 0, 0})},
 		{ID: "issue-c", Raw: "c", Status: issues.StatusOpen, TagScores: []issues.TagRelevance{{Tag: "alpha", Relevance: 1}}, Embedding: unitVec64([]float64{1, 0, 0, 0})},
 		{ID: "issue-d", Raw: "d", Status: issues.StatusOpen, TagScores: []issues.TagRelevance{{Tag: "alpha", Relevance: 1}}, Embedding: unitVec64([]float64{1, 0, 0, 0})},
+		{ID: "issue-ballast-a", Raw: "ballast", Status: issues.StatusClosed, TagScores: []issues.TagRelevance{{Tag: "alpha", Relevance: 1}}, Embedding: unitVec64([]float64{-1, 0, 0, 0})},
+		{ID: "issue-ballast-b", Raw: "ballast", Status: issues.StatusClosed, TagScores: []issues.TagRelevance{{Tag: "alpha", Relevance: 1}}, Embedding: unitVec64([]float64{-1, 0, 0, 0})},
+		{ID: "issue-ballast-c", Raw: "ballast", Status: issues.StatusClosed, TagScores: []issues.TagRelevance{{Tag: "alpha", Relevance: 1}}, Embedding: unitVec64([]float64{-1, 0, 0, 0})},
+		{ID: "issue-ballast-d", Raw: "ballast", Status: issues.StatusClosed, TagScores: []issues.TagRelevance{{Tag: "alpha", Relevance: 1}}, Embedding: unitVec64([]float64{-1, 0, 0, 0})},
+		{ID: "issue-ballast-e", Raw: "ballast", Status: issues.StatusClosed, TagScores: []issues.TagRelevance{{Tag: "alpha", Relevance: 1}}, Embedding: unitVec64([]float64{0, -1, 0, 0})},
+		{ID: "issue-ballast-f", Raw: "ballast", Status: issues.StatusClosed, TagScores: []issues.TagRelevance{{Tag: "alpha", Relevance: 1}}, Embedding: unitVec64([]float64{0, -1, 0, 0})},
 		{
 			ID:     openReviewIssueID,
 			Raw:    "beta concept hidden behind alpha tag",
@@ -193,11 +204,14 @@ func TestDebugFactorWeightsBuildsActionableReviewQueue(t *testing.T) {
 func TestDebugIssueR2ReportsRawNorms(t *testing.T) {
 	ctx := context.Background()
 	store := issues.NewInMemoryStore([]issues.Issue{
-		{ID: "pure-a", Raw: "test", TagScores: []issues.TagRelevance{{Tag: "alpha", Relevance: 1}}, Embedding: unitVec64([]float64{1, 0, 0, 0})},
+		// Embeddings sum to zero so runtime corpus-mean centering is a no-op
+		// and the raw-norm expectations hold exactly.
+		{ID: "pure-a", Raw: "test", TagScores: []issues.TagRelevance{{Tag: "alpha", Relevance: 1}}, Embedding: unitVec64([]float64{0, 0, 0, 1})},
+		{ID: "pure-b", Raw: "test", TagScores: []issues.TagRelevance{{Tag: "alpha", Relevance: 1}}, Embedding: unitVec64([]float64{0, 0, 0, -1})},
 		{ID: "mixed-a", Raw: "test", TagScores: []issues.TagRelevance{{Tag: "alpha", Relevance: 1}}, Embedding: unitVec64([]float64{1, 0, 1, 0})},
-		{ID: "mixed-b", Raw: "test", TagScores: []issues.TagRelevance{{Tag: "alpha", Relevance: 1}}, Embedding: unitVec64([]float64{1, 0, 1, 0})},
-		{ID: "mixed-c", Raw: "test", TagScores: []issues.TagRelevance{{Tag: "alpha", Relevance: 1}}, Embedding: unitVec64([]float64{1, 0, 1, 0})},
-		{ID: "mixed-d", Raw: "test", TagScores: []issues.TagRelevance{{Tag: "alpha", Relevance: 1}}, Embedding: unitVec64([]float64{1, 0, 1, 0})},
+		{ID: "mixed-b", Raw: "test", TagScores: []issues.TagRelevance{{Tag: "alpha", Relevance: 1}}, Embedding: unitVec64([]float64{-1, 0, -1, 0})},
+		{ID: "mixed-c", Raw: "test", TagScores: []issues.TagRelevance{{Tag: "alpha", Relevance: 1}}, Embedding: unitVec64([]float64{1, 0, -1, 0})},
+		{ID: "mixed-d", Raw: "test", TagScores: []issues.TagRelevance{{Tag: "alpha", Relevance: 1}}, Embedding: unitVec64([]float64{-1, 0, 1, 0})},
 	})
 	tagStore := &debugTagStore{}
 	catalog := tags.NewCatalogService(tagStore, nil, nil)
