@@ -98,3 +98,19 @@ const (
 	ProjectionWeightFloor = 0.1 // minimum per-issue weight in PCA covariance
 	DefaultMaturity       = 0.5 // maturity fallback when lifecycle metrics are absent
 )
+
+// Anchored ridge regression (debug/shadow only — not wired into ranking).
+// Per-tag penalties for the diagonal solve f = (TTᵀ + Λ)⁻¹(Te + Λr).
+const (
+	// RidgeAnchorLambdaScored anchors tags where the analyzer expressed an
+	// opinion (a TagRelevance entry exists, including negation-only ones).
+	// Strong enough that the ridge shrinks toward the analyzer's judgment;
+	// small enough that the embedding can still shift it noticeably.
+	RidgeAnchorLambdaScored = 0.5
+	// RidgeAnchorLambdaUnscored anchors catalog tags with no analyzer
+	// opinion. Deliberately weak: an absent score means "no opinion", not
+	// evidence of absence, so these tags float almost freely toward the
+	// least-squares fit — which is what makes missing-tag detection
+	// (f_k ≫ r_k) possible.
+	RidgeAnchorLambdaUnscored = 0.05
+)
