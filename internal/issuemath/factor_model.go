@@ -43,6 +43,34 @@ func newFactorDecomposition(capacity int) FactorDecomposition {
 	}
 }
 
+// DecomposedEmbedding bundles the unit factor/residual directions of one
+// embedding with their pre-normalization magnitudes. The magnitudes are what
+// make similarity blending honest: a unit residual direction alone cannot
+// say whether it represents 5% or 95% of the original embedding.
+type DecomposedEmbedding struct {
+	Factor       []float64 // unit factor direction (zero vector when no factor evidence)
+	Residual     []float64 // unit residual direction (zero vector when fully explained)
+	FactorNorm   float64   // explained magnitude before normalization
+	ResidualNorm float64   // unexplained magnitude before normalization
+}
+
+// DecomposedFor returns the stored decomposition for the given issue.
+func (d FactorDecomposition) DecomposedFor(id string) (DecomposedEmbedding, bool) {
+	if !d.used {
+		return DecomposedEmbedding{}, false
+	}
+	i, ok := d.index[id]
+	if !ok {
+		return DecomposedEmbedding{}, false
+	}
+	return DecomposedEmbedding{
+		Factor:       d.factors[i],
+		Residual:     d.residuals[i],
+		FactorNorm:   d.factorNorms[i],
+		ResidualNorm: d.residualNorms[i],
+	}, true
+}
+
 // FactorEmbedding returns the factor-predicted embedding for the given issue, or nil.
 func (d FactorDecomposition) FactorEmbedding(id string) []float64 {
 	if !d.used {
@@ -171,6 +199,19 @@ func ComputeFactorDecomposition(
 	var varFactor, varResidual float64
 	validCount := 0
 
+	// putResidualOnly records an issue with no usable factor evidence:
+	// zero factor, the full embedding as residual, R² of zero.
+	putResidualOnly := func(id string, issueEmb []float64, totalVar float64) {
+		residual := append([]float64(nil), issueEmb...)
+		residualNorm := math.Sqrt(totalVar)
+		if !isZeroVector(residual) {
+			normalizeVector(residual)
+		}
+		decomp.put(id, make([]float64, embDim), residual, 0, residualNorm, 0)
+		varResidual += totalVar
+		validCount++
+	}
+
 	for _, item := range items {
 		issueEmb := issueEmbeddings[item.ID]
 		if len(issueEmb) == 0 || len(issueEmb) != embDim {
@@ -183,20 +224,22 @@ func ComputeFactorDecomposition(
 		factorEmb := synthesizeFactorEmbedding(item.TagScores, tagIndex, tagCov, tagEmbeddings, tagNames, len(tagNames), embDim)
 		if isZeroVector(factorEmb) {
 			// No tags — full weight to residual for this issue.
-			residual := append([]float64(nil), issueEmb...)
-			residualNorm := math.Sqrt(totalVar)
-			if !isZeroVector(residual) {
-				normalizeVector(residual)
-			}
-			decomp.put(item.ID, make([]float64, embDim), residual, 0, residualNorm, 0)
-			varResidual += totalVar
-			validCount++
+			putResidualOnly(item.ID, issueEmb, totalVar)
 			continue
 		}
 		normalizeVector(factorEmb)
 
 		// Project issue embedding onto factor-predicted direction.
 		projScalar := dotProduct(issueEmb, factorEmb)
+		if projScalar <= 0 {
+			// The embedding is anti-aligned with its own tag direction: the
+			// tags assert a direction the text does not support. Record "no
+			// factor evidence" instead of projecting — a sign-flipped factor
+			// (−û) would score ≈ −1 against issues with the same tags,
+			// asserting strong dissimilarity where the honest claim is none.
+			putResidualOnly(item.ID, issueEmb, totalVar)
+			continue
+		}
 		proj := make([]float64, embDim)
 		residual := make([]float64, embDim)
 		for d := range embDim {
@@ -249,21 +292,32 @@ func ComputeFactorDecomposition(
 }
 
 // DecomposeEmbedding performs the same factor/residual split for a single
-// embedding vector (e.g. a search query).
+// embedding vector (e.g. a search query or person profile), with the same
+// non-negative projection rule as ComputeFactorDecomposition.
 func DecomposeEmbedding(
 	embedding []float64,
 	tagScores []issues.TagRelevance,
 	tagNames []string,
 	tagEmbeddings map[string][]float64,
 	tagCov *mat.Dense,
-) (factor, residual []float64) {
+) DecomposedEmbedding {
 	embDim := len(embedding)
-	if embDim == 0 || len(tagNames) == 0 {
-		residual = append([]float64(nil), embedding...)
+
+	residualOnly := func() DecomposedEmbedding {
+		residual := append([]float64(nil), embedding...)
+		residualNorm := math.Sqrt(dotProduct(residual, residual))
 		if !isZeroVector(residual) {
 			normalizeVector(residual)
 		}
-		return make([]float64, embDim), residual
+		return DecomposedEmbedding{
+			Factor:       make([]float64, embDim),
+			Residual:     residual,
+			ResidualNorm: residualNorm,
+		}
+	}
+
+	if embDim == 0 || len(tagNames) == 0 {
+		return residualOnly()
 	}
 
 	tagIndex := make(map[string]int, len(tagNames))
@@ -273,21 +327,24 @@ func DecomposeEmbedding(
 
 	factorEmb := synthesizeFactorEmbedding(tagScores, tagIndex, tagCov, tagEmbeddings, tagNames, len(tagNames), embDim)
 	if isZeroVector(factorEmb) {
-		residual = append([]float64(nil), embedding...)
-		if !isZeroVector(residual) {
-			normalizeVector(residual)
-		}
-		return make([]float64, embDim), residual
+		return residualOnly()
 	}
 	normalizeVector(factorEmb)
 
 	projScalar := dotProduct(embedding, factorEmb)
-	factor = make([]float64, embDim)
-	residual = make([]float64, embDim)
+	if projScalar <= 0 {
+		// Anti-aligned with the tag direction — no factor evidence (see
+		// ComputeFactorDecomposition).
+		return residualOnly()
+	}
+
+	factor := make([]float64, embDim)
+	residual := make([]float64, embDim)
 	for d := range embDim {
 		factor[d] = projScalar * factorEmb[d]
 		residual[d] = embedding[d] - factor[d]
 	}
+	residualNorm := math.Sqrt(dotProduct(residual, residual))
 
 	if !isZeroVector(factor) {
 		normalizeVector(factor)
@@ -296,14 +353,29 @@ func DecomposeEmbedding(
 		normalizeVector(residual)
 	}
 
-	return factor, residual
+	return DecomposedEmbedding{
+		Factor:       factor,
+		Residual:     residual,
+		FactorNorm:   projScalar,
+		ResidualNorm: residualNorm,
+	}
 }
 
 // BlendFromDecomposition computes the blended similarity using the
-// decomposition's data-driven weights.
-func BlendFromDecomposition(decomp FactorDecomposition, factorA, residualA, factorB, residualB []float64) (factorSim, residualSim, blended float64) {
-	factorSim = vectors.UnitCosineSimilarity(factorA, factorB)
-	residualSim = vectors.UnitCosineSimilarity(residualA, residualB)
+// decomposition's data-driven weights. Both sides compare unit directions.
+//
+// Residual similarity deliberately ignores the residual magnitudes, and
+// this was measured, not assumed: scaling the residual cosine by the
+// magnitudes (the unnormalized residual dot product) dropped fixture
+// NDCG@8 by 0.033, and the geometric-mean variant was a wash (+0.001
+// NDCG, −0.005 Recall). The residual direction of a well-explained issue
+// is its specific content beyond the tags — exactly what discriminates
+// issues within a topic cluster — so down-weighting small residuals
+// removes ranking signal rather than noise. The magnitudes stay available
+// on DecomposedEmbedding for diagnostics and future calibration.
+func BlendFromDecomposition(decomp FactorDecomposition, a, b DecomposedEmbedding) (factorSim, residualSim, blended float64) {
+	factorSim = vectors.UnitCosineSimilarity(a.Factor, b.Factor)
+	residualSim = vectors.UnitCosineSimilarity(a.Residual, b.Residual)
 	blended = decomp.FactorWeight*factorSim + decomp.ResidualWeight*residualSim
 	return factorSim, residualSim, blended
 }

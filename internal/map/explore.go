@@ -91,6 +91,7 @@ func ExploreFromIssuesWithTags(storeIssues []issues.Issue, storeTags []issues.Ta
 	}
 
 	targetSummary := exploreIssueSummary(target)
+	targetDecomposed, targetOK := decomp.DecomposedFor(target.ID)
 	now := time.Now().UTC()
 
 	related := make([]RelatedIssue, 0, len(candidateSet)-1)
@@ -102,12 +103,11 @@ func ExploreFromIssuesWithTags(storeIssues []issues.Issue, storeTags []issues.Ta
 		candidateSummary := exploreIssueSummary(candidate)
 		semanticSim := vectors.UnitCosineSimilarity(issueEmbeddings[target.ID], issueEmbeddings[candidate.ID])
 
+		candidateDecomposed, candidateOK := decomp.DecomposedFor(candidate.ID)
 		var factorSim, residualSim, blended float64
-		if useDecomp && len(decomp.FactorEmbedding(candidate.ID)) > 0 {
+		if useDecomp && targetOK && candidateOK {
 			factorSim, _, blended = issuemath.BlendFromDecomposition(
-				decomp,
-				decomp.FactorEmbedding(target.ID), decomp.ResidualEmbedding(target.ID),
-				decomp.FactorEmbedding(candidate.ID), decomp.ResidualEmbedding(candidate.ID),
+				decomp, targetDecomposed, candidateDecomposed,
 			)
 		} else {
 			residualSim = semanticSim

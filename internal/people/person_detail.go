@@ -153,7 +153,7 @@ func (h GetPersonDetailHandler) recommendOpenIssues(
 
 	// Decompose person embedding.
 	tagCov := issuemath.BuildTagCovariance(tagNames, tagEmbeddings)
-	personFactor, personResidual := issuemath.DecomposeEmbedding(personEmbedding, profile, tagNames, tagEmbeddings, tagCov)
+	personDecomposed := issuemath.DecomposeEmbedding(personEmbedding, profile, tagNames, tagEmbeddings, tagCov)
 
 	recommendations := make([]PersonIssueRecommendation, 0, len(openIssues))
 	detailReader, _ := h.Store.(issues.IssueDetailReader)
@@ -167,10 +167,9 @@ func (h GetPersonDetailHandler) recommendOpenIssues(
 		issueTags := issueTagProfile(issue)
 
 		var factorScore, semanticScore, combinedScore float64
-		if len(decomp.FactorEmbedding(issue.ID)) > 0 {
+		if issueDecomposed, ok := decomp.DecomposedFor(issue.ID); ok {
 			factorScore, semanticScore, combinedScore = issuemath.BlendFromDecomposition(
-				decomp, personFactor, personResidual,
-				decomp.FactorEmbedding(issue.ID), decomp.ResidualEmbedding(issue.ID),
+				decomp, personDecomposed, issueDecomposed,
 			)
 		} else {
 			factorScore = issuemath.TagProfileSimilarity(profile, issueTags)

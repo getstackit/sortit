@@ -173,11 +173,11 @@ func SearchFromQueryWithTags(
 
 	// Fall back to legacy factor vectors when decomposition didn't produce per-issue vectors.
 	useDecomp := decomp.Decomposed()
-	var queryFactorEmb, queryResidualEmb []float64
+	var queryDecomposed issuemath.DecomposedEmbedding
 	var factorVectors map[string][]float64
 	if useDecomp {
 		tagCov := issuemath.BuildTagCovariance(tagNames, tagEmbeddings)
-		queryFactorEmb, queryResidualEmb = issuemath.DecomposeEmbedding(queryVector, querySummary.Tags, tagNames, tagEmbeddings, tagCov)
+		queryDecomposed = issuemath.DecomposeEmbedding(queryVector, querySummary.Tags, tagNames, tagEmbeddings, tagCov)
 	} else {
 		factorVectors = runtimeFactorVectors(mapIssues, tagNames, tagEmbeddings)
 	}
@@ -221,10 +221,9 @@ func SearchFromQueryWithTags(
 		semanticSim := vectors.CosineSimilarity(queryVector, issueEmbeddings[candidate.ID])
 
 		var factorSim, residualSim, blended float64
-		if useDecomp && len(decomp.FactorEmbedding(candidate.ID)) > 0 {
+		if candidateDecomposed, ok := decomp.DecomposedFor(candidate.ID); useDecomp && ok {
 			factorSim, _, blended = issuemath.BlendFromDecomposition(
-				searchDecomp, queryFactorEmb, queryResidualEmb,
-				decomp.FactorEmbedding(candidate.ID), decomp.ResidualEmbedding(candidate.ID),
+				searchDecomp, queryDecomposed, candidateDecomposed,
 			)
 		} else {
 			residualSim = semanticSim

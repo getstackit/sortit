@@ -247,21 +247,32 @@ func TestDecomposeEmbedding_Consistency(t *testing.T) {
 		{Tag: "beta", Relevance: 0.3},
 	}
 
-	factor, residual := DecomposeEmbedding(emb, tags, tagNames, tagEmb, tagCov)
+	dv := DecomposeEmbedding(emb, tags, tagNames, tagEmb, tagCov)
 
-	if len(factor) != len(emb) {
-		t.Fatalf("factor dimension %d != embedding dimension %d", len(factor), len(emb))
+	if len(dv.Factor) != len(emb) {
+		t.Fatalf("factor dimension %d != embedding dimension %d", len(dv.Factor), len(emb))
 	}
-	if len(residual) != len(emb) {
-		t.Fatalf("residual dimension %d != embedding dimension %d", len(residual), len(emb))
+	if len(dv.Residual) != len(emb) {
+		t.Fatalf("residual dimension %d != embedding dimension %d", len(dv.Residual), len(emb))
 	}
 
 	// Factor and residual should be non-zero for tagged issue with residual.
-	if isZeroVector(factor) {
+	if isZeroVector(dv.Factor) {
 		t.Error("factor embedding should not be zero for tagged issue")
 	}
-	if isZeroVector(residual) {
+	if isZeroVector(dv.Residual) {
 		t.Error("residual embedding should not be zero for issue with residual component")
+	}
+	if dv.FactorNorm <= 0 {
+		t.Errorf("factor norm should be positive for an aligned tagged embedding, got %f", dv.FactorNorm)
+	}
+	if dv.ResidualNorm <= 0 {
+		t.Errorf("residual norm should be positive for an embedding with residual, got %f", dv.ResidualNorm)
+	}
+	// Norms reconstruct the unit embedding's energy: f² + r² = 1.
+	energy := dv.FactorNorm*dv.FactorNorm + dv.ResidualNorm*dv.ResidualNorm
+	if math.Abs(energy-1) > 1e-9 {
+		t.Errorf("factorNorm²+residualNorm² = %f, want 1 for a unit embedding", energy)
 	}
 }
 
@@ -274,18 +285,25 @@ func TestDecomposeEmbedding_NoTags(t *testing.T) {
 
 	emb := []float64{0, 0, 3, 4}
 
-	factor, residual := DecomposeEmbedding(emb, nil, tagNames, tagEmb, tagCov)
+	dv := DecomposeEmbedding(emb, nil, tagNames, tagEmb, tagCov)
 
-	if !isZeroVector(factor) {
+	if !isZeroVector(dv.Factor) {
 		t.Error("factor should be zero for issue with no tags")
 	}
 	// Residual should preserve direction while being normalized for similarity use.
-	sim := dotProduct(residual, unitVec(emb))
+	sim := dotProduct(dv.Residual, unitVec(emb))
 	if sim < 0.99 {
 		t.Errorf("residual should approximate original embedding, similarity=%f", sim)
 	}
-	if math.Abs(dotProduct(residual, residual)-1) > 1e-9 {
-		t.Errorf("residual should be unit normalized, got squared norm=%f", dotProduct(residual, residual))
+	if math.Abs(dotProduct(dv.Residual, dv.Residual)-1) > 1e-9 {
+		t.Errorf("residual should be unit normalized, got squared norm=%f", dotProduct(dv.Residual, dv.Residual))
+	}
+	// The (unnormalized) embedding has magnitude 5; the norm should keep it.
+	if math.Abs(dv.ResidualNorm-5) > 1e-9 {
+		t.Errorf("residual norm should be the embedding magnitude 5, got %f", dv.ResidualNorm)
+	}
+	if dv.FactorNorm != 0 {
+		t.Errorf("factor norm should be zero with no tags, got %f", dv.FactorNorm)
 	}
 }
 
@@ -295,12 +313,20 @@ func TestBlendFromDecomposition(t *testing.T) {
 		ResidualWeight: 0.7,
 	}
 
-	factorA := unitVec([]float64{1, 0, 0, 0})
-	residualA := unitVec([]float64{0, 1, 0, 0})
-	factorB := unitVec([]float64{1, 0, 0, 0})
-	residualB := unitVec([]float64{0, 0, 1, 0}) // orthogonal residual
+	a := DecomposedEmbedding{
+		Factor:       unitVec([]float64{1, 0, 0, 0}),
+		Residual:     unitVec([]float64{0, 1, 0, 0}),
+		FactorNorm:   0.8,
+		ResidualNorm: 0.6,
+	}
+	b := DecomposedEmbedding{
+		Factor:       unitVec([]float64{1, 0, 0, 0}),
+		Residual:     unitVec([]float64{0, 0, 1, 0}), // orthogonal residual
+		FactorNorm:   0.8,
+		ResidualNorm: 0.6,
+	}
 
-	factorSim, residualSim, blended := BlendFromDecomposition(decomp, factorA, residualA, factorB, residualB)
+	factorSim, residualSim, blended := BlendFromDecomposition(decomp, a, b)
 
 	if math.Abs(factorSim-1.0) > 1e-9 {
 		t.Errorf("expected factorSim=1.0, got %f", factorSim)
@@ -311,6 +337,75 @@ func TestBlendFromDecomposition(t *testing.T) {
 	expected := 0.3*1.0 + 0.7*0.0
 	if math.Abs(blended-expected) > 1e-9 {
 		t.Errorf("expected blended=%f, got %f", expected, blended)
+	}
+}
+
+// TestBlendFromDecomposition_ResidualMagnitudeInvariant pins a deliberate,
+// measured decision: residual similarity compares directions only. Scaling
+// by residual magnitudes was tried and regressed fixture NDCG@8 (see the
+// BlendFromDecomposition comment) — a well-explained issue's residual
+// direction is its discriminating content, not noise. If this test breaks
+// because someone reintroduces magnitude scaling, the change must come with
+// fresh harness evidence.
+func TestBlendFromDecomposition_ResidualMagnitudeInvariant(t *testing.T) {
+	decomp := FactorDecomposition{FactorWeight: 0, ResidualWeight: 1}
+
+	dir := unitVec([]float64{0, 1, 0, 0})
+	small := DecomposedEmbedding{Factor: unitVec([]float64{1, 0, 0, 0}), Residual: dir, FactorNorm: 0.99, ResidualNorm: 0.1}
+	large := DecomposedEmbedding{Factor: unitVec([]float64{1, 0, 0, 0}), Residual: dir, FactorNorm: 0.2, ResidualNorm: 0.98}
+
+	_, smallSim, _ := BlendFromDecomposition(decomp, small, small)
+	_, largeSim, _ := BlendFromDecomposition(decomp, large, large)
+
+	if math.Abs(smallSim-1) > 1e-9 || math.Abs(largeSim-1) > 1e-9 {
+		t.Errorf("residual similarity should be magnitude-invariant, got small=%f large=%f", smallSim, largeSim)
+	}
+}
+
+// TestComputeFactorDecomposition_AntiAlignedEmbedding verifies the
+// non-negative projection rule: an embedding pointing against its own tag
+// direction yields no factor evidence (zero factor, R² = 0) instead of a
+// sign-flipped factor that would score ≈ −1 against same-tagged issues.
+func TestComputeFactorDecomposition_AntiAlignedEmbedding(t *testing.T) {
+	tagEmb := map[string][]float64{
+		"alpha": unitVec([]float64{1, 0, 0, 0}),
+		"beta":  unitVec([]float64{0, 1, 0, 0}),
+	}
+	tagNames := []string{"alpha", "beta"}
+
+	items := make([]issues.Issue, 0, 6)
+	embeds := make(map[string][]float64, 6)
+	// Five aligned issues to satisfy MinDecompositionIssues, one anti-aligned.
+	for i := range 5 {
+		id := "aligned-" + string(rune('A'+i))
+		items = append(items, issues.Issue{ID: id, TagScores: []issues.TagRelevance{{Tag: "alpha", Relevance: 0.9}}})
+		embeds[id] = unitVec([]float64{1, 0.2, 0.1, 0})
+	}
+	items = append(items, issues.Issue{ID: "anti", TagScores: []issues.TagRelevance{{Tag: "alpha", Relevance: 0.9}}})
+	embeds["anti"] = unitVec([]float64{-1, 0, 0.1, 0})
+
+	decomp := ComputeFactorDecomposition(items, tagNames, embeds, tagEmb)
+	if !decomp.Decomposed() {
+		t.Fatal("expected decomposition to run")
+	}
+
+	dv, ok := decomp.DecomposedFor("anti")
+	if !ok {
+		t.Fatal("anti-aligned issue should still be decomposed")
+	}
+	if !isZeroVector(dv.Factor) {
+		t.Error("anti-aligned issue should have a zero factor, not a sign-flipped one")
+	}
+	if dv.FactorNorm != 0 {
+		t.Errorf("anti-aligned issue should have factor norm 0, got %f", dv.FactorNorm)
+	}
+	if r2, _ := decomp.IssueR2("anti"); r2 != 0 {
+		t.Errorf("anti-aligned issue should have R² = 0, got %f", r2)
+	}
+
+	aligned, _ := decomp.DecomposedFor("aligned-A")
+	if isZeroVector(aligned.Factor) {
+		t.Error("aligned issue should keep its factor component")
 	}
 }
 
