@@ -247,23 +247,40 @@ func SearchFromQueryWithTags(
 			blended = (1-factorShare)*residualSim + factorShare*factorSim
 		}
 
-		combined := blended
-		// Note: the DB query also applies recency decay (90-day half-life) to rank
-		// the retrieval window. This app-side freshness weight fine-tunes within
-		// the semantic/factor blend on the already-retrieved candidates.
-		combined *= issueanalytics.IssueFreshnessWeight(candidate, now)
-		combined *= 1 + scoring.SearchVelocityBoost*issueVelocityScore(candidate)
-		combined += issueanalytics.IssueAuthority(candidate) * scoring.AuthorityConsumerWt
-		combined -= issueSpecificityPenalty(candidateSummary.Tags, tagSpecificity)
+		// Composition rule: query-relative evidence is additive, candidate
+		// quality modulates multiplicatively.
+		//
+		// The similarity blend and the query-conditional boosts/penalties
+		// all assert how well this candidate matches *this query*, so they
+		// add, then clamp at zero — no relevance evidence means no score.
+		evidence := blended
 		if genericQuery {
-			combined += specificCooccurrenceBoost(candidateSummary.Tags, tagSpecificity)
+			evidence += specificCooccurrenceBoost(candidateSummary.Tags, tagSpecificity)
 		}
 		if cfg.regionTarget != "" && candidateInRegion(candidateSummary.Tags, cfg.regionTarget) {
-			combined += scoring.RegionMatchBoost
+			evidence += scoring.RegionMatchBoost
 		}
 		if len(cfg.antiCorrelators) > 0 {
-			combined -= candidateAntiCorrelationPenalty(candidateSummary.Tags, cfg.antiCorrelators)
+			evidence -= candidateAntiCorrelationPenalty(candidateSummary.Tags, cfg.antiCorrelators)
 		}
+		evidence = max(evidence, 0)
+
+		// Query-independent candidate properties (freshness, velocity,
+		// authority, tag specificity) scale the evidence as bounded
+		// multipliers: they can never flip a score's sign, resurrect a
+		// zero-evidence candidate, or push the total outside a predictable
+		// range. Under the previous mixed composition, additive authority
+		// could dominate the sign of a negative blend, and the freshness
+		// multiplier made negative scores *better* as issues aged.
+		//
+		// Note: the DB query also applies recency decay (90-day half-life)
+		// to rank the retrieval window. This app-side freshness weight
+		// fine-tunes within the already-retrieved candidates.
+		combined := evidence
+		combined *= issueanalytics.IssueFreshnessWeight(candidate, now)
+		combined *= 1 + scoring.SearchVelocityBoost*issueVelocityScore(candidate)
+		combined *= 1 + scoring.AuthorityConsumerWt*issueanalytics.IssueAuthority(candidate)
+		combined *= 1 - issueSpecificityPenalty(candidateSummary.Tags, tagSpecificity)
 		sharedTags := sharedRelevantTags(querySummary.Tags, candidateSummary.Tags, scoring.SharedTagsLimit)
 
 		scores = append(scores, scoredResult{

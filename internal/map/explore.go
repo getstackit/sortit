@@ -123,9 +123,17 @@ func ExploreFromIssuesWithTags(storeIssues []issues.Issue, storeTags []issues.Ta
 			blended = scoring.SemanticWeight*residualSim + scoring.FactorWeight*factorSim
 		}
 
+		// Same composition rule as search: relatedness evidence adds,
+		// candidate quality multiplies. The relationship boost is a
+		// human-declared link — evidence of relatedness in its own right —
+		// so it is added after the blend is clamped at zero: an explicit
+		// link must surface the issue even when embedding similarity is
+		// weak or negative.
 		boost := relationshipBoost(boosts, target.ID, candidate.ID)
-		authority := issueanalytics.IssueAuthority(candidate) * scoring.AuthorityConsumerWt
-		combined := minFloat(1, (blended+boost+authority)*math.Sqrt(issueanalytics.IssueFreshnessWeight(candidate, now)))
+		evidence := math.Max(0, blended) + boost
+		authority := 1 + scoring.AuthorityConsumerWt*issueanalytics.IssueAuthority(candidate)
+		recency := math.Pow(issueanalytics.IssueFreshnessWeight(candidate, now), scoring.ExploreFreshnessExponent)
+		combined := minFloat(1, evidence*authority*recency)
 		sharedTags := sharedRelevantTags(targetSummary.Tags, candidateSummary.Tags, scoring.SharedTagsLimit)
 
 		related = append(related, RelatedIssue{

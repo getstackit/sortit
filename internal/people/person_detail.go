@@ -3,6 +3,7 @@ package people
 import (
 	"cmp"
 	"context"
+	"math"
 	"slices"
 	"strings"
 	"time"
@@ -177,10 +178,15 @@ func (h GetPersonDetailHandler) recommendOpenIssues(
 			combinedScore = scoring.PersonRecommendFactor*factorScore + scoring.PersonRecommendSemantic*semanticScore
 		}
 
+		// Fit evidence clamps at zero, then candidate quality modulates
+		// multiplicatively — the same composition rule as search. A
+		// previously additive authority term could resurrect a candidate
+		// with no fit evidence at all.
+		combinedScore = math.Max(0, combinedScore)
 		combinedScore *= issueanalytics.IssueFreshnessWeight(issue, now)
 		combinedScore *= scoring.PersonMaturityBase + scoring.PersonMaturityWeight*issuesMaturity(issue)
 		combinedScore *= 1 - scoring.PersonVelocityPenalty*issueVelocity(issue)
-		combinedScore += issueanalytics.IssueAuthority(issue) * scoring.AuthorityConsumerWt
+		combinedScore *= 1 + scoring.AuthorityConsumerWt*issueanalytics.IssueAuthority(issue)
 		sharedTags := topSharedTags(profile, issueTags, scoring.SharedTagsLimit)
 		reason := recommendationReason(sharedTags, factorScore, semanticScore)
 		recommendations = append(recommendations, PersonIssueRecommendation{

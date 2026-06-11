@@ -31,6 +31,16 @@ func AttachIssueVelocity(posts []issues.IssuePost, links []issues.IssueLink, met
 	return metrics
 }
 
+// ComputeIssueVelocity returns the half-life-decayed activity score and the
+// count of events inside the recent-activity window.
+//
+// The decayed weight has no window cutoff: a hard 30-day window made the
+// score discontinuous — an event at day 29.9 contributed ~0.23 of its
+// weight, at day 30.1 exactly 0 — so an issue's velocity could step down
+// overnight with no new information. The 14-day half-life already drives
+// old events toward zero smoothly (~0.05 of original weight at 60 days).
+// The window is kept only for RecentActivityCount, which answers the
+// different question "how many things happened lately?".
 func ComputeIssueVelocity(posts []issues.IssuePost, links []issues.IssueLink, now time.Time) (float64, int) {
 	if now.IsZero() {
 		now = time.Now().UTC()
@@ -45,16 +55,18 @@ func ComputeIssueVelocity(posts []issues.IssuePost, links []issues.IssueLink, no
 	)
 	for _, event := range events {
 		createdAt := event.createdAt.UTC()
-		if createdAt.IsZero() || createdAt.After(now) || createdAt.Before(cutoff) {
+		if createdAt.IsZero() || createdAt.After(now) {
 			continue
 		}
 		ageDays := now.Sub(createdAt).Hours() / 24
 		decay := math.Exp(-math.Ln2 * ageDays / issueVelocityHalfLifeDays)
 		weighted += event.weight * decay
-		count++
+		if !createdAt.Before(cutoff) {
+			count++
+		}
 	}
 
-	if count == 0 {
+	if weighted == 0 {
 		return 0, 0
 	}
 
