@@ -373,10 +373,29 @@ func DecomposeEmbedding(
 // issues within a topic cluster — so down-weighting small residuals
 // removes ranking signal rather than noise. The magnitudes stay available
 // on DecomposedEmbedding for diagnostics and future calibration.
+// When one side of a pair carries no factor evidence (untagged or
+// anti-aligned: zero factor vector), the blend marginalizes to the residual
+// signal at full weight instead of adding w_F·0. Without this, every such
+// pair lives on a deflated scale — w_R·residualSim, topping out at ~w_R —
+// in the same ranked list as full-scale pairs, which buries it under
+// fixed-size additive boosts and tie windows calibrated for [0, 1]-ish
+// scores. The symmetric rule applies when a residual side is zero (a fully
+// explained embedding): the pair is compared on factor alone.
 func BlendFromDecomposition(decomp FactorDecomposition, a, b DecomposedEmbedding) (factorSim, residualSim, blended float64) {
 	factorSim = vectors.UnitCosineSimilarity(a.Factor, b.Factor)
 	residualSim = vectors.UnitCosineSimilarity(a.Residual, b.Residual)
-	blended = decomp.FactorWeight*factorSim + decomp.ResidualWeight*residualSim
+
+	wF, wR := decomp.FactorWeight, decomp.ResidualWeight
+	noFactor := isZeroVector(a.Factor) || isZeroVector(b.Factor)
+	noResidual := isZeroVector(a.Residual) || isZeroVector(b.Residual)
+	switch {
+	case noFactor && !noResidual:
+		wF, wR = 0, 1
+	case noResidual && !noFactor:
+		wF, wR = 1, 0
+	}
+
+	blended = wF*factorSim + wR*residualSim
 	return factorSim, residualSim, blended
 }
 

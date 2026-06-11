@@ -225,6 +225,15 @@ func SearchFromQueryWithTags(
 			factorSim, _, blended = issuemath.BlendFromDecomposition(
 				searchDecomp, queryDecomposed, candidateDecomposed,
 			)
+		} else if useDecomp {
+			// The candidate is missing from the decomposition — no persisted
+			// embedding, or a dimension mismatch (e.g. an embedding-model
+			// change mid-corpus). Score it as pure semantic similarity at
+			// full weight: blending a zero factor side at w_F would put it
+			// on a deflated scale relative to decomposed candidates in the
+			// same ranked list.
+			residualSim = semanticSim
+			blended = semanticSim
 		} else {
 			residualSim = semanticSim
 			factorSim = vectors.CosineSimilarity(queryFactor, factorVectors[candidate.ID])

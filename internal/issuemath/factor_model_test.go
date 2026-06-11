@@ -362,6 +362,37 @@ func TestBlendFromDecomposition_ResidualMagnitudeInvariant(t *testing.T) {
 	}
 }
 
+// TestBlendFromDecomposition_MarginalizesMissingEvidence pins the
+// degenerate-pair rule: when one side has no factor evidence (zero factor
+// vector — untagged or anti-aligned), the blend puts full weight on the
+// residual signal instead of deflating the pair by w_F, so it competes on
+// the same [-1, 1] scale as fully decomposed pairs. Symmetrically, a pair
+// with a zero residual side is compared on factor alone.
+func TestBlendFromDecomposition_MarginalizesMissingEvidence(t *testing.T) {
+	decomp := FactorDecomposition{FactorWeight: 0.6, ResidualWeight: 0.4}
+
+	zero4 := []float64{0, 0, 0, 0}
+	factorDir := unitVec([]float64{1, 0, 0, 0})
+	residualDir := unitVec([]float64{0, 1, 0, 0})
+
+	tagged := DecomposedEmbedding{Factor: factorDir, Residual: residualDir, FactorNorm: 0.8, ResidualNorm: 0.6}
+	untagged := DecomposedEmbedding{Factor: zero4, Residual: residualDir, ResidualNorm: 1}
+	explained := DecomposedEmbedding{Factor: factorDir, Residual: zero4, FactorNorm: 1}
+
+	if _, _, blended := BlendFromDecomposition(decomp, tagged, untagged); math.Abs(blended-1) > 1e-9 {
+		t.Errorf("zero-factor pair should marginalize to residualSim=1, got blended=%f", blended)
+	}
+	if _, _, blended := BlendFromDecomposition(decomp, tagged, explained); math.Abs(blended-1) > 1e-9 {
+		t.Errorf("zero-residual pair should marginalize to factorSim=1, got blended=%f", blended)
+	}
+	if _, _, blended := BlendFromDecomposition(decomp, tagged, tagged); math.Abs(blended-1) > 1e-9 {
+		t.Errorf("fully decomposed identical pair should blend to 1, got %f", blended)
+	}
+	if _, _, blended := BlendFromDecomposition(decomp, untagged, explained); blended != 0 {
+		t.Errorf("pair with no comparable evidence should blend to 0, got %f", blended)
+	}
+}
+
 // TestComputeFactorDecomposition_AntiAlignedEmbedding verifies the
 // non-negative projection rule: an embedding pointing against its own tag
 // direction yields no factor evidence (zero factor, R² = 0) instead of a

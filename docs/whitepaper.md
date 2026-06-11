@@ -181,6 +181,18 @@ The blended similarity used for ranking is then:
 sim(A, B) = w_F · cos(factor_A, factor_B) + w_R · cos(residual_A, residual_B)
 ```
 
+**Degenerate pairs marginalize to the evidence that exists.** When either
+side of a pair has a zero factor (untagged, or anti-aligned per §2.3), the
+blend puts full weight on the residual signal — and symmetrically, full
+weight on the factor side when a residual is zero. Without this rule such
+pairs would top out at `w_R` (or `w_F`) in the same ranked list as
+full-scale pairs: an untagged search query would have *every* candidate
+deflated by `w_F`, letting the fixed-size additive boosts (§7) and the
+0.05 tie window dominate the deflated similarity scale. Candidates missing
+from the decomposition entirely (no persisted embedding, or a dimension
+mismatch after an embedding-model change) are scored as pure semantic
+similarity at full weight for the same reason.
+
 ### 2.5 What this is, and what it isn't — a critical note
 
 The decomposition is presented as a "factor model" but mathematically it is
