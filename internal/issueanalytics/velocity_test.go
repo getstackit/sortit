@@ -7,13 +7,12 @@ import (
 	"sortit/internal/issues"
 )
 
-func TestComputeIssueVelocityIgnoresNonMeaningfulOrOldEvents(t *testing.T) {
+func TestComputeIssueVelocityIgnoresNonMeaningfulEvents(t *testing.T) {
 	now := time.Date(2026, 3, 15, 12, 0, 0, 0, time.UTC)
 
 	velocity, count := ComputeIssueVelocity([]issues.IssuePost{
 		{Sequence: 1, Kind: "report", CreatedAt: now.Add(-24 * time.Hour)},
 		{Sequence: 2, Kind: "closed", CreatedAt: now.Add(-24 * time.Hour)},
-		{Sequence: 3, Kind: "refinement", CreatedAt: now.Add(-45 * 24 * time.Hour)},
 	}, nil, now)
 
 	if count != 0 {
@@ -21,6 +20,31 @@ func TestComputeIssueVelocityIgnoresNonMeaningfulOrOldEvents(t *testing.T) {
 	}
 	if velocity != 0 {
 		t.Fatalf("expected zero velocity, got %v", velocity)
+	}
+}
+
+// TestComputeIssueVelocityDecaysOldEventsSmoothly pins the no-cliff rule:
+// events older than the recent-activity window still contribute their
+// half-life-decayed weight to velocity (no step at day 30), while the
+// recent-activity count stays windowed.
+func TestComputeIssueVelocityDecaysOldEventsSmoothly(t *testing.T) {
+	now := time.Date(2026, 3, 15, 12, 0, 0, 0, time.UTC)
+
+	oldVelocity, oldCount := ComputeIssueVelocity([]issues.IssuePost{
+		{Sequence: 3, Kind: "refinement", CreatedAt: now.Add(-45 * 24 * time.Hour)},
+	}, nil, now)
+	recentVelocity, _ := ComputeIssueVelocity([]issues.IssuePost{
+		{Sequence: 3, Kind: "refinement", CreatedAt: now.Add(-24 * time.Hour)},
+	}, nil, now)
+
+	if oldCount != 0 {
+		t.Fatalf("expected zero recent activity count for a 45-day-old event, got %d", oldCount)
+	}
+	if oldVelocity <= 0 {
+		t.Fatalf("expected small positive velocity from a decayed old event, got %v", oldVelocity)
+	}
+	if oldVelocity >= recentVelocity {
+		t.Fatalf("expected old event velocity %v < recent event velocity %v", oldVelocity, recentVelocity)
 	}
 }
 

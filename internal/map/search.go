@@ -45,6 +45,18 @@ type searchConfig struct {
 	// embedding means used for centering. Required when storeIssues is a
 	// retrieved subset, whose own mean would erase the query signal.
 	corpusMeans *issuemath.CorpusMeans
+	// factorWeightOverride, when non-nil, replaces the data-driven factor
+	// share of the similarity blend (and the tag-correlation nudge) with a
+	// fixed value. Evaluation hook for the matheval sweep; production
+	// callers leave it unset.
+	factorWeightOverride *float64
+	// ridgeLambda, when non-nil, switches the similarity model from the
+	// rank-1 factor projection to the full-rank anchored-ridge blend
+	// (tag-space), with this value as the unscored-tag penalty. The value is
+	// expected to be GCV-derived upstream and cached by corpus revision —
+	// search does not run the selection itself. Phase 3b A/B opt-in;
+	// production default leaves it unset (rank-1).
+	ridgeLambda *float64
 }
 
 func WithOffset(offset int) SearchOption {
@@ -80,6 +92,33 @@ func WithAntiCorrelators(tags map[string]float64) SearchOption {
 			return
 		}
 		c.antiCorrelators = tags
+	}
+}
+
+// WithFactorWeightOverride forces the factor share of the similarity blend
+// to a fixed value in [0, 1] instead of the data-driven decomposition weight,
+// disabling the tag-correlation nudge. This is an evaluation hook for the
+// matheval blend-weight sweep; production search paths do not set it.
+func WithFactorWeightOverride(factorWeight float64) SearchOption {
+	return func(c *searchConfig) {
+		w := min(max(factorWeight, 0), 1)
+		c.factorWeightOverride = &w
+	}
+}
+
+// WithRidgeSimilarity switches the similarity model to the full-rank
+// anchored-ridge blend (tag-space cos(f_A,f_B)), using lambda as the
+// unscored-tag penalty. lambda should be the GCV-derived value from
+// issuemath.SelectRidgeLambdaGCV, computed over the full corpus and cached by
+// revision — search does not run the selection. Non-positive lambda is
+// ignored (keeps the rank-1 model). When the corpus is too small for the
+// ridge decomposition, search falls back to rank-1 automatically.
+func WithRidgeSimilarity(lambda float64) SearchOption {
+	return func(c *searchConfig) {
+		if lambda <= 0 {
+			return
+		}
+		c.ridgeLambda = &lambda
 	}
 }
 
@@ -157,11 +196,11 @@ func SearchFromQueryWithTags(
 
 	// Fall back to legacy factor vectors when decomposition didn't produce per-issue vectors.
 	useDecomp := decomp.Decomposed()
-	var queryFactorEmb, queryResidualEmb []float64
+	var queryDecomposed issuemath.DecomposedEmbedding
 	var factorVectors map[string][]float64
 	if useDecomp {
 		tagCov := issuemath.BuildTagCovariance(tagNames, tagEmbeddings)
-		queryFactorEmb, queryResidualEmb = issuemath.DecomposeEmbedding(queryVector, querySummary.Tags, tagNames, tagEmbeddings, tagCov)
+		queryDecomposed = issuemath.DecomposeEmbedding(queryVector, querySummary.Tags, tagNames, tagEmbeddings, tagCov)
 	} else {
 		factorVectors = runtimeFactorVectors(mapIssues, tagNames, tagEmbeddings)
 	}
@@ -181,14 +220,41 @@ func SearchFromQueryWithTags(
 	genericQuery := queryMatchesGenericTag(queryLower, tagSpecificity)
 	now := time.Now().UTC()
 
+	// adjustFactorWeight applies the tag-correlation nudge (when the query
+	// names a tag) and the evaluation override to a model's factor share.
+	// Shared by the rank-1 and ridge models so both react identically.
+	adjustFactorWeight := func(fw float64) (factor, residual float64) {
+		if tagCorrelationBoost {
+			fw = min(max(fw+scoring.TagCorrelationFactorNudge, scoring.MinFactorWeight), scoring.MaxFactorWeight)
+		}
+		if cfg.factorWeightOverride != nil {
+			fw = *cfg.factorWeightOverride
+		}
+		return fw, 1 - fw
+	}
+
 	// When query matches a tag name, nudge factor weight up.
 	searchDecomp := decomp
-	if tagCorrelationBoost && useDecomp {
-		searchDecomp.FactorWeight = min(
-			max(decomp.FactorWeight+scoring.TagCorrelationFactorNudge, scoring.MinFactorWeight),
-			scoring.MaxFactorWeight,
-		)
-		searchDecomp.ResidualWeight = 1 - searchDecomp.FactorWeight
+	if useDecomp {
+		searchDecomp.FactorWeight, searchDecomp.ResidualWeight = adjustFactorWeight(decomp.FactorWeight)
+	}
+
+	// Ridge similarity model (Phase 3b, opt-in via WithRidgeSimilarity). Only
+	// engaged when the corpus is large enough for both decompositions; falls
+	// back to rank-1 otherwise.
+	useRidge := cfg.ridgeLambda != nil && useDecomp
+	var ridgeDecomp issuemath.RidgeDecomposition
+	var queryRidge issuemath.RidgeVectors
+	if useRidge {
+		ridgeDecomp = issuemath.ComputeRidgeDecomposition(mapIssues, tagNames, issueEmbeddings, tagEmbeddings,
+			scoring.RidgeAnchorLambdaScored, *cfg.ridgeLambda)
+		if ridgeDecomp.Decomposed() {
+			ridgeDecomp.FactorWeight, ridgeDecomp.ResidualWeight = adjustFactorWeight(ridgeDecomp.FactorWeight)
+			queryRidge = issuemath.DecomposeRidgeEmbedding(queryVector, querySummary.Tags, tagNames, tagEmbeddings,
+				scoring.RidgeAnchorLambdaScored, *cfg.ridgeLambda)
+		} else {
+			useRidge = false
+		}
 	}
 
 	related := make([]RelatedIssue, 0, len(storeIssues))
@@ -200,39 +266,73 @@ func SearchFromQueryWithTags(
 		candidateSummary := exploreIssueSummary(candidate)
 		semanticSim := vectors.CosineSimilarity(queryVector, issueEmbeddings[candidate.ID])
 
-		var factorSim, residualSim, blended float64
-		if useDecomp && len(decomp.FactorEmbedding(candidate.ID)) > 0 {
-			factorSim, _, blended = issuemath.BlendFromDecomposition(
-				searchDecomp, queryFactorEmb, queryResidualEmb,
-				decomp.FactorEmbedding(candidate.ID), decomp.ResidualEmbedding(candidate.ID),
-			)
-		} else {
-			residualSim = semanticSim
-			factorSim = vectors.CosineSimilarity(queryFactor, factorVectors[candidate.ID])
-			if tagCorrelationBoost {
-				blended = scoring.TagCorrelationSemantic*residualSim + scoring.TagCorrelationFactor*factorSim
+		// Missing-from-decomposition candidates (no persisted embedding, or a
+		// dimension mismatch after an embedding-model change) score as pure
+		// semantic similarity at full weight: blending a zero factor side at
+		// w_F would deflate them relative to decomposed candidates in the
+		// same ranked list.
+		var factorSim, blended float64
+		switch {
+		case useRidge:
+			if cv, ok := ridgeDecomp.VectorsFor(candidate.ID); ok {
+				factorSim, _, blended = issuemath.RidgeBlend(ridgeDecomp, queryRidge, cv, issuemath.RidgeTagSpace)
 			} else {
-				blended = scoring.SemanticWeight*residualSim + scoring.FactorWeight*factorSim
+				blended = semanticSim
 			}
+		case useDecomp:
+			if candidateDecomposed, ok := decomp.DecomposedFor(candidate.ID); ok {
+				factorSim, _, blended = issuemath.BlendFromDecomposition(
+					searchDecomp, queryDecomposed, candidateDecomposed,
+				)
+			} else {
+				blended = semanticSim
+			}
+		default:
+			factorSim = vectors.CosineSimilarity(queryFactor, factorVectors[candidate.ID])
+			factorShare := scoring.FactorWeight
+			if tagCorrelationBoost {
+				factorShare = scoring.TagCorrelationFactor
+			}
+			if cfg.factorWeightOverride != nil {
+				factorShare = *cfg.factorWeightOverride
+			}
+			blended = (1-factorShare)*semanticSim + factorShare*factorSim
 		}
 
-		combined := blended
-		// Note: the DB query also applies recency decay (90-day half-life) to rank
-		// the retrieval window. This app-side freshness weight fine-tunes within
-		// the semantic/factor blend on the already-retrieved candidates.
-		combined *= issueanalytics.IssueFreshnessWeight(candidate, now)
-		combined *= 1 + scoring.SearchVelocityBoost*issueVelocityScore(candidate)
-		combined += issueanalytics.IssueAuthority(candidate) * scoring.AuthorityConsumerWt
-		combined -= issueSpecificityPenalty(candidateSummary.Tags, tagSpecificity)
+		// Composition rule: query-relative evidence is additive, candidate
+		// quality modulates multiplicatively.
+		//
+		// The similarity blend and the query-conditional boosts/penalties
+		// all assert how well this candidate matches *this query*, so they
+		// add, then clamp at zero — no relevance evidence means no score.
+		evidence := blended
 		if genericQuery {
-			combined += specificCooccurrenceBoost(candidateSummary.Tags, tagSpecificity)
+			evidence += specificCooccurrenceBoost(candidateSummary.Tags, tagSpecificity)
 		}
 		if cfg.regionTarget != "" && candidateInRegion(candidateSummary.Tags, cfg.regionTarget) {
-			combined += scoring.RegionMatchBoost
+			evidence += scoring.RegionMatchBoost
 		}
 		if len(cfg.antiCorrelators) > 0 {
-			combined -= candidateAntiCorrelationPenalty(candidateSummary.Tags, cfg.antiCorrelators)
+			evidence -= candidateAntiCorrelationPenalty(candidateSummary.Tags, cfg.antiCorrelators)
 		}
+		evidence = max(evidence, 0)
+
+		// Query-independent candidate properties (freshness, velocity,
+		// authority, tag specificity) scale the evidence as bounded
+		// multipliers: they can never flip a score's sign, resurrect a
+		// zero-evidence candidate, or push the total outside a predictable
+		// range. Under the previous mixed composition, additive authority
+		// could dominate the sign of a negative blend, and the freshness
+		// multiplier made negative scores *better* as issues aged.
+		//
+		// Note: the DB query also applies recency decay (90-day half-life)
+		// to rank the retrieval window. This app-side freshness weight
+		// fine-tunes within the already-retrieved candidates.
+		combined := evidence
+		combined *= issueanalytics.IssueFreshnessWeight(candidate, now)
+		combined *= 1 + scoring.SearchVelocityBoost*issueVelocityScore(candidate)
+		combined *= 1 + scoring.AuthorityConsumerWt*issueanalytics.IssueAuthority(candidate)
+		combined *= 1 - issueSpecificityPenalty(candidateSummary.Tags, tagSpecificity)
 		sharedTags := sharedRelevantTags(querySummary.Tags, candidateSummary.Tags, scoring.SharedTagsLimit)
 
 		scores = append(scores, scoredResult{

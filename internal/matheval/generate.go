@@ -15,6 +15,13 @@ import (
 // per-issue R² — some issues are almost fully explained by their tags, some
 // are mostly residual, and untagged notes are pure residual.
 //
+// Every synthesized vector additionally shares a corpus-wide common
+// direction (anisotropy), mirroring real text-embedding models, where two
+// unrelated same-corpus texts still cosine at ~0.5–0.7 (whitepaper §2.0).
+// Without it the fixtures cannot exercise the corpus-mean centering that the
+// runtime applies, and any constant tuned here would be tuned against an
+// unrealistically isotropic geometry.
+//
 // Regenerate testdata/corpus.json with:
 //
 //	go test ./internal/matheval -run TestCorpusMatchesGenerator -update
@@ -24,6 +31,7 @@ func GenerateCorpus() Corpus {
 
 	for _, spec := range tagSpecs {
 		vec := combine(
+			scaled(anisotropyVec(), anisotropyScale),
 			scaled(noiseVec("domain:"+spec.domain), 0.9),
 			scaled(noiseVec("tag:"+spec.name), 0.45),
 		)
@@ -65,10 +73,30 @@ func GenerateCorpus() Corpus {
 	return corpus
 }
 
+// anisotropyScale sets the magnitude of the shared common direction mixed
+// into every synthesized vector. The common direction enters issue and
+// query embeddings twice — once directly and once through their tag
+// directions, which also carry it — so the effective shared component is
+// larger than this constant suggests. 0.55 lands the mean raw pairwise
+// cosine across the corpus at ~0.58, inside the ~0.5–0.7 band observed on
+// real OpenAI embeddings over a homogeneous corpus; corpus-mean centering
+// removes it almost entirely (TestGeneratedCorpusIsAnisotropic pins both).
+const anisotropyScale = 0.55
+
+// anisotropyVec is the corpus-wide common direction. Tags, issues, and
+// queries all share the same one — in reality all text goes through the
+// same embedding model, whose common component does not depend on whether
+// the text is a tag description or an issue.
+func anisotropyVec() []float64 {
+	return noiseVec("corpus:anisotropy")
+}
+
 // synthesizeEmbedding builds a unit embedding from tag directions plus seeded
-// noise. With no tags the embedding is pure noise (an "off-taxonomy" text).
+// noise. With no tags the content part is pure noise (an "off-taxonomy"
+// text). The shared anisotropic direction is added on top either way: even
+// off-taxonomy text comes out of the same embedding model.
 func synthesizeEmbedding(seed string, tags []TagScore, noise float64, tagVecs map[string][]float64) []float64 {
-	vec := make([]float64, EmbeddingDim)
+	vec := scaled(anisotropyVec(), anisotropyScale)
 	for _, ts := range tags {
 		vec = combine(vec, scaled(tagVecs[ts.Tag], ts.Relevance))
 	}
@@ -95,10 +123,12 @@ func noiseVec(seed string) []float64 {
 	return vec
 }
 
-func combine(a, b []float64) []float64 {
-	out := make([]float64, len(a))
-	for i := range a {
-		out[i] = a[i] + b[i]
+func combine(vecs ...[]float64) []float64 {
+	out := make([]float64, len(vecs[0]))
+	for _, vec := range vecs {
+		for i := range vec {
+			out[i] += vec[i]
+		}
 	}
 	return out
 }

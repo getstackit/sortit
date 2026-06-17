@@ -36,6 +36,19 @@ explainable ranking signal.
 
 ## 2. The factor / residual decomposition
 
+> **Status (Phase 3c):** the similarity-ranked surfaces — issue **search**,
+> **explore** (related issues), and **person recommendations** — now default
+> to the full-rank anchored-ridge model described in
+> [math-evolution.md §5](./math-evolution.md#5-anchored-ridge-regression-f_i),
+> with its unscored-tag penalty selected per corpus by GCV
+> (`internal/ridgelambda`). The rank-1 decomposition documented in this
+> section remains the **fallback** on those surfaces (small corpora, or no
+> penalty available) and still backs the debug R²/factor-weight endpoints.
+> The 2-D **map projection** is unaffected — it is PCA on the tag-relevance
+> matrix (§3), not this embedding decomposition. The rank-1 model is
+> documented here because it is the foundation the ridge model refines and
+> the fallback every ridge surface degrades to.
+
 The central trick in Sortit is to split each issue's embedding into:
 
 - A **factor** component — the part of the embedding that can be predicted
@@ -137,9 +150,17 @@ Given the issue's actual embedding `e`, project onto the normalized direction
 `û = ê / ||ê||`:
 
 ```
-factor   = (e · û) û
+factor   = (e · û) û     if e · û > 0, else 0
 residual = e − factor          (orthogonal to factor by construction)
 ```
+
+The projection is **non-negative**: when the centered embedding is
+anti-aligned with its own tag direction (`e · û ≤ 0`), the issue is treated
+as having *no factor evidence* — zero factor, full-embedding residual,
+`R² = 0` — rather than projected onto `−û`. A sign-flipped factor would
+score ≈ −1 against issues sharing the same tags, asserting strong
+dissimilarity where the honest claim is "the text does not support the
+tagging." Tags assert non-negative alignment; the projection respects that.
 
 Because the split is orthogonal:
 
@@ -173,6 +194,18 @@ The blended similarity used for ranking is then:
 sim(A, B) = w_F · cos(factor_A, factor_B) + w_R · cos(residual_A, residual_B)
 ```
 
+**Degenerate pairs marginalize to the evidence that exists.** When either
+side of a pair has a zero factor (untagged, or anti-aligned per §2.3), the
+blend puts full weight on the residual signal — and symmetrically, full
+weight on the factor side when a residual is zero. Without this rule such
+pairs would top out at `w_R` (or `w_F`) in the same ranked list as
+full-scale pairs: an untagged search query would have *every* candidate
+deflated by `w_F`, letting the fixed-size additive boosts (§7) and the
+0.05 tie window dominate the deflated similarity scale. Candidates missing
+from the decomposition entirely (no persisted embedding, or a dimension
+mismatch after an embedding-model change) are scored as pure semantic
+similarity at full weight for the same reason.
+
 ### 2.5 What this is, and what it isn't — a critical note
 
 The decomposition is presented as a "factor model" but mathematically it is
@@ -186,15 +219,21 @@ Implications:
   Even a perfectly tagged issue has low `R²` whenever the embedding model
   doesn't agree with the linear combination of tag embeddings. This is fine
   as a diagnostic but does *not* mean tagging is poor.
-- **The "factor" vector is normalized before similarity**, throwing away its
-  magnitude. Two issues with very different `||factor||` but identical
-  direction are treated as factor-identical. The magnitude is preserved
-  only via `factorNorm` for the R² calculation; it does not influence
-  ranking.
+- **Both similarity sides compare unit directions; magnitudes do not
+  influence ranking.** This is now a *measured* decision rather than an
+  accident: scaling residual similarity by the residual magnitudes (the
+  unnormalized residual dot product) dropped fixture NDCG@8 by 0.033, and a
+  geometric-mean variant was a wash. The residual direction of a
+  well-explained issue is its discriminating content within a topic
+  cluster, not amplified noise. The magnitudes remain available on
+  `DecomposedEmbedding` for diagnostics.
 - **The aggregate weights `w_F, w_R` are corpus-wide, not query-aware.**
   Searches that should weight factors more heavily (e.g. a tag-name query)
   get a fixed `+0.1` nudge instead of a recomputation. That nudge is itself
-  a hyperparameter.
+  a hyperparameter. The identification `w_F = aggregate R²` is, however,
+  no longer unvalidated: the matheval sweep (`-sweep`) shows fixture
+  NDCG@8 plateaus over `w_F ∈ [0.55, 0.90]` and the data-driven weight
+  plus nudge sits in that plateau, slightly above the best fixed override.
 - The name is aspirational. A more honest label would be
   *embedding-to-tag-direction projection* — but the implementation does in
   fact behave like a soft factor model in practice.
@@ -434,10 +473,11 @@ hubness; cluster top-tag and label both use hubness as a per-issue weight.
 
 ### 6.5 Critical notes on the primitives
 
-- **Velocity window cutoff is discontinuous.** A 30-day window combined with
-  a 14-day half-life means an event at day 29.9 contributes ~0.226 of its
-  weight, at day 30.1 contributes 0. A smoother decay (e.g., just exponential
-  with no hard window) would behave better as time crosses the boundary.
+- **Velocity decay is now windowless.** The decayed weight has no cutoff —
+  the 14-day half-life drives old events toward zero smoothly (an event at
+  60 days carries ~0.05 of its weight) instead of stepping to zero at day
+  30. The 30-day window survives only in `RecentActivityCount`, which
+  answers a different question ("how many things happened lately?").
 - **Authority and hubness use different slopes (0.25 vs 0.15)** for no
   documented reason. The asymmetry seems incidental rather than considered.
 - **Maturity's stability fallback (0.35) is a hidden prior.** Without any
@@ -448,16 +488,33 @@ hubness; cluster top-tag and label both use hubness as a per-issue weight.
 
 ## 7. How signals combine in search
 
-[`search.go:143`](../internal/map/search.go) builds:
+[`search.go`](../internal/map/search.go) composes scores under one rule:
+**query-relative evidence adds, candidate quality multiplies.**
 
 ```
-combined  =  blended_similarity                  // w_F·cos(F_q,F_i) + w_R·cos(R_q,R_i)
-combined *= freshness(i)                          // multiplicative, 0.3..1.0
-combined *= 1 + 0.08 · velocity(i)                // multiplicative, 1.0..1.08
-combined += 0.10 · authority(i)                   // additive
-combined -= specificityPenalty(i.top3)            // additive, 0..0.04
-combined += co-occurrence boost (if generic query) // additive, 0..0.06
+evidence  =  blended_similarity                   // w_F·cos(F_q,F_i) + w_R·cos(R_q,R_i)
+evidence +=  co-occurrence boost (generic query)  // additive, 0..0.06
+evidence +=  region-match boost                   // additive, 0.08
+evidence -=  anti-correlation penalty             // additive
+evidence  =  max(evidence, 0)                     // no evidence → no score
+
+combined  =  evidence
+combined *=  freshness(i)                         // 0.3..1.0
+combined *=  1 + 0.08 · velocity(i)               // 1.0..1.08
+combined *=  1 + 0.10 · authority(i)              // 1.0..1.10
+combined *=  1 − specificityPenalty(i.top3)       // 0.96..1.0
 ```
+
+The additive terms all assert how well the candidate matches *this query*;
+the multiplicative terms are query-independent properties of the candidate
+and can only scale evidence — never flip its sign, resurrect a
+zero-evidence candidate, or push the score outside a predictable range.
+Under the previous mixed composition, additive authority could dominate the
+sign of a negative blend, and the freshness multiplier made negative scores
+*better* as issues aged. Explore and person recommendations follow the same
+rule; in explore the human-declared relationship boost counts as evidence
+(added after the clamp, so an explicit link surfaces even at zero embedding
+similarity).
 
 Tie-breaker (within `ContentConfidenceTieWindow = 0.05`): higher
 `contentConfidence` wins; then raw `combined`; then `semantic`; then
@@ -465,15 +522,15 @@ Tie-breaker (within `ContentConfidenceTieWindow = 0.05`): higher
 
 ### 7.1 Critical notes on the combination
 
-- **Mixed additive and multiplicative composition** makes the score
-  unpredictable at the edges. With negative cosine values (possible for
-  unrelated embeddings), additive authority can dominate the sign of
-  `combined`. The blended similarity is in `[-1, 1]`, but after the
-  modifiers the range is no longer bounded to that interval.
-- **Tie-window of 0.05 assumes `combined ∈ [0, 1]`-ish.** In practice it
-  usually is, but there is no guarantee.
-- **Explore uses `√freshness` instead of `freshness`** ([`explore.go:118`](../internal/map/explore.go)). Same family of formulas with
-  different exponents and no documented rationale.
+- **The score range is now non-negative and bounded** (evidence ≤ ~1.14
+  before modifiers, modifiers ≤ ~1.19 combined), so the 0.05 tie window
+  operates on a predictable scale. Candidates with negative blended
+  similarity all clamp to zero and resolve by the tie-breaker chain.
+- **Explore uses `freshness^0.5` instead of `freshness`** — now an explicit
+  constant (`scoring.ExploreFreshnessExponent`) with a documented
+  rationale: explore ranks the neighbors of a specific issue, where
+  staleness matters less than relatedness, so the decay range is
+  compressed rather than matched to search.
 - **Tag-name correlation has two implementations.** The decomposition path
   nudges `w_F` by `+0.1`; the legacy fallback substitutes fixed `0.5/0.5`
   weights from `TagCorrelationSemantic/Factor`. The two paths produce
@@ -585,13 +642,13 @@ fallback behavior itself is unchanged.
 
 | # | Issue                                                          | Suggested direction                                          |
 |---|----------------------------------------------------------------|--------------------------------------------------------------|
-| 1 | Single-direction "factor model" is oversold                    | Either embrace multi-direction (top-k tags as basis vectors) or rename to "tag-direction projection". |
+| 1 | Single-direction "factor model" is oversold                    | Addressed: the similarity surfaces (search/explore/person) now default to the full-rank anchored ridge `f = (TTᵀ+Λ)⁻¹(Te+Λr)` (math-evolution Phase 3c), a genuine multi-dimensional loading rather than a rank-1 projection. This rank-1 decomposition is now the documented fallback. |
 | 2 | Shrinkage `α = 1 − mean(off-diag²)` is heuristic               | Replace with Ledoit-Wolf or document explicitly as a stability hack. |
 | 3 | Map sign-convention depends on first issue                     | Addressed: deterministic largest-absolute-loading sign convention plus Procrustes alignment against the previous layout (§3.3). |
 | 4 | Hash-based "embedding" fallback hides degradation              | Addressed: per-kind counters plus rate-limited warning logs, exposed via `/api/v1/debug/embedding-fallbacks` (§9). Making search return an error instead remains open. |
-| 5 | Inconsistent recency exponents (`freshness` vs `√freshness`)   | Pick one and document it. |
-| 6 | Mixed additive/multiplicative composition in `combined`        | Either go fully multiplicative (boosts as multipliers in `[1, 1+ε]`) or fully additive and clamp the range. |
-| 7 | Velocity hard window at 30 days                                | Drop the window; pure exponential decay is smoother. |
+| 5 | Inconsistent recency exponents (`freshness` vs `√freshness`)   | Addressed: explore's softer exponent is a named constant (`ExploreFreshnessExponent`) with documented rationale (§7.1). |
+| 6 | Mixed additive/multiplicative composition in `combined`        | Addressed: evidence adds and clamps at zero, quality modulates multiplicatively, across search/explore/person recommendations (§7). |
+| 7 | Velocity hard window at 30 days                                | Addressed: decayed weight is windowless; the window survives only in `RecentActivityCount` (§6.5). |
 | 8 | Authority and hubness slopes (0.25 vs 0.15) are asymmetric     | Pick from a deliberate utility argument, or unify them. |
 | 9 | Hyperparameters everywhere with no evaluation harness          | Addressed: [`internal/matheval`](./math-eval.md) runs a labeled judgment set (32 queries over a 48-issue fixture corpus) against a golden baseline on every test run. |
 | 10 | `k = 8` in specificity is fixed                                | Make adaptive (`min(8, ⌈√n⌉)` or similar). |

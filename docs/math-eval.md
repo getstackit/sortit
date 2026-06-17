@@ -17,14 +17,17 @@ go test ./internal/matheval -run TestMathEval -v
 
 # After an intentional math change: re-record the golden files
 go test ./internal/matheval -update
+
+# Hyperparameter sweep reports (log-only, opt-in)
+go test ./internal/matheval -run TestSweepFactorWeight -sweep -v
 ```
 
 A run produces output like:
 
 ```
-search: queries=32 NDCG@8=0.8233 Recall@8=0.8549
-factor model: factorWeight=0.6782 aggregateR2=0.6782
-per-issue R²: n=48 mean=0.6782 median=0.7386 p10=0.5177 p90=0.8654
+search: queries=32 NDCG@8=0.8645 Recall@8=0.9117
+factor model: factorWeight=0.6230 aggregateR2=0.6230
+per-issue R²: n=48 mean=0.6230 median=0.6487 p10=0.4175 p90=0.8553
 ```
 
 and compares it against the recorded baseline in
@@ -91,6 +94,14 @@ it cannot drift from its documented provenance:
   directions plus seeded hash noise. The noise share varies per issue
   (0.3–1.0), producing a realistic spread of per-issue R², including three
   untagged "off-taxonomy" notes that decompose to pure residual.
+- **Every vector shares a corpus-wide common direction** (anisotropy),
+  mirroring real text-embedding models where unrelated same-corpus texts
+  still cosine at ~0.5–0.7 (whitepaper §2.0). The mean raw pairwise cosine
+  across fixture issues is ~0.58 and drops to ~0 after corpus-mean
+  centering; `TestGeneratedCorpusIsAnisotropic` pins both bounds. Without
+  this property the harness would not exercise the runtime's centering
+  path, and constants tuned here would be tuned against an unrealistically
+  isotropic geometry.
 - **Queries** are built the same way from the analyzer-style tag scores a
   real query would carry; a few are bare tag names (`billing`, `ui`,
   `backend`) to exercise the tag-correlation nudge and the generic-tag
@@ -112,6 +123,19 @@ diverge.
 When adding queries or issues, extend the specs in `generate.go`, label the
 new queries in `judgments.json`, then run `go test ./internal/matheval
 -update` to regenerate the corpus and baseline together.
+
+## Sweep mode
+
+`TestSweepFactorWeight` (opt-in via `-sweep -v`) reports NDCG@8/Recall@8 as
+a function of the factor share `w_F` of the similarity blend, forced through
+`issuemap.WithFactorWeightOverride`, alongside the data-driven weight's
+metrics. The production blend identifies `w_F` with the decomposition's
+aggregate R² — a variance-explained quantity, not a ranking-utility one —
+and this sweep is the evidence for whether that identification holds: on the
+current fixtures the NDCG curve plateaus over `w_F ∈ [0.55, 0.90]` and the
+data-driven weight (0.62 plus the per-query tag-correlation nudge) sits in
+that plateau, slightly above the best fixed override. Sweeps are reports,
+not gates — they never fail on metric values.
 
 ## What this harness does not cover
 

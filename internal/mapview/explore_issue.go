@@ -9,6 +9,7 @@ import (
 	"sortit/internal/issues"
 	issueviews "sortit/internal/issues/views"
 	issuemap "sortit/internal/map"
+	"sortit/internal/ridgelambda"
 	"sortit/internal/tags"
 )
 
@@ -22,6 +23,26 @@ type ExploreIssueHandler struct {
 	DetailReader issues.IssueDetailReader
 	SearchStore  issues.SemanticSearchStore
 	Catalog      *tags.CatalogService
+	// RidgeLambda selects the anchored-ridge similarity model for explore
+	// when wired and the corpus is large enough; otherwise explore uses the
+	// rank-1 factor model. Mirrors the search path.
+	RidgeLambda *ridgelambda.Cache
+}
+
+// exploreOpts returns the ridge-similarity option carrying the
+// revision-cached GCV penalty, or nil when ridge is unavailable.
+func (h ExploreIssueHandler) exploreOpts(ctx context.Context) ([]issuemap.ExploreOption, error) {
+	if h.RidgeLambda == nil {
+		return nil, nil
+	}
+	lambda, ok, err := h.RidgeLambda.Current(ctx)
+	if err != nil {
+		return nil, err
+	}
+	if !ok {
+		return nil, nil
+	}
+	return []issuemap.ExploreOption{issuemap.WithExploreRidgeSimilarity(lambda)}, nil
 }
 
 func (h ExploreIssueHandler) Handle(ctx context.Context, input ExploreIssue) (issuemap.ExploreResponse, error) {
@@ -42,7 +63,12 @@ func (h ExploreIssueHandler) Handle(ctx context.Context, input ExploreIssue) (is
 		return issuemap.ExploreResponse{}, err
 	}
 
-	return issuemap.ExploreFromIssuesWithTags(storeIssues, storeTags, input.ID, input.Limit)
+	ridgeOpts, err := h.exploreOpts(ctx)
+	if err != nil {
+		return issuemap.ExploreResponse{}, err
+	}
+
+	return issuemap.ExploreFromIssuesWithTags(storeIssues, storeTags, input.ID, input.Limit, ridgeOpts...)
 }
 
 func (h ExploreIssueHandler) handleSemanticExplore(
@@ -66,7 +92,12 @@ func (h ExploreIssueHandler) handleSemanticExplore(
 		return issuemap.ExploreResponse{}, err
 	}
 
-	return issuemap.ExploreFromIssuesWithTags(candidateSet, storeTags, target.ID, input.Limit)
+	ridgeOpts, err := h.exploreOpts(ctx)
+	if err != nil {
+		return issuemap.ExploreResponse{}, err
+	}
+
+	return issuemap.ExploreFromIssuesWithTags(candidateSet, storeTags, target.ID, input.Limit, ridgeOpts...)
 }
 
 func exploreSemanticCandidateSet(

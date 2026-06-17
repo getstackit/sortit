@@ -54,6 +54,13 @@ const (
 
 // Explore scoring.
 const (
+	// ExploreFreshnessExponent softens recency decay on the explore
+	// surface relative to search (exponent 1). Explore ranks the
+	// neighbors of a specific issue, where staleness matters less than
+	// relatedness — a six-month-old duplicate is still the duplicate.
+	// The square root compresses the freshness range [0.3, 1] to
+	// [~0.55, 1] instead of flattening it entirely.
+	ExploreFreshnessExponent = 0.5
 	ExploreOpportunityMinSim = 0.45 // minimum combined similarity for opportunities
 	ExploreMaturityBase      = 0.8  // base maturity factor in opportunity confidence
 	ExploreMaturityWeight    = 0.2  // maturity multiplier weight
