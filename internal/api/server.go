@@ -27,6 +27,7 @@ import (
 	mcpserver "sortit/internal/mcp"
 	"sortit/internal/people"
 	"sortit/internal/regions"
+	"sortit/internal/ridgelambda"
 	"sortit/internal/search"
 	"sortit/internal/tagcooccurrence"
 	"sortit/internal/tags"
@@ -601,6 +602,12 @@ func NewServer(cfg ServerConfig) *Server {
 		Tags:      catalog,
 		Revisions: revisions,
 	}
+	ridgeLambdaCache := &ridgelambda.Cache{
+		Store:     store,
+		Tags:      catalog,
+		Revisions: revisions,
+		Centering: centeringCache,
+	}
 	var customRegionStore regions.CustomRegionStore = store
 	var customRegionWriter regions.CustomRegionWriter = store
 	regionsLoader := &regions.Loader{
@@ -672,12 +679,14 @@ func NewServer(cfg ServerConfig) *Server {
 			Store:        baseStore,
 			Cooccurrence: cooccurrenceCache,
 			Centering:    centeringCache,
+			RidgeLambda:  ridgeLambdaCache,
 		},
 		searchUnified: search.SearchUnifiedHandler{
-			Analyzer:  commandAnalyzer,
-			Catalog:   catalog,
-			Store:     baseStore,
-			Centering: centeringCache,
+			Analyzer:    commandAnalyzer,
+			Catalog:     catalog,
+			Store:       baseStore,
+			Centering:   centeringCache,
+			RidgeLambda: ridgeLambdaCache,
 		},
 		exploreIssue: mapview.ExploreIssueHandler{
 			Reader:       store,
