@@ -45,6 +45,11 @@ type searchConfig struct {
 	// embedding means used for centering. Required when storeIssues is a
 	// retrieved subset, whose own mean would erase the query signal.
 	corpusMeans *issuemath.CorpusMeans
+	// factorWeightOverride, when non-nil, replaces the data-driven factor
+	// share of the similarity blend (and the tag-correlation nudge) with a
+	// fixed value. Evaluation hook for the matheval sweep; production
+	// callers leave it unset.
+	factorWeightOverride *float64
 }
 
 func WithOffset(offset int) SearchOption {
@@ -80,6 +85,17 @@ func WithAntiCorrelators(tags map[string]float64) SearchOption {
 			return
 		}
 		c.antiCorrelators = tags
+	}
+}
+
+// WithFactorWeightOverride forces the factor share of the similarity blend
+// to a fixed value in [0, 1] instead of the data-driven decomposition weight,
+// disabling the tag-correlation nudge. This is an evaluation hook for the
+// matheval blend-weight sweep; production search paths do not set it.
+func WithFactorWeightOverride(factorWeight float64) SearchOption {
+	return func(c *searchConfig) {
+		w := min(max(factorWeight, 0), 1)
+		c.factorWeightOverride = &w
 	}
 }
 
@@ -157,11 +173,11 @@ func SearchFromQueryWithTags(
 
 	// Fall back to legacy factor vectors when decomposition didn't produce per-issue vectors.
 	useDecomp := decomp.Decomposed()
-	var queryFactorEmb, queryResidualEmb []float64
+	var queryDecomposed issuemath.DecomposedEmbedding
 	var factorVectors map[string][]float64
 	if useDecomp {
 		tagCov := issuemath.BuildTagCovariance(tagNames, tagEmbeddings)
-		queryFactorEmb, queryResidualEmb = issuemath.DecomposeEmbedding(queryVector, querySummary.Tags, tagNames, tagEmbeddings, tagCov)
+		queryDecomposed = issuemath.DecomposeEmbedding(queryVector, querySummary.Tags, tagNames, tagEmbeddings, tagCov)
 	} else {
 		factorVectors = runtimeFactorVectors(mapIssues, tagNames, tagEmbeddings)
 	}
@@ -190,6 +206,10 @@ func SearchFromQueryWithTags(
 		)
 		searchDecomp.ResidualWeight = 1 - searchDecomp.FactorWeight
 	}
+	if cfg.factorWeightOverride != nil {
+		searchDecomp.FactorWeight = *cfg.factorWeightOverride
+		searchDecomp.ResidualWeight = 1 - searchDecomp.FactorWeight
+	}
 
 	related := make([]RelatedIssue, 0, len(storeIssues))
 	scores := make([]scoredResult, 0, len(storeIssues))
@@ -201,19 +221,30 @@ func SearchFromQueryWithTags(
 		semanticSim := vectors.CosineSimilarity(queryVector, issueEmbeddings[candidate.ID])
 
 		var factorSim, residualSim, blended float64
-		if useDecomp && len(decomp.FactorEmbedding(candidate.ID)) > 0 {
+		if candidateDecomposed, ok := decomp.DecomposedFor(candidate.ID); useDecomp && ok {
 			factorSim, _, blended = issuemath.BlendFromDecomposition(
-				searchDecomp, queryFactorEmb, queryResidualEmb,
-				decomp.FactorEmbedding(candidate.ID), decomp.ResidualEmbedding(candidate.ID),
+				searchDecomp, queryDecomposed, candidateDecomposed,
 			)
+		} else if useDecomp {
+			// The candidate is missing from the decomposition — no persisted
+			// embedding, or a dimension mismatch (e.g. an embedding-model
+			// change mid-corpus). Score it as pure semantic similarity at
+			// full weight: blending a zero factor side at w_F would put it
+			// on a deflated scale relative to decomposed candidates in the
+			// same ranked list.
+			residualSim = semanticSim
+			blended = semanticSim
 		} else {
 			residualSim = semanticSim
 			factorSim = vectors.CosineSimilarity(queryFactor, factorVectors[candidate.ID])
+			factorShare := scoring.FactorWeight
 			if tagCorrelationBoost {
-				blended = scoring.TagCorrelationSemantic*residualSim + scoring.TagCorrelationFactor*factorSim
-			} else {
-				blended = scoring.SemanticWeight*residualSim + scoring.FactorWeight*factorSim
+				factorShare = scoring.TagCorrelationFactor
 			}
+			if cfg.factorWeightOverride != nil {
+				factorShare = *cfg.factorWeightOverride
+			}
+			blended = (1-factorShare)*residualSim + factorShare*factorSim
 		}
 
 		combined := blended

@@ -91,6 +91,7 @@ func ExploreFromIssuesWithTags(storeIssues []issues.Issue, storeTags []issues.Ta
 	}
 
 	targetSummary := exploreIssueSummary(target)
+	targetDecomposed, targetOK := decomp.DecomposedFor(target.ID)
 	now := time.Now().UTC()
 
 	related := make([]RelatedIssue, 0, len(candidateSet)-1)
@@ -102,14 +103,21 @@ func ExploreFromIssuesWithTags(storeIssues []issues.Issue, storeTags []issues.Ta
 		candidateSummary := exploreIssueSummary(candidate)
 		semanticSim := vectors.UnitCosineSimilarity(issueEmbeddings[target.ID], issueEmbeddings[candidate.ID])
 
+		candidateDecomposed, candidateOK := decomp.DecomposedFor(candidate.ID)
 		var factorSim, residualSim, blended float64
-		if useDecomp && len(decomp.FactorEmbedding(candidate.ID)) > 0 {
+		switch {
+		case useDecomp && targetOK && candidateOK:
 			factorSim, _, blended = issuemath.BlendFromDecomposition(
-				decomp,
-				decomp.FactorEmbedding(target.ID), decomp.ResidualEmbedding(target.ID),
-				decomp.FactorEmbedding(candidate.ID), decomp.ResidualEmbedding(candidate.ID),
+				decomp, targetDecomposed, candidateDecomposed,
 			)
-		} else {
+		case useDecomp:
+			// Target or candidate missing from the decomposition (no
+			// embedding or dimension mismatch) — pure semantic at full
+			// weight, mirroring the search path, so the pair is not scored
+			// on a deflated scale relative to decomposed pairs.
+			residualSim = semanticSim
+			blended = semanticSim
+		default:
 			residualSim = semanticSim
 			factorSim = vectors.UnitCosineSimilarity(factorVectors[target.ID], factorVectors[candidate.ID])
 			blended = scoring.SemanticWeight*residualSim + scoring.FactorWeight*factorSim

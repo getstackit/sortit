@@ -137,9 +137,17 @@ Given the issue's actual embedding `e`, project onto the normalized direction
 `û = ê / ||ê||`:
 
 ```
-factor   = (e · û) û
+factor   = (e · û) û     if e · û > 0, else 0
 residual = e − factor          (orthogonal to factor by construction)
 ```
+
+The projection is **non-negative**: when the centered embedding is
+anti-aligned with its own tag direction (`e · û ≤ 0`), the issue is treated
+as having *no factor evidence* — zero factor, full-embedding residual,
+`R² = 0` — rather than projected onto `−û`. A sign-flipped factor would
+score ≈ −1 against issues sharing the same tags, asserting strong
+dissimilarity where the honest claim is "the text does not support the
+tagging." Tags assert non-negative alignment; the projection respects that.
 
 Because the split is orthogonal:
 
@@ -173,6 +181,18 @@ The blended similarity used for ranking is then:
 sim(A, B) = w_F · cos(factor_A, factor_B) + w_R · cos(residual_A, residual_B)
 ```
 
+**Degenerate pairs marginalize to the evidence that exists.** When either
+side of a pair has a zero factor (untagged, or anti-aligned per §2.3), the
+blend puts full weight on the residual signal — and symmetrically, full
+weight on the factor side when a residual is zero. Without this rule such
+pairs would top out at `w_R` (or `w_F`) in the same ranked list as
+full-scale pairs: an untagged search query would have *every* candidate
+deflated by `w_F`, letting the fixed-size additive boosts (§7) and the
+0.05 tie window dominate the deflated similarity scale. Candidates missing
+from the decomposition entirely (no persisted embedding, or a dimension
+mismatch after an embedding-model change) are scored as pure semantic
+similarity at full weight for the same reason.
+
 ### 2.5 What this is, and what it isn't — a critical note
 
 The decomposition is presented as a "factor model" but mathematically it is
@@ -186,15 +206,21 @@ Implications:
   Even a perfectly tagged issue has low `R²` whenever the embedding model
   doesn't agree with the linear combination of tag embeddings. This is fine
   as a diagnostic but does *not* mean tagging is poor.
-- **The "factor" vector is normalized before similarity**, throwing away its
-  magnitude. Two issues with very different `||factor||` but identical
-  direction are treated as factor-identical. The magnitude is preserved
-  only via `factorNorm` for the R² calculation; it does not influence
-  ranking.
+- **Both similarity sides compare unit directions; magnitudes do not
+  influence ranking.** This is now a *measured* decision rather than an
+  accident: scaling residual similarity by the residual magnitudes (the
+  unnormalized residual dot product) dropped fixture NDCG@8 by 0.033, and a
+  geometric-mean variant was a wash. The residual direction of a
+  well-explained issue is its discriminating content within a topic
+  cluster, not amplified noise. The magnitudes remain available on
+  `DecomposedEmbedding` for diagnostics.
 - **The aggregate weights `w_F, w_R` are corpus-wide, not query-aware.**
   Searches that should weight factors more heavily (e.g. a tag-name query)
   get a fixed `+0.1` nudge instead of a recomputation. That nudge is itself
-  a hyperparameter.
+  a hyperparameter. The identification `w_F = aggregate R²` is, however,
+  no longer unvalidated: the matheval sweep (`-sweep`) shows fixture
+  NDCG@8 plateaus over `w_F ∈ [0.55, 0.90]` and the data-driven weight
+  plus nudge sits in that plateau, slightly above the best fixed override.
 - The name is aspirational. A more honest label would be
   *embedding-to-tag-direction projection* — but the implementation does in
   fact behave like a soft factor model in practice.

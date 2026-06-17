@@ -22,14 +22,16 @@ projection**:
 ```
 ê_i      = Tᵀ (Σ_shrunk · r_i)        // synthesized direction
 û_i      = ê_i / ||ê_i||
-factor_i = (e_i · û_i) · û_i           // 1-D projection of embedding
+factor_i = (e_i · û_i) · û_i           // 1-D projection, zeroed when e·û ≤ 0
 residual = e_i − factor_i
 ```
 
 After normalization, `cos(factor_A, factor_B) ≈ cos(ê_A, ê_B)` — a function
 purely of tag loadings and tag embeddings. The issue embedding contributes
-**only a sign bit** to factor similarity. All the embedding signal lives in
-the residual side, weighted by `w_R`.
+**only an alignment gate** to factor similarity: an anti-aligned embedding
+(`e · û ≤ 0`) zeroes the factor rather than flipping it (whitepaper §2.3),
+and otherwise the embedding's degree of support is discarded. All the
+embedding signal lives in the residual side, weighted by `w_R`.
 
 That's a defensible heuristic, but it's not a factor model. It also leaves
 significant signal on the floor:
