@@ -12,6 +12,7 @@ import (
 	"sortit/internal/issues"
 	issueviews "sortit/internal/issues/views"
 	issuemap "sortit/internal/map"
+	"sortit/internal/ridgelambda"
 	"sortit/internal/tags"
 )
 
@@ -33,6 +34,23 @@ type SearchUnifiedHandler struct {
 	// Centering provides revision-cached full-corpus embedding means —
 	// see SearchIssuesHandler.Centering.
 	Centering *centering.Cache
+	// RidgeLambda selects the anchored-ridge similarity model when wired —
+	// see SearchIssuesHandler.RidgeLambda.
+	RidgeLambda *ridgelambda.Cache
+}
+
+func (h SearchUnifiedHandler) ridgeOption(ctx context.Context) ([]issuemap.SearchOption, error) {
+	if h.RidgeLambda == nil {
+		return nil, nil
+	}
+	lambda, ok, err := h.RidgeLambda.Current(ctx)
+	if err != nil {
+		return nil, err
+	}
+	if !ok {
+		return nil, nil
+	}
+	return []issuemap.SearchOption{issuemap.WithRidgeSimilarity(lambda)}, nil
 }
 
 func (h SearchUnifiedHandler) Handle(ctx context.Context, input SearchUnified) (SearchUnifiedResponse, error) {
@@ -56,6 +74,11 @@ func (h SearchUnifiedHandler) Handle(ctx context.Context, input SearchUnified) (
 	queryTags := issueenrichment.IssueTagScoresFromAnalysis(analyzed.Tags)
 
 	corpusMeans, err := h.Centering.Current(ctx)
+	if err != nil {
+		return SearchUnifiedResponse{}, err
+	}
+
+	ridgeOpt, err := h.ridgeOption(ctx)
 	if err != nil {
 		return SearchUnifiedResponse{}, err
 	}
@@ -84,7 +107,7 @@ func (h SearchUnifiedHandler) Handle(ctx context.Context, input SearchUnified) (
 			queryTags,
 			queryEmbedding,
 			limit,
-			issuemap.WithCorpusMeans(corpusMeans),
+			append([]issuemap.SearchOption{issuemap.WithCorpusMeans(corpusMeans)}, ridgeOpt...)...,
 		)
 		relatedTags := issuemap.SearchTags(storeTags, queryEmbedding, limit)
 
@@ -115,7 +138,7 @@ func (h SearchUnifiedHandler) Handle(ctx context.Context, input SearchUnified) (
 		queryTags,
 		queryEmbedding,
 		limit,
-		issuemap.WithCorpusMeans(corpusMeans),
+		append([]issuemap.SearchOption{issuemap.WithCorpusMeans(corpusMeans)}, ridgeOpt...)...,
 	)
 
 	relatedTags := issuemap.SearchTags(storeTags, queryEmbedding, limit)

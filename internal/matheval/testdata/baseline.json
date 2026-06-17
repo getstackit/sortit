@@ -1,18 +1,18 @@
 {
   "search": {
     "queries": 32,
-    "ndcg@8": 0.8738,
-    "recall@8": 0.9273
+    "ndcg@8": 0.8645,
+    "recall@8": 0.9117
   },
   "factorModel": {
-    "factorWeight": 0.6587,
-    "aggregateR2": 0.6587,
+    "factorWeight": 0.623,
+    "aggregateR2": 0.623,
     "r2": {
       "count": 48,
-      "mean": 0.6587,
-      "median": 0.705,
-      "p10": 0.4136,
-      "p90": 0.8817
+      "mean": 0.623,
+      "median": 0.6487,
+      "p10": 0.4175,
+      "p90": 0.8553
     }
   }
 }

@@ -22,14 +22,16 @@ projection**:
 ```
 ê_i      = Tᵀ (Σ_shrunk · r_i)        // synthesized direction
 û_i      = ê_i / ||ê_i||
-factor_i = (e_i · û_i) · û_i           // 1-D projection of embedding
+factor_i = (e_i · û_i) · û_i           // 1-D projection, zeroed when e·û ≤ 0
 residual = e_i − factor_i
 ```
 
 After normalization, `cos(factor_A, factor_B) ≈ cos(ê_A, ê_B)` — a function
 purely of tag loadings and tag embeddings. The issue embedding contributes
-**only a sign bit** to factor similarity. All the embedding signal lives in
-the residual side, weighted by `w_R`.
+**only an alignment gate** to factor similarity: an anti-aligned embedding
+(`e · û ≤ 0`) zeroes the factor rather than flipping it (whitepaper §2.3),
+and otherwise the embedding's degree of support is discarded. All the
+embedding signal lives in the residual side, weighted by `w_R`.
 
 That's a defensible heuristic, but it's not a factor model. It also leaves
 significant signal on the floor:
@@ -495,7 +497,7 @@ What is actually in the tree, verified against the code:
 | **Phase 0** | Σ tightening **dropped** (see §9 item 1 — corpus-mean centering made signed cosines legitimate). Drift metric shipped as a restricted cosine (`DriftCosine`, zero-zero components excluded) rather than the `‖f − r‖` norm. | `internal/issuemath/centering.go`, `internal/issuemath/ridgescore.go` |
 | **Phase 1** | **Shipped end-to-end.** Analyzer emits `negated_tags` with evidence; verifier cross-checks quotes before applying; persisted as `Negation` / `NegationProvenance` / `NegationEvidence` / `NegationReason` on `TagRelevance`. Emitting provenances today: `analyzer-negation` and `verifier-dominance` (the §9 item 5 DownRank conversion). `dismiss` and `cooccurrence` provenances are defined but not yet emitted. | `internal/ai/openai.go`, `internal/ai/service.go` (`normalizeNegated`), `internal/issueenrichment/verify.go` (`applyAnalyzerNegations`), `internal/domain/tags.go` |
 | **Phase 2** | **Shadow mode, on demand.** Anchored ridge with per-tag diagonal penalties (scored vs unscored anchors) computed per request behind `GET /api/v1/debug/issues/{id}/ridge`, anchored on signed `r⁺ − r⁻`. Not persisted, not consumed by ranking. | `internal/issuemath/ridgescore.go`, `internal/diagnostics/debug_ridge_score.go`, `internal/scoring/constants.go` (`RidgeAnchorLambda*`) |
-| **Phase 3** | Not started — `factor_model.go` and `synthesizeFactorEmbedding` still power similarity blending. | `internal/issuemath/factor_model.go` |
+| **Phase 3** | **3a measured (shadow); λ made data-driven.** `ComputeRidgeDecomposition` builds per-issue `f_i`, reconstruction `Tᵀf`, residual, and true R² = 1 − ‖e − Tᵀf‖²/‖e‖²; `RidgeBlend` offers tag-space and reconstruction-space similarity. The matheval shadow harness (`TestRidgeShadowComparison`, `-ridge`) compares both against rank-1. **Result:** the debug-endpoint default `λ_unscored=0.05` overfits (unscored tags soak up variance; R² inflated to ~0.90) and *regresses* ranking. The ranking penalty is not a transferable constant — it depends on tag-catalog conditioning and the K/D ratio — so `SelectRidgeLambdaGCV` derives it per corpus by generalized cross-validation (no labels, no held-out split). On the fixtures GCV picks `λ_unscored≈3.0`, landing **tag-space** ridge at NDCG 0.933 / Recall 0.964 vs rank-1's 0.874 / 0.928 (honest R² ~0.80). Tag-space beats reconstruction-space (settles the similarity-shape fork). **3b shipped (opt-in):** `WithRidgeSimilarity(λ)` swaps the rank-1 blend for the GCV-λ ridge tag-space blend, keeping every downstream modifier identical. The full-path A/B confirms the win survives the pipeline: NDCG +0.065 / Recall +0.047 vs rank-1. **3c shipped (default flip):** the GCV penalty is revision-cached in `internal/ridgelambda` (stride-sampled, centered with the corpus means) and threaded through the API into search, explore, and person recommendations — all three now default to ridge, falling back to rank-1 only when the corpus is too small to select a penalty. `factor_model.go` is retained as that documented fallback (and still backs the debug R²/factor-weight endpoints) rather than deleted, preserving graceful degradation. The map projection is untouched (it is PCA on tag relevance, not this decomposition — that switch is Phase 6). Caveat: only search is harness-validated; explore/person inherit the same model and code. | `internal/issuemath/ridge_decomposition.go`, `internal/issuemath/ridge_gcv.go`, `internal/ridgelambda/cache.go`, `internal/map/search.go`, `internal/map/explore.go`, `internal/people/person_detail.go` |
 | **Phase 4** | Not started — no NMF, no `internal/issuefactors` / themes package. | — |
 | **Phase 5** | Not started. The existing person profile/correlation endpoints predate this design and aggregate `r_i`, not `f_i`. | — |
 | **Phase 6** | Not started — the map still projects PCA-on-X′ (now with Procrustes alignment against the previous layout for orientation stability; see whitepaper §3.3). | `internal/issuemath/projection.go` |

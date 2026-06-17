@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"sortit/internal/issuemath"
+	"sortit/internal/issues"
 	issuemap "sortit/internal/map"
 	"sortit/internal/scoring"
 )
@@ -139,27 +140,7 @@ func computeMetrics(t *testing.T) Baseline {
 	storeIssues := corpus.StoreIssues(now)
 	storeTags := corpus.StoreTags()
 
-	var ndcgSum, recallSum float64
-	for _, judgment := range judgments {
-		query, ok := corpus.QueryByID(judgment.Query)
-		if !ok {
-			t.Fatalf("judgment query %q not in corpus", judgment.Query)
-		}
-		resp := issuemap.SearchFromQueryWithTags(
-			storeIssues,
-			storeTags,
-			query.Raw,
-			toTagRelevances(query.Tags),
-			query.Embedding,
-			evalK,
-		)
-		ranked := make([]string, len(resp.RelatedIssues))
-		for i, ri := range resp.RelatedIssues {
-			ranked[i] = ri.ID
-		}
-		ndcgSum += NDCGAtK(ranked, judgment.Expected, evalK)
-		recallSum += RecallAtK(ranked, judgment.Expected, evalK)
-	}
+	ndcg, recall := rankingMetrics(t, corpus, judgments, storeIssues, storeTags)
 
 	// Mirror the runtime corpus-load boundary: the map/search layer centers
 	// issue and tag embeddings against the corpus means before decomposing.
@@ -174,12 +155,11 @@ func computeMetrics(t *testing.T) Baseline {
 	})
 	r2Dist := Summarize(r2s)
 
-	queryCount := float64(len(judgments))
 	return Baseline{
 		Search: SearchMetrics{
 			Queries: len(judgments),
-			NDCG:    round4(ndcgSum / queryCount),
-			Recall:  round4(recallSum / queryCount),
+			NDCG:    round4(ndcg),
+			Recall:  round4(recall),
 		},
 		FactorModel: FactorModelMetrics{
 			FactorWeight: round4(decomp.FactorWeight),
@@ -193,6 +173,44 @@ func computeMetrics(t *testing.T) Baseline {
 			},
 		},
 	}
+}
+
+// rankingMetrics drives the production search entry point for every labeled
+// query and returns mean NDCG@K and Recall@K. Extra search options are
+// forwarded, which is how the sweep harness injects weight overrides.
+func rankingMetrics(
+	t *testing.T,
+	corpus Corpus,
+	judgments []Judgment,
+	storeIssues []issues.Issue,
+	storeTags []issues.Tag,
+	opts ...issuemap.SearchOption,
+) (ndcg, recall float64) {
+	t.Helper()
+	var ndcgSum, recallSum float64
+	for _, judgment := range judgments {
+		query, ok := corpus.QueryByID(judgment.Query)
+		if !ok {
+			t.Fatalf("judgment query %q not in corpus", judgment.Query)
+		}
+		resp := issuemap.SearchFromQueryWithTags(
+			storeIssues,
+			storeTags,
+			query.Raw,
+			toTagRelevances(query.Tags),
+			query.Embedding,
+			evalK,
+			opts...,
+		)
+		ranked := make([]string, len(resp.RelatedIssues))
+		for i, ri := range resp.RelatedIssues {
+			ranked[i] = ri.ID
+		}
+		ndcgSum += NDCGAtK(ranked, judgment.Expected, evalK)
+		recallSum += RecallAtK(ranked, judgment.Expected, evalK)
+	}
+	queryCount := float64(len(judgments))
+	return ndcgSum / queryCount, recallSum / queryCount
 }
 
 func round4(v float64) float64 {

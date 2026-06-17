@@ -13,6 +13,7 @@ import (
 	"sortit/internal/issues"
 	issueviews "sortit/internal/issues/views"
 	issuemap "sortit/internal/map"
+	"sortit/internal/ridgelambda"
 	"sortit/internal/tagcooccurrence"
 	"sortit/internal/tags"
 )
@@ -42,6 +43,28 @@ type SearchIssuesHandler struct {
 	// subset, and centering them with their own mean would subtract the
 	// query signal itself.
 	Centering *centering.Cache
+	// RidgeLambda provides the revision-cached GCV penalty that selects the
+	// anchored-ridge similarity model. When wired and the corpus is large
+	// enough, ridge is the default ranker; otherwise search falls back to
+	// the rank-1 factor model.
+	RidgeLambda *ridgelambda.Cache
+}
+
+// ridgeOption returns the WithRidgeSimilarity option carrying the
+// revision-cached GCV penalty, or an empty slice when ridge is unavailable
+// (cache not wired, or corpus too small) so search uses the rank-1 model.
+func (h SearchIssuesHandler) ridgeOption(ctx context.Context) ([]issuemap.SearchOption, error) {
+	if h.RidgeLambda == nil {
+		return nil, nil
+	}
+	lambda, ok, err := h.RidgeLambda.Current(ctx)
+	if err != nil {
+		return nil, err
+	}
+	if !ok {
+		return nil, nil
+	}
+	return []issuemap.SearchOption{issuemap.WithRidgeSimilarity(lambda)}, nil
 }
 
 // regionOpts inspects the query for an exact tag-name match. When found,
@@ -129,6 +152,11 @@ func (h SearchIssuesHandler) Handle(ctx context.Context, input SearchIssues) (is
 		return issuemap.SearchResponse{}, err
 	}
 
+	ridgeOpt, err := h.ridgeOption(ctx)
+	if err != nil {
+		return issuemap.SearchResponse{}, err
+	}
+
 	if searcher, ok := semanticSearchStore(h.Store); ok {
 		storeTags, err := h.Catalog.StoredTags(ctx)
 		if err != nil {
@@ -159,6 +187,7 @@ func (h SearchIssuesHandler) Handle(ctx context.Context, input SearchIssues) (is
 			issuemap.WithSortBy(searchOpts.SortBy),
 			issuemap.WithCorpusMeans(corpusMeans),
 		}
+		baseOpts = append(baseOpts, ridgeOpt...)
 
 		return issuemap.SearchFromQueryWithTags(
 			candidates,
@@ -196,6 +225,7 @@ func (h SearchIssuesHandler) Handle(ctx context.Context, input SearchIssues) (is
 		issuemap.WithSortBy(searchOpts.SortBy),
 		issuemap.WithCorpusMeans(corpusMeans),
 	}
+	baseOpts = append(baseOpts, ridgeOpt...)
 
 	return issuemap.SearchFromQueryWithTags(
 		storeIssues,
