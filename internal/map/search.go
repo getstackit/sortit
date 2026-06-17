@@ -50,6 +50,13 @@ type searchConfig struct {
 	// fixed value. Evaluation hook for the matheval sweep; production
 	// callers leave it unset.
 	factorWeightOverride *float64
+	// ridgeLambda, when non-nil, switches the similarity model from the
+	// rank-1 factor projection to the full-rank anchored-ridge blend
+	// (tag-space), with this value as the unscored-tag penalty. The value is
+	// expected to be GCV-derived upstream and cached by corpus revision —
+	// search does not run the selection itself. Phase 3b A/B opt-in;
+	// production default leaves it unset (rank-1).
+	ridgeLambda *float64
 }
 
 func WithOffset(offset int) SearchOption {
@@ -96,6 +103,22 @@ func WithFactorWeightOverride(factorWeight float64) SearchOption {
 	return func(c *searchConfig) {
 		w := min(max(factorWeight, 0), 1)
 		c.factorWeightOverride = &w
+	}
+}
+
+// WithRidgeSimilarity switches the similarity model to the full-rank
+// anchored-ridge blend (tag-space cos(f_A,f_B)), using lambda as the
+// unscored-tag penalty. lambda should be the GCV-derived value from
+// issuemath.SelectRidgeLambdaGCV, computed over the full corpus and cached by
+// revision — search does not run the selection. Non-positive lambda is
+// ignored (keeps the rank-1 model). When the corpus is too small for the
+// ridge decomposition, search falls back to rank-1 automatically.
+func WithRidgeSimilarity(lambda float64) SearchOption {
+	return func(c *searchConfig) {
+		if lambda <= 0 {
+			return
+		}
+		c.ridgeLambda = &lambda
 	}
 }
 
@@ -197,18 +220,41 @@ func SearchFromQueryWithTags(
 	genericQuery := queryMatchesGenericTag(queryLower, tagSpecificity)
 	now := time.Now().UTC()
 
+	// adjustFactorWeight applies the tag-correlation nudge (when the query
+	// names a tag) and the evaluation override to a model's factor share.
+	// Shared by the rank-1 and ridge models so both react identically.
+	adjustFactorWeight := func(fw float64) (factor, residual float64) {
+		if tagCorrelationBoost {
+			fw = min(max(fw+scoring.TagCorrelationFactorNudge, scoring.MinFactorWeight), scoring.MaxFactorWeight)
+		}
+		if cfg.factorWeightOverride != nil {
+			fw = *cfg.factorWeightOverride
+		}
+		return fw, 1 - fw
+	}
+
 	// When query matches a tag name, nudge factor weight up.
 	searchDecomp := decomp
-	if tagCorrelationBoost && useDecomp {
-		searchDecomp.FactorWeight = min(
-			max(decomp.FactorWeight+scoring.TagCorrelationFactorNudge, scoring.MinFactorWeight),
-			scoring.MaxFactorWeight,
-		)
-		searchDecomp.ResidualWeight = 1 - searchDecomp.FactorWeight
+	if useDecomp {
+		searchDecomp.FactorWeight, searchDecomp.ResidualWeight = adjustFactorWeight(decomp.FactorWeight)
 	}
-	if cfg.factorWeightOverride != nil {
-		searchDecomp.FactorWeight = *cfg.factorWeightOverride
-		searchDecomp.ResidualWeight = 1 - searchDecomp.FactorWeight
+
+	// Ridge similarity model (Phase 3b, opt-in via WithRidgeSimilarity). Only
+	// engaged when the corpus is large enough for both decompositions; falls
+	// back to rank-1 otherwise.
+	useRidge := cfg.ridgeLambda != nil && useDecomp
+	var ridgeDecomp issuemath.RidgeDecomposition
+	var queryRidge issuemath.RidgeVectors
+	if useRidge {
+		ridgeDecomp = issuemath.ComputeRidgeDecomposition(mapIssues, tagNames, issueEmbeddings, tagEmbeddings,
+			scoring.RidgeAnchorLambdaScored, *cfg.ridgeLambda)
+		if ridgeDecomp.Decomposed() {
+			ridgeDecomp.FactorWeight, ridgeDecomp.ResidualWeight = adjustFactorWeight(ridgeDecomp.FactorWeight)
+			queryRidge = issuemath.DecomposeRidgeEmbedding(queryVector, querySummary.Tags, tagNames, tagEmbeddings,
+				scoring.RidgeAnchorLambdaScored, *cfg.ridgeLambda)
+		} else {
+			useRidge = false
+		}
 	}
 
 	related := make([]RelatedIssue, 0, len(storeIssues))
@@ -220,22 +266,28 @@ func SearchFromQueryWithTags(
 		candidateSummary := exploreIssueSummary(candidate)
 		semanticSim := vectors.CosineSimilarity(queryVector, issueEmbeddings[candidate.ID])
 
-		var factorSim, residualSim, blended float64
-		if candidateDecomposed, ok := decomp.DecomposedFor(candidate.ID); useDecomp && ok {
-			factorSim, _, blended = issuemath.BlendFromDecomposition(
-				searchDecomp, queryDecomposed, candidateDecomposed,
-			)
-		} else if useDecomp {
-			// The candidate is missing from the decomposition — no persisted
-			// embedding, or a dimension mismatch (e.g. an embedding-model
-			// change mid-corpus). Score it as pure semantic similarity at
-			// full weight: blending a zero factor side at w_F would put it
-			// on a deflated scale relative to decomposed candidates in the
-			// same ranked list.
-			residualSim = semanticSim
-			blended = semanticSim
-		} else {
-			residualSim = semanticSim
+		// Missing-from-decomposition candidates (no persisted embedding, or a
+		// dimension mismatch after an embedding-model change) score as pure
+		// semantic similarity at full weight: blending a zero factor side at
+		// w_F would deflate them relative to decomposed candidates in the
+		// same ranked list.
+		var factorSim, blended float64
+		switch {
+		case useRidge:
+			if cv, ok := ridgeDecomp.VectorsFor(candidate.ID); ok {
+				factorSim, _, blended = issuemath.RidgeBlend(ridgeDecomp, queryRidge, cv, issuemath.RidgeTagSpace)
+			} else {
+				blended = semanticSim
+			}
+		case useDecomp:
+			if candidateDecomposed, ok := decomp.DecomposedFor(candidate.ID); ok {
+				factorSim, _, blended = issuemath.BlendFromDecomposition(
+					searchDecomp, queryDecomposed, candidateDecomposed,
+				)
+			} else {
+				blended = semanticSim
+			}
+		default:
 			factorSim = vectors.CosineSimilarity(queryFactor, factorVectors[candidate.ID])
 			factorShare := scoring.FactorWeight
 			if tagCorrelationBoost {
@@ -244,7 +296,7 @@ func SearchFromQueryWithTags(
 			if cfg.factorWeightOverride != nil {
 				factorShare = *cfg.factorWeightOverride
 			}
-			blended = (1-factorShare)*residualSim + factorShare*factorSim
+			blended = (1-factorShare)*semanticSim + factorShare*factorSim
 		}
 
 		// Composition rule: query-relative evidence is additive, candidate

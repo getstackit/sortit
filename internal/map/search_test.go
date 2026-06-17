@@ -254,6 +254,65 @@ func TestSearchReportsRawSemanticSimilarityWhenDecompositionIsActive(t *testing.
 	}
 }
 
+func TestSearchWithRidgeSimilarityRanksSameTagIssuesFirst(t *testing.T) {
+	// Two tag clusters with separable embeddings; query leans on alpha.
+	storeIssues := []issues.Issue{
+		{ID: "alpha-a", Raw: "alpha issue a", Status: issues.StatusOpen, TagScores: []domain.TagRelevance{{Tag: "alpha", Relevance: 0.9}}, Embedding: unitVec([]float64{0.95, 0.1, 0.1, 0})},
+		{ID: "alpha-b", Raw: "alpha issue b", Status: issues.StatusOpen, TagScores: []domain.TagRelevance{{Tag: "alpha", Relevance: 0.85}}, Embedding: unitVec([]float64{0.9, 0.2, 0.1, 0})},
+		{ID: "alpha-c", Raw: "alpha issue c", Status: issues.StatusOpen, TagScores: []domain.TagRelevance{{Tag: "alpha", Relevance: 0.8}}, Embedding: unitVec([]float64{0.92, 0.1, 0.2, 0})},
+		{ID: "beta-a", Raw: "beta issue a", Status: issues.StatusOpen, TagScores: []domain.TagRelevance{{Tag: "beta", Relevance: 0.9}}, Embedding: unitVec([]float64{0.1, 0.95, 0.1, 0})},
+		{ID: "beta-b", Raw: "beta issue b", Status: issues.StatusOpen, TagScores: []domain.TagRelevance{{Tag: "beta", Relevance: 0.85}}, Embedding: unitVec([]float64{0.2, 0.9, 0.1, 0})},
+		{ID: "beta-c", Raw: "beta issue c", Status: issues.StatusOpen, TagScores: []domain.TagRelevance{{Tag: "beta", Relevance: 0.8}}, Embedding: unitVec([]float64{0.1, 0.92, 0.2, 0})},
+	}
+	storeTags := []issues.Tag{
+		{Name: "alpha", Embedding: unitVec([]float64{1, 0, 0, 0})},
+		{Name: "beta", Embedding: unitVec([]float64{0, 1, 0, 0})},
+	}
+
+	resp := SearchFromQueryWithTags(
+		storeIssues, storeTags,
+		"alpha problem",
+		[]issues.TagRelevance{{Tag: "alpha", Relevance: 0.9}},
+		unitVec([]float64{0.95, 0.1, 0.1, 0}),
+		3,
+		WithRidgeSimilarity(1.0),
+	)
+
+	if len(resp.RelatedIssues) != 3 {
+		t.Fatalf("expected 3 results, got %d", len(resp.RelatedIssues))
+	}
+	for _, r := range resp.RelatedIssues {
+		if r.ID[:5] != "alpha" {
+			t.Errorf("ridge ranking surfaced a non-alpha issue %q in the top 3 for an alpha query", r.ID)
+		}
+	}
+}
+
+func TestSearchWithRidgeSimilarityFallsBackOnTinyCorpus(t *testing.T) {
+	// Below MinDecompositionIssues the ridge decomposition can't run; the
+	// option must degrade to the default model without error.
+	storeIssues := []issues.Issue{
+		{ID: "a", Raw: "alpha one", Status: issues.StatusOpen, TagScores: []domain.TagRelevance{{Tag: "alpha", Relevance: 0.9}}, Embedding: unitVec([]float64{1, 0, 0, 0})},
+		{ID: "b", Raw: "alpha two", Status: issues.StatusOpen, TagScores: []domain.TagRelevance{{Tag: "alpha", Relevance: 0.8}}, Embedding: unitVec([]float64{0.9, 0.1, 0, 0})},
+	}
+	storeTags := []issues.Tag{
+		{Name: "alpha", Embedding: unitVec([]float64{1, 0, 0, 0})},
+		{Name: "beta", Embedding: unitVec([]float64{0, 1, 0, 0})},
+	}
+
+	resp := SearchFromQueryWithTags(
+		storeIssues, storeTags,
+		"alpha",
+		[]issues.TagRelevance{{Tag: "alpha", Relevance: 0.9}},
+		unitVec([]float64{1, 0, 0, 0}),
+		10,
+		WithRidgeSimilarity(1.0),
+	)
+	if len(resp.RelatedIssues) == 0 {
+		t.Fatal("expected results from the rank-1 fallback on a tiny corpus")
+	}
+}
+
 func TestCandidateInRegionRespectsMembershipFloor(t *testing.T) {
 	tags := []TagRelevance{
 		{Tag: "auth", Relevance: 0.5},

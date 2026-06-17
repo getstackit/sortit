@@ -9,6 +9,7 @@ import (
 
 	"sortit/internal/issuemath"
 	"sortit/internal/issues"
+	issuemap "sortit/internal/map"
 	"sortit/internal/scoring"
 )
 
@@ -69,6 +70,7 @@ func TestRidgeShadowComparison(t *testing.T) {
 
 	now := time.Now().UTC()
 	storeIssues := corpus.StoreIssues(now)
+	storeTags := corpus.StoreTags()
 	tagNames := corpus.TagNames()
 
 	// Mirror the runtime corpus-load boundary: center issue and tag
@@ -167,6 +169,19 @@ func TestRidgeShadowComparison(t *testing.T) {
 	// The GCV ridge is the candidate that would actually ship; tag-space is
 	// the winning similarity shape.
 	t.Logf("GCV ridge tag-space NDCG@8 vs rank-1: %+.4f (Recall %+.4f)", gtNDCG-r1NDCG, gtRecall-r1Recall)
+
+	// Full ranking-path A/B: drive the production search entry point end to
+	// end (freshness, velocity, authority, specificity, co-occurrence — every
+	// modifier), rank-1 default vs ridge via WithRidgeSimilarity. This is the
+	// check that the similarity-only win survives the rest of the pipeline.
+	pathRank1NDCG, pathRank1Recall := rankingMetrics(t, corpus, judgments, storeIssues, storeTags)
+	pathRidgeNDCG, pathRidgeRecall := rankingMetrics(t, corpus, judgments, storeIssues, storeTags,
+		issuemap.WithRidgeSimilarity(gcvLambda))
+	t.Logf("--- full ranking path (all modifiers) ---")
+	t.Logf("%-26s  %8s  %8s", "model", "NDCG@8", "Recall@8")
+	t.Logf("%-26s  %8.4f  %8.4f", "rank-1 (current default)", pathRank1NDCG, pathRank1Recall)
+	t.Logf("%-26s  %8.4f  %8.4f", "ridge tag-space (GCV)", pathRidgeNDCG, pathRidgeRecall)
+	t.Logf("full-path ridge NDCG@8 vs rank-1: %+.4f (Recall %+.4f)", pathRidgeNDCG-pathRank1NDCG, pathRidgeRecall-pathRank1Recall)
 
 	// Does the high ridge R² reflect tags explaining the text, or unscored
 	// tags overfitting the embedding under a weak penalty? Sweep λ_unscored:
