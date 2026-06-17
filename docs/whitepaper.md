@@ -36,15 +36,18 @@ explainable ranking signal.
 
 ## 2. The factor / residual decomposition
 
-> **Status (Phase 3c):** issue **search** now defaults to the full-rank
-> anchored-ridge similarity model described in
+> **Status (Phase 3c):** the similarity-ranked surfaces — issue **search**,
+> **explore** (related issues), and **person recommendations** — now default
+> to the full-rank anchored-ridge model described in
 > [math-evolution.md §5](./math-evolution.md#5-anchored-ridge-regression-f_i),
 > with its unscored-tag penalty selected per corpus by GCV
 > (`internal/ridgelambda`). The rank-1 decomposition documented in this
-> section remains the **fallback** (small corpora, missing penalty) and is
-> still the live model for explore, person recommendations, and the map
-> projection. It is described here because it is the foundation the ridge
-> model refines, and because it still ranks most non-search surfaces.
+> section remains the **fallback** on those surfaces (small corpora, or no
+> penalty available) and still backs the debug R²/factor-weight endpoints.
+> The 2-D **map projection** is unaffected — it is PCA on the tag-relevance
+> matrix (§3), not this embedding decomposition. The rank-1 model is
+> documented here because it is the foundation the ridge model refines and
+> the fallback every ridge surface degrades to.
 
 The central trick in Sortit is to split each issue's embedding into:
 

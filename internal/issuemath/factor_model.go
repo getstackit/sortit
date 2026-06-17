@@ -14,6 +14,13 @@ import (
 // factor-predicted and residual components. The weights are data-driven,
 // computed from the variance explained by the tag-factor model.
 //
+// As of Phase 3c (docs/math-evolution.md) this rank-1 decomposition is the
+// *fallback* similarity model: search, explore, and person recommendations
+// default to the full-rank anchored ridge in RidgeDecomposition and fall
+// back here only when no GCV penalty is available (e.g. a corpus below
+// MinDecompositionIssues). It also still backs the debug R²/factor-weight
+// endpoints.
+//
 // Embeddings and R² values are stored in parallel slices indexed by a single
 // map, avoiding per-field hash table overhead.
 type FactorDecomposition struct {

@@ -12,6 +12,7 @@ import (
 	"sortit/internal/issuemath"
 	"sortit/internal/issues"
 	issueviews "sortit/internal/issues/views"
+	"sortit/internal/ridgelambda"
 	"sortit/internal/scoring"
 	"sortit/internal/tags"
 	"sortit/internal/vectors"
@@ -41,6 +42,10 @@ type PersonDetail struct {
 type GetPersonDetailHandler struct {
 	Store   issues.Store
 	Catalog *tags.CatalogService
+	// RidgeLambda selects the anchored-ridge similarity model for
+	// recommendations when wired and the corpus is large enough; otherwise
+	// recommendations use the rank-1 factor model. Mirrors the search path.
+	RidgeLambda *ridgelambda.Cache
 }
 
 func (h GetPersonDetailHandler) Handle(ctx context.Context, person string) (PersonDetail, error) {
@@ -150,11 +155,54 @@ func (h GetPersonDetailHandler) recommendOpenIssues(
 	// mean, never with its own statistics.
 	issueEmbeddings, tagEmbeddings, corpusMeans := issuemath.CenterEmbeddings(issueEmbeddings, tagEmbeddings)
 	personEmbedding = issuemath.CenterVector(personEmbedding, corpusMeans.Issue)
-	decomp := issuemath.ComputeFactorDecomposition(openIssues, tagNames, issueEmbeddings, tagEmbeddings)
 
-	// Decompose person embedding.
-	tagCov := issuemath.BuildTagCovariance(tagNames, tagEmbeddings)
-	personDecomposed := issuemath.DecomposeEmbedding(personEmbedding, profile, tagNames, tagEmbeddings, tagCov)
+	// Prefer the anchored-ridge model (Phase 3c) when a GCV penalty is
+	// available; otherwise fall back to the rank-1 factor decomposition. Only
+	// the chosen model is computed.
+	var (
+		ridgeDecomp      issuemath.RidgeDecomposition
+		personRidge      issuemath.RidgeVectors
+		decomp           issuemath.FactorDecomposition
+		personDecomposed issuemath.DecomposedEmbedding
+		useRidge         bool
+	)
+	if h.RidgeLambda != nil {
+		lambda, ok, lerr := h.RidgeLambda.Current(ctx)
+		if lerr != nil {
+			return nil, lerr
+		}
+		if ok {
+			ridgeDecomp = issuemath.ComputeRidgeDecomposition(openIssues, tagNames, issueEmbeddings, tagEmbeddings,
+				scoring.RidgeAnchorLambdaScored, lambda)
+			if ridgeDecomp.Decomposed() {
+				personRidge = issuemath.DecomposeRidgeEmbedding(personEmbedding, profile, tagNames, tagEmbeddings,
+					scoring.RidgeAnchorLambdaScored, lambda)
+				useRidge = true
+			}
+		}
+	}
+	if !useRidge {
+		decomp = issuemath.ComputeFactorDecomposition(openIssues, tagNames, issueEmbeddings, tagEmbeddings)
+		tagCov := issuemath.BuildTagCovariance(tagNames, tagEmbeddings)
+		personDecomposed = issuemath.DecomposeEmbedding(personEmbedding, profile, tagNames, tagEmbeddings, tagCov)
+	}
+
+	// blendPerson scores one candidate against the person, using whichever
+	// similarity model is active and falling back to plain tag-profile +
+	// embedding similarity when the candidate wasn't decomposed.
+	blendPerson := func(issueID string, issueTags []TagRelevance) (factor, semantic, combined float64) {
+		if useRidge {
+			if rv, ok := ridgeDecomp.VectorsFor(issueID); ok {
+				return issuemath.RidgeBlend(ridgeDecomp, personRidge, rv, issuemath.RidgeTagSpace)
+			}
+		} else if issueDecomposed, ok := decomp.DecomposedFor(issueID); ok {
+			return issuemath.BlendFromDecomposition(decomp, personDecomposed, issueDecomposed)
+		}
+		factor = issuemath.TagProfileSimilarity(profile, issueTags)
+		semantic = vectors.CosineSimilarity(personEmbedding, issueEmbeddings[issueID])
+		combined = scoring.PersonRecommendFactor*factor + scoring.PersonRecommendSemantic*semantic
+		return factor, semantic, combined
+	}
 
 	recommendations := make([]PersonIssueRecommendation, 0, len(openIssues))
 	detailReader, _ := h.Store.(issues.IssueDetailReader)
@@ -167,16 +215,7 @@ func (h GetPersonDetailHandler) recommendOpenIssues(
 
 		issueTags := issueTagProfile(issue)
 
-		var factorScore, semanticScore, combinedScore float64
-		if issueDecomposed, ok := decomp.DecomposedFor(issue.ID); ok {
-			factorScore, semanticScore, combinedScore = issuemath.BlendFromDecomposition(
-				decomp, personDecomposed, issueDecomposed,
-			)
-		} else {
-			factorScore = issuemath.TagProfileSimilarity(profile, issueTags)
-			semanticScore = vectors.CosineSimilarity(personEmbedding, issueEmbeddings[issue.ID])
-			combinedScore = scoring.PersonRecommendFactor*factorScore + scoring.PersonRecommendSemantic*semanticScore
-		}
+		factorScore, semanticScore, combinedScore := blendPerson(issue.ID, issueTags)
 
 		// Fit evidence clamps at zero, then candidate quality modulates
 		// multiplicatively — the same composition rule as search. A

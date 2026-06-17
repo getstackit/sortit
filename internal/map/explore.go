@@ -62,10 +62,34 @@ type ExploreResponse struct {
 	Opportunities []Opportunity  `json:"opportunities"`
 }
 
-func ExploreFromIssuesWithTags(storeIssues []issues.Issue, storeTags []issues.Tag, targetID string, limit int) (ExploreResponse, error) {
+// ExploreOption configures ExploreFromIssuesWithTags.
+type ExploreOption func(*exploreConfig)
+
+type exploreConfig struct {
+	ridgeLambda *float64
+}
+
+// WithExploreRidgeSimilarity switches explore's similarity model to the
+// full-rank anchored-ridge tag-space blend, using lambda (the GCV-derived,
+// revision-cached penalty) as the unscored-tag penalty. Mirrors
+// WithRidgeSimilarity on the search path; non-positive lambda is ignored.
+func WithExploreRidgeSimilarity(lambda float64) ExploreOption {
+	return func(c *exploreConfig) {
+		if lambda > 0 {
+			c.ridgeLambda = &lambda
+		}
+	}
+}
+
+func ExploreFromIssuesWithTags(storeIssues []issues.Issue, storeTags []issues.Tag, targetID string, limit int, opts ...ExploreOption) (ExploreResponse, error) {
 	targetID = strings.TrimSpace(targetID)
 	if targetID == "" {
 		return ExploreResponse{}, issues.ErrNotFound
+	}
+
+	var cfg exploreConfig
+	for _, opt := range opts {
+		opt(&cfg)
 	}
 
 	target, candidateSet, err := exploreInputIssues(storeIssues, targetID)
@@ -90,6 +114,21 @@ func ExploreFromIssuesWithTags(storeIssues []issues.Issue, storeTags []issues.Ta
 		factorVectors = runtimeFactorVectors(mapIssues, tagNames, tagEmbeddings)
 	}
 
+	// Anchored-ridge model (Phase 3c) when a GCV penalty is supplied and the
+	// corpus decomposes; otherwise the rank-1 decomposition above.
+	var (
+		ridgeDecomp issuemath.RidgeDecomposition
+		targetRidge issuemath.RidgeVectors
+		useRidge    bool
+	)
+	if cfg.ridgeLambda != nil && useDecomp {
+		ridgeDecomp = issuemath.ComputeRidgeDecomposition(mapIssues, tagNames, issueEmbeddings, tagEmbeddings,
+			scoring.RidgeAnchorLambdaScored, *cfg.ridgeLambda)
+		if ridgeDecomp.Decomposed() {
+			targetRidge, useRidge = ridgeDecomp.VectorsFor(target.ID)
+		}
+	}
+
 	targetSummary := exploreIssueSummary(target)
 	targetDecomposed, targetOK := decomp.DecomposedFor(target.ID)
 	now := time.Now().UTC()
@@ -103,24 +142,31 @@ func ExploreFromIssuesWithTags(storeIssues []issues.Issue, storeTags []issues.Ta
 		candidateSummary := exploreIssueSummary(candidate)
 		semanticSim := vectors.UnitCosineSimilarity(issueEmbeddings[target.ID], issueEmbeddings[candidate.ID])
 
-		candidateDecomposed, candidateOK := decomp.DecomposedFor(candidate.ID)
-		var factorSim, residualSim, blended float64
+		var factorSim, blended float64
 		switch {
-		case useDecomp && targetOK && candidateOK:
-			factorSim, _, blended = issuemath.BlendFromDecomposition(
-				decomp, targetDecomposed, candidateDecomposed,
-			)
+		case useRidge:
+			if cv, ok := ridgeDecomp.VectorsFor(candidate.ID); ok {
+				factorSim, _, blended = issuemath.RidgeBlend(ridgeDecomp, targetRidge, cv, issuemath.RidgeTagSpace)
+			} else {
+				blended = semanticSim
+			}
+		case useDecomp && targetOK:
+			if candidateDecomposed, ok := decomp.DecomposedFor(candidate.ID); ok {
+				factorSim, _, blended = issuemath.BlendFromDecomposition(
+					decomp, targetDecomposed, candidateDecomposed,
+				)
+			} else {
+				// Candidate missing from the decomposition (no embedding or
+				// dimension mismatch) — pure semantic at full weight,
+				// mirroring the search path, so the pair is not scored on a
+				// deflated scale relative to decomposed pairs.
+				blended = semanticSim
+			}
 		case useDecomp:
-			// Target or candidate missing from the decomposition (no
-			// embedding or dimension mismatch) — pure semantic at full
-			// weight, mirroring the search path, so the pair is not scored
-			// on a deflated scale relative to decomposed pairs.
-			residualSim = semanticSim
 			blended = semanticSim
 		default:
-			residualSim = semanticSim
 			factorSim = vectors.UnitCosineSimilarity(factorVectors[target.ID], factorVectors[candidate.ID])
-			blended = scoring.SemanticWeight*residualSim + scoring.FactorWeight*factorSim
+			blended = scoring.SemanticWeight*semanticSim + scoring.FactorWeight*factorSim
 		}
 
 		// Same composition rule as search: relatedness evidence adds,
