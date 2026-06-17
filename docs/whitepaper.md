@@ -642,7 +642,7 @@ fallback behavior itself is unchanged.
 
 | # | Issue                                                          | Suggested direction                                          |
 |---|----------------------------------------------------------------|--------------------------------------------------------------|
-| 1 | Single-direction "factor model" is oversold                    | Either embrace multi-direction (top-k tags as basis vectors) or rename to "tag-direction projection". |
+| 1 | Single-direction "factor model" is oversold                    | Addressed: the similarity surfaces (search/explore/person) now default to the full-rank anchored ridge `f = (TTᵀ+Λ)⁻¹(Te+Λr)` (math-evolution Phase 3c), a genuine multi-dimensional loading rather than a rank-1 projection. This rank-1 decomposition is now the documented fallback. |
 | 2 | Shrinkage `α = 1 − mean(off-diag²)` is heuristic               | Replace with Ledoit-Wolf or document explicitly as a stability hack. |
 | 3 | Map sign-convention depends on first issue                     | Addressed: deterministic largest-absolute-loading sign convention plus Procrustes alignment against the previous layout (§3.3). |
 | 4 | Hash-based "embedding" fallback hides degradation              | Addressed: per-kind counters plus rate-limited warning logs, exposed via `/api/v1/debug/embedding-fallbacks` (§9). Making search return an error instead remains open. |
