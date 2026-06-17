@@ -291,21 +291,16 @@ func residualOnlyRidgeVectors(e []float64, totalNorm float64) RidgeVectors {
 	}
 }
 
-// ridgeAnchorAndLambdas builds the signed prior r = r⁺ − r⁻ and the per-tag
-// penalty vector. Tags the analyzer scored (or negated) get lambdaScored;
-// the rest get lambdaUnscored. Tag matching is by raw name, matching the
-// rank-1 synthesizeFactorEmbedding path.
-func ridgeAnchorAndLambdas(
+// signedAnchor builds the signed prior r = r⁺ − r⁻ and a mask of which tags
+// the analyzer expressed an opinion on. Tag matching is by raw name,
+// matching the rank-1 synthesizeFactorEmbedding path.
+func signedAnchor(
 	tagScores []issues.TagRelevance,
 	tagIndex map[string]int,
 	numTags int,
-	lambdaScored, lambdaUnscored float64,
-) (anchor, lambdas []float64) {
+) (anchor []float64, scored []bool) {
 	anchor = make([]float64, numTags)
-	lambdas = make([]float64, numTags)
-	for i := range lambdas {
-		lambdas[i] = lambdaUnscored
-	}
+	scored = make([]bool, numTags)
 	for _, ts := range tagScores {
 		idx, ok := tagIndex[ts.Tag]
 		if !ok {
@@ -316,7 +311,28 @@ func ridgeAnchorAndLambdas(
 			negation = *ts.Negation
 		}
 		anchor[idx] = ts.Relevance - negation
-		lambdas[idx] = lambdaScored
+		scored[idx] = true
+	}
+	return anchor, scored
+}
+
+// ridgeAnchorAndLambdas builds the signed prior and the per-tag penalty
+// vector. Tags the analyzer scored (or negated) get lambdaScored; the rest
+// get lambdaUnscored.
+func ridgeAnchorAndLambdas(
+	tagScores []issues.TagRelevance,
+	tagIndex map[string]int,
+	numTags int,
+	lambdaScored, lambdaUnscored float64,
+) (anchor, lambdas []float64) {
+	anchor, scored := signedAnchor(tagScores, tagIndex, numTags)
+	lambdas = make([]float64, numTags)
+	for i := range lambdas {
+		if scored[i] {
+			lambdas[i] = lambdaScored
+		} else {
+			lambdas[i] = lambdaUnscored
+		}
 	}
 	return anchor, lambdas
 }

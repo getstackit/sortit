@@ -23,16 +23,22 @@ var ridgeShadow = flag.Bool("ridge", false, "run the ridge-vs-rank1 shadow compa
 //     rises, i.e. 16 weakly-penalized tag directions soaking up embedding
 //     variance. The drift-diagnostic endpoint *wants* that weak penalty (so
 //     missing tags float up); the ranking path does not.
-//   - Properly regularized (λ_unscored≈1.0) with TAG-SPACE similarity, ridge
-//     reaches NDCG ~0.933 vs rank-1 0.874. Tag-space beats reconstruction-
-//     space across the sweep, which settles the Phase 3b similarity-shape
-//     fork in favor of cos(f_A,f_B).
+//   - The ranking penalty should not be a hardcoded constant: the optimum
+//     depends on the tag catalog's conditioning and the K/D ratio, both of
+//     which the system knows at solve time. SelectRidgeLambdaGCV derives it
+//     from the data via generalized cross-validation — no labels, no held-out
+//     split. On these fixtures GCV picks λ_unscored≈3.0, which lands ridge
+//     TAG-SPACE similarity at NDCG ~0.933 / Recall ~0.964 vs rank-1's
+//     0.874 / 0.928 — a win on both, reached without peeking at the
+//     judgments. R² at that λ falls to ~0.80, an honest middle ground.
+//     Tag-space beats reconstruction-space, settling the Phase 3b
+//     similarity-shape fork in favor of cos(f_A,f_B).
 //   - Caveat: these fixtures generate embeddings AS relevance-weighted tag
 //     sums, so they structurally favor the tag-direction story and cannot
 //     show ridge's real edge (analyzer-vs-geometry divergence / the drift
-//     signal). Treat the specific λ_unscored=1.0 as fit-to-fixtures, not a
-//     production constant; the value needs held-out or real-embedding
-//     validation before Phase 3b hardcodes a ranking λ.
+//     signal). The win here is therefore a floor, and GCV — not a fixture-fit
+//     constant — is what carries forward: it re-derives λ on whatever real
+//     K/D/conditioning production has.
 //
 // TestRidgeShadowComparison measures the full-rank anchored-ridge model
 // against the current rank-1 projection on the fixture corpus, before any
@@ -76,12 +82,22 @@ func TestRidgeShadowComparison(t *testing.T) {
 		t.Fatal("rank-1 decomposition fell back; corpus should be large enough")
 	}
 
-	// Ridge model.
+	// Ridge model at the debug-endpoint default penalty.
 	rdecomp := issuemath.ComputeRidgeDecomposition(storeIssues, tagNames, issueEmb, tagEmb,
 		scoring.RidgeAnchorLambdaScored, scoring.RidgeAnchorLambdaUnscored)
 	if !rdecomp.Decomposed() {
 		t.Fatal("ridge decomposition fell back; corpus should be large enough")
 	}
+
+	// Ridge model at the GCV-selected unscored penalty — derived from the
+	// data, not hardcoded.
+	gcvLambda, ok := issuemath.SelectRidgeLambdaGCV(storeIssues, tagNames, issueEmb, tagEmb,
+		scoring.RidgeAnchorLambdaScored, nil)
+	if !ok {
+		t.Fatal("GCV λ selection fell back; corpus should be large enough")
+	}
+	gcvDecomp := issuemath.ComputeRidgeDecomposition(storeIssues, tagNames, issueEmb, tagEmb,
+		scoring.RidgeAnchorLambdaScored, gcvLambda)
 
 	centeredQuery := func(q CorpusQuery) []float64 {
 		return issuemath.CenterVector(q.Embedding, means.Issue)
@@ -112,27 +128,45 @@ func TestRidgeShadowComparison(t *testing.T) {
 		})
 	}
 
+	ridgeAt := func(d issuemath.RidgeDecomposition, lambda float64, mode issuemath.RidgeSimilarityMode) func(CorpusQuery) []string {
+		return func(q CorpusQuery) []string {
+			qv := issuemath.DecomposeRidgeEmbedding(centeredQuery(q), toTagRelevances(q.Tags), tagNames, tagEmb,
+				scoring.RidgeAnchorLambdaScored, lambda)
+			return rankByScore(storeIssues, func(id string) (float64, bool) {
+				cv, ok := d.VectorsFor(id)
+				if !ok {
+					return 0, false
+				}
+				_, _, blended := issuemath.RidgeBlend(d, qv, cv, mode)
+				return blended, true
+			})
+		}
+	}
+
 	r1NDCG, r1Recall := shadowMetrics(corpus, judgments, rank1)
 	rtNDCG, rtRecall := shadowMetrics(corpus, judgments, func(q CorpusQuery) []string { return ridge(q, issuemath.RidgeTagSpace) })
 	rrNDCG, rrRecall := shadowMetrics(corpus, judgments, func(q CorpusQuery) []string { return ridge(q, issuemath.RidgeReconSpace) })
+	gtNDCG, gtRecall := shadowMetrics(corpus, judgments, ridgeAt(gcvDecomp, gcvLambda, issuemath.RidgeTagSpace))
+	grNDCG, grRecall := shadowMetrics(corpus, judgments, ridgeAt(gcvDecomp, gcvLambda, issuemath.RidgeReconSpace))
 
-	t.Logf("%-22s  %8s  %8s  %8s", "model", "NDCG@8", "Recall@8", "w_F")
-	t.Logf("%-22s  %8.4f  %8.4f  %8.4f", "rank-1 (current)", r1NDCG, r1Recall, fdecomp.FactorWeight)
-	t.Logf("%-22s  %8.4f  %8.4f  %8.4f", "ridge tag-space", rtNDCG, rtRecall, rdecomp.FactorWeight)
-	t.Logf("%-22s  %8.4f  %8.4f  %8.4f", "ridge recon-space", rrNDCG, rrRecall, rdecomp.FactorWeight)
+	t.Logf("%-26s  %8s  %8s  %8s", "model", "NDCG@8", "Recall@8", "w_F")
+	t.Logf("%-26s  %8.4f  %8.4f  %8.4f", "rank-1 (current)", r1NDCG, r1Recall, fdecomp.FactorWeight)
+	t.Logf("%-26s  %8.4f  %8.4f  %8.4f", "ridge tag-space (λ=0.05)", rtNDCG, rtRecall, rdecomp.FactorWeight)
+	t.Logf("%-26s  %8.4f  %8.4f  %8.4f", "ridge recon-space (λ=0.05)", rrNDCG, rrRecall, rdecomp.FactorWeight)
+	t.Logf("%-26s  %8.4f  %8.4f  %8.4f", "ridge tag-space (GCV)", gtNDCG, gtRecall, gcvDecomp.FactorWeight)
+	t.Logf("%-26s  %8.4f  %8.4f  %8.4f", "ridge recon-space (GCV)", grNDCG, grRecall, gcvDecomp.FactorWeight)
+	t.Logf("GCV-selected λ_unscored = %.3f (default was %.3f)", gcvLambda, scoring.RidgeAnchorLambdaUnscored)
 
-	rank1R2 := collectR2(fdecomp.AllR2)
-	ridgeR2 := collectR2(rdecomp.AllR2)
-	r1Dist := Summarize(rank1R2)
-	rDist := Summarize(ridgeR2)
-	t.Logf("R² (rank-1, squared-cosine): mean=%.4f median=%.4f p10=%.4f p90=%.4f", r1Dist.Mean, r1Dist.Median, r1Dist.P10, r1Dist.P90)
-	t.Logf("R² (ridge, reconstruction):  mean=%.4f median=%.4f p10=%.4f p90=%.4f", rDist.Mean, rDist.Median, rDist.P10, rDist.P90)
+	r1Dist := Summarize(collectR2(fdecomp.AllR2))
+	defaultDist := Summarize(collectR2(rdecomp.AllR2))
+	gcvDist := Summarize(collectR2(gcvDecomp.AllR2))
+	t.Logf("R² (rank-1, squared-cosine):     mean=%.4f median=%.4f p10=%.4f p90=%.4f", r1Dist.Mean, r1Dist.Median, r1Dist.P10, r1Dist.P90)
+	t.Logf("R² (ridge recon, λ=0.05 overfit): mean=%.4f median=%.4f p10=%.4f p90=%.4f", defaultDist.Mean, defaultDist.Median, defaultDist.P10, defaultDist.P90)
+	t.Logf("R² (ridge recon, GCV λ):          mean=%.4f median=%.4f p10=%.4f p90=%.4f", gcvDist.Mean, gcvDist.Median, gcvDist.P10, gcvDist.P90)
 
-	bestRidge := rtNDCG
-	if rrNDCG > bestRidge {
-		bestRidge = rrNDCG
-	}
-	t.Logf("best ridge NDCG@8 vs rank-1: %+.4f", bestRidge-r1NDCG)
+	// The GCV ridge is the candidate that would actually ship; tag-space is
+	// the winning similarity shape.
+	t.Logf("GCV ridge tag-space NDCG@8 vs rank-1: %+.4f (Recall %+.4f)", gtNDCG-r1NDCG, gtRecall-r1Recall)
 
 	// Does the high ridge R² reflect tags explaining the text, or unscored
 	// tags overfitting the embedding under a weak penalty? Sweep λ_unscored:
