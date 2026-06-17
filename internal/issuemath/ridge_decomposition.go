@@ -75,14 +75,6 @@ func (d RidgeDecomposition) VectorsFor(id string) (RidgeVectors, bool) {
 // Decomposed reports whether any issues were decomposed.
 func (d RidgeDecomposition) Decomposed() bool { return d.used }
 
-// DecomposedCount returns the number of decomposed issues.
-func (d RidgeDecomposition) DecomposedCount() int {
-	if !d.used {
-		return 0
-	}
-	return len(d.index)
-}
-
 // AllR2 iterates over each decomposed issue's true R².
 func (d RidgeDecomposition) AllR2(fn func(id string, r2 float64)) {
 	if !d.used {

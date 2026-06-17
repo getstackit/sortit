@@ -78,45 +78,6 @@ func (m *cliLoginManager) Begin() (CLILoginStart, error) {
 	return start, nil
 }
 
-func (m *cliLoginManager) Exists(id string) error {
-	m.mu.Lock()
-	defer m.mu.Unlock()
-
-	now := time.Now().UTC()
-	m.cleanupLocked(now)
-	login, ok := m.logins[id]
-	if !ok {
-		return ErrCLILoginNotFound
-	}
-	if now.After(login.expiresAt) {
-		delete(m.logins, id)
-		return ErrCLILoginExpired
-	}
-	return nil
-}
-
-func (m *cliLoginManager) Complete(id, exchangeToken string, result CLILoginResult) error {
-	m.mu.Lock()
-	defer m.mu.Unlock()
-
-	now := time.Now().UTC()
-	m.cleanupLocked(now)
-	login, ok := m.logins[id]
-	if !ok {
-		return ErrCLILoginNotFound
-	}
-	if now.After(login.expiresAt) {
-		delete(m.logins, id)
-		return ErrCLILoginExpired
-	}
-	if hashToken(exchangeToken) != login.exchangeTokenHash {
-		return ErrUnauthorized
-	}
-
-	login.result = &result
-	return nil
-}
-
 func (m *cliLoginManager) MarkComplete(id string, result CLILoginResult) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
@@ -175,10 +136,6 @@ func (m *cliLoginManager) cleanupLocked(now time.Time) {
 
 func (s *Service) BeginCLILogin() (CLILoginStart, error) {
 	return s.cliLogins.Begin()
-}
-
-func (s *Service) CLILoginExists(id string) error {
-	return s.cliLogins.Exists(id)
 }
 
 func (s *Service) CompleteCLILogin(ctx context.Context, id string, user User) (CLILoginResult, error) {

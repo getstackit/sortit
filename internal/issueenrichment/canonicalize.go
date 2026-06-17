@@ -8,20 +8,6 @@ import (
 	"sortit/internal/issues"
 )
 
-func (s *IssueEnricher) canonicalizeRefinement(ctx context.Context, issue issues.Issue, postRaw string) (string, error) {
-	discussionTexts := make([]string, 0, len(issue.Discussion)+1)
-	for _, post := range issue.Discussion {
-		text := strings.TrimSpace(post.Raw)
-		if text == "" {
-			continue
-		}
-		discussionTexts = append(discussionTexts, text)
-	}
-	discussionTexts = append(discussionTexts, postRaw)
-
-	return s.canonicalizeDiscussion(ctx, discussionTexts)
-}
-
 func (s *IssueEnricher) canonicalizePersistedIssue(ctx context.Context, issue issues.Issue, targetSequence int) (string, int, error) {
 	targetSequence = max(1, targetSequence)
 

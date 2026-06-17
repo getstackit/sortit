@@ -24,19 +24,6 @@ func ValidateRaw(raw string, fieldName string) (string, error) {
 	return raw, nil
 }
 
-// ValidateRefineInput validates and trims both PostRaw and CanonicalRaw.
-func ValidateRefineInput(input RefineInput) (postRaw, canonicalRaw string, err error) {
-	postRaw, err = ValidateRaw(input.PostRaw, "post raw")
-	if err != nil {
-		return "", "", err
-	}
-	canonicalRaw, err = ValidateRaw(input.CanonicalRaw, "canonical raw")
-	if err != nil {
-		return "", "", err
-	}
-	return postRaw, canonicalRaw, nil
-}
-
 // EnsureMutable returns ErrIssueClosed if the issue is closed.
 func EnsureMutable(issue Issue) error {
 	if issue.Status == StatusClosed {
@@ -56,16 +43,6 @@ func NewDiscussionPost(issueID string, discussion []IssuePost, raw, createdBy, k
 		Sequence:  len(discussion) + 1,
 		Kind:      kind,
 	}
-}
-
-// ApplyRefinement updates an issue's canonical fields from a RefineInput.
-func ApplyRefinement(issue *Issue, canonicalRaw string, input RefineInput) {
-	issue.Raw = canonicalRaw
-	issue.Tags = displayTags(input.Tags, input.TagScores)
-	issue.TagScores = copyTagScores(input.TagScores)
-	issue.Embedding = copyEmbedding(input.Embedding)
-	issue.EnrichmentStatus = EnrichmentStatusComplete
-	issue.EnrichmentError = ""
 }
 
 // BuildNewIssue creates a new Issue from CreateInput with proper defaults.

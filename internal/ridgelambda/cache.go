@@ -98,17 +98,6 @@ func (c *Cache) Current(ctx context.Context) (float64, bool, error) {
 	return lambda, ok, nil
 }
 
-// Invalidate forces a recompute on the next Current call.
-func (c *Cache) Invalidate() {
-	if c == nil {
-		return
-	}
-	c.mu.Lock()
-	defer c.mu.Unlock()
-	c.computed = false
-	c.revision = 0
-}
-
 func (c *Cache) compute(ctx context.Context) (float64, bool, error) {
 	items, err := c.Store.List(ctx)
 	if err != nil {

@@ -85,21 +85,6 @@ func (s *Service) CompleteGitHubLogin(w http.ResponseWriter, r *http.Request, ca
 	return nil
 }
 
-func (s *Service) CompleteGitHubCLILogin(w http.ResponseWriter, r *http.Request, callbackPath, loginID string) (User, CLILoginResult, error) {
-	user, err := s.completeOAuthLogin(r, callbackPath)
-	if err != nil {
-		return User{}, CLILoginResult{}, err
-	}
-	if err := s.setSessionCookie(w, r, user.ID); err != nil {
-		return User{}, CLILoginResult{}, err
-	}
-	result, err := s.CompleteCLILogin(r.Context(), loginID, user)
-	if err != nil {
-		return User{}, CLILoginResult{}, err
-	}
-	return user, result, nil
-}
-
 func (s *Service) completeOAuthLogin(r *http.Request, callbackPath string) (User, error) {
 	code := strings.TrimSpace(r.URL.Query().Get("code"))
 	state := strings.TrimSpace(r.URL.Query().Get("state"))
