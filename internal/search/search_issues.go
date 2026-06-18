@@ -182,11 +182,12 @@ func (h SearchIssuesHandler) Handle(ctx context.Context, input SearchIssues) (is
 			return issuemap.SearchResponse{}, err
 		}
 
-		baseOpts := []issuemap.SearchOption{
+		baseOpts := make([]issuemap.SearchOption, 0, 3+len(ridgeOpt))
+		baseOpts = append(baseOpts,
 			issuemap.WithOffset(searchOpts.Offset),
 			issuemap.WithSortBy(searchOpts.SortBy),
 			issuemap.WithCorpusMeans(corpusMeans),
-		}
+		)
 		baseOpts = append(baseOpts, ridgeOpt...)
 
 		return issuemap.SearchFromQueryWithTags(
@@ -220,11 +221,12 @@ func (h SearchIssuesHandler) Handle(ctx context.Context, input SearchIssues) (is
 		return issuemap.SearchResponse{}, err
 	}
 
-	baseOpts := []issuemap.SearchOption{
+	baseOpts := make([]issuemap.SearchOption, 0, 3+len(ridgeOpt))
+	baseOpts = append(baseOpts,
 		issuemap.WithOffset(searchOpts.Offset),
 		issuemap.WithSortBy(searchOpts.SortBy),
 		issuemap.WithCorpusMeans(corpusMeans),
-	}
+	)
 	baseOpts = append(baseOpts, ridgeOpt...)
 
 	return issuemap.SearchFromQueryWithTags(
