@@ -532,10 +532,10 @@ Tie-breaker (within `ContentConfidenceTieWindow = 0.05`): higher
   staleness matters less than relatedness, so the decay range is
   compressed rather than matched to search.
 - **Tag-name correlation has two implementations.** The decomposition path
-  nudges `w_F` by `+0.1`; the legacy fallback substitutes fixed `0.5/0.5`
-  weights from `TagCorrelationSemantic/Factor`. The two paths produce
-  different rankings on the same data depending on whether decomposition
-  succeeded.
+  nudges `w_F` by `+0.1`; the legacy fallback (corpus too small to
+  decompose) substitutes a fixed factor share of `TagCorrelationFactor`
+  (0.5). The two paths produce different rankings on the same data
+  depending on whether decomposition succeeded.
 - **The velocity boost is small** (multiplier in `[1.0, 1.08]`) and the
   authority boost is also small (additive in `[0, 0.10]`). Their *relative*
   importance is dominated by `blended` for most queries. That's probably

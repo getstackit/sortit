@@ -8,8 +8,7 @@ package scoring
 const (
 	SemanticWeight            = 0.6  // default semantic share of the blend
 	FactorWeight              = 0.4  // default factor share of the blend
-	TagCorrelationSemantic    = 0.5  // semantic share when query matches a tag name
-	TagCorrelationFactor      = 0.5  // factor share when query matches a tag name
+	TagCorrelationFactor      = 0.5  // factor share when query matches a tag name (semantic share is 1 − this)
 	PersonRecommendFactor     = 0.65 // factor share for person recommendations
 	PersonRecommendSemantic   = 0.35 // semantic share for person recommendations
 	CorrelationSemanticWeight = 0.6  // semantic share for work correlations

@@ -56,14 +56,6 @@ func Start(ctx context.Context, database string) (*Harness, error) {
 	}, nil
 }
 
-func (h *Harness) ConnectionString() string {
-	return h.url
-}
-
-func (h *Harness) DatabaseName() string {
-	return h.database
-}
-
 func (h *Harness) Terminate(ctx context.Context) error {
 	if h == nil || h.container == nil {
 		return nil

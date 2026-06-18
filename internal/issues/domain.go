@@ -61,11 +61,6 @@ func HydrateOperation(operation IssueOperation, issuesByID map[string]Issue) Iss
 	return hydrateOperation(operation, issuesByID)
 }
 
-// IssuesByIDFromList creates a map of issue ID to Issue from a slice.
-func IssuesByIDFromList(items []Issue) map[string]Issue {
-	return issuesByIDFromList(items)
-}
-
 // MapProjectionIssuesFromIssues converts full issues into the minimal payload
 // needed to rebuild the map projection.
 func MapProjectionIssuesFromIssues(items []Issue) []MapProjectionIssue {

@@ -107,14 +107,3 @@ type SpecificityScorer interface {
 type Canonicalizer interface {
 	CanonicalizeDiscussion(ctx context.Context, posts []string) (string, error)
 }
-
-func TagsFromNames(names []string) []Tag {
-	tags := make([]Tag, 0, len(names))
-	for _, name := range names {
-		if name == "" {
-			continue
-		}
-		tags = append(tags, Tag{Name: name})
-	}
-	return tags
-}
