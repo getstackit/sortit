@@ -91,7 +91,18 @@ func WithAntiCorrelators(tags map[string]float64) SearchOption {
 		if len(tags) == 0 {
 			return
 		}
-		c.antiCorrelators = tags
+		normalized := make(map[string]float64, len(tags))
+		for tag, weight := range tags {
+			name := domain.NormalizeTagName(tag)
+			if name == "" || weight <= 0 {
+				continue
+			}
+			normalized[name] = weight
+		}
+		if len(normalized) == 0 {
+			return
+		}
+		c.antiCorrelators = normalized
 	}
 }
 
@@ -435,18 +446,16 @@ func sortBoth(related []RelatedIssue, scores []scoredResult, cmpFn func(ai, bi i
 	copy(scores, sortedScores)
 }
 
-// queryMatchesTagNames returns true if any query word exactly matches a known
-// tag name, indicating the user is searching by tag-space concepts.
+// queryMatchesTagNames returns true if the query exactly contains a known tag
+// name as a token-bounded phrase, indicating the user is searching by
+// tag-space concepts.
 func queryMatchesTagNames(queryLower string, tagNames []string) bool {
 	if queryLower == "" || len(tagNames) == 0 {
 		return false
 	}
-	words := make(map[string]struct{})
-	for w := range strings.FieldsSeq(queryLower) {
-		words[domain.NormalizeTagName(w)] = struct{}{}
-	}
+	queryTerms := normalizedTagTerms(queryLower)
 	for _, tag := range tagNames {
-		if _, ok := words[domain.NormalizeTagName(tag)]; ok {
+		if containsTagPhrase(queryTerms, normalizedTagTerms(tag)) {
 			return true
 		}
 	}
@@ -462,28 +471,29 @@ func issueSpecificityPenalty(tags []TagRelevance, tagSpecificity map[string]*flo
 	limit := min(scoring.SpecificityPenaltyTopN, len(tags))
 	var totalPenalty float64
 	for _, tag := range tags[:limit] {
-		totalPenalty += specificityPenalty(tagSpecificity[tag.Tag])
+		totalPenalty += specificityPenalty(tagSpecificity[domain.NormalizeTagName(tag.Tag)])
 	}
 	return totalPenalty / float64(limit)
 }
 
-// queryMatchesGenericTag returns true if any query word exactly matches a
-// tag with low specificity (< 0.5), indicating the user is filtering by a
-// broad category.
+// queryMatchesGenericTag returns true if the query exactly contains a tag with
+// low specificity (< 0.5), indicating the user is filtering by a broad
+// category.
 func queryMatchesGenericTag(queryLower string, tagSpecificity map[string]*float64) bool {
 	if queryLower == "" {
 		return false
 	}
-	for w := range strings.FieldsSeq(queryLower) {
-		normalized := domain.NormalizeTagName(w)
-		if p, ok := tagSpecificity[normalized]; ok {
-			s := scoring.GenericTagThreshold
-			if p != nil {
-				s = *p
-			}
-			if s < scoring.GenericTagThreshold {
-				return true
-			}
+	queryTerms := normalizedTagTerms(queryLower)
+	for tag, p := range tagSpecificity {
+		if !containsTagPhrase(queryTerms, normalizedTagTerms(tag)) {
+			continue
+		}
+		s := scoring.GenericTagThreshold
+		if p != nil {
+			s = *p
+		}
+		if s < scoring.GenericTagThreshold {
+			return true
 		}
 	}
 	return false
@@ -500,7 +510,7 @@ func specificCooccurrenceBoost(tags []TagRelevance, tagSpecificity map[string]*f
 			continue
 		}
 		s := scoring.GenericTagThreshold
-		if p, ok := tagSpecificity[tag.Tag]; ok && p != nil {
+		if p, ok := tagSpecificity[domain.NormalizeTagName(tag.Tag)]; ok && p != nil {
 			s = *p
 		}
 		if s >= scoring.GenericTagThreshold {
@@ -517,9 +527,36 @@ func specificCooccurrenceBoost(tags []TagRelevance, tagSpecificity map[string]*f
 func buildTagSpecificityMap(tags []issues.Tag) map[string]*float64 {
 	m := make(map[string]*float64, len(tags))
 	for i := range tags {
-		m[tags[i].Name] = tags[i].Specificity
+		name := domain.NormalizeTagName(tags[i].Name)
+		if name == "" {
+			continue
+		}
+		m[name] = tags[i].Specificity
 	}
 	return m
+}
+
+func normalizedTagTerms(text string) []string {
+	return strings.Fields(domain.NormalizeTagName(text))
+}
+
+func containsTagPhrase(queryTerms, tagTerms []string) bool {
+	if len(queryTerms) == 0 || len(tagTerms) == 0 || len(tagTerms) > len(queryTerms) {
+		return false
+	}
+	for i := 0; i <= len(queryTerms)-len(tagTerms); i++ {
+		matched := true
+		for j, term := range tagTerms {
+			if queryTerms[i+j] != term {
+				matched = false
+				break
+			}
+		}
+		if matched {
+			return true
+		}
+	}
+	return false
 }
 
 type RelatedTag struct {
@@ -581,10 +618,7 @@ func searchQueryTags(tags []issues.TagRelevance) []TagRelevance {
 			continue
 		}
 		seen[name] = struct{}{}
-		queryTags = append(queryTags, TagRelevance{
-			Tag:       name,
-			Relevance: tag.Relevance,
-		})
+		queryTags = append(queryTags, copyRuntimeTagRelevance(tag, name))
 	}
 
 	slices.SortFunc(queryTags, func(a, b TagRelevance) int {
@@ -600,12 +634,12 @@ func searchQueryTags(tags []issues.TagRelevance) []TagRelevance {
 // candidateInRegion reports whether the candidate's tag scores include
 // the target tag at or above scoring.RegionMembershipFloor.
 func candidateInRegion(candidateTags []TagRelevance, target string) bool {
-	target = strings.ToLower(strings.TrimSpace(target))
+	target = domain.NormalizeTagName(target)
 	if target == "" {
 		return false
 	}
 	for _, tag := range candidateTags {
-		if strings.ToLower(strings.TrimSpace(tag.Tag)) == target &&
+		if domain.NormalizeTagName(tag.Tag) == target &&
 			tag.Relevance >= scoring.RegionMembershipFloor {
 			return true
 		}
@@ -625,7 +659,7 @@ func candidateAntiCorrelationPenalty(
 		if tag.Relevance < scoring.RegionAntiCorrelationStrongTag {
 			continue
 		}
-		name := strings.ToLower(strings.TrimSpace(tag.Tag))
+		name := domain.NormalizeTagName(tag.Tag)
 		weight, ok := antiCorrelators[name]
 		if !ok {
 			continue
