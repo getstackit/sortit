@@ -344,6 +344,37 @@ func TestComputeDensityOrthogonalEmbeddingsLow(t *testing.T) {
 	}
 }
 
+func TestComputeDensityCentersAgainstFullCorpus(t *testing.T) {
+	auth := domain.RegionKey{Kind: domain.RegionKindTag, ID: "auth"}
+	members := []issues.Issue{
+		{ID: "a1", Status: issues.StatusOpen, TagScores: []domain.TagRelevance{{Tag: "auth", Relevance: 0.9}}, Embedding: []float64{10, 1, 0, 0}},
+		{ID: "a2", Status: issues.StatusOpen, TagScores: []domain.TagRelevance{{Tag: "auth", Relevance: 0.9}}, Embedding: []float64{10, -1, 0, 0}},
+		{ID: "a3", Status: issues.StatusOpen, TagScores: []domain.TagRelevance{{Tag: "auth", Relevance: 0.9}}, Embedding: []float64{10, 0, 1, 0}},
+		{ID: "a4", Status: issues.StatusOpen, TagScores: []domain.TagRelevance{{Tag: "auth", Relevance: 0.9}}, Embedding: []float64{10, 0, -1, 0}},
+		{ID: "a5", Status: issues.StatusOpen, TagScores: []domain.TagRelevance{{Tag: "auth", Relevance: 0.9}}, Embedding: []float64{10, 0.7, 0.7, 0}},
+	}
+	items := append([]issues.Issue(nil), members...)
+	items = append(items,
+		issues.Issue{ID: "b1", Status: issues.StatusOpen, TagScores: []domain.TagRelevance{{Tag: "billing", Relevance: 0.9}}, Embedding: []float64{10, 0, 0, 1}},
+		issues.Issue{ID: "b2", Status: issues.StatusOpen, TagScores: []domain.TagRelevance{{Tag: "billing", Relevance: 0.9}}, Embedding: []float64{10, 0, 0, -1}},
+		issues.Issue{ID: "b3", Status: issues.StatusOpen, TagScores: []domain.TagRelevance{{Tag: "billing", Relevance: 0.9}}, Embedding: []float64{10, 0.4, 0, 1}},
+		issues.Issue{ID: "b4", Status: issues.StatusOpen, TagScores: []domain.TagRelevance{{Tag: "billing", Relevance: 0.9}}, Embedding: []float64{10, -0.4, 0, -1}},
+		issues.Issue{ID: "b5", Status: issues.StatusOpen, TagScores: []domain.TagRelevance{{Tag: "billing", Relevance: 0.9}}, Embedding: []float64{10, 0, 0.4, 1}},
+	)
+
+	rawDensity := ComputeDensityMembers(members)
+	centeredDensity := ComputeDensity(items, auth)
+	if rawDensity == nil || centeredDensity == nil {
+		t.Fatalf("expected both densities, got raw=%+v centered=%+v", rawDensity, centeredDensity)
+	}
+	if *rawDensity < 0.95 {
+		t.Fatalf("test setup expected raw common-direction density to be high, got %v", *rawDensity)
+	}
+	if *centeredDensity >= *rawDensity-0.2 {
+		t.Fatalf("expected corpus centering to materially reduce density; raw=%v centered=%v", *rawDensity, *centeredDensity)
+	}
+}
+
 func TestComputeDensitySkipsIssuesWithoutEmbeddings(t *testing.T) {
 	auth := domain.RegionKey{Kind: domain.RegionKindTag, ID: "auth"}
 	items := []issues.Issue{
@@ -388,6 +419,34 @@ func TestComputeCorpusOrphansIdentifiesUnalignedIssues(t *testing.T) {
 	}
 	if got.Fraction != 0.5 {
 		t.Fatalf("expected fraction 0.5 (2/4 considered), got %v", got.Fraction)
+	}
+}
+
+func TestComputeCorpusOrphansUsesCenteredAlignment(t *testing.T) {
+	tags := []issues.Tag{
+		{Name: "tag-a", Embedding: []float64{10, 1, 0, 0, 0, 0, 0}},
+		{Name: "tag-b", Embedding: []float64{10, -1, 0, 0, 0, 0, 0}},
+		{Name: "tag-c", Embedding: []float64{10, 0, 1, 0, 0, 0, 0}},
+		{Name: "tag-d", Embedding: []float64{10, 0, -1, 0, 0, 0, 0}},
+		{Name: "tag-e", Embedding: []float64{10, 0, 0, 1, 0, 0, 0}},
+	}
+	items := []issues.Issue{
+		{ID: "aligned-a", Status: issues.StatusOpen, Embedding: []float64{10, 1, 0, 0, 0, 0, 0}, TagScores: []domain.TagRelevance{{Tag: "tag-a", Relevance: 0.9}}},
+		{ID: "aligned-b", Status: issues.StatusOpen, Embedding: []float64{10, -1, 0, 0, 0, 0, 0}, TagScores: []domain.TagRelevance{{Tag: "tag-b", Relevance: 0.9}}},
+		{ID: "aligned-c", Status: issues.StatusOpen, Embedding: []float64{10, 0, 1, 0, 0, 0, 0}, TagScores: []domain.TagRelevance{{Tag: "tag-c", Relevance: 0.9}}},
+		{ID: "aligned-d", Status: issues.StatusOpen, Embedding: []float64{10, 0, -1, 0, 0, 0, 0}, TagScores: []domain.TagRelevance{{Tag: "tag-d", Relevance: 0.9}}},
+		{ID: "common-direction-only", Status: issues.StatusOpen, Embedding: []float64{10, 0, 0, 0, 0, 0, 1}, TagScores: []domain.TagRelevance{{Tag: "tag-a", Relevance: 0.1}}},
+	}
+
+	got := ComputeCorpusOrphans(items, tags)
+	if got.Total != 1 {
+		t.Fatalf("expected common-direction-only issue to be counted as an orphan after centering, got %+v", got)
+	}
+	if got.Open != 1 {
+		t.Fatalf("expected 1 open orphan, got %d", got.Open)
+	}
+	if got.Fraction != 0.2 {
+		t.Fatalf("expected fraction 0.2 (1/5 considered), got %v", got.Fraction)
 	}
 }
 

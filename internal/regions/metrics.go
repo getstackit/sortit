@@ -3,10 +3,12 @@ package regions
 import (
 	"math"
 	"sort"
+	"strconv"
 	"time"
 
 	"sortit/internal/domain"
 	"sortit/internal/issueanalytics"
+	"sortit/internal/issuemath"
 	"sortit/internal/issues"
 	"sortit/internal/vectors"
 )
@@ -144,28 +146,51 @@ const DensityMinMembers = 5
 
 // ComputeDensity returns a [0, 1] cohesion score for the region: the
 // mean cosine similarity between each in-region issue's embedding and
-// the region's centroid (L2-normalized mean of member embeddings).
-// Returns nil when fewer than DensityMinMembers issues have embeddings
-// or when the centroid is degenerate (zero vector / mismatched dims).
+// the region's centroid (L2-normalized mean of member embeddings), after
+// centering issue embeddings against the full supplied corpus.
+// Returns nil when fewer than DensityMinMembers issues have embeddings.
+// If centering makes the member centroid degenerate, it falls back to the
+// non-negative mean pairwise cosine among members.
 func ComputeDensity(items []issues.Issue, key domain.RegionKey) *float64 {
-	return ComputeDensityMembers(filterMembers(items, key))
+	centered := centeredIssueVectors(items)
+	memberVectors := make([][]float64, 0)
+	for i, issue := range items {
+		if !BelongsTo(issue, key) {
+			continue
+		}
+		memberVectors = append(memberVectors, centered[i])
+	}
+	return computeDensityFromVectors(memberVectors)
 }
 
-// ComputeDensityMembers computes density from a pre-filtered set.
+// ComputeDensityMembers computes density from a pre-filtered set. Callers
+// that have the full corpus should prefer ComputeDensity so centering uses
+// corpus-level, not member-level, statistics.
 func ComputeDensityMembers(memberIssues []issues.Issue) *float64 {
 	members := make([][]float64, 0)
-	dim := 0
 	for _, issue := range memberIssues {
 		if len(issue.Embedding) == 0 {
 			continue
 		}
-		if dim == 0 {
-			dim = len(issue.Embedding)
-		}
-		if len(issue.Embedding) != dim {
+		members = append(members, issue.Embedding)
+	}
+	return computeDensityFromVectors(members)
+}
+
+func computeDensityFromVectors(vectorsIn [][]float64) *float64 {
+	members := make([][]float64, 0, len(vectorsIn))
+	dim := 0
+	for _, vec := range vectorsIn {
+		if len(vec) == 0 {
 			continue
 		}
-		members = append(members, issue.Embedding)
+		if dim == 0 {
+			dim = len(vec)
+		}
+		if len(vec) != dim {
+			continue
+		}
+		members = append(members, vec)
 	}
 	if len(members) < DensityMinMembers {
 		return nil
@@ -185,13 +210,33 @@ func ComputeDensityMembers(memberIssues []issues.Issue) *float64 {
 		mag += v * v
 	}
 	if mag == 0 {
-		return nil
+		return computePairwiseDensity(members)
 	}
 	sum := 0.0
 	for _, vec := range members {
 		sum += vectors.CosineSimilarity(vec, centroid)
 	}
 	density := sum / n
+	density = math.Round(density*1000) / 1000
+	return &density
+}
+
+func computePairwiseDensity(members [][]float64) *float64 {
+	if len(members) < DensityMinMembers {
+		return nil
+	}
+	sum := 0.0
+	count := 0
+	for i := 0; i < len(members); i++ {
+		for j := i + 1; j < len(members); j++ {
+			sum += vectors.CosineSimilarity(members[i], members[j])
+			count++
+		}
+	}
+	if count == 0 {
+		return nil
+	}
+	density := max(sum/float64(count), 0)
 	density = math.Round(density*1000) / 1000
 	return &density
 }
@@ -215,17 +260,19 @@ const OrphanAlignmentFloor = 0.08
 // Issues lacking an embedding are not counted as orphans on the second
 // criterion alone (we can't tell); they're skipped.
 func ComputeCorpusOrphans(items []issues.Issue, tags []issues.Tag) domain.CorpusOrphans {
-	tagEmbeddings := make([][]float64, 0, len(tags))
-	for _, t := range tags {
-		if len(t.Embedding) > 0 {
-			tagEmbeddings = append(tagEmbeddings, t.Embedding)
+	centeredIssues, centeredTags := centeredCorpusVectors(items, tags)
+	tagEmbeddings := make([][]float64, 0, len(centeredTags))
+	for _, tagVec := range centeredTags {
+		if len(tagVec) > 0 {
+			tagEmbeddings = append(tagEmbeddings, tagVec)
 		}
 	}
 
 	var total, open int
 	considered := 0
-	for _, issue := range items {
-		if len(issue.Embedding) == 0 {
+	for i, issue := range items {
+		issueVec := centeredIssues[i]
+		if len(issueVec) == 0 {
 			// Can't measure semantic alignment without an embedding; skip.
 			continue
 		}
@@ -243,7 +290,7 @@ func ComputeCorpusOrphans(items []issues.Issue, tags []issues.Tag) domain.Corpus
 
 		nearest := 0.0
 		for _, tagVec := range tagEmbeddings {
-			sim := vectors.CosineSimilarity(issue.Embedding, tagVec)
+			sim := vectors.CosineSimilarity(issueVec, tagVec)
 			if sim > nearest {
 				nearest = sim
 			}
@@ -263,6 +310,45 @@ func ComputeCorpusOrphans(items []issues.Issue, tags []issues.Tag) domain.Corpus
 		fraction = float64(total) / float64(considered)
 	}
 	return domain.CorpusOrphans{Total: total, Open: open, Fraction: fraction}
+}
+
+func centeredIssueVectors(items []issues.Issue) [][]float64 {
+	centeredIssues, _ := centeredCorpusVectors(items, nil)
+	return centeredIssues
+}
+
+func centeredCorpusVectors(items []issues.Issue, tags []issues.Tag) ([][]float64, [][]float64) {
+	issueRaw := make(map[string][]float64, len(items))
+	issueKeys := make([]string, len(items))
+	for i, issue := range items {
+		key := "issue:" + strconv.Itoa(i)
+		issueKeys[i] = key
+		if len(issue.Embedding) > 0 {
+			issueRaw[key] = issue.Embedding
+		}
+	}
+
+	tagRaw := make(map[string][]float64, len(tags))
+	tagKeys := make([]string, len(tags))
+	for i, tag := range tags {
+		key := "tag:" + strconv.Itoa(i)
+		tagKeys[i] = key
+		if len(tag.Embedding) > 0 {
+			tagRaw[key] = tag.Embedding
+		}
+	}
+
+	centeredIssueMap, centeredTagMap, _ := issuemath.CenterEmbeddings(issueRaw, tagRaw)
+
+	centeredIssues := make([][]float64, len(items))
+	for i, key := range issueKeys {
+		centeredIssues[i] = centeredIssueMap[key]
+	}
+	centeredTags := make([][]float64, len(tags))
+	for i, key := range tagKeys {
+		centeredTags[i] = centeredTagMap[key]
+	}
+	return centeredIssues, centeredTags
 }
 
 // ComputeChurn counts events whose IssueID is currently a region member
@@ -335,6 +421,17 @@ func ComputeAuthorityMembers(members []issues.Issue) (links int, mean *float64) 
 // member set. Cluster regions use this directly; tag regions go through
 // ComputeMetrics, which filters and then calls this.
 func ComputeMetricsForMembers(key domain.RegionKey, members []issues.Issue, events []issues.Event, window domain.TimeWindow, now time.Time) (domain.RegionMetrics, bool) {
+	return computeMetricsForMembersWithDensity(key, members, events, window, now, ComputeDensityMembers(members))
+}
+
+func computeMetricsForMembersWithDensity(
+	key domain.RegionKey,
+	members []issues.Issue,
+	events []issues.Event,
+	window domain.TimeWindow,
+	now time.Time,
+	density *float64,
+) (domain.RegionMetrics, bool) {
 	mass, open, closed := ComputeMassMembers(members)
 	if mass == 0 {
 		return domain.RegionMetrics{}, false
@@ -347,7 +444,7 @@ func ComputeMetricsForMembers(key domain.RegionKey, members []issues.Issue, even
 		MassOpen:       open,
 		MassClosed:     closed,
 		AgeBuckets:     ComputeAgeBucketsMembers(members, now),
-		Density:        ComputeDensityMembers(members),
+		Density:        density,
 		Growth:         ComputeGrowthMembers(members, window),
 		Closure:        ComputeClosureMembers(members, window),
 		Churn:          ComputeChurnMembers(events, members, window),
@@ -358,9 +455,11 @@ func ComputeMetricsForMembers(key domain.RegionKey, members []issues.Issue, even
 
 // ComputeMetrics produces all current-phase metrics for a single
 // tag-region. Returns false if no issues are members (zero mass).
-// Delegates to ComputeMetricsForMembers after filtering by BelongsTo.
+// Density is centered against the full supplied corpus; the rest of the
+// metrics operate on the filtered member set.
 func ComputeMetrics(items []issues.Issue, events []issues.Event, key domain.RegionKey, window domain.TimeWindow, now time.Time) (domain.RegionMetrics, bool) {
-	return ComputeMetricsForMembers(key, filterMembers(items, key), events, window, now)
+	members := filterMembers(items, key)
+	return computeMetricsForMembersWithDensity(key, members, events, window, now, ComputeDensity(items, key))
 }
 
 // inWindow returns true when t is in [window.Start, window.End].

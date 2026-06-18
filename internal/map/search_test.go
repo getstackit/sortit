@@ -114,6 +114,113 @@ func TestGenericQueryBoostsIssuesWithSpecificTags(t *testing.T) {
 	}
 }
 
+func TestRuntimeStoredTagRelevancesPreservesSignedMetadata(t *testing.T) {
+	alignment := 0.42
+	specificity := 0.71
+	dominanceGap := 0.18
+	negation := 0.63
+	issue := issues.Issue{TagScores: []domain.TagRelevance{{
+		Tag:                 " auth ",
+		Relevance:           0.2,
+		Suggested:           true,
+		Description:         "authentication",
+		CandidateSources:    []string{"analyzer"},
+		Alignment:           &alignment,
+		Specificity:         &specificity,
+		VerificationVerdict: domain.TagVerificationVerdictFlagged,
+		VerificationReason:  "better explained by billing",
+		DominatedBy:         "billing",
+		DominanceGap:        &dominanceGap,
+		Evidence:            []domain.EvidenceRange{{Start: 1, End: 5, Text: "auth"}},
+		Negation:            &negation,
+		NegationProvenance:  domain.NegationProvenanceVerifier,
+		NegationEvidence:    []domain.EvidenceRange{{Start: 7, End: 11, Text: "no auth"}},
+		NegationReason:      "explicitly ruled out",
+	}}}
+
+	got := runtimeStoredTagRelevances(issue)
+	if len(got) != 1 {
+		t.Fatalf("expected 1 tag relevance, got %d", len(got))
+	}
+	tag := got[0]
+	if tag.Tag != "auth" {
+		t.Fatalf("expected trimmed tag name, got %q", tag.Tag)
+	}
+	if tag.Negation == nil || *tag.Negation != negation {
+		t.Fatalf("expected negation %v, got %+v", negation, tag.Negation)
+	}
+	if tag.NegationProvenance != domain.NegationProvenanceVerifier || tag.NegationReason != "explicitly ruled out" {
+		t.Fatalf("negation metadata was not preserved: %+v", tag)
+	}
+	if tag.VerificationVerdict != domain.TagVerificationVerdictFlagged || tag.DominatedBy != "billing" {
+		t.Fatalf("verification metadata was not preserved: %+v", tag)
+	}
+	if len(tag.CandidateSources) != 1 || tag.CandidateSources[0] != "analyzer" {
+		t.Fatalf("candidate sources were not preserved: %+v", tag.CandidateSources)
+	}
+	if tag.Negation == issue.TagScores[0].Negation || tag.Alignment == issue.TagScores[0].Alignment {
+		t.Fatal("expected runtime tag relevance to copy pointer fields")
+	}
+}
+
+func TestSearchQueryTagsPreservesSignedMetadata(t *testing.T) {
+	negation := 0.55
+	got := searchQueryTags([]issues.TagRelevance{
+		{Tag: "billing", Relevance: 0.9},
+		{
+			Tag:                " auth ",
+			Relevance:          0.4,
+			Negation:           &negation,
+			NegationProvenance: domain.NegationProvenanceAnalyzer,
+			NegationReason:     "query says not auth",
+		},
+	})
+	if len(got) != 2 {
+		t.Fatalf("expected 2 query tags, got %d", len(got))
+	}
+	auth := got[1]
+	if auth.Tag != "auth" {
+		t.Fatalf("expected trimmed auth tag after relevance sort, got %+v", got)
+	}
+	if auth.Negation == nil || *auth.Negation != negation {
+		t.Fatalf("expected query negation %v, got %+v", negation, auth.Negation)
+	}
+	if auth.NegationProvenance != domain.NegationProvenanceAnalyzer || auth.NegationReason != "query says not auth" {
+		t.Fatalf("query negation metadata was not preserved: %+v", auth)
+	}
+}
+
+func TestQueryMatchesMultiWordTagName(t *testing.T) {
+	if !queryMatchesTagNames("front end regression", []string{"front end"}) {
+		t.Fatal("expected query to match multi-word tag phrase")
+	}
+	if queryMatchesTagNames("frontend regression", []string{"front end"}) {
+		t.Fatal("expected compact token not to match multi-word tag phrase")
+	}
+	if queryMatchesTagNames("front billing end", []string{"front end"}) {
+		t.Fatal("expected non-contiguous words not to match tag phrase")
+	}
+}
+
+func TestGenericQueryAndSpecificityUseNormalizedTagNames(t *testing.T) {
+	lowSpecificity := 0.1
+	tagSpecificity := buildTagSpecificityMap([]issues.Tag{
+		{Name: "Front End", Specificity: &lowSpecificity},
+	})
+
+	if !queryMatchesGenericTag("front end regression", tagSpecificity) {
+		t.Fatal("expected query to match generic multi-word tag")
+	}
+	if queryMatchesGenericTag("front billing end", tagSpecificity) {
+		t.Fatal("expected non-contiguous words not to match generic tag phrase")
+	}
+
+	penalty := issueSpecificityPenalty([]TagRelevance{{Tag: "front end", Relevance: 0.9}}, tagSpecificity)
+	if penalty <= specificityPenalty(nil) {
+		t.Fatalf("expected normalized specificity lookup to use low specificity; got penalty %v", penalty)
+	}
+}
+
 func TestSearchUsesContentConfidenceAsNearTieBreaker(t *testing.T) {
 	storeIssues := []issues.Issue{
 		{

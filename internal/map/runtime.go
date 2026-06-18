@@ -8,6 +8,7 @@ import (
 	"strings"
 	"unicode"
 
+	"sortit/internal/domain"
 	"sortit/internal/issueanalytics"
 	"sortit/internal/issuemath"
 	"sortit/internal/issues"
@@ -376,10 +377,7 @@ func runtimeStoredTagRelevances(issue issues.Issue) []TagRelevance {
 				continue
 			}
 			seen[name] = struct{}{}
-			relevances = append(relevances, TagRelevance{
-				Tag:       name,
-				Relevance: tag.Relevance,
-			})
+			relevances = append(relevances, copyRuntimeTagRelevance(tag, name))
 		}
 
 		slices.SortStableFunc(relevances, func(a, b TagRelevance) int {
@@ -392,6 +390,27 @@ func runtimeStoredTagRelevances(issue issues.Issue) []TagRelevance {
 	}
 
 	return runtimeTagRelevances(issue.Tags)
+}
+
+func copyRuntimeTagRelevance(tag TagRelevance, name string) TagRelevance {
+	out := tag
+	out.Tag = name
+	out.CandidateSources = append([]string(nil), tag.CandidateSources...)
+	out.Evidence = append([]domain.EvidenceRange(nil), tag.Evidence...)
+	out.NegationEvidence = append([]domain.EvidenceRange(nil), tag.NegationEvidence...)
+	out.Alignment = copyFloat64Ptr(tag.Alignment)
+	out.Specificity = copyFloat64Ptr(tag.Specificity)
+	out.DominanceGap = copyFloat64Ptr(tag.DominanceGap)
+	out.Negation = copyFloat64Ptr(tag.Negation)
+	return out
+}
+
+func copyFloat64Ptr(value *float64) *float64 {
+	if value == nil {
+		return nil
+	}
+	copied := *value
+	return &copied
 }
 
 func runtimeTagRelevances(tags []string) []TagRelevance {
