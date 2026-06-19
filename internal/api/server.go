@@ -360,6 +360,10 @@ func (s *Server) registerIssueRoutes(r chi.Router) {
 func (s *Server) registerMemoryRoutes(r chi.Router) {
 	r.Get("/memories", s.handleMemoryList)
 	r.Post("/memories", s.handleMemoryCreate)
+	r.Get("/memories/proposals", s.handleMemoryProposalList)
+	r.Post("/memories/proposals/synthesize", s.handleMemoryProposalSynthesize)
+	r.Post("/memories/proposals/{id}/accept", s.handleMemoryProposalAccept)
+	r.Post("/memories/proposals/{id}/reject", s.handleMemoryProposalReject)
 	r.Get("/memories/{id}", s.handleGetMemory)
 	r.Post("/memories/{id}/supersede", s.handleMemorySupersede)
 	r.Post("/memories/{id}/archive", s.handleMemoryArchive)
@@ -580,6 +584,7 @@ func NewServer(cfg ServerConfig) *Server {
 	enricher := issueenrichment.NewIssueEnricher(commandAnalyzer, catalog, enricherLogger)
 	enricher.UseMemoryContext(store)
 	memoryService := memories.NewService(store, enricher, logger)
+	memoryService.UseSynthesis(store, store)
 	var enrichmentWorker *issueenrichment.IssueEnrichmentWorker
 	workerLogger := logger.With("component", "enrichment_worker")
 	if claimer := enrichmentJobClaimerFromStore(baseStore); claimer != nil && uowBeginner != nil {

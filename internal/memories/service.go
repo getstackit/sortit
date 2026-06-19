@@ -6,6 +6,7 @@ package memories
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log/slog"
 	"sort"
@@ -17,6 +18,10 @@ import (
 	"sortit/internal/issues"
 	"sortit/internal/tags"
 )
+
+// ErrProposalNotPending is returned when accepting or rejecting a proposal that
+// has already been resolved.
+var ErrProposalNotPending = errors.New("memory proposal is not pending")
 
 // anchorTagRelevanceFloor is the minimum relevance for a scored tag to be
 // auto-promoted into a memory's anchor set when the author supplied none.
@@ -32,11 +37,18 @@ type TextEnricher interface {
 	AnalyzeText(ctx context.Context, raw string, opts issueenrichment.AnalyzeTextOptions) (issueenrichment.AnalyzeTextResult, error)
 }
 
+// CorpusReader exposes the issue corpus that synthesis reads from.
+type CorpusReader interface {
+	List(ctx context.Context) ([]issues.Issue, error)
+}
+
 // Service is the application layer for memories.
 type Service struct {
-	store    issues.MemoryStore
-	enricher TextEnricher
-	logger   *slog.Logger
+	store     issues.MemoryStore
+	enricher  TextEnricher
+	logger    *slog.Logger
+	proposals issues.MemoryProposalStore
+	corpus    CorpusReader
 }
 
 // NewService constructs a memory service. enricher may be nil (memories are
@@ -46,6 +58,14 @@ func NewService(store issues.MemoryStore, enricher TextEnricher, logger *slog.Lo
 		logger = slog.Default()
 	}
 	return &Service{store: store, enricher: enricher, logger: logger.With("component", "memories")}
+}
+
+// UseSynthesis enables the synthesis proposal queue (hybrid creation): the
+// system drafts candidate memories from the corpus for human review. Pass nil
+// stores to leave synthesis disabled.
+func (s *Service) UseSynthesis(proposals issues.MemoryProposalStore, corpus CorpusReader) {
+	s.proposals = proposals
+	s.corpus = corpus
 }
 
 // CreateMemoryInput describes a new memory.
@@ -145,6 +165,110 @@ func (s *Service) transition(ctx context.Context, id string, status domain.Memor
 		"superseded_by", supersededBy,
 	)
 	return memory, nil
+}
+
+// SynthesizeProposals scans the corpus for clusters of closed decisions and
+// drafts memory proposals for human review. Existing pending proposals and
+// active memories are respected so reruns don't duplicate. Returns the newly
+// created proposals.
+func (s *Service) SynthesizeProposals(ctx context.Context) ([]domain.MemoryProposal, error) {
+	if s.proposals == nil || s.corpus == nil {
+		return nil, fmt.Errorf("memory synthesis is not configured")
+	}
+	corpusIssues, err := s.corpus.List(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("load corpus for synthesis: %w", err)
+	}
+	pending, err := s.proposals.ListMemoryProposals(ctx, domain.MemoryProposalStatusPending)
+	if err != nil {
+		return nil, fmt.Errorf("load pending proposals: %w", err)
+	}
+	active, err := s.store.ListMemories(ctx, issues.MemoryListOptions{Status: domain.MemoryStatusActive})
+	if err != nil {
+		return nil, fmt.Errorf("load active memories: %w", err)
+	}
+
+	drafts := SynthesizeMemoryProposals(corpusIssues, pending, active)
+	created := make([]domain.MemoryProposal, 0, len(drafts))
+	now := time.Now().UTC()
+	for _, draft := range drafts {
+		draft.ID = issues.NewMemoryProposalID()
+		draft.CreatedAt = now
+		draft.UpdatedAt = now
+		if err := s.proposals.UpsertMemoryProposal(ctx, draft); err != nil {
+			return nil, fmt.Errorf("save proposal: %w", err)
+		}
+		created = append(created, draft)
+	}
+	s.logger.InfoContext(ctx, "synthesized memory proposals", "count", len(created))
+	return created, nil
+}
+
+// ListProposals returns synthesis proposals, optionally filtered by status.
+func (s *Service) ListProposals(ctx context.Context, status domain.MemoryProposalStatus) ([]domain.MemoryProposal, error) {
+	if s.proposals == nil {
+		return nil, fmt.Errorf("memory synthesis is not configured")
+	}
+	return s.proposals.ListMemoryProposals(ctx, status)
+}
+
+// AcceptProposal turns a pending proposal into a permanent memory (enriched and
+// persisted), then marks the proposal accepted.
+func (s *Service) AcceptProposal(ctx context.Context, id, acceptedBy string) (domain.Memory, error) {
+	if s.proposals == nil {
+		return domain.Memory{}, fmt.Errorf("memory synthesis is not configured")
+	}
+	proposal, err := s.proposals.GetMemoryProposal(ctx, id)
+	if err != nil {
+		return domain.Memory{}, err
+	}
+	if proposal.Status != domain.MemoryProposalStatusPending {
+		return domain.Memory{}, ErrProposalNotPending
+	}
+
+	memory, err := s.CreateMemory(ctx, CreateMemoryInput{
+		Title:          proposal.Title,
+		Body:           proposal.Body,
+		Kind:           proposal.Kind,
+		AnchorTags:     proposal.AnchorTags,
+		AnchorRegion:   proposal.AnchorRegion,
+		CreatedBy:      strings.TrimSpace(acceptedBy),
+		Source:         domain.MemorySourceSynthesized,
+		SourceIssueIDs: proposal.SourceIssueIDs,
+		Confidence:     proposal.Confidence,
+	})
+	if err != nil {
+		return domain.Memory{}, err
+	}
+
+	proposal.Status = domain.MemoryProposalStatusAccepted
+	proposal.AcceptedMemoryID = memory.ID
+	proposal.UpdatedAt = time.Now().UTC()
+	if err := s.proposals.UpsertMemoryProposal(ctx, proposal); err != nil {
+		return domain.Memory{}, fmt.Errorf("mark proposal accepted: %w", err)
+	}
+	s.logger.InfoContext(ctx, "memory proposal accepted", "proposal_id", proposal.ID, "memory_id", memory.ID)
+	return memory, nil
+}
+
+// RejectProposal marks a pending proposal as rejected.
+func (s *Service) RejectProposal(ctx context.Context, id string) (domain.MemoryProposal, error) {
+	if s.proposals == nil {
+		return domain.MemoryProposal{}, fmt.Errorf("memory synthesis is not configured")
+	}
+	proposal, err := s.proposals.GetMemoryProposal(ctx, id)
+	if err != nil {
+		return domain.MemoryProposal{}, err
+	}
+	if proposal.Status != domain.MemoryProposalStatusPending {
+		return domain.MemoryProposal{}, ErrProposalNotPending
+	}
+	proposal.Status = domain.MemoryProposalStatusRejected
+	proposal.UpdatedAt = time.Now().UTC()
+	if err := s.proposals.UpsertMemoryProposal(ctx, proposal); err != nil {
+		return domain.MemoryProposal{}, fmt.Errorf("mark proposal rejected: %w", err)
+	}
+	return proposal, nil
 }
 
 // enrich runs the memory body through the issue enrichment pipeline to attach a

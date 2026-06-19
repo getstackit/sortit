@@ -36,7 +36,90 @@ func newMemoryCmd(opts *rootOptions) *cobra.Command {
 	memoryCmd.AddCommand(newMemoryListCmd(opts))
 	memoryCmd.AddCommand(newMemorySupersedeCmd(opts))
 	memoryCmd.AddCommand(newMemoryArchiveCmd(opts))
+	memoryCmd.AddCommand(newMemoryProposalsCmd(opts))
 	return memoryCmd
+}
+
+type memoryProposalsListResponse struct {
+	Proposals []domain.MemoryProposal `json:"proposals"`
+}
+
+func newMemoryProposalsCmd(opts *rootOptions) *cobra.Command {
+	proposalsCmd := &cobra.Command{
+		Use:   "proposals",
+		Short: "Synthesized memory proposals awaiting review",
+	}
+	proposalsCmd.AddCommand(newMemoryProposalsListCmd(opts))
+	proposalsCmd.AddCommand(newMemoryProposalsSynthesizeCmd(opts))
+	proposalsCmd.AddCommand(newMemoryProposalsAcceptCmd(opts))
+	proposalsCmd.AddCommand(newMemoryProposalsRejectCmd(opts))
+	return proposalsCmd
+}
+
+func newMemoryProposalsListCmd(opts *rootOptions) *cobra.Command {
+	var status string
+	cmd := &cobra.Command{
+		Use:   "list",
+		Short: "List memory proposals",
+		RunE: func(cmd *cobra.Command, _ []string) error {
+			client := opts.client()
+			params := newQueryParams().add("status", status)
+			var response memoryProposalsListResponse
+			if err := client.Get(cmd.Context(), "/memories/proposals"+params.encode(), &response); err != nil {
+				return err
+			}
+			return printJSON(cmd, response)
+		},
+	}
+	cmd.Flags().StringVar(&status, "status", "pending", "Status filter: pending, accepted, rejected, all")
+	return cmd
+}
+
+func newMemoryProposalsSynthesizeCmd(opts *rootOptions) *cobra.Command {
+	return &cobra.Command{
+		Use:   "synthesize",
+		Short: "Scan the corpus and draft new memory proposals",
+		RunE: func(cmd *cobra.Command, _ []string) error {
+			client := opts.client()
+			var response memoryProposalsListResponse
+			if err := client.Post(cmd.Context(), "/memories/proposals/synthesize", nil, &response); err != nil {
+				return err
+			}
+			return printJSON(cmd, response)
+		},
+	}
+}
+
+func newMemoryProposalsAcceptCmd(opts *rootOptions) *cobra.Command {
+	return &cobra.Command{
+		Use:   "accept <id>",
+		Short: "Accept a proposal, creating a permanent memory",
+		Args:  cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			client := opts.client()
+			var created domain.Memory
+			if err := client.Post(cmd.Context(), "/memories/proposals/"+args[0]+"/accept", nil, &created); err != nil {
+				return err
+			}
+			return printJSON(cmd, created)
+		},
+	}
+}
+
+func newMemoryProposalsRejectCmd(opts *rootOptions) *cobra.Command {
+	return &cobra.Command{
+		Use:   "reject <id>",
+		Short: "Reject a proposal",
+		Args:  cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			client := opts.client()
+			var rejected domain.MemoryProposal
+			if err := client.Post(cmd.Context(), "/memories/proposals/"+args[0]+"/reject", nil, &rejected); err != nil {
+				return err
+			}
+			return printJSON(cmd, rejected)
+		},
+	}
 }
 
 func newMemoryCreateCmd(opts *rootOptions) *cobra.Command {

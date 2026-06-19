@@ -426,16 +426,17 @@ func DefaultTags() []Tag {
 }
 
 type InMemoryStore struct {
-	mu             sync.RWMutex
-	issues         []Issue
-	discussion     map[string][]IssuePost
-	snapshots      map[string][]IssueSnapshot
-	links          []IssueLink
-	operations     []IssueOperation
-	events         []Event
-	enrichmentJobs map[string]inMemoryEnrichmentJob
-	customRegions  map[string]domain.CustomRegion
-	memories       map[string]domain.Memory
+	mu              sync.RWMutex
+	issues          []Issue
+	discussion      map[string][]IssuePost
+	snapshots       map[string][]IssueSnapshot
+	links           []IssueLink
+	operations      []IssueOperation
+	events          []Event
+	enrichmentJobs  map[string]inMemoryEnrichmentJob
+	customRegions   map[string]domain.CustomRegion
+	memories        map[string]domain.Memory
+	memoryProposals map[string]domain.MemoryProposal
 }
 
 type inMemoryEnrichmentJob struct {
@@ -445,12 +446,13 @@ type inMemoryEnrichmentJob struct {
 
 func NewInMemoryStore(seed []Issue) *InMemoryStore {
 	store := &InMemoryStore{
-		issues:         cloneIssues(seed),
-		discussion:     make(map[string][]IssuePost, len(seed)),
-		snapshots:      make(map[string][]IssueSnapshot, len(seed)),
-		enrichmentJobs: make(map[string]inMemoryEnrichmentJob),
-		customRegions:  make(map[string]domain.CustomRegion),
-		memories:       make(map[string]domain.Memory),
+		issues:          cloneIssues(seed),
+		discussion:      make(map[string][]IssuePost, len(seed)),
+		snapshots:       make(map[string][]IssueSnapshot, len(seed)),
+		enrichmentJobs:  make(map[string]inMemoryEnrichmentJob),
+		customRegions:   make(map[string]domain.CustomRegion),
+		memories:        make(map[string]domain.Memory),
+		memoryProposals: make(map[string]domain.MemoryProposal),
 	}
 
 	for _, issue := range store.issues {

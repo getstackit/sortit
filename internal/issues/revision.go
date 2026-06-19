@@ -214,6 +214,31 @@ func (s *ObservedStore) SearchMemories(ctx context.Context, query []float64, lim
 	return nil, nil
 }
 
+func (s *ObservedStore) ListMemoryProposals(ctx context.Context, status domain.MemoryProposalStatus) ([]domain.MemoryProposal, error) {
+	if ps, ok := s.base.(MemoryProposalStore); ok {
+		return ps.ListMemoryProposals(ctx, status)
+	}
+	return nil, nil
+}
+
+func (s *ObservedStore) GetMemoryProposal(ctx context.Context, id string) (domain.MemoryProposal, error) {
+	if ps, ok := s.base.(MemoryProposalStore); ok {
+		return ps.GetMemoryProposal(ctx, id)
+	}
+	return domain.MemoryProposal{}, ErrMemoryProposalNotFound
+}
+
+func (s *ObservedStore) UpsertMemoryProposal(ctx context.Context, proposal domain.MemoryProposal) error {
+	if ps, ok := s.base.(MemoryProposalStore); ok {
+		if err := ps.UpsertMemoryProposal(ctx, proposal); err != nil {
+			return err
+		}
+		s.tracker.Bump()
+		return nil
+	}
+	return ErrMemoryProposalNotFound
+}
+
 func (s *ObservedStore) List(ctx context.Context) ([]Issue, error) {
 	return s.base.List(ctx)
 }

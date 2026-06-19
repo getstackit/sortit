@@ -40,3 +40,8 @@ func NewIssueContentFactID() string {
 func NewMemoryID() string {
 	return ulid.MustNew(ulid.Now(), rand.Reader).String()
 }
+
+// NewMemoryProposalID generates a new server-side ULID for a memory proposal.
+func NewMemoryProposalID() string {
+	return ulid.MustNew(ulid.Now(), rand.Reader).String()
+}

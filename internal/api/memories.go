@@ -167,3 +167,86 @@ func (s *Server) handleMemoryArchive(w http.ResponseWriter, r *http.Request) {
 
 	writeJSON(w, http.StatusOK, memory)
 }
+
+type memoryProposalsResponse struct {
+	Proposals []domain.MemoryProposal `json:"proposals"`
+}
+
+func (s *Server) handleMemoryProposalList(w http.ResponseWriter, r *http.Request) {
+	if s.memories == nil {
+		writeError(w, http.StatusServiceUnavailable, "memories are not available")
+		return
+	}
+
+	status := strings.TrimSpace(r.URL.Query().Get("status"))
+	if strings.EqualFold(status, "all") {
+		status = ""
+	}
+
+	proposals, err := s.memories.ListProposals(r.Context(), domain.MemoryProposalStatus(status))
+	if err != nil {
+		writeInternalError(w, r, "failed to list memory proposals", err)
+		return
+	}
+
+	writeJSON(w, http.StatusOK, memoryProposalsResponse{Proposals: proposals})
+}
+
+func (s *Server) handleMemoryProposalSynthesize(w http.ResponseWriter, r *http.Request) {
+	if s.memories == nil {
+		writeError(w, http.StatusServiceUnavailable, "memories are not available")
+		return
+	}
+
+	proposals, err := s.memories.SynthesizeProposals(r.Context())
+	if err != nil {
+		writeInternalError(w, r, "failed to synthesize memory proposals", err)
+		return
+	}
+
+	writeJSON(w, http.StatusOK, memoryProposalsResponse{Proposals: proposals})
+}
+
+func (s *Server) handleMemoryProposalAccept(w http.ResponseWriter, r *http.Request) {
+	if s.memories == nil {
+		writeError(w, http.StatusServiceUnavailable, "memories are not available")
+		return
+	}
+
+	memory, err := s.memories.AcceptProposal(r.Context(), chi.URLParam(r, "id"), actorForRequest(r, ""))
+	if err != nil {
+		switch {
+		case errors.Is(err, issues.ErrMemoryProposalNotFound):
+			writeError(w, http.StatusNotFound, "memory proposal not found")
+		case errors.Is(err, memories.ErrProposalNotPending):
+			writeError(w, http.StatusConflict, "memory proposal is not pending")
+		default:
+			writeInternalError(w, r, "failed to accept memory proposal", err)
+		}
+		return
+	}
+
+	writeJSON(w, http.StatusCreated, memory)
+}
+
+func (s *Server) handleMemoryProposalReject(w http.ResponseWriter, r *http.Request) {
+	if s.memories == nil {
+		writeError(w, http.StatusServiceUnavailable, "memories are not available")
+		return
+	}
+
+	proposal, err := s.memories.RejectProposal(r.Context(), chi.URLParam(r, "id"))
+	if err != nil {
+		switch {
+		case errors.Is(err, issues.ErrMemoryProposalNotFound):
+			writeError(w, http.StatusNotFound, "memory proposal not found")
+		case errors.Is(err, memories.ErrProposalNotPending):
+			writeError(w, http.StatusConflict, "memory proposal is not pending")
+		default:
+			writeInternalError(w, r, "failed to reject memory proposal", err)
+		}
+		return
+	}
+
+	writeJSON(w, http.StatusOK, proposal)
+}

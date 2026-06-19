@@ -157,6 +157,77 @@ func TestSupersedeMemory(t *testing.T) {
 	}
 }
 
+func TestSynthesizeAcceptAndRejectProposals(t *testing.T) {
+	store := issues.NewInMemoryStore([]issues.Issue{
+		closedDecision("i1", "search", "default to ridge", "by_design"),
+		closedDecision("i2", "search", "still ridge", "by_design"),
+		closedDecision("j1", "export", "csv only", "by_design"),
+		closedDecision("j2", "export", "no xlsx", "wont_fix"),
+	})
+	svc := NewService(store, nil, nil)
+	svc.UseSynthesis(store, store)
+	ctx := context.Background()
+
+	created, err := svc.SynthesizeProposals(ctx)
+	if err != nil {
+		t.Fatalf("synthesize: %v", err)
+	}
+	if len(created) != 2 {
+		t.Fatalf("expected 2 proposals (search, export), got %d", len(created))
+	}
+
+	// Rerun is idempotent: tags already covered by pending proposals are skipped.
+	again, err := svc.SynthesizeProposals(ctx)
+	if err != nil {
+		t.Fatalf("re-synthesize: %v", err)
+	}
+	if len(again) != 0 {
+		t.Fatalf("expected no new proposals on rerun, got %d", len(again))
+	}
+
+	// Accept one: it becomes a synthesized memory and the proposal is resolved.
+	target := created[0]
+	memory, err := svc.AcceptProposal(ctx, target.ID, "alice")
+	if err != nil {
+		t.Fatalf("accept: %v", err)
+	}
+	if memory.Source != domain.MemorySourceSynthesized {
+		t.Fatalf("expected synthesized source, got %s", memory.Source)
+	}
+	if len(memory.SourceIssueIDs) != 2 {
+		t.Fatalf("expected provenance carried to memory, got %+v", memory.SourceIssueIDs)
+	}
+
+	accepted, err := svc.ListProposals(ctx, domain.MemoryProposalStatusAccepted)
+	if err != nil {
+		t.Fatalf("list accepted: %v", err)
+	}
+	if len(accepted) != 1 || accepted[0].AcceptedMemoryID != memory.ID {
+		t.Fatalf("expected 1 accepted proposal linked to the memory, got %+v", accepted)
+	}
+
+	// Accepting again is a conflict.
+	if _, err := svc.AcceptProposal(ctx, target.ID, "alice"); !errors.Is(err, ErrProposalNotPending) {
+		t.Fatalf("expected ErrProposalNotPending, got %v", err)
+	}
+
+	// Reject the other.
+	rejected, err := svc.RejectProposal(ctx, created[1].ID)
+	if err != nil {
+		t.Fatalf("reject: %v", err)
+	}
+	if rejected.Status != domain.MemoryProposalStatusRejected {
+		t.Fatalf("expected rejected status, got %s", rejected.Status)
+	}
+}
+
+func TestSynthesisNotConfigured(t *testing.T) {
+	svc := NewService(issues.NewInMemoryStore(nil), nil, nil)
+	if _, err := svc.SynthesizeProposals(context.Background()); err == nil {
+		t.Fatal("expected error when synthesis is not configured")
+	}
+}
+
 func TestArchiveMemory(t *testing.T) {
 	store := issues.NewInMemoryStore(nil)
 	svc := NewService(store, nil, nil)
