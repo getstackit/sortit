@@ -39,7 +39,39 @@ func newCurationCandidatesCmd(opts *rootOptions) *cobra.Command {
 	candidatesCmd.AddCommand(newCurationCandidatesDuplicatesCmd(opts))
 	candidatesCmd.AddCommand(newCurationCandidatesStaleCmd(opts))
 	candidatesCmd.AddCommand(newCurationCandidatesHealthCmd(opts))
+	candidatesCmd.AddCommand(newCurationCandidatesMemoriesCmd(opts))
 	return candidatesCmd
+}
+
+func newCurationCandidatesMemoriesCmd(opts *rootOptions) *cobra.Command {
+	var (
+		maxReinforcement float64
+		minAgeDays       float64
+		minSimilarity    float64
+		limit            int
+	)
+	cmd := &cobra.Command{
+		Use:   "memories",
+		Short: "Quiet memories worth archiving and redundant ones worth superseding",
+		RunE: func(cmd *cobra.Command, _ []string) error {
+			client := opts.client()
+			params := newQueryParams().
+				addFloat("maxReinforcement", maxReinforcement).
+				addFloat("minAgeDays", minAgeDays).
+				addFloat("minSimilarity", minSimilarity).
+				addInt("limit", limit)
+			var response map[string]any
+			if err := client.Get(cmd.Context(), "/curation/candidates/memories"+params.encode(), &response); err != nil {
+				return err
+			}
+			return printJSON(cmd, response)
+		},
+	}
+	cmd.Flags().Float64Var(&maxReinforcement, "max-reinforcement", 0, "Quiet threshold: memories at or below are archive candidates (default 0.1)")
+	cmd.Flags().Float64Var(&minAgeDays, "min-age-days", 0, "Spare memories younger than this (default 30)")
+	cmd.Flags().Float64Var(&minSimilarity, "min-similarity", 0, "Redundancy threshold for supersede pairs (default 0.9)")
+	cmd.Flags().IntVar(&limit, "limit", 0, "Maximum results per category")
+	return cmd
 }
 
 func newCurationCandidatesDuplicatesCmd(opts *rootOptions) *cobra.Command {

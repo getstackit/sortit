@@ -47,54 +47,55 @@ type ServerConfig struct {
 }
 
 type Server struct {
-	config               ServerConfig
-	logger               *slog.Logger
-	httpServer           *http.Server
-	startedAt            time.Time
-	revisions            *issues.RevisionTracker
-	mapProjectionLoader  *mapview.MapProjectionLoader
-	enrichmentWorker     *issueenrichment.IssueEnrichmentWorker
-	enrichmentCancel     context.CancelFunc
-	enrichmentDone       chan struct{}
-	createIssue          issuecmd.CreateIssueHandler
-	refineIssue          issuecmd.RefineIssueHandler
-	progressIssue        issuecmd.ProgressIssueHandler
-	closeIssue           issuecmd.CloseIssueHandler
-	reopenIssue          issuecmd.ReopenIssueHandler
-	assignIssue          issuecmd.AssignIssueHandler
-	reEnrichIssue        issuecmd.ReEnrichIssueHandler
-	splitIssue           issuecmd.SplitIssueHandler
-	combineIssues        issuecmd.CombineIssuesHandler
-	linkIssues           issuecmd.LinkIssuesHandler
-	listIssues           issueviews.ListIssuesHandler
-	listActivity         issueviews.ListActivityHandler
-	getIssue             issueviews.GetIssueHandler
-	compareIssues        issueviews.CompareIssuesHandler
-	searchIssues         search.SearchIssuesHandler
-	searchUnified        search.SearchUnifiedHandler
-	listTags             issueviews.ListTagsHandler
-	getMap               mapview.MapHandler
-	getMapEdges          mapview.EdgeHandler
-	debugAnalyzeIssue    diagnostics.DebugAnalyzeIssueHandler
-	debugEvalTags        diagnostics.DebugEvalTagsHandler
-	debugFactorWeights   diagnostics.DebugFactorWeightsHandler
-	debugIssueR2         diagnostics.DebugIssueR2Handler
-	debugTagCooccurrence diagnostics.DebugTagCooccurrenceHandler
-	debugRidgeScore      diagnostics.DebugRidgeScoreHandler
-	debugEmbeddingFalls  diagnostics.DebugEmbeddingFallbacksHandler
-	exploreIssue         mapview.ExploreIssueHandler
-	getPersonProfile     people.GetPersonProfileHandler
-	getPersonDetail      people.GetPersonDetailHandler
-	workCorrelations     people.WorkCorrelationsHandler
-	regions              *regions.Handler
-	customRegions        *regions.CustomHandler
-	cooccurrenceCache    *tagcooccurrence.Cache
-	issueXRay            *issuexray.Handler
-	authService          *auth.Service
-	catalog              *tags.CatalogService
-	memories             *memories.Service
-	curation             *curation.Service
-	curationDetector     *curation.Detector
+	config                 ServerConfig
+	logger                 *slog.Logger
+	httpServer             *http.Server
+	startedAt              time.Time
+	revisions              *issues.RevisionTracker
+	mapProjectionLoader    *mapview.MapProjectionLoader
+	enrichmentWorker       *issueenrichment.IssueEnrichmentWorker
+	enrichmentCancel       context.CancelFunc
+	enrichmentDone         chan struct{}
+	createIssue            issuecmd.CreateIssueHandler
+	refineIssue            issuecmd.RefineIssueHandler
+	progressIssue          issuecmd.ProgressIssueHandler
+	closeIssue             issuecmd.CloseIssueHandler
+	reopenIssue            issuecmd.ReopenIssueHandler
+	assignIssue            issuecmd.AssignIssueHandler
+	reEnrichIssue          issuecmd.ReEnrichIssueHandler
+	splitIssue             issuecmd.SplitIssueHandler
+	combineIssues          issuecmd.CombineIssuesHandler
+	linkIssues             issuecmd.LinkIssuesHandler
+	listIssues             issueviews.ListIssuesHandler
+	listActivity           issueviews.ListActivityHandler
+	getIssue               issueviews.GetIssueHandler
+	compareIssues          issueviews.CompareIssuesHandler
+	searchIssues           search.SearchIssuesHandler
+	searchUnified          search.SearchUnifiedHandler
+	listTags               issueviews.ListTagsHandler
+	getMap                 mapview.MapHandler
+	getMapEdges            mapview.EdgeHandler
+	debugAnalyzeIssue      diagnostics.DebugAnalyzeIssueHandler
+	debugEvalTags          diagnostics.DebugEvalTagsHandler
+	debugFactorWeights     diagnostics.DebugFactorWeightsHandler
+	debugIssueR2           diagnostics.DebugIssueR2Handler
+	debugTagCooccurrence   diagnostics.DebugTagCooccurrenceHandler
+	debugRidgeScore        diagnostics.DebugRidgeScoreHandler
+	debugEmbeddingFalls    diagnostics.DebugEmbeddingFallbacksHandler
+	exploreIssue           mapview.ExploreIssueHandler
+	getPersonProfile       people.GetPersonProfileHandler
+	getPersonDetail        people.GetPersonDetailHandler
+	workCorrelations       people.WorkCorrelationsHandler
+	regions                *regions.Handler
+	customRegions          *regions.CustomHandler
+	cooccurrenceCache      *tagcooccurrence.Cache
+	issueXRay              *issuexray.Handler
+	authService            *auth.Service
+	catalog                *tags.CatalogService
+	memories               *memories.Service
+	curation               *curation.Service
+	curationDetector       *curation.Detector
+	curationMemoryDetector *curation.MemoryDetector
 }
 
 type issueTagStore interface {
@@ -378,6 +379,7 @@ func (s *Server) registerCurationRoutes(r chi.Router) {
 	r.Get("/curation/candidates/duplicates", s.handleCurationCandidatesDuplicates)
 	r.Get("/curation/candidates/stale", s.handleCurationCandidatesStale)
 	r.Get("/curation/candidates/health", s.handleCurationCandidatesHealth)
+	r.Get("/curation/candidates/memories", s.handleCurationCandidatesMemories)
 	r.Get("/curation/proposals", s.handleCurationProposalList)
 	r.Post("/curation/proposals", s.handleCurationProposalCreate)
 	r.Get("/curation/proposals/{id}", s.handleGetCurationProposal)
@@ -681,6 +683,7 @@ func NewServer(cfg ServerConfig) *Server {
 	}
 	curationDetector := curation.NewDetector(store, store, exploreHandler,
 		diagnostics.DebugFactorWeightsHandler{Store: store, Catalog: catalog}, logger)
+	curationMemoryDetector := curation.NewMemoryDetector(store, store, logger)
 
 	return &Server{
 		config:              cfg,
@@ -763,11 +766,12 @@ func NewServer(cfg ServerConfig) *Server {
 			Tags:         catalog,
 			Cooccurrence: cooccurrenceCache,
 		},
-		authService:      cfg.Auth,
-		catalog:          catalog,
-		memories:         memoryService,
-		curation:         curationService,
-		curationDetector: curationDetector,
+		authService:            cfg.Auth,
+		catalog:                catalog,
+		memories:               memoryService,
+		curation:               curationService,
+		curationDetector:       curationDetector,
+		curationMemoryDetector: curationMemoryDetector,
 	}
 }
 

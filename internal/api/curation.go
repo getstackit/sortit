@@ -142,6 +142,56 @@ func (s *Server) handleCurationCandidatesHealth(w http.ResponseWriter, r *http.R
 	writeJSON(w, http.StatusOK, report)
 }
 
+func (s *Server) handleCurationCandidatesMemories(w http.ResponseWriter, r *http.Request) {
+	if s.curationMemoryDetector == nil {
+		writeError(w, http.StatusServiceUnavailable, "curation is not available")
+		return
+	}
+
+	q := r.URL.Query()
+	var (
+		quietParams     curation.QuietParams
+		redundantParams curation.RedundantParams
+	)
+	if v, ok, err := optionalFloatQuery(q, "maxReinforcement"); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid maxReinforcement query")
+		return
+	} else if ok {
+		quietParams.MaxReinforcement = v
+	}
+	if v, ok, err := optionalFloatQuery(q, "minAgeDays"); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid minAgeDays query")
+		return
+	} else if ok {
+		quietParams.MinAgeDays = v
+	}
+	if v, ok, err := optionalFloatQuery(q, "minSimilarity"); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid minSimilarity query")
+		return
+	} else if ok {
+		redundantParams.MinSimilarity = v
+	}
+	if v, err := ParsePositiveIntQuery(q, "limit"); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid limit query")
+		return
+	} else if v != nil {
+		quietParams.Limit = *v
+		redundantParams.Limit = *v
+	}
+
+	quiet, err := s.curationMemoryDetector.DetectQuietMemories(r.Context(), quietParams)
+	if err != nil {
+		writeInternalError(w, r, "failed to detect quiet memories", err)
+		return
+	}
+	redundant, err := s.curationMemoryDetector.DetectRedundantMemories(r.Context(), redundantParams)
+	if err != nil {
+		writeInternalError(w, r, "failed to detect redundant memories", err)
+		return
+	}
+	writeJSON(w, http.StatusOK, curation.MemoryCandidates{Quiet: quiet, Redundant: redundant})
+}
+
 type curationProposalsResponse struct {
 	Proposals []domain.CurationProposal `json:"proposals"`
 }
