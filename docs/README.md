@@ -6,6 +6,7 @@ These docs describe the current product and implementation. Historical planning 
 
 ## Guides
 
+- [Workflow](./workflow.md): how people are expected to work with Sortit day to day — capture, search, curate, refine, assign, resolve.
 - [Architecture](./architecture.md): main runtime components and request flow.
 - [Development](./development.md): local setup, environment variables, auth, and common commands.
 - [API, CLI, and MCP](./api-cli-mcp.md): supported integration surfaces.

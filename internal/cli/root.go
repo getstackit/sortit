@@ -109,6 +109,7 @@ Date:    ` + date,
 	rootCmd.AddCommand(newMineCmd(&opts))
 	rootCmd.AddCommand(newIssueCmd(&opts))
 	rootCmd.AddCommand(newMemoryCmd(&opts))
+	rootCmd.AddCommand(newCurationCmd(&opts))
 	rootCmd.AddCommand(newTagsCmd(&opts))
 	rootCmd.AddCommand(newPeopleCmd(&opts))
 	rootCmd.AddCommand(newDebugCmd(&opts))

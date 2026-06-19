@@ -16,6 +16,7 @@ import (
 	"sortit/internal/ai"
 	"sortit/internal/auth"
 	"sortit/internal/centering"
+	"sortit/internal/curation"
 	"sortit/internal/diagnostics"
 	issueenrichment "sortit/internal/issueenrichment"
 	"sortit/internal/issueevents"
@@ -92,6 +93,7 @@ type Server struct {
 	authService          *auth.Service
 	catalog              *tags.CatalogService
 	memories             *memories.Service
+	curation             *curation.Service
 }
 
 type issueTagStore interface {
@@ -264,6 +266,7 @@ func (s *Server) registerDedicatedAPIRoutes(r chi.Router) {
 		s.registerAuthRoutes(r)
 		s.registerIssueRoutes(r)
 		s.registerMemoryRoutes(r)
+		s.registerCurationRoutes(r)
 		s.registerTagRoutes(r)
 		r.Get("/people/correlations", s.handleWorkCorrelations)
 		r.Get("/people/{person}", s.handlePersonDetail)
@@ -299,6 +302,7 @@ func (s *Server) registerUIRoutes(r chi.Router) {
 		r.Post("/auth/cli/login/{loginID}/complete", s.handleAuthCLILoginComplete)
 		s.registerIssueRoutes(r)
 		s.registerMemoryRoutes(r)
+		s.registerCurationRoutes(r)
 		r.Get("/activity", s.handleActivity)
 		r.Post("/issues/compare", s.handleIssueCompare)
 		r.Get("/search", s.handleUnifiedSearch)
@@ -367,6 +371,14 @@ func (s *Server) registerMemoryRoutes(r chi.Router) {
 	r.Get("/memories/{id}", s.handleGetMemory)
 	r.Post("/memories/{id}/supersede", s.handleMemorySupersede)
 	r.Post("/memories/{id}/archive", s.handleMemoryArchive)
+}
+
+func (s *Server) registerCurationRoutes(r chi.Router) {
+	r.Get("/curation/proposals", s.handleCurationProposalList)
+	r.Post("/curation/proposals", s.handleCurationProposalCreate)
+	r.Get("/curation/proposals/{id}", s.handleGetCurationProposal)
+	r.Post("/curation/proposals/{id}/accept", s.handleCurationProposalAccept)
+	r.Post("/curation/proposals/{id}/reject", s.handleCurationProposalReject)
 }
 
 func (s *Server) registerTagRoutes(r chi.Router) {
@@ -640,6 +652,23 @@ func NewServer(cfg ServerConfig) *Server {
 	regionsHandler := &regions.Handler{Loader: regionsLoader}
 	customRegionHandler := &regions.CustomHandler{Store: customRegionWriter}
 
+	// Hoisted so the curation dispatcher and the Server fields share one
+	// instance of each handler.
+	closeIssueHandler := issuecmd.CloseIssueHandler{Runner: runner, Events: eventBus}
+	reEnrichIssueHandler := issuecmd.ReEnrichIssueHandler{Runner: runner, Store: store, Events: eventBus}
+	combineIssuesHandler := issuecmd.CombineIssuesHandler{
+		Runner:   runner,
+		Store:    store,
+		Enricher: enricher,
+		Events:   eventBus,
+	}
+	curationService := curation.NewService(store, curation.HandlerDispatcher{
+		CombineHandler:  combineIssuesHandler,
+		CloseHandler:    closeIssueHandler,
+		ReenrichHandler: reEnrichIssueHandler,
+		Memories:        memoryService,
+	}, logger)
+
 	return &Server{
 		config:              cfg,
 		logger:              logger,
@@ -660,7 +689,7 @@ func NewServer(cfg ServerConfig) *Server {
 			Events:   eventBus,
 		},
 		progressIssue: issuecmd.ProgressIssueHandler{Runner: runner, Events: eventBus},
-		closeIssue:    issuecmd.CloseIssueHandler{Runner: runner, Events: eventBus},
+		closeIssue:    closeIssueHandler,
 		reopenIssue: issuecmd.ReopenIssueHandler{
 			Runner: runner,
 			Events: eventBus,
@@ -669,22 +698,13 @@ func NewServer(cfg ServerConfig) *Server {
 			Runner: runner,
 			Events: eventBus,
 		},
-		reEnrichIssue: issuecmd.ReEnrichIssueHandler{
-			Runner: runner,
-			Store:  store,
-			Events: eventBus,
-		},
+		reEnrichIssue: reEnrichIssueHandler,
 		splitIssue: issuecmd.SplitIssueHandler{
 			Runner:   runner,
 			Enricher: enricher,
 			Events:   eventBus,
 		},
-		combineIssues: issuecmd.CombineIssuesHandler{
-			Runner:   runner,
-			Store:    store,
-			Enricher: enricher,
-			Events:   eventBus,
-		},
+		combineIssues: combineIssuesHandler,
 		linkIssues: issuecmd.LinkIssuesHandler{
 			Runner: runner,
 			Events: eventBus,
@@ -739,6 +759,7 @@ func NewServer(cfg ServerConfig) *Server {
 		authService: cfg.Auth,
 		catalog:     catalog,
 		memories:    memoryService,
+		curation:    curationService,
 	}
 }
 

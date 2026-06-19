@@ -45,3 +45,8 @@ func NewMemoryID() string {
 func NewMemoryProposalID() string {
 	return ulid.MustNew(ulid.Now(), rand.Reader).String()
 }
+
+// NewCurationProposalID generates a new server-side ULID for a curation proposal.
+func NewCurationProposalID() string {
+	return ulid.MustNew(ulid.Now(), rand.Reader).String()
+}

@@ -35,6 +35,20 @@ CREATE TABLE "public"."auth_accounts" (
     "provider_user_id" text NOT NULL,
     "created_at_unix_nano" bigint NOT NULL
 );
+CREATE TABLE "public"."curation_proposals" (
+    "id" text NOT NULL,
+    "kind" text NOT NULL,
+    "payload_json" jsonb NOT NULL,
+    "status" text NOT NULL,
+    "rationale" text NOT NULL,
+    "confidence" double precision NOT NULL,
+    "source_refs_json" jsonb NOT NULL,
+    "created_by" text NOT NULL,
+    "reviewed_by" text NOT NULL,
+    "result_ref" text NOT NULL,
+    "created_at_unix_nano" bigint NOT NULL,
+    "updated_at_unix_nano" bigint NOT NULL
+);
 CREATE TABLE "public"."custom_regions" (
     "id" text NOT NULL,
     "label" text NOT NULL,
@@ -315,6 +329,15 @@ ALTER TABLE ONLY "public"."append_only_migration_checkpoints" ALTER COLUMN "phas
 ALTER TABLE ONLY "public"."append_only_migration_checkpoints" ALTER COLUMN "cursor_json" SET DEFAULT '{}'::jsonb;
 ALTER TABLE ONLY "public"."append_only_migration_checkpoints" ALTER COLUMN "summary_json" SET DEFAULT '{}'::jsonb;
 ALTER TABLE ONLY "public"."append_only_parity_runs" ALTER COLUMN "details_json" SET DEFAULT '{}'::jsonb;
+ALTER TABLE ONLY "public"."curation_proposals" ALTER COLUMN "kind" SET DEFAULT 'combine_issues'::text;
+ALTER TABLE ONLY "public"."curation_proposals" ALTER COLUMN "payload_json" SET DEFAULT '{}'::jsonb;
+ALTER TABLE ONLY "public"."curation_proposals" ALTER COLUMN "status" SET DEFAULT 'pending'::text;
+ALTER TABLE ONLY "public"."curation_proposals" ALTER COLUMN "rationale" SET DEFAULT ''::text;
+ALTER TABLE ONLY "public"."curation_proposals" ALTER COLUMN "confidence" SET DEFAULT 0;
+ALTER TABLE ONLY "public"."curation_proposals" ALTER COLUMN "source_refs_json" SET DEFAULT '[]'::jsonb;
+ALTER TABLE ONLY "public"."curation_proposals" ALTER COLUMN "created_by" SET DEFAULT ''::text;
+ALTER TABLE ONLY "public"."curation_proposals" ALTER COLUMN "reviewed_by" SET DEFAULT ''::text;
+ALTER TABLE ONLY "public"."curation_proposals" ALTER COLUMN "result_ref" SET DEFAULT ''::text;
 ALTER TABLE ONLY "public"."custom_regions" ALTER COLUMN "description" SET DEFAULT ''::text;
 ALTER TABLE ONLY "public"."custom_regions" ALTER COLUMN "created_by" SET DEFAULT ''::text;
 ALTER TABLE ONLY "public"."dismissed_tag_merges" ALTER COLUMN "id" SET DEFAULT nextval('dismissed_tag_merges_id_seq'::regclass);
@@ -424,6 +447,7 @@ ALTER TABLE ONLY "public"."append_only_parity_runs" ADD CONSTRAINT "append_only_
 ALTER TABLE ONLY "public"."auth_accounts" ADD CONSTRAINT "auth_accounts_pkey" PRIMARY KEY (id);
 ALTER TABLE ONLY "public"."auth_accounts" ADD CONSTRAINT "auth_accounts_provider_provider_user_id_key" UNIQUE (provider, provider_user_id);
 ALTER TABLE ONLY "public"."auth_accounts" ADD CONSTRAINT "auth_accounts_user_id_fkey" FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE;
+ALTER TABLE ONLY "public"."curation_proposals" ADD CONSTRAINT "curation_proposals_pkey" PRIMARY KEY (id);
 ALTER TABLE ONLY "public"."custom_regions" ADD CONSTRAINT "custom_regions_pkey" PRIMARY KEY (id);
 ALTER TABLE ONLY "public"."dismissed_tag_merges" ADD CONSTRAINT "dismissed_tag_merges_canonical_name_alias_name_key" UNIQUE (canonical_name, alias_name);
 ALTER TABLE ONLY "public"."dismissed_tag_merges" ADD CONSTRAINT "dismissed_tag_merges_pkey" PRIMARY KEY (id);
@@ -473,6 +497,8 @@ ALTER TABLE ONLY "public"."users" ADD CONSTRAINT "users_pkey" PRIMARY KEY (id);
 CREATE INDEX api_tokens_user_id_idx ON public.api_tokens USING btree (user_id);
 CREATE INDEX append_only_parity_runs_domain_created_idx ON public.append_only_parity_runs USING btree (domain, created_at_unix_nano DESC, id DESC);
 CREATE INDEX auth_accounts_user_id_idx ON public.auth_accounts USING btree (user_id);
+CREATE INDEX curation_proposals_kind_idx ON public.curation_proposals USING btree (kind);
+CREATE INDEX curation_proposals_status_created_idx ON public.curation_proposals USING btree (status, created_at_unix_nano DESC, id);
 CREATE INDEX custom_regions_created_idx ON public.custom_regions USING btree (created_at_unix_nano DESC, id);
 CREATE INDEX events_created_at_idx ON public.events USING btree (created_at_unix_nano DESC, id DESC);
 CREATE INDEX events_issue_id_idx ON public.events USING btree (issue_id);
