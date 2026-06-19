@@ -91,6 +91,27 @@ export type IssueMapCanvasNode = {
   dataIssue?: string;
 };
 
+// IssueMapCanvasLandmark is a permanent memory rendered onto the map. It uses a
+// distinct diamond marker (vs. the round issue nodes) with a halo whose size
+// reflects reinforcement, so documented decisions read as landmarks over the
+// issue terrain.
+export type IssueMapCanvasLandmark = {
+  key: string;
+  cx: number;
+  cy: number;
+  size: number;
+  haloRadius?: number;
+  fill: string;
+  label?: string;
+  labelClassName?: string;
+  onClick?: MouseEventHandler<SVGGElement>;
+  className?: string;
+};
+
+function diamondPath(cx: number, cy: number, size: number) {
+  return `M ${cx} ${cy - size} L ${cx + size} ${cy} L ${cx} ${cy + size} L ${cx - size} ${cy} Z`;
+}
+
 type IssueMapCanvasProps = {
   width: number | string;
   height: number | string;
@@ -102,6 +123,7 @@ type IssueMapCanvasProps = {
   clusters?: IssueMapCanvasCluster[];
   edges?: IssueMapCanvasLine[];
   nodes?: IssueMapCanvasNode[];
+  landmarks?: IssueMapCanvasLandmark[];
   children?: ReactNode;
 } & Omit<SVGProps<SVGSVGElement>, "width" | "height" | "children">;
 
@@ -118,6 +140,7 @@ export const IssueMapCanvas = forwardRef<SVGSVGElement, IssueMapCanvasProps>(
       clusters = [],
       edges = [],
       nodes = [],
+      landmarks = [],
       children,
       ...props
     },
@@ -267,6 +290,52 @@ export const IssueMapCanvas = forwardRef<SVGSVGElement, IssueMapCanvasProps>(
               fillOpacity={node.labelFillOpacity ?? 1}
             >
               {node.label}
+            </text>
+          )}
+        </g>
+      ))}
+
+      {landmarks.map((landmark) => (
+        <g
+          key={landmark.key}
+          onClick={landmark.onClick}
+          className={landmark.className}
+        >
+          {landmark.haloRadius ? (
+            <circle
+              cx={landmark.cx}
+              cy={landmark.cy}
+              r={landmark.haloRadius}
+              fill={landmark.fill}
+              fillOpacity={0.12}
+              stroke={landmark.fill}
+              strokeOpacity={0.4}
+            />
+          ) : null}
+          <path
+            d={diamondPath(landmark.cx, landmark.cy, landmark.size)}
+            fill={landmark.fill}
+            fillOpacity={0.95}
+            stroke="var(--background)"
+            strokeWidth={2}
+            strokeLinejoin="round"
+          />
+          {landmark.label && (
+            <text
+              x={landmark.cx}
+              y={landmark.cy + landmark.size + 13}
+              textAnchor="middle"
+              className={cn(
+                "text-[10px] font-semibold tracking-wide",
+                landmark.labelClassName
+              )}
+              paintOrder="stroke"
+              stroke="var(--background)"
+              strokeOpacity={0.96}
+              strokeWidth={5}
+              fill={landmark.fill}
+            >
+              {landmark.label}
             </text>
           )}
         </g>

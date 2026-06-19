@@ -8,6 +8,7 @@ import (
 	"sync"
 	"time"
 
+	"sortit/internal/domain"
 	"sortit/internal/issues"
 	issuemap "sortit/internal/map"
 	"sortit/internal/tags"
@@ -22,6 +23,9 @@ type MapProjectionLoader struct {
 	Catalog     *tags.CatalogService
 	Revisions   revisionSource
 	Projections issues.MapProjectionStorePersistence
+	// Memories, when set, overlays permanent memories as map landmarks. It is
+	// optional: a nil store simply yields no landmarks.
+	Memories issues.MemoryStore
 
 	mu sync.Mutex
 
@@ -233,11 +237,47 @@ func (l *MapProjectionLoader) rebuildProfiled(ctx context.Context) (issuemap.Map
 		return issuemap.MapProjection{}, rebuildProfile{}, err
 	}
 
+	if err := l.attachLandmarks(ctx, &projection, items); err != nil {
+		return issuemap.MapProjection{}, rebuildProfile{}, err
+	}
+
 	return projection, rebuildProfile{
 		load:  loadProfile,
 		build: buildProfile,
 		total: time.Since(startedAt),
 	}, nil
+}
+
+// attachLandmarks overlays active memories onto the freshly built projection as
+// map landmarks. Memories consume the issue-derived layout (positions and
+// clusters) without being part of the PCA fit, so they never distort the model
+// they were derived from.
+func (l *MapProjectionLoader) attachLandmarks(ctx context.Context, projection *issuemap.MapProjection, items []issues.MapProjectionIssue) error {
+	if l.Memories == nil || !projection.Available || len(projection.MapIssues) == 0 {
+		return nil
+	}
+
+	mems, err := l.Memories.ListMemories(ctx, issues.MemoryListOptions{Status: domain.MemoryStatusActive})
+	if err != nil {
+		return err
+	}
+	if len(mems) == 0 {
+		return nil
+	}
+
+	issuePositions := make(map[string]issuemap.Position, len(projection.MapIssues))
+	for _, mapIssue := range projection.MapIssues {
+		issuePositions[mapIssue.ID] = issuemap.Position{X: mapIssue.X, Y: mapIssue.Y}
+	}
+	issueEmbeddings := make(map[string][]float64, len(items))
+	for _, item := range items {
+		if len(item.Embedding) > 0 {
+			issueEmbeddings[item.ID] = item.Embedding
+		}
+	}
+
+	projection.Landmarks = issuemap.ComputeMemoryLandmarks(mems, issuePositions, issueEmbeddings, projection.Clusters)
+	return nil
 }
 
 func loadDetailedIssuesAndTagsProfiled(

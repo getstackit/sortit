@@ -373,7 +373,13 @@ func clusterColor(group []issues.Issue) string {
 		}
 	}
 
-	if c, ok := tagColors[topTag]; ok {
+	return TagColor(topTag)
+}
+
+// TagColor returns the palette color for a tag, or the neutral default when the
+// tag has no assigned color. Shared by cluster coloring and memory landmarks.
+func TagColor(tag string) string {
+	if c, ok := tagColors[tag]; ok {
 		return c
 	}
 	return "#94a3b8"

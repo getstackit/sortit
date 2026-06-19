@@ -34,7 +34,7 @@ func NewStubTagger() *StubTagger {
 	return &StubTagger{}
 }
 
-func (t *StubTagger) Score(_ context.Context, text string, tags []Tag, _ []FewShotExample) (ScoreResult, error) {
+func (t *StubTagger) Score(_ context.Context, text string, tags []Tag, _ []FewShotExample, _ []PriorDecision) (ScoreResult, error) {
 	lower := strings.ToLower(text)
 	scores := make([]TagScore, 0, len(tags))
 	for _, tag := range tags {
