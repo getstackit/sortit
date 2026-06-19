@@ -94,6 +94,7 @@ type Server struct {
 	catalog              *tags.CatalogService
 	memories             *memories.Service
 	curation             *curation.Service
+	curationDetector     *curation.Detector
 }
 
 type issueTagStore interface {
@@ -374,6 +375,8 @@ func (s *Server) registerMemoryRoutes(r chi.Router) {
 }
 
 func (s *Server) registerCurationRoutes(r chi.Router) {
+	r.Get("/curation/candidates/duplicates", s.handleCurationCandidatesDuplicates)
+	r.Get("/curation/candidates/stale", s.handleCurationCandidatesStale)
 	r.Get("/curation/proposals", s.handleCurationProposalList)
 	r.Post("/curation/proposals", s.handleCurationProposalCreate)
 	r.Get("/curation/proposals/{id}", s.handleGetCurationProposal)
@@ -668,6 +671,14 @@ func NewServer(cfg ServerConfig) *Server {
 		ReenrichHandler: reEnrichIssueHandler,
 		Memories:        memoryService,
 	}, logger)
+	exploreHandler := mapview.ExploreIssueHandler{
+		Reader:       store,
+		DetailReader: store,
+		SearchStore:  semanticSearchStoreFromStore(baseStore),
+		Catalog:      catalog,
+		RidgeLambda:  ridgeLambdaCache,
+	}
+	curationDetector := curation.NewDetector(store, store, exploreHandler, logger)
 
 	return &Server{
 		config:              cfg,
@@ -728,13 +739,7 @@ func NewServer(cfg ServerConfig) *Server {
 			Centering:   centeringCache,
 			RidgeLambda: ridgeLambdaCache,
 		},
-		exploreIssue: mapview.ExploreIssueHandler{
-			Reader:       store,
-			DetailReader: store,
-			SearchStore:  semanticSearchStoreFromStore(baseStore),
-			Catalog:      catalog,
-			RidgeLambda:  ridgeLambdaCache,
-		},
+		exploreIssue:         exploreHandler,
 		listTags:             issueviews.ListTagsHandler{Catalog: catalog},
 		getMap:               mapview.MapHandler{IssueStore: store, Catalog: catalog, Projection: mapProjectionLoader},
 		getMapEdges:          mapview.EdgeHandler{IssueStore: store, Catalog: catalog, Projection: mapProjectionLoader},
@@ -756,10 +761,11 @@ func NewServer(cfg ServerConfig) *Server {
 			Tags:         catalog,
 			Cooccurrence: cooccurrenceCache,
 		},
-		authService: cfg.Auth,
-		catalog:     catalog,
-		memories:    memoryService,
-		curation:    curationService,
+		authService:      cfg.Auth,
+		catalog:          catalog,
+		memories:         memoryService,
+		curation:         curationService,
+		curationDetector: curationDetector,
 	}
 }
 

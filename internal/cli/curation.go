@@ -26,8 +26,78 @@ func newCurationCmd(opts *rootOptions) *cobra.Command {
 		Use:   "curation",
 		Short: "Librarian review queue: curate issues and memories",
 	}
+	curationCmd.AddCommand(newCurationCandidatesCmd(opts))
 	curationCmd.AddCommand(newCurationProposalsCmd(opts))
 	return curationCmd
+}
+
+func newCurationCandidatesCmd(opts *rootOptions) *cobra.Command {
+	candidatesCmd := &cobra.Command{
+		Use:   "candidates",
+		Short: "Read-only curation candidates for the librarian to judge",
+	}
+	candidatesCmd.AddCommand(newCurationCandidatesDuplicatesCmd(opts))
+	candidatesCmd.AddCommand(newCurationCandidatesStaleCmd(opts))
+	return candidatesCmd
+}
+
+func newCurationCandidatesDuplicatesCmd(opts *rootOptions) *cobra.Command {
+	var (
+		minSimilarity float64
+		maxSeeds      int
+		exploreLimit  int
+		limit         int
+	)
+	cmd := &cobra.Command{
+		Use:   "duplicates",
+		Short: "Clusters of highly-similar open issues worth combining",
+		RunE: func(cmd *cobra.Command, _ []string) error {
+			client := opts.client()
+			params := newQueryParams().
+				addFloat("minSimilarity", minSimilarity).
+				addInt("maxSeeds", maxSeeds).
+				addInt("exploreLimit", exploreLimit).
+				addInt("limit", limit)
+			var response map[string]any
+			if err := client.Get(cmd.Context(), "/curation/candidates/duplicates"+params.encode(), &response); err != nil {
+				return err
+			}
+			return printJSON(cmd, response)
+		},
+	}
+	cmd.Flags().Float64Var(&minSimilarity, "min-similarity", 0, "Minimum combined similarity to link two issues (default 0.85)")
+	cmd.Flags().IntVar(&maxSeeds, "max-seeds", 0, "Cap seed issues explored (0 = all open issues)")
+	cmd.Flags().IntVar(&exploreLimit, "explore-limit", 0, "Per-seed related-issue limit (default 10)")
+	cmd.Flags().IntVar(&limit, "limit", 0, "Maximum clusters returned")
+	return cmd
+}
+
+func newCurationCandidatesStaleCmd(opts *rootOptions) *cobra.Command {
+	var (
+		minDaysInactive float64
+		maxVelocity     float64
+		limit           int
+	)
+	cmd := &cobra.Command{
+		Use:   "stale",
+		Short: "Long-inactive open issues worth closing as stale",
+		RunE: func(cmd *cobra.Command, _ []string) error {
+			client := opts.client()
+			params := newQueryParams().
+				addFloat("minDaysInactive", minDaysInactive).
+				addFloat("maxVelocity", maxVelocity).
+				addInt("limit", limit)
+			var response map[string]any
+			if err := client.Get(cmd.Context(), "/curation/candidates/stale"+params.encode(), &response); err != nil {
+				return err
+			}
+			return printJSON(cmd, response)
+		},
+	}
+	cmd.Flags().Float64Var(&minDaysInactive, "min-days-inactive", 0, "Minimum days since last activity (default 90)")
+	cmd.Flags().Float64Var(&maxVelocity, "max-velocity", 0, "Maximum velocity to still count as stale (default 0.05)")
+	cmd.Flags().IntVar(&limit, "limit", 0, "Maximum results returned")
+	return cmd
 }
 
 func newCurationProposalsCmd(opts *rootOptions) *cobra.Command {
