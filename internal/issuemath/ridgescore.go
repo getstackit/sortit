@@ -1,10 +1,6 @@
 package issuemath
 
-import (
-	"math"
-
-	"gonum.org/v1/gonum/mat"
-)
+import "math"
 
 // ComputeRidgeScores returns the anchored-ridge refined tag-relevance
 // vector for one issue with a single shared shrinkage strength:
@@ -74,43 +70,14 @@ func ComputeRidgeScoresDiagonal(
 		}
 	}
 
-	// Build T (tagCount × dim). Each row is one tag's embedding.
-	tMat := mat.NewDense(tagCount, dim, nil)
-	for i, vec := range tagEmbeddings {
-		tMat.SetRow(i, vec)
-	}
-
-	// gram = T Tᵀ — a tagCount × tagCount tag-tag covariance.
-	var gram mat.Dense
-	gram.Mul(tMat, tMat.T())
-
-	// Add Λ to the diagonal.
-	for i := range tagCount {
-		gram.Set(i, i, gram.At(i, i)+lambdas[i])
-	}
-
-	// projection = T e — tagCount-length vector.
-	eVec := mat.NewVecDense(dim, issueEmbedding)
-	var projection mat.VecDense
-	projection.MulVec(tMat, eVec)
-
-	// rhs = T e + Λ r
-	rhs := mat.NewVecDense(tagCount, nil)
-	for i := range tagCount {
-		rhs.SetVec(i, projection.AtVec(i)+lambdas[i]*anchor[i])
-	}
-
-	// Solve (T Tᵀ + Λ) f = rhs.
-	var f mat.VecDense
-	if err := f.SolveVec(&gram, rhs); err != nil {
+	// The solver builds T and T Tᵀ and runs the same gonum solve; for a single
+	// issue there is nothing to amortize, but it keeps one implementation of the
+	// ridge math. solve returns solver-owned scratch, so copy before returning.
+	f := newRidgeSolver(tagEmbeddings, dim).solve(issueEmbedding, anchor, lambdas)
+	if f == nil {
 		return nil
 	}
-
-	out := make([]float64, tagCount)
-	for i := range tagCount {
-		out[i] = f.AtVec(i)
-	}
-	return out
+	return append([]float64(nil), f...)
 }
 
 // DriftCosine measures directional agreement between a refined ridge

@@ -1,20 +1,18 @@
 package issuemath
 
-import "math"
+import (
+	"math"
+
+	"gonum.org/v1/gonum/floats"
+)
 
 func normalizeVector(vector []float64) {
-	var magnitude float64
-	for _, value := range vector {
-		magnitude += value * value
-	}
+	// floats.Dot(v, v) is the sum of squares through the unrolled kernel.
+	magnitude := floats.Dot(vector, vector)
 	if magnitude == 0 {
 		return
 	}
-
-	scale := math.Sqrt(magnitude)
-	for i := range vector {
-		vector[i] /= scale
-	}
+	floats.Scale(1/math.Sqrt(magnitude), vector)
 }
 
 func isZeroVector(values []float64) bool {
@@ -30,11 +28,7 @@ func dotProduct(a, b []float64) float64 {
 	if len(a) != len(b) {
 		return 0
 	}
-	var sum float64
-	for i := range a {
-		sum += a[i] * b[i]
-	}
-	return sum
+	return floats.Dot(a, b)
 }
 
 func clamp(v, lo, hi float64) float64 {

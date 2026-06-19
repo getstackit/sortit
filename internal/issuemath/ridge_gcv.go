@@ -3,6 +3,7 @@ package issuemath
 import (
 	"math"
 
+	"gonum.org/v1/gonum/floats"
 	"gonum.org/v1/gonum/mat"
 
 	"sortit/internal/issues"
@@ -109,10 +110,22 @@ func aggregateRidgeGCV(
 	lambdaScored, lambdaUnscored float64,
 	embDim, numTags int,
 ) (float64, bool) {
+	// Buffers are hoisted out of the per-sample loop and reused: every solve
+	// is the same K×K shape, so CopySym/Factorize/SolveVecTo/SolveTo all
+	// overwrite in place. At the corpus scale this turns the dominant GCV
+	// allocator (a SymDense, a VecDense, a Dense, and a recon slice per
+	// sample per grid point) into a handful of allocations per grid point.
 	var sum float64
+	a := mat.NewSymDense(numTags, nil)
+	rhs := mat.NewVecDense(numTags, nil)
+	recon := make([]float64, embDim)
+	var (
+		chol mat.Cholesky
+		f    mat.VecDense
+		xinv mat.Dense
+	)
 	for _, s := range samples {
 		// A = T Tᵀ + Λ (symmetric positive definite: gram is PSD, Λ > 0).
-		a := mat.NewSymDense(numTags, nil)
 		a.CopySym(gram)
 		for k := range numTags {
 			lambda := lambdaUnscored
@@ -122,13 +135,11 @@ func aggregateRidgeGCV(
 			a.SetSym(k, k, a.At(k, k)+lambda)
 		}
 
-		var chol mat.Cholesky
 		if !chol.Factorize(a) {
 			return 0, false
 		}
 
 		// f = A⁻¹ (T e + Λ r).
-		rhs := mat.NewVecDense(numTags, nil)
 		for k := range numTags {
 			lambda := lambdaUnscored
 			if s.scored[k] {
@@ -136,15 +147,13 @@ func aggregateRidgeGCV(
 			}
 			rhs.SetVec(k, dotProduct(tagMatrix[k], s.embedding)+lambda*s.anchor[k])
 		}
-		var f mat.VecDense
 		if err := chol.SolveVecTo(&f, rhs); err != nil {
 			return 0, false
 		}
 
-		residSq := ridgeReconResidualSq(tagMatrix, &f, s.embedding, embDim, numTags)
+		residSq := ridgeReconResidualSq(tagMatrix, &f, s.embedding, recon, numTags)
 
 		// Effective degrees of freedom df = tr(A⁻¹ T Tᵀ).
-		var xinv mat.Dense
 		if err := chol.SolveTo(&xinv, gram); err != nil {
 			return 0, false
 		}
@@ -171,21 +180,21 @@ func ridgeGramMatrix(tagMatrix [][]float64, numTags int) *mat.SymDense {
 	return gram
 }
 
-// ridgeReconResidualSq returns ‖e − Tᵀf‖².
-func ridgeReconResidualSq(tagMatrix [][]float64, f mat.Vector, e []float64, embDim, numTags int) float64 {
-	recon := make([]float64, embDim)
+// ridgeReconResidualSq returns ‖e − Tᵀf‖². The recon buffer (len embDim) is
+// caller-owned scratch, cleared and reused across samples to avoid a per-call
+// allocation. The reconstruction accumulates through floats.AddScaled (an AXPY
+// kernel) rather than a hand-rolled inner loop.
+func ridgeReconResidualSq(tagMatrix [][]float64, f mat.Vector, e, recon []float64, numTags int) float64 {
+	clear(recon)
 	for k := range numTags {
 		fk := f.AtVec(k)
 		if fk == 0 {
 			continue
 		}
-		row := tagMatrix[k]
-		for d := range embDim {
-			recon[d] += fk * row[d]
-		}
+		floats.AddScaled(recon, fk, tagMatrix[k])
 	}
 	var sum float64
-	for d := range embDim {
+	for d := range recon {
 		diff := e[d] - recon[d]
 		sum += diff * diff
 	}

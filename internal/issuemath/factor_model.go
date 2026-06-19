@@ -3,6 +3,7 @@ package issuemath
 import (
 	"math"
 
+	"gonum.org/v1/gonum/floats"
 	"gonum.org/v1/gonum/mat"
 
 	"sortit/internal/issues"
@@ -248,11 +249,10 @@ func ComputeFactorDecomposition(
 			continue
 		}
 		proj := make([]float64, embDim)
+		floats.AddScaled(proj, projScalar, factorEmb)
 		residual := make([]float64, embDim)
-		for d := range embDim {
-			proj[d] = projScalar * factorEmb[d]
-			residual[d] = issueEmb[d] - proj[d]
-		}
+		copy(residual, issueEmb)
+		floats.Sub(residual, proj)
 
 		projVar := dotProduct(proj, proj)
 		resVar := dotProduct(residual, residual)
@@ -346,11 +346,10 @@ func DecomposeEmbedding(
 	}
 
 	factor := make([]float64, embDim)
+	floats.AddScaled(factor, projScalar, factorEmb)
 	residual := make([]float64, embDim)
-	for d := range embDim {
-		factor[d] = projScalar * factorEmb[d]
-		residual[d] = embedding[d] - factor[d]
-	}
+	copy(residual, embedding)
+	floats.Sub(residual, factor)
 	residualNorm := math.Sqrt(dotProduct(residual, residual))
 
 	if !isZeroVector(factor) {

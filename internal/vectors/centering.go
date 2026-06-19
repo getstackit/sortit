@@ -1,6 +1,10 @@
 package vectors
 
-import "math"
+import (
+	"math"
+
+	"gonum.org/v1/gonum/floats"
+)
 
 // Mean returns the component-wise mean of the given vectors. The dimension
 // is taken from the first non-empty vector; empty vectors and vectors of a
@@ -18,18 +22,13 @@ func Mean(vecs [][]float64) []float64 {
 		if len(vec) != len(sum) {
 			continue
 		}
-		for i, v := range vec {
-			sum[i] += v
-		}
+		floats.Add(sum, vec)
 		count++
 	}
 	if count == 0 {
 		return nil
 	}
-	scale := 1 / float64(count)
-	for i := range sum {
-		sum[i] *= scale
-	}
+	floats.Scale(1/float64(count), sum)
 	return sum
 }
 
@@ -53,9 +52,7 @@ func CenterUnit(v, mean []float64) []float64 {
 		return out
 	}
 
-	for i := range out {
-		out[i] -= mean[i]
-	}
+	floats.Sub(out, mean)
 	if isZero(out) {
 		copy(out, v)
 	}
@@ -73,15 +70,12 @@ func isZero(values []float64) bool {
 }
 
 func normalizeUnit(vector []float64) {
-	var magnitude float64
-	for _, value := range vector {
-		magnitude += value * value
-	}
-	if magnitude == 0 {
+	// floats.Dot(v, v) gives the sum of squares through the fast unrolled
+	// kernel; floats.Norm would be overflow-safe but slower, and unit-length
+	// embeddings never approach the overflow regime it guards against.
+	sumSq := floats.Dot(vector, vector)
+	if sumSq == 0 {
 		return
 	}
-	scale := math.Sqrt(magnitude)
-	for i := range vector {
-		vector[i] /= scale
-	}
+	floats.Scale(1/math.Sqrt(sumSq), vector)
 }
