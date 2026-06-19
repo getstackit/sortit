@@ -6,11 +6,12 @@ import (
 	"strings"
 
 	"sortit/internal/ai"
+	"sortit/internal/domain"
 	"sortit/internal/issues"
 	"sortit/internal/tags"
 )
 
-func (s *IssueEnricher) analyzeWithCandidateTaxonomy(ctx context.Context, raw string, preferred []string, mode tags.CandidateMode) (ai.AnalyzedIssue, tags.CandidateTaxonomy, error) {
+func (s *IssueEnricher) analyzeWithCandidateTaxonomy(ctx context.Context, raw string, preferred []string, mode tags.CandidateMode, includePriorDecisions bool) (ai.AnalyzedIssue, tags.CandidateTaxonomy, error) {
 	freshEmbedding, err := s.analyzer.EmbedText(ctx, raw)
 	if err != nil {
 		return ai.AnalyzedIssue{}, tags.CandidateTaxonomy{}, fmt.Errorf("embed raw for shortlist: %w", err)
@@ -32,11 +33,54 @@ func (s *IssueEnricher) analyzeWithCandidateTaxonomy(ctx context.Context, raw st
 		examples = s.exemplars.Select(ctx, s.analyzer, freshEmbeddingVector, candidateTagNames, 3)
 	}
 
-	analyzed, err := s.analyzer.AnalyzeIssueData(ctx, raw, candidates.AITags(), examples)
+	var priorDecisions []ai.PriorDecision
+	if includePriorDecisions {
+		priorDecisions = s.relevantPriorDecisions(ctx, freshEmbeddingVector)
+	}
+
+	analyzed, err := s.analyzer.AnalyzeIssueData(ctx, raw, candidates.AITags(), examples, priorDecisions...)
 	if err != nil {
 		return ai.AnalyzedIssue{}, tags.CandidateTaxonomy{}, err
 	}
 	return analyzed, candidates, nil
+}
+
+// relevantPriorDecisions retrieves the memories most similar to the text being
+// enriched and shapes them as tagging context, so a new issue restating a
+// settled decision is tagged consistently with it. Failures are non-fatal.
+func (s *IssueEnricher) relevantPriorDecisions(ctx context.Context, embedding []float64) []ai.PriorDecision {
+	if s.memoryStore == nil || len(embedding) == 0 {
+		return nil
+	}
+	results, err := s.memoryStore.SearchMemories(ctx, embedding, memoryContextLimit)
+	if err != nil {
+		if s.logger != nil {
+			s.logger.WarnContext(ctx, "memory context retrieval failed", "error", err)
+		}
+		return nil
+	}
+	decisions := make([]ai.PriorDecision, 0, len(results))
+	for _, result := range results {
+		if result.Similarity < memoryContextSimFloor {
+			continue
+		}
+		decisions = append(decisions, ai.PriorDecision{
+			Title:   priorDecisionTitle(result.Memory),
+			Summary: result.Memory.Body,
+			Tags:    result.Memory.AnchorTags,
+		})
+	}
+	return decisions
+}
+
+func priorDecisionTitle(memory domain.Memory) string {
+	if title := strings.TrimSpace(memory.Title); title != "" {
+		return title
+	}
+	if len(memory.AnchorTags) > 0 {
+		return memory.AnchorTags[0]
+	}
+	return "memory"
 }
 
 func (s *IssueEnricher) tagSpecificityMap(ctx context.Context) map[string]*float64 {
@@ -55,7 +99,7 @@ func (s *IssueEnricher) tagSpecificityMap(ctx context.Context) map[string]*float
 }
 
 func (s *IssueEnricher) AnalyzeText(ctx context.Context, raw string, opts AnalyzeTextOptions) (AnalyzeTextResult, error) {
-	analyzed, candidates, err := s.analyzeWithCandidateTaxonomy(ctx, raw, opts.PreferredTags, opts.CandidateMode)
+	analyzed, candidates, err := s.analyzeWithCandidateTaxonomy(ctx, raw, opts.PreferredTags, opts.CandidateMode, !opts.SkipPriorDecisions)
 	if err != nil {
 		return AnalyzeTextResult{}, err
 	}

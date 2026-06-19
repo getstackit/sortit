@@ -159,6 +159,8 @@ func (s *Service) enrich(ctx context.Context, memory *domain.Memory) {
 		PreferredTags: memory.AnchorTags,
 		CandidateMode: tags.CandidateModeRetrievalShortlist,
 		Verify:        true,
+		// A memory's own tagging should not be influenced by other memories.
+		SkipPriorDecisions: true,
 	})
 	if err != nil {
 		s.logger.WarnContext(ctx, "memory enrichment failed; persisting without scores", "error", err)

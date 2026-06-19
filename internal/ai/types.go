@@ -88,8 +88,18 @@ type FewShotTag struct {
 	Relevance float64 `json:"relevance"`
 }
 
+// PriorDecision is a documented memory surfaced to the tagger as context, so a
+// new issue can be tagged consistently with decisions already made and so the
+// model is aware the question may already be settled ("have we decided this
+// before?").
+type PriorDecision struct {
+	Title   string   `json:"title"`
+	Summary string   `json:"summary"`
+	Tags    []string `json:"tags,omitempty"`
+}
+
 type Tagger interface {
-	Score(ctx context.Context, text string, tags []Tag, examples []FewShotExample) (ScoreResult, error)
+	Score(ctx context.Context, text string, tags []Tag, examples []FewShotExample, priorDecisions []PriorDecision) (ScoreResult, error)
 	Provider() string
 	Model() string
 }

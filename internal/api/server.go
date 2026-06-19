@@ -578,6 +578,7 @@ func NewServer(cfg ServerConfig) *Server {
 	catalog := tags.NewCatalogService(tagStore, commandAnalyzer, catalogLogger)
 	enricherLogger := logger.With("component", "enricher")
 	enricher := issueenrichment.NewIssueEnricher(commandAnalyzer, catalog, enricherLogger)
+	enricher.UseMemoryContext(store)
 	memoryService := memories.NewService(store, enricher, logger)
 	var enrichmentWorker *issueenrichment.IssueEnrichmentWorker
 	workerLogger := logger.With("component", "enrichment_worker")

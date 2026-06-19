@@ -78,7 +78,7 @@ type evidenceTagger struct {
 	negated []ai.NegatedTag
 }
 
-func (t *evidenceTagger) Score(_ context.Context, _ string, _ []ai.Tag, _ []ai.FewShotExample) (ai.ScoreResult, error) {
+func (t *evidenceTagger) Score(_ context.Context, _ string, _ []ai.Tag, _ []ai.FewShotExample, _ []ai.PriorDecision) (ai.ScoreResult, error) {
 	return ai.ScoreResult{
 		Tags:    append([]ai.TagScore(nil), t.scores...),
 		Negated: append([]ai.NegatedTag(nil), t.negated...),
