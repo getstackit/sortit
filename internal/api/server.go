@@ -377,6 +377,7 @@ func (s *Server) registerMemoryRoutes(r chi.Router) {
 func (s *Server) registerCurationRoutes(r chi.Router) {
 	r.Get("/curation/candidates/duplicates", s.handleCurationCandidatesDuplicates)
 	r.Get("/curation/candidates/stale", s.handleCurationCandidatesStale)
+	r.Get("/curation/candidates/health", s.handleCurationCandidatesHealth)
 	r.Get("/curation/proposals", s.handleCurationProposalList)
 	r.Post("/curation/proposals", s.handleCurationProposalCreate)
 	r.Get("/curation/proposals/{id}", s.handleGetCurationProposal)
@@ -678,7 +679,8 @@ func NewServer(cfg ServerConfig) *Server {
 		Catalog:      catalog,
 		RidgeLambda:  ridgeLambdaCache,
 	}
-	curationDetector := curation.NewDetector(store, store, exploreHandler, logger)
+	curationDetector := curation.NewDetector(store, store, exploreHandler,
+		diagnostics.DebugFactorWeightsHandler{Store: store, Catalog: catalog}, logger)
 
 	return &Server{
 		config:              cfg,

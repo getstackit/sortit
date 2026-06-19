@@ -38,6 +38,7 @@ func newCurationCandidatesCmd(opts *rootOptions) *cobra.Command {
 	}
 	candidatesCmd.AddCommand(newCurationCandidatesDuplicatesCmd(opts))
 	candidatesCmd.AddCommand(newCurationCandidatesStaleCmd(opts))
+	candidatesCmd.AddCommand(newCurationCandidatesHealthCmd(opts))
 	return candidatesCmd
 }
 
@@ -97,6 +98,34 @@ func newCurationCandidatesStaleCmd(opts *rootOptions) *cobra.Command {
 	cmd.Flags().Float64Var(&minDaysInactive, "min-days-inactive", 0, "Minimum days since last activity (default 90)")
 	cmd.Flags().Float64Var(&maxVelocity, "max-velocity", 0, "Maximum velocity to still count as stale (default 0.05)")
 	cmd.Flags().IntVar(&limit, "limit", 0, "Maximum results returned")
+	return cmd
+}
+
+func newCurationCandidatesHealthCmd(opts *rootOptions) *cobra.Command {
+	var (
+		maxR2         float64
+		includeFailed bool
+		limit         int
+	)
+	cmd := &cobra.Command{
+		Use:   "health",
+		Short: "Issues whose enrichment failed or fits the tag model poorly, plus taxonomy gaps",
+		RunE: func(cmd *cobra.Command, _ []string) error {
+			client := opts.client()
+			params := newQueryParams().
+				addFloat("maxR2", maxR2).
+				addBool("includeFailed", includeFailed).
+				addInt("limit", limit)
+			var response map[string]any
+			if err := client.Get(cmd.Context(), "/curation/candidates/health"+params.encode(), &response); err != nil {
+				return err
+			}
+			return printJSON(cmd, response)
+		},
+	}
+	cmd.Flags().Float64Var(&maxR2, "max-r2", 0, "Extra filter on low-R² issues (0 = use the model's own list)")
+	cmd.Flags().BoolVar(&includeFailed, "include-failed", true, "Include enrichment-failed issues")
+	cmd.Flags().IntVar(&limit, "limit", 0, "Maximum re-enrich candidates returned")
 	return cmd
 }
 

@@ -7,6 +7,7 @@ import (
 	"strings"
 	"time"
 
+	"sortit/internal/diagnostics"
 	"sortit/internal/issues"
 	issueviews "sortit/internal/issues/views"
 	issuemap "sortit/internal/map"
@@ -17,10 +18,11 @@ import (
 // judges (with codebase context), and turns into proposals. Detection never
 // writes proposals or mutates state — it only surfaces what may be worth a move.
 type Detector struct {
-	reader   issues.Reader
-	detail   issues.IssueDetailReader
-	explorer IssueExplorer
-	logger   *slog.Logger
+	reader        issues.Reader
+	detail        issues.IssueDetailReader
+	explorer      IssueExplorer
+	factorWeights FactorWeightsReporter
+	logger        *slog.Logger
 }
 
 // IssueExplorer is the similarity surface duplicate detection rides on.
@@ -29,13 +31,27 @@ type IssueExplorer interface {
 	Handle(ctx context.Context, in mapview.ExploreIssue) (issuemap.ExploreResponse, error)
 }
 
+// FactorWeightsReporter is the factor-model diagnostic surface health detection
+// rides on. diagnostics.DebugFactorWeightsHandler satisfies it.
+type FactorWeightsReporter interface {
+	Handle(ctx context.Context) (diagnostics.DebugFactorWeightsResult, error)
+}
+
 // NewDetector constructs a candidate detector. detail may be nil (stale
-// detection then falls back to whatever metrics List already carries).
-func NewDetector(reader issues.Reader, detail issues.IssueDetailReader, explorer IssueExplorer, logger *slog.Logger) *Detector {
+// detection then falls back to whatever metrics List already carries);
+// factorWeights may be nil (health detection then skips low-R² and taxonomy
+// gaps, surfacing only enrichment failures).
+func NewDetector(reader issues.Reader, detail issues.IssueDetailReader, explorer IssueExplorer, factorWeights FactorWeightsReporter, logger *slog.Logger) *Detector {
 	if logger == nil {
 		logger = slog.Default()
 	}
-	return &Detector{reader: reader, detail: detail, explorer: explorer, logger: logger.With("component", "curation.detect")}
+	return &Detector{
+		reader:        reader,
+		detail:        detail,
+		explorer:      explorer,
+		factorWeights: factorWeights,
+		logger:        logger.With("component", "curation.detect"),
+	}
 }
 
 // --- Duplicate consolidation ---
@@ -225,6 +241,103 @@ func (d *Detector) DetectStaleIssues(ctx context.Context, params StaleParams) ([
 		stale = stale[:params.Limit]
 	}
 	return stale, nil
+}
+
+// --- Cataloging health ---
+
+// HealthIssue is an issue whose enrichment is broken or low-quality and may be
+// worth re-enriching.
+type HealthIssue struct {
+	IssueID         string   `json:"issueId"`
+	Reason          string   `json:"reason"` // "enrichment_failed" | "low_r2"
+	Summary         string   `json:"summary"`
+	R2              *float64 `json:"r2,omitempty"`
+	EnrichmentError string   `json:"enrichmentError,omitempty"`
+}
+
+// TaxonomyGap is a tag that aligns poorly with an issue it was scored on,
+// signaling the taxonomy may need a sharper or new tag.
+type TaxonomyGap struct {
+	Tag       string  `json:"tag"`
+	IssueID   string  `json:"issueId"`
+	Alignment float64 `json:"alignment"`
+}
+
+// HealthReport bundles cataloging-health candidates: issues to re-enrich and
+// taxonomy gaps to investigate.
+type HealthReport struct {
+	Issues       []HealthIssue `json:"issues"`
+	TaxonomyGaps []TaxonomyGap `json:"taxonomyGaps,omitempty"`
+}
+
+// HealthParams tunes health detection. Zero values fall back to defaults.
+type HealthParams struct {
+	MaxR2         float64 // extra filter on low-R² issues; 0 = use the model's own list
+	IncludeFailed bool    // include enrichment-failed issues
+	Limit         int     // max re-enrich candidates returned; 0 = all
+}
+
+// DetectHealthIssues surfaces issues whose enrichment failed or whose tag factor
+// model fits poorly (low R²), plus taxonomy gaps. Low-R² and gaps come from the
+// factor-weights diagnostic; when no factor-weights reporter is wired, only
+// enrichment failures are reported.
+func (d *Detector) DetectHealthIssues(ctx context.Context, params HealthParams) (HealthReport, error) {
+	report := HealthReport{Issues: make([]HealthIssue, 0)}
+	seen := map[string]struct{}{}
+
+	if params.IncludeFailed {
+		all, err := d.reader.List(ctx)
+		if err != nil {
+			return HealthReport{}, err
+		}
+		for _, issue := range all {
+			if issue.EnrichmentStatus != issues.EnrichmentStatusFailed {
+				continue
+			}
+			seen[issue.ID] = struct{}{}
+			report.Issues = append(report.Issues, HealthIssue{
+				IssueID:         issue.ID,
+				Reason:          "enrichment_failed",
+				Summary:         firstLine(issue.Raw),
+				EnrichmentError: strings.TrimSpace(issue.EnrichmentError),
+			})
+		}
+	}
+
+	if d.factorWeights != nil {
+		result, err := d.factorWeights.Handle(ctx)
+		if err != nil {
+			return HealthReport{}, err
+		}
+		for _, low := range result.LowR2Issues {
+			if params.MaxR2 > 0 && low.R2 > params.MaxR2 {
+				continue
+			}
+			if _, dup := seen[low.ID]; dup {
+				continue
+			}
+			seen[low.ID] = struct{}{}
+			r2 := low.R2
+			report.Issues = append(report.Issues, HealthIssue{
+				IssueID: low.ID,
+				Reason:  "low_r2",
+				Summary: firstLine(low.Raw),
+				R2:      &r2,
+			})
+		}
+		for _, gap := range result.ReviewQueue.LowAlignmentTags {
+			report.TaxonomyGaps = append(report.TaxonomyGaps, TaxonomyGap{
+				Tag:       gap.TagScore.Tag,
+				IssueID:   gap.IssueID,
+				Alignment: round3(gap.Alignment),
+			})
+		}
+	}
+
+	if params.Limit > 0 && len(report.Issues) > params.Limit {
+		report.Issues = report.Issues[:params.Limit]
+	}
+	return report, nil
 }
 
 // --- helpers ---

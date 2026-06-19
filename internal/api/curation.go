@@ -110,6 +110,38 @@ func (s *Server) handleCurationCandidatesStale(w http.ResponseWriter, r *http.Re
 	writeJSON(w, http.StatusOK, staleCandidatesResponse{Issues: stale})
 }
 
+func (s *Server) handleCurationCandidatesHealth(w http.ResponseWriter, r *http.Request) {
+	if s.curationDetector == nil {
+		writeError(w, http.StatusServiceUnavailable, "curation is not available")
+		return
+	}
+
+	q := r.URL.Query()
+	params := curation.HealthParams{IncludeFailed: true}
+	if v := strings.TrimSpace(q.Get("includeFailed")); v != "" {
+		params.IncludeFailed = v == "true" || v == "1"
+	}
+	if v, ok, err := optionalFloatQuery(q, "maxR2"); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid maxR2 query")
+		return
+	} else if ok {
+		params.MaxR2 = v
+	}
+	if v, err := ParsePositiveIntQuery(q, "limit"); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid limit query")
+		return
+	} else if v != nil {
+		params.Limit = *v
+	}
+
+	report, err := s.curationDetector.DetectHealthIssues(r.Context(), params)
+	if err != nil {
+		writeInternalError(w, r, "failed to detect health candidates", err)
+		return
+	}
+	writeJSON(w, http.StatusOK, report)
+}
+
 type curationProposalsResponse struct {
 	Proposals []domain.CurationProposal `json:"proposals"`
 }

@@ -37,7 +37,7 @@ func TestDetectDuplicatesClustersSimilarOpenIssues(t *testing.T) {
 			{ID: "d", Status: issues.StatusOpen, CombinedSimilarity: 0.40},
 		},
 	}}
-	det := NewDetector(store, store, explorer, nil)
+	det := NewDetector(store, store, explorer, nil, nil)
 
 	clusters, err := det.DetectDuplicates(ctx, DuplicateParams{MinSimilarity: 0.85})
 	if err != nil {
@@ -72,7 +72,7 @@ func TestDetectStaleIssuesFlagsInactiveOpenIssues(t *testing.T) {
 		{ID: "closed-old", Raw: "Done long ago", Status: issues.StatusClosed, CreatedAt: now.AddDate(0, 0, -300)},
 	})
 
-	det := NewDetector(store, store, fakeExplorer{}, nil)
+	det := NewDetector(store, store, fakeExplorer{}, nil, nil)
 	// High MaxVelocity isolates the days-inactive filter under test.
 	stale, err := det.DetectStaleIssues(ctx, StaleParams{MinDaysInactive: 90, MaxVelocity: 1000})
 	if err != nil {
