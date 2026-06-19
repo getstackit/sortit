@@ -361,6 +361,8 @@ func (s *Server) registerMemoryRoutes(r chi.Router) {
 	r.Get("/memories", s.handleMemoryList)
 	r.Post("/memories", s.handleMemoryCreate)
 	r.Get("/memories/{id}", s.handleGetMemory)
+	r.Post("/memories/{id}/supersede", s.handleMemorySupersede)
+	r.Post("/memories/{id}/archive", s.handleMemoryArchive)
 }
 
 func (s *Server) registerTagRoutes(r chi.Router) {

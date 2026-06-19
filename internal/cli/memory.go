@@ -22,6 +22,10 @@ type memoriesListResponse struct {
 	Memories []domain.Memory `json:"memories"`
 }
 
+type supersedeMemoryRequest struct {
+	SupersededBy string `json:"supersededBy,omitempty"`
+}
+
 func newMemoryCmd(opts *rootOptions) *cobra.Command {
 	memoryCmd := &cobra.Command{
 		Use:   "memory",
@@ -30,6 +34,8 @@ func newMemoryCmd(opts *rootOptions) *cobra.Command {
 	memoryCmd.AddCommand(newMemoryCreateCmd(opts))
 	memoryCmd.AddCommand(newMemoryGetCmd(opts))
 	memoryCmd.AddCommand(newMemoryListCmd(opts))
+	memoryCmd.AddCommand(newMemorySupersedeCmd(opts))
+	memoryCmd.AddCommand(newMemoryArchiveCmd(opts))
 	return memoryCmd
 }
 
@@ -119,4 +125,43 @@ func newMemoryListCmd(opts *rootOptions) *cobra.Command {
 	cmd.Flags().IntVar(&limit, "limit", 0, "Maximum number of results")
 	cmd.Flags().IntVar(&offset, "offset", 0, "Number of results to skip")
 	return cmd
+}
+
+func newMemorySupersedeCmd(opts *rootOptions) *cobra.Command {
+	var supersededBy string
+
+	cmd := &cobra.Command{
+		Use:   "supersede <id>",
+		Short: "Mark a memory as superseded by newer knowledge",
+		Args:  cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			client := opts.client()
+			var updated domain.Memory
+			if err := client.Post(cmd.Context(), "/memories/"+args[0]+"/supersede", supersedeMemoryRequest{
+				SupersededBy: strings.TrimSpace(supersededBy),
+			}, &updated); err != nil {
+				return err
+			}
+			return printJSON(cmd, updated)
+		},
+	}
+
+	cmd.Flags().StringVar(&supersededBy, "by", "", "Memory id that replaces this one")
+	return cmd
+}
+
+func newMemoryArchiveCmd(opts *rootOptions) *cobra.Command {
+	return &cobra.Command{
+		Use:   "archive <id>",
+		Short: "Archive a memory (retire without a replacement)",
+		Args:  cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			client := opts.client()
+			var updated domain.Memory
+			if err := client.Post(cmd.Context(), "/memories/"+args[0]+"/archive", nil, &updated); err != nil {
+				return err
+			}
+			return printJSON(cmd, updated)
+		},
+	}
 }

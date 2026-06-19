@@ -122,3 +122,55 @@ func TestCreateMemoryNilEnricher(t *testing.T) {
 		t.Fatalf("expected no embedding without enricher, got %v", created.Embedding)
 	}
 }
+
+func TestSupersedeMemory(t *testing.T) {
+	store := issues.NewInMemoryStore(nil)
+	svc := NewService(store, nil, nil)
+	ctx := context.Background()
+
+	original, err := svc.CreateMemory(ctx, CreateMemoryInput{Body: "old decision"})
+	if err != nil {
+		t.Fatalf("create original: %v", err)
+	}
+	replacement, err := svc.CreateMemory(ctx, CreateMemoryInput{Body: "new decision"})
+	if err != nil {
+		t.Fatalf("create replacement: %v", err)
+	}
+
+	updated, err := svc.SupersedeMemory(ctx, original.ID, replacement.ID)
+	if err != nil {
+		t.Fatalf("supersede: %v", err)
+	}
+	if updated.Status != domain.MemoryStatusSuperseded {
+		t.Fatalf("expected superseded status, got %s", updated.Status)
+	}
+	if updated.SupersededBy != replacement.ID {
+		t.Fatalf("expected SupersededBy %q, got %q", replacement.ID, updated.SupersededBy)
+	}
+
+	if _, err := svc.SupersedeMemory(ctx, original.ID, original.ID); err == nil {
+		t.Fatal("expected error superseding a memory by itself")
+	}
+
+	if _, err := svc.SupersedeMemory(ctx, "missing", ""); !errors.Is(err, issues.ErrMemoryNotFound) {
+		t.Fatalf("expected ErrMemoryNotFound, got %v", err)
+	}
+}
+
+func TestArchiveMemory(t *testing.T) {
+	store := issues.NewInMemoryStore(nil)
+	svc := NewService(store, nil, nil)
+	ctx := context.Background()
+
+	created, err := svc.CreateMemory(ctx, CreateMemoryInput{Body: "retire me"})
+	if err != nil {
+		t.Fatalf("create: %v", err)
+	}
+	updated, err := svc.ArchiveMemory(ctx, created.ID)
+	if err != nil {
+		t.Fatalf("archive: %v", err)
+	}
+	if updated.Status != domain.MemoryStatusArchived {
+		t.Fatalf("expected archived status, got %s", updated.Status)
+	}
+}

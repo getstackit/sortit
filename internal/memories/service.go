@@ -114,6 +114,39 @@ func (s *Service) ListMemories(ctx context.Context, opts issues.MemoryListOption
 	return s.store.ListMemories(ctx, opts)
 }
 
+// SupersedeMemory marks a memory as superseded — the "system evolves" path.
+// supersededBy optionally records the memory that replaces it.
+func (s *Service) SupersedeMemory(ctx context.Context, id, supersededBy string) (domain.Memory, error) {
+	return s.transition(ctx, id, domain.MemoryStatusSuperseded, strings.TrimSpace(supersededBy))
+}
+
+// ArchiveMemory retires a memory without pointing at a replacement.
+func (s *Service) ArchiveMemory(ctx context.Context, id string) (domain.Memory, error) {
+	return s.transition(ctx, id, domain.MemoryStatusArchived, "")
+}
+
+func (s *Service) transition(ctx context.Context, id string, status domain.MemoryStatus, supersededBy string) (domain.Memory, error) {
+	memory, err := s.store.GetMemory(ctx, id)
+	if err != nil {
+		return domain.Memory{}, err
+	}
+	if supersededBy != "" && supersededBy == memory.ID {
+		return domain.Memory{}, fmt.Errorf("a memory cannot supersede itself")
+	}
+	memory.Status = status
+	memory.SupersededBy = supersededBy
+	memory.UpdatedAt = time.Now().UTC()
+	if err := s.store.UpsertMemory(ctx, memory); err != nil {
+		return domain.Memory{}, fmt.Errorf("save memory transition: %w", err)
+	}
+	s.logger.InfoContext(ctx, "memory transitioned",
+		"memory_id", memory.ID,
+		"status", status,
+		"superseded_by", supersededBy,
+	)
+	return memory, nil
+}
+
 // enrich runs the memory body through the issue enrichment pipeline to attach a
 // tag-relevance profile and embedding. Failures are logged but non-fatal: a
 // memory always persists and can be re-enriched later.

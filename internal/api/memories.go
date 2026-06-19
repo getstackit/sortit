@@ -2,6 +2,7 @@ package api
 
 import (
 	"errors"
+	"io"
 	"net/http"
 	"strings"
 
@@ -113,6 +114,54 @@ func (s *Server) handleGetMemory(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		writeInternalError(w, r, "failed to load memory", err)
+		return
+	}
+
+	writeJSON(w, http.StatusOK, memory)
+}
+
+type supersedeMemoryRequest struct {
+	SupersededBy string `json:"supersededBy,omitempty"`
+}
+
+func (s *Server) handleMemorySupersede(w http.ResponseWriter, r *http.Request) {
+	if s.memories == nil {
+		writeError(w, http.StatusServiceUnavailable, "memories are not available")
+		return
+	}
+
+	request, err := decodeJSON[supersedeMemoryRequest](r)
+	if err != nil && !errors.Is(err, io.EOF) {
+		writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+
+	memory, err := s.memories.SupersedeMemory(r.Context(), chi.URLParam(r, "id"), request.SupersededBy)
+	if err != nil {
+		if errors.Is(err, issues.ErrMemoryNotFound) {
+			writeError(w, http.StatusNotFound, "memory not found")
+			return
+		}
+		writeInternalError(w, r, "failed to supersede memory", err)
+		return
+	}
+
+	writeJSON(w, http.StatusOK, memory)
+}
+
+func (s *Server) handleMemoryArchive(w http.ResponseWriter, r *http.Request) {
+	if s.memories == nil {
+		writeError(w, http.StatusServiceUnavailable, "memories are not available")
+		return
+	}
+
+	memory, err := s.memories.ArchiveMemory(r.Context(), chi.URLParam(r, "id"))
+	if err != nil {
+		if errors.Is(err, issues.ErrMemoryNotFound) {
+			writeError(w, http.StatusNotFound, "memory not found")
+			return
+		}
+		writeInternalError(w, r, "failed to archive memory", err)
 		return
 	}
 
