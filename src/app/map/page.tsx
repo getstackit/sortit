@@ -19,6 +19,7 @@ import { IssueListItem } from "@/components/issue-list-item";
 import {
   IssueMapCanvas,
   type IssueMapCanvasBlob,
+  type IssueMapCanvasLandmark,
   type IssueMapCanvasLine,
   type IssueMapCanvasNode,
   type IssueMapCanvasRing,
@@ -1166,6 +1167,22 @@ function MapPageContent() {
     setFilteredClusterLabel,
   ]);
 
+  const canvasLandmarks = useMemo<IssueMapCanvasLandmark[]>(() => {
+    const landmarks = mapData?.landmarks ?? [];
+    return landmarks.map((landmark) => {
+      const { sx, sy } = toScreen(landmark.x, landmark.y);
+      return {
+        key: `landmark-${landmark.id}`,
+        cx: sx,
+        cy: sy,
+        size: 6,
+        haloRadius: 9 + landmark.reinforcement * 16,
+        fill: landmark.color || "#8b5cf6",
+        label: landmark.title,
+      };
+    });
+  }, [mapData, toScreen]);
+
   const filteredIssueIds = useMemo(() => {
     if (!filteredClusterLabel) return null;
     const members = clusterMembers.get(filteredClusterLabel);
@@ -1782,6 +1799,7 @@ function MapPageContent() {
             blobs={canvasBlobs}
             edges={canvasEdges}
             nodes={canvasNodes}
+            landmarks={canvasLandmarks}
           >
             {lassoPoints.length > 1 && (
               <polygon

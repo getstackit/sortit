@@ -26,6 +26,7 @@ import {
   Users,
   BarChart3,
   Layers,
+  BookMarked,
   Settings,
   Bug,
 } from "lucide-react";
@@ -50,6 +51,7 @@ const navItems: { label: string; href: string; icon: LucideIcon }[] = [
   { label: "Activity", href: "/activity", icon: Activity },
   { label: "Tag Map", href: "/tags", icon: Tags },
   { label: "Regions", href: "/regions", icon: Layers },
+  { label: "Memories", href: "/memories", icon: BookMarked },
   { label: "People", href: "/people", icon: Users },
   { label: "Analytics", href: "/analytics", icon: BarChart3 },
   { label: "Settings", href: "/settings", icon: Settings },
