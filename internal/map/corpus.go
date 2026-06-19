@@ -36,6 +36,7 @@ type MapProjection struct {
 	MapIssues         []MapIssue
 	AllEdges          []Edge
 	Clusters          []Cluster
+	Landmarks         []Landmark
 	VisibleIssueIDs   map[string]struct{}
 }
 
@@ -69,6 +70,7 @@ func SubsetMapProjection(projection MapProjection, issueIDs map[string]struct{})
 		MapIssues:         filterMapIssuesByID(projection.MapIssues, issueIDs),
 		AllEdges:          filterEdgesByID(projection.AllEdges, issueIDs),
 		Clusters:          filterVisibleClusters(projection.Clusters, issueIDs),
+		Landmarks:         projection.Landmarks,
 		VisibleIssueIDs:   filteredVisible,
 	}
 }
@@ -241,6 +243,11 @@ func BuildMapFromProjection(projection MapProjection, viewport *Viewport, edgeTh
 		base.clusters = []Cluster{}
 	}
 
+	landmarks := projection.Landmarks
+	if landmarks == nil {
+		landmarks = []Landmark{}
+	}
+
 	return MapResponse{
 		Available:         true,
 		IssueCount:        len(projection.MapIssues),
@@ -248,6 +255,7 @@ func BuildMapFromProjection(projection MapProjection, viewport *Viewport, edgeTh
 		Issues:            base.mapIssues,
 		Edges:             edges,
 		Clusters:          base.clusters,
+		Landmarks:         landmarks,
 	}, nil
 }
 

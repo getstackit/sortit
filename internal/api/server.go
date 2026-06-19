@@ -605,6 +605,7 @@ func NewServer(cfg ServerConfig) *Server {
 		Catalog:     catalog,
 		Revisions:   revisions,
 		Projections: mapProjectionStoreFromIssueStore(baseStore),
+		Memories:    store,
 	}
 	cooccurrenceCache := &tagcooccurrence.Cache{
 		Store:     store,

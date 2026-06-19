@@ -85,6 +85,42 @@ func ComputeMemoryReinforcement(memoryEmbedding []float64, candidates []Reinforc
 	return result
 }
 
+// NeighborhoodReinforcement measures how reinforced a memory is purely by the
+// density of related issues around it, ignoring time. Each issue within the
+// similarity threshold contributes its relatedness; the saturated sum is the
+// reinforcement score. This is the time-free counterpart to
+// ComputeMemoryReinforcement, used where activity timestamps aren't available
+// (e.g. map landmark prominence) — a memory in a dense, well-trodden area
+// scores high even when the area is quiet.
+func NeighborhoodReinforcement(memoryEmbedding []float64, issueEmbeddings [][]float64) MemoryReinforcement {
+	if len(memoryEmbedding) == 0 {
+		return MemoryReinforcement{}
+	}
+
+	var (
+		weighted float64
+		count    int
+	)
+	for _, embedding := range issueEmbeddings {
+		if len(embedding) != len(memoryEmbedding) {
+			continue
+		}
+		sim := vectors.CosineSimilarity(memoryEmbedding, embedding)
+		if sim < scoring.MemoryNeighborhoodSimThreshold {
+			continue
+		}
+		weighted += sim
+		count++
+	}
+	if weighted == 0 {
+		return MemoryReinforcement{}
+	}
+	return MemoryReinforcement{
+		Score:      clamp01(1 - math.Exp(-weighted/scoring.MemoryReinforcementSaturation)),
+		EventCount: count,
+	}
+}
+
 // MemoryProminence converts a reinforcement score into a multiplicative
 // prominence weight. The base is 1.0 — memories never decay — and reinforcement
 // adds up to MemoryReinforcementBoost on top.
