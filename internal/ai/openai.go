@@ -139,7 +139,7 @@ func NewOpenAIEmbedder(cfg OpenAIConfig) (*OpenAIEmbedder, error) {
 	}, nil
 }
 
-func (t *OpenAITagger) Score(ctx context.Context, text string, tags []Tag, examples []FewShotExample) (ScoreResult, error) {
+func (t *OpenAITagger) Score(ctx context.Context, text string, tags []Tag, examples []FewShotExample, priorDecisions []PriorDecision) (ScoreResult, error) {
 	request := openAIChatCompletionRequest{
 		Model:       t.model,
 		Temperature: 0,
@@ -153,7 +153,7 @@ func (t *OpenAITagger) Score(ctx context.Context, text string, tags []Tag, examp
 			},
 			{
 				Role:    "user",
-				Content: buildOpenAITaggingPrompt(text, tags, examples),
+				Content: buildOpenAITaggingPrompt(text, tags, examples, priorDecisions...),
 			},
 		},
 	}
@@ -297,7 +297,7 @@ func (c *openAIClient) doJSON(ctx context.Context, requestPath string, requestBo
 	return nil
 }
 
-func buildOpenAITaggingPrompt(text string, tags []Tag, examples []FewShotExample) string {
+func buildOpenAITaggingPrompt(text string, tags []Tag, examples []FewShotExample, priorDecisions ...PriorDecision) string {
 	var builder strings.Builder
 	builder.WriteString("Classify the issue against the supplied taxonomy.\n")
 	builder.WriteString("Consider issue type, failure mode, affected surface, platform, and user workflow.\n")
@@ -322,6 +322,26 @@ func buildOpenAITaggingPrompt(text string, tags []Tag, examples []FewShotExample
 					builder.WriteString(", ")
 				}
 				fmt.Fprintf(&builder, "%s (%.2f)", tag.Name, tag.Relevance)
+			}
+			builder.WriteString("\n")
+		}
+	}
+
+	if len(priorDecisions) > 0 {
+		builder.WriteString("\nDocumented prior decisions (permanent memories) relevant to this area. ")
+		builder.WriteString("If the issue restates one of these, lean on the tags it already uses for consistency; ")
+		builder.WriteString("do not invent new tags for a question already settled here:\n")
+		for i, decision := range priorDecisions {
+			title := strings.TrimSpace(decision.Title)
+			if title == "" {
+				title = fmt.Sprintf("Decision %d", i+1)
+			}
+			fmt.Fprintf(&builder, "- %s", title)
+			if len(decision.Tags) > 0 {
+				fmt.Fprintf(&builder, " [%s]", strings.Join(decision.Tags, ", "))
+			}
+			if summary := strings.TrimSpace(decision.Summary); summary != "" {
+				fmt.Fprintf(&builder, ": %s", truncateExampleText(summary, 200))
 			}
 			builder.WriteString("\n")
 		}

@@ -28,6 +28,19 @@ const (
 	FreshnessHalfLifeDays = 90.0 // days until weight reaches midpoint
 )
 
+// Memory reinforcement: reinforced permanence. Unlike issues, memories never
+// decay — their base prominence is 1.0. Instead, recent related corpus
+// activity (issues that land in a memory's embedding neighborhood) reinforces
+// it, raising prominence. This inverts the velocity idea: activity strengthens
+// rather than freshens. The half-life is long so a quiet area keeps its
+// documented decisions warm for months.
+const (
+	MemoryReinforcementHalfLifeDays = 120.0 // half-life of a neighborhood activity event
+	MemoryReinforcementSaturation   = 3.0   // weighted-sum scale before saturation
+	MemoryReinforcementBoost        = 0.5   // max multiplicative prominence boost at full reinforcement
+	MemoryNeighborhoodSimThreshold  = 0.6   // min cosine similarity for an issue to reinforce a memory
+)
+
 // Search ranking modifiers.
 const (
 	SearchVelocityBoost        = 0.08 // multiplicative velocity contribution

@@ -33,6 +33,18 @@ export type MapCluster = {
   topTag: string;
 };
 
+export type MapLandmark = {
+  id: string;
+  title: string;
+  kind: string;
+  x: number;
+  y: number;
+  anchorTags?: string[];
+  anchorRegion?: string;
+  reinforcement: number;
+  color: string;
+};
+
 export type MapData = {
   available: boolean;
   unavailableReason?: string;
@@ -41,6 +53,7 @@ export type MapData = {
   issues: MapIssue[];
   edges: MapEdge[];
   clusters: MapCluster[];
+  landmarks?: MapLandmark[];
 };
 
 export type EdgeData = {

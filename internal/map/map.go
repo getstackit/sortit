@@ -27,6 +27,22 @@ type MapIssue struct {
 	Hubness    float64            `json:"hubness"`
 }
 
+// Landmark is a permanent memory rendered onto the map. Unlike issues, a
+// landmark is positioned by anchoring it to a region or the similarity-weighted
+// centroid of the issues it relates to — it consumes the issue-derived layout
+// without contributing to (and thus distorting) the PCA fit.
+type Landmark struct {
+	ID            string   `json:"id"`
+	Title         string   `json:"title"`
+	Kind          string   `json:"kind"`
+	X             float64  `json:"x"`
+	Y             float64  `json:"y"`
+	AnchorTags    []string `json:"anchorTags,omitempty"`
+	AnchorRegion  string   `json:"anchorRegion,omitempty"`
+	Reinforcement float64  `json:"reinforcement"`
+	Color         string   `json:"color"`
+}
+
 type MapResponse struct {
 	Available         bool       `json:"available"`
 	UnavailableReason string     `json:"unavailableReason,omitempty"`
@@ -35,6 +51,7 @@ type MapResponse struct {
 	Issues            []MapIssue `json:"issues"`
 	Edges             []Edge     `json:"edges"`
 	Clusters          []Cluster  `json:"clusters"`
+	Landmarks         []Landmark `json:"landmarks"`
 }
 
 type EdgeResponse struct {
@@ -69,6 +86,7 @@ func unavailableMapResponse(reason string, issueCount int) MapResponse {
 		Issues:            []MapIssue{},
 		Edges:             []Edge{},
 		Clusters:          []Cluster{},
+		Landmarks:         []Landmark{},
 	}
 }
 

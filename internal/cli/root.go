@@ -108,6 +108,7 @@ Date:    ` + date,
 	rootCmd.AddCommand(integrations.NewAgentsCmd(version))
 	rootCmd.AddCommand(newMineCmd(&opts))
 	rootCmd.AddCommand(newIssueCmd(&opts))
+	rootCmd.AddCommand(newMemoryCmd(&opts))
 	rootCmd.AddCommand(newTagsCmd(&opts))
 	rootCmd.AddCommand(newPeopleCmd(&opts))
 	rootCmd.AddCommand(newDebugCmd(&opts))

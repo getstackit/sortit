@@ -32,12 +32,12 @@ func NewAnalyzerWithCanonicalizer(tagger Tagger, embedder Embedder, canonicalize
 	}
 }
 
-func (a *Analyzer) AnalyzeIssueData(ctx context.Context, text string, tags []Tag, examples []FewShotExample) (AnalyzedIssue, error) {
+func (a *Analyzer) AnalyzeIssueData(ctx context.Context, text string, tags []Tag, examples []FewShotExample, priorDecisions ...PriorDecision) (AnalyzedIssue, error) {
 	if a == nil || a.tagger == nil || a.embedder == nil {
 		return AnalyzedIssue{}, ErrNotConfigured
 	}
 
-	result, err := a.tagger.Score(ctx, text, tags, examples)
+	result, err := a.tagger.Score(ctx, text, tags, examples, priorDecisions)
 	if err != nil {
 		return AnalyzedIssue{}, fmt.Errorf("score tags: %w", err)
 	}

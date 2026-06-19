@@ -22,7 +22,7 @@ type fakeTagger struct {
 	scores       []ai.TagScore
 }
 
-func (t *fakeTagger) Score(_ context.Context, _ string, tags []ai.Tag, _ []ai.FewShotExample) (ai.ScoreResult, error) {
+func (t *fakeTagger) Score(_ context.Context, _ string, tags []ai.Tag, _ []ai.FewShotExample, _ []ai.PriorDecision) (ai.ScoreResult, error) {
 	t.capturedTags = append([]ai.Tag(nil), tags...)
 	return ai.ScoreResult{Tags: append([]ai.TagScore(nil), t.scores...)}, nil
 }

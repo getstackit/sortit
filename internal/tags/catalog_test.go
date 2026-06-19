@@ -51,7 +51,7 @@ func (s *catalogTestStore) UpdateTagSpecificity(_ context.Context, name string, 
 
 type catalogTestTagger struct{}
 
-func (catalogTestTagger) Score(_ context.Context, _ string, _ []ai.Tag, _ []ai.FewShotExample) (ai.ScoreResult, error) {
+func (catalogTestTagger) Score(_ context.Context, _ string, _ []ai.Tag, _ []ai.FewShotExample, _ []ai.PriorDecision) (ai.ScoreResult, error) {
 	return ai.ScoreResult{}, nil
 }
 

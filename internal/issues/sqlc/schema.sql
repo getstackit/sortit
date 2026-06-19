@@ -201,6 +201,41 @@ CREATE TABLE "public"."map_projections" (
     "payload_json" jsonb NOT NULL,
     "created_at_unix_nano" bigint NOT NULL
 );
+CREATE TABLE "public"."memories" (
+    "id" text NOT NULL,
+    "title" text NOT NULL,
+    "body" text NOT NULL,
+    "kind" text NOT NULL,
+    "anchor_tags_json" jsonb NOT NULL,
+    "anchor_region" text NOT NULL,
+    "tag_scores_json" jsonb NOT NULL,
+    "embedding_vector" vector,
+    "status" text NOT NULL,
+    "superseded_by" text NOT NULL,
+    "source" text NOT NULL,
+    "source_issue_ids_json" jsonb NOT NULL,
+    "confidence" double precision NOT NULL,
+    "created_by" text NOT NULL,
+    "created_at_unix_nano" bigint NOT NULL,
+    "updated_at_unix_nano" bigint NOT NULL,
+    "last_reinforced_at_unix_nano" bigint NOT NULL,
+    "reinforcement_count" bigint NOT NULL
+);
+CREATE TABLE "public"."memory_proposals" (
+    "id" text NOT NULL,
+    "title" text NOT NULL,
+    "body" text NOT NULL,
+    "kind" text NOT NULL,
+    "anchor_tags_json" jsonb NOT NULL,
+    "anchor_region" text NOT NULL,
+    "source_issue_ids_json" jsonb NOT NULL,
+    "confidence" double precision NOT NULL,
+    "status" text NOT NULL,
+    "rationale" text NOT NULL,
+    "accepted_memory_id" text NOT NULL,
+    "created_at_unix_nano" bigint NOT NULL,
+    "updated_at_unix_nano" bigint NOT NULL
+);
 CREATE TABLE "public"."sessions" (
     "id" text NOT NULL,
     "user_id" text NOT NULL,
@@ -338,6 +373,30 @@ ALTER TABLE ONLY "public"."issues" ALTER COLUMN "enrichment_error" SET DEFAULT '
 ALTER TABLE ONLY "public"."issues" ALTER COLUMN "enrichment_target_sequence" SET DEFAULT 1;
 ALTER TABLE ONLY "public"."issues" ALTER COLUMN "closed_reason" SET DEFAULT ''::text;
 ALTER TABLE ONLY "public"."issues" ALTER COLUMN "closed_reason_note" SET DEFAULT ''::text;
+ALTER TABLE ONLY "public"."memories" ALTER COLUMN "title" SET DEFAULT ''::text;
+ALTER TABLE ONLY "public"."memories" ALTER COLUMN "body" SET DEFAULT ''::text;
+ALTER TABLE ONLY "public"."memories" ALTER COLUMN "kind" SET DEFAULT 'decision'::text;
+ALTER TABLE ONLY "public"."memories" ALTER COLUMN "anchor_tags_json" SET DEFAULT '[]'::jsonb;
+ALTER TABLE ONLY "public"."memories" ALTER COLUMN "anchor_region" SET DEFAULT ''::text;
+ALTER TABLE ONLY "public"."memories" ALTER COLUMN "tag_scores_json" SET DEFAULT '[]'::jsonb;
+ALTER TABLE ONLY "public"."memories" ALTER COLUMN "status" SET DEFAULT 'active'::text;
+ALTER TABLE ONLY "public"."memories" ALTER COLUMN "superseded_by" SET DEFAULT ''::text;
+ALTER TABLE ONLY "public"."memories" ALTER COLUMN "source" SET DEFAULT 'manual'::text;
+ALTER TABLE ONLY "public"."memories" ALTER COLUMN "source_issue_ids_json" SET DEFAULT '[]'::jsonb;
+ALTER TABLE ONLY "public"."memories" ALTER COLUMN "confidence" SET DEFAULT 1;
+ALTER TABLE ONLY "public"."memories" ALTER COLUMN "created_by" SET DEFAULT ''::text;
+ALTER TABLE ONLY "public"."memories" ALTER COLUMN "last_reinforced_at_unix_nano" SET DEFAULT 0;
+ALTER TABLE ONLY "public"."memories" ALTER COLUMN "reinforcement_count" SET DEFAULT 0;
+ALTER TABLE ONLY "public"."memory_proposals" ALTER COLUMN "title" SET DEFAULT ''::text;
+ALTER TABLE ONLY "public"."memory_proposals" ALTER COLUMN "body" SET DEFAULT ''::text;
+ALTER TABLE ONLY "public"."memory_proposals" ALTER COLUMN "kind" SET DEFAULT 'decision'::text;
+ALTER TABLE ONLY "public"."memory_proposals" ALTER COLUMN "anchor_tags_json" SET DEFAULT '[]'::jsonb;
+ALTER TABLE ONLY "public"."memory_proposals" ALTER COLUMN "anchor_region" SET DEFAULT ''::text;
+ALTER TABLE ONLY "public"."memory_proposals" ALTER COLUMN "source_issue_ids_json" SET DEFAULT '[]'::jsonb;
+ALTER TABLE ONLY "public"."memory_proposals" ALTER COLUMN "confidence" SET DEFAULT 0;
+ALTER TABLE ONLY "public"."memory_proposals" ALTER COLUMN "status" SET DEFAULT 'pending'::text;
+ALTER TABLE ONLY "public"."memory_proposals" ALTER COLUMN "rationale" SET DEFAULT ''::text;
+ALTER TABLE ONLY "public"."memory_proposals" ALTER COLUMN "accepted_memory_id" SET DEFAULT ''::text;
 ALTER TABLE ONLY "public"."tag_cooccurrence_projections" ALTER COLUMN "revision" SET DEFAULT 0;
 ALTER TABLE ONLY "public"."tag_cooccurrence_projections" ALTER COLUMN "issue_count" SET DEFAULT 0;
 ALTER TABLE ONLY "public"."tag_cooccurrence_projections" ALTER COLUMN "tag_count" SET DEFAULT 0;
@@ -399,6 +458,8 @@ ALTER TABLE ONLY "public"."issue_snapshots" ADD CONSTRAINT "issue_snapshots_issu
 ALTER TABLE ONLY "public"."issue_snapshots" ADD CONSTRAINT "issue_snapshots_pkey" PRIMARY KEY (issue_id, sequence);
 ALTER TABLE ONLY "public"."issues" ADD CONSTRAINT "issues_pkey" PRIMARY KEY (id);
 ALTER TABLE ONLY "public"."map_projections" ADD CONSTRAINT "derived_corpus_projections_pkey" PRIMARY KEY (revision);
+ALTER TABLE ONLY "public"."memories" ADD CONSTRAINT "memories_pkey" PRIMARY KEY (id);
+ALTER TABLE ONLY "public"."memory_proposals" ADD CONSTRAINT "memory_proposals_pkey" PRIMARY KEY (id);
 ALTER TABLE ONLY "public"."sessions" ADD CONSTRAINT "sessions_pkey" PRIMARY KEY (id);
 ALTER TABLE ONLY "public"."sessions" ADD CONSTRAINT "sessions_token_hash_key" UNIQUE (token_hash);
 ALTER TABLE ONLY "public"."sessions" ADD CONSTRAINT "sessions_user_id_fkey" FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE;
@@ -438,6 +499,10 @@ CREATE INDEX issue_posts_kind_idx ON public.issue_posts USING btree (kind);
 CREATE INDEX issues_assigned_to_idx ON public.issues USING btree (assigned_to);
 CREATE INDEX issues_embedding_vector_cosine_hnsw_idx ON public.issues USING hnsw (((embedding_vector)::vector(1536)) vector_cosine_ops) WHERE ((embedding_vector IS NOT NULL) AND (vector_dims(embedding_vector) = 1536));
 CREATE INDEX issues_status_idx ON public.issues USING btree (status);
+CREATE INDEX memories_created_idx ON public.memories USING btree (created_at_unix_nano DESC, id);
+CREATE INDEX memories_embedding_vector_cosine_hnsw_idx ON public.memories USING hnsw (((embedding_vector)::vector(1536)) vector_cosine_ops) WHERE ((embedding_vector IS NOT NULL) AND (vector_dims(embedding_vector) = 1536));
+CREATE INDEX memories_status_idx ON public.memories USING btree (status);
+CREATE INDEX memory_proposals_status_created_idx ON public.memory_proposals USING btree (status, created_at_unix_nano DESC, id);
 CREATE INDEX sessions_expires_at_unix_nano_idx ON public.sessions USING btree (expires_at_unix_nano);
 CREATE INDEX sessions_user_id_idx ON public.sessions USING btree (user_id);
 CREATE UNIQUE INDEX tag_events_source_idx ON public.tag_events USING btree (source, source_id);
