@@ -171,6 +171,49 @@ func (s *ObservedStore) DeleteCustomRegion(ctx context.Context, id string) error
 	return nil
 }
 
+func (s *ObservedStore) ListMemories(ctx context.Context, opts MemoryListOptions) ([]domain.Memory, error) {
+	if ms, ok := s.base.(MemoryStore); ok {
+		return ms.ListMemories(ctx, opts)
+	}
+	return nil, nil
+}
+
+func (s *ObservedStore) GetMemory(ctx context.Context, id string) (domain.Memory, error) {
+	if ms, ok := s.base.(MemoryStore); ok {
+		return ms.GetMemory(ctx, id)
+	}
+	return domain.Memory{}, ErrMemoryNotFound
+}
+
+func (s *ObservedStore) UpsertMemory(ctx context.Context, memory domain.Memory) error {
+	if ms, ok := s.base.(MemoryStore); ok {
+		if err := ms.UpsertMemory(ctx, memory); err != nil {
+			return err
+		}
+		s.tracker.Bump()
+		return nil
+	}
+	return ErrMemoryNotFound
+}
+
+func (s *ObservedStore) DeleteMemory(ctx context.Context, id string) error {
+	if ms, ok := s.base.(MemoryStore); ok {
+		if err := ms.DeleteMemory(ctx, id); err != nil {
+			return err
+		}
+		s.tracker.Bump()
+		return nil
+	}
+	return nil
+}
+
+func (s *ObservedStore) SearchMemories(ctx context.Context, query []float64, limit int) ([]MemorySimilarity, error) {
+	if ms, ok := s.base.(MemoryStore); ok {
+		return ms.SearchMemories(ctx, query, limit)
+	}
+	return nil, nil
+}
+
 func (s *ObservedStore) List(ctx context.Context) ([]Issue, error) {
 	return s.base.List(ctx)
 }

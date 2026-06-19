@@ -35,3 +35,8 @@ func NewTagEventID() string {
 func NewIssueContentFactID() string {
 	return ulid.MustNew(ulid.Now(), rand.Reader).String()
 }
+
+// NewMemoryID generates a new server-side ULID for a memory.
+func NewMemoryID() string {
+	return ulid.MustNew(ulid.Now(), rand.Reader).String()
+}

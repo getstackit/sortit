@@ -25,6 +25,7 @@ import (
 	"sortit/internal/issuexray"
 	"sortit/internal/mapview"
 	mcpserver "sortit/internal/mcp"
+	"sortit/internal/memories"
 	"sortit/internal/people"
 	"sortit/internal/regions"
 	"sortit/internal/ridgelambda"
@@ -90,6 +91,7 @@ type Server struct {
 	issueXRay            *issuexray.Handler
 	authService          *auth.Service
 	catalog              *tags.CatalogService
+	memories             *memories.Service
 }
 
 type issueTagStore interface {
@@ -261,6 +263,7 @@ func (s *Server) registerDedicatedAPIRoutes(r chi.Router) {
 		r.Use(authRequiredMiddleware(s.authService))
 		s.registerAuthRoutes(r)
 		s.registerIssueRoutes(r)
+		s.registerMemoryRoutes(r)
 		s.registerTagRoutes(r)
 		r.Get("/people/correlations", s.handleWorkCorrelations)
 		r.Get("/people/{person}", s.handlePersonDetail)
@@ -295,6 +298,7 @@ func (s *Server) registerUIRoutes(r chi.Router) {
 		s.registerAuthRoutes(r)
 		r.Post("/auth/cli/login/{loginID}/complete", s.handleAuthCLILoginComplete)
 		s.registerIssueRoutes(r)
+		s.registerMemoryRoutes(r)
 		r.Get("/activity", s.handleActivity)
 		r.Post("/issues/compare", s.handleIssueCompare)
 		r.Get("/search", s.handleUnifiedSearch)
@@ -351,6 +355,12 @@ func (s *Server) registerIssueRoutes(r chi.Router) {
 	r.Post("/issues/{id}/re-enrich", s.handleReEnrichIssue)
 	r.Post("/issues/{id}/split", s.handleSplitIssue)
 	r.Get("/issues/{id}/r2", s.handleDebugIssueR2)
+}
+
+func (s *Server) registerMemoryRoutes(r chi.Router) {
+	r.Get("/memories", s.handleMemoryList)
+	r.Post("/memories", s.handleMemoryCreate)
+	r.Get("/memories/{id}", s.handleGetMemory)
 }
 
 func (s *Server) registerTagRoutes(r chi.Router) {
@@ -566,6 +576,7 @@ func NewServer(cfg ServerConfig) *Server {
 	catalog := tags.NewCatalogService(tagStore, commandAnalyzer, catalogLogger)
 	enricherLogger := logger.With("component", "enricher")
 	enricher := issueenrichment.NewIssueEnricher(commandAnalyzer, catalog, enricherLogger)
+	memoryService := memories.NewService(store, enricher, logger)
 	var enrichmentWorker *issueenrichment.IssueEnrichmentWorker
 	workerLogger := logger.With("component", "enrichment_worker")
 	if claimer := enrichmentJobClaimerFromStore(baseStore); claimer != nil && uowBeginner != nil {
@@ -718,6 +729,7 @@ func NewServer(cfg ServerConfig) *Server {
 		},
 		authService: cfg.Auth,
 		catalog:     catalog,
+		memories:    memoryService,
 	}
 }
 

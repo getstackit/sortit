@@ -435,6 +435,7 @@ type InMemoryStore struct {
 	events         []Event
 	enrichmentJobs map[string]inMemoryEnrichmentJob
 	customRegions  map[string]domain.CustomRegion
+	memories       map[string]domain.Memory
 }
 
 type inMemoryEnrichmentJob struct {
@@ -449,6 +450,7 @@ func NewInMemoryStore(seed []Issue) *InMemoryStore {
 		snapshots:      make(map[string][]IssueSnapshot, len(seed)),
 		enrichmentJobs: make(map[string]inMemoryEnrichmentJob),
 		customRegions:  make(map[string]domain.CustomRegion),
+		memories:       make(map[string]domain.Memory),
 	}
 
 	for _, issue := range store.issues {
