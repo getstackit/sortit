@@ -10,10 +10,8 @@ import (
 )
 
 func TestEnrichmentBackfillRebuildsProjectionFromLegacyState(t *testing.T) {
-	t.Parallel()
-
 	ctx := context.Background()
-	store := newLifecycleTestStore(t, ctx)
+	store := newAppendonlyTestStore(t, ctx)
 	enrichment := NewEnrichmentStore(store.DB())
 
 	issue := issues.BuildNewIssue("issue-enrichment-000001", issues.CreateInput{

@@ -5,42 +5,11 @@ import (
 	"encoding/json"
 	"testing"
 	"time"
-
-	"sortit/internal/issues"
-	"sortit/internal/testpostgres"
 )
 
 func TestFrameworkStoreCheckpointAndParityRunCRUD(t *testing.T) {
-	t.Parallel()
-
 	ctx := context.Background()
-	harness, err := testpostgres.Start(ctx, "sortit_appendonly_framework_test")
-	if err != nil {
-		t.Fatalf("start postgres harness: %v", err)
-	}
-	t.Cleanup(func() {
-		if err := harness.Terminate(ctx); err != nil {
-			t.Fatalf("terminate postgres harness: %v", err)
-		}
-	})
-
-	databaseURL := harness.Acquire(t, func(ctx context.Context, databaseURL string) error {
-		store, err := issues.OpenPostgresStore(ctx, databaseURL)
-		if err != nil {
-			return err
-		}
-		return store.Close()
-	})
-
-	store, err := issues.OpenPostgresStore(ctx, databaseURL)
-	if err != nil {
-		t.Fatalf("open postgres store: %v", err)
-	}
-	t.Cleanup(func() {
-		if err := store.Close(); err != nil {
-			t.Fatalf("close postgres store: %v", err)
-		}
-	})
+	store := newAppendonlyTestStore(t, ctx)
 
 	framework := NewFrameworkStore(store.DB())
 

@@ -7,14 +7,11 @@ import (
 	"testing"
 
 	"sortit/internal/issues"
-	"sortit/internal/testpostgres"
 )
 
 func TestLifecycleBackfillRebuildsProjectionFromLegacyPosts(t *testing.T) {
-	t.Parallel()
-
 	ctx := context.Background()
-	store := newLifecycleTestStore(t, ctx)
+	store := newAppendonlyTestStore(t, ctx)
 	lifecycle := NewLifecycleStore(store.DB())
 
 	issue := issues.BuildNewIssue("issue-lifecycle-000001", issues.CreateInput{
@@ -145,10 +142,8 @@ func TestLifecycleBackfillRebuildsProjectionFromLegacyPosts(t *testing.T) {
 }
 
 func TestLifecycleBackfillAddsInferredFactForMissingAssignmentHistory(t *testing.T) {
-	t.Parallel()
-
 	ctx := context.Background()
-	store := newLifecycleTestStore(t, ctx)
+	store := newAppendonlyTestStore(t, ctx)
 	lifecycle := NewLifecycleStore(store.DB())
 
 	issue := issues.BuildNewIssue("issue-lifecycle-000002", issues.CreateInput{
@@ -202,39 +197,6 @@ type lifecycleFactRow struct {
 	Kind     string
 	Inferred bool
 	Payload  json.RawMessage
-}
-
-func newLifecycleTestStore(t *testing.T, ctx context.Context) *issues.PostgresStore {
-	t.Helper()
-
-	harness, err := testpostgres.Start(ctx, "sortit_appendonly_lifecycle_test")
-	if err != nil {
-		t.Fatalf("start postgres harness: %v", err)
-	}
-	t.Cleanup(func() {
-		if err := harness.Terminate(ctx); err != nil {
-			t.Fatalf("terminate postgres harness: %v", err)
-		}
-	})
-
-	databaseURL := harness.Acquire(t, func(ctx context.Context, databaseURL string) error {
-		store, err := issues.OpenPostgresStore(ctx, databaseURL)
-		if err != nil {
-			return err
-		}
-		return store.Close()
-	})
-
-	store, err := issues.OpenPostgresStore(ctx, databaseURL)
-	if err != nil {
-		t.Fatalf("open postgres store: %v", err)
-	}
-	t.Cleanup(func() {
-		if err := store.Close(); err != nil {
-			t.Fatalf("close postgres store: %v", err)
-		}
-	})
-	return store
 }
 
 func loadLifecycleFacts(t *testing.T, ctx context.Context, db *sql.DB, issueID string) []lifecycleFactRow {

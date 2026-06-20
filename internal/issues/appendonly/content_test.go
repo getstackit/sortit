@@ -7,10 +7,8 @@ import (
 )
 
 func TestIssueContentBackfillRebuildsProjectionFromLegacyIssues(t *testing.T) {
-	t.Parallel()
-
 	ctx := context.Background()
-	store := newLifecycleTestStore(t, ctx)
+	store := newAppendonlyTestStore(t, ctx)
 	content := NewIssueContentStore(store.DB())
 
 	createdAt := time.Now().UTC().Add(-time.Hour).Truncate(time.Microsecond)
