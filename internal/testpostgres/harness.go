@@ -13,7 +13,10 @@ import (
 	"github.com/testcontainers/testcontainers-go/modules/postgres"
 )
 
-const image = "paradedb/paradedb:latest"
+// Pinned to match docker-compose.yml and .github/workflows/test.yml. A floating
+// :latest tag silently kept tests on a stale cached image; an explicit tag keeps
+// the test container in lockstep with local dev and CI.
+const image = "paradedb/paradedb:0.24.0-pg18"
 
 type Harness struct {
 	container *postgres.PostgresContainer

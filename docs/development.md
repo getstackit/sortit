@@ -117,10 +117,11 @@ mise run vuln:web
 
 ## Database Image
 
-Local Postgres and CI Postgres are both `paradedb/paradedb:0.23.1-pg18` (PostgreSQL 18 + ParadeDB extensions). The tag is pinned in two places that must move together:
+Local Postgres and CI Postgres are both `paradedb/paradedb:0.24.0-pg18` (PostgreSQL 18 + ParadeDB extensions). The tag is pinned in three places that must move together:
 
-- `docker-compose.yml`
-- `.github/workflows/test.yml`
+- `docker-compose.yml` (local dev)
+- `.github/workflows/test.yml` (CI Postgres service)
+- `internal/testpostgres/harness.go` (testcontainers image used by backend tests)
 
 When upgrading:
 

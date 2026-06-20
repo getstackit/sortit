@@ -1,9 +1,10 @@
 services:
   postgres:
     # Pinned to keep local and CI Postgres versions in lockstep.
-    # When upgrading, bump CI (.github/workflows/test.yml) at the same time
-    # and review docs/development.md for any migration notes.
-    image: paradedb/paradedb:0.23.1-pg18
+    # When upgrading, bump CI (.github/workflows/test.yml) and the testcontainers
+    # image (internal/testpostgres/harness.go) at the same time, and review
+    # docs/development.md for any migration notes.
+    image: paradedb/paradedb:0.24.0-pg18
     ports:
       - "${POSTGRES_PORT:-5432}:5432"
     environment:
