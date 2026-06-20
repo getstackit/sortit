@@ -18,6 +18,12 @@ const (
 	codexSkillsDir    = ".codex/skills"
 	claudeSkillsLabel = "~/.claude/skills"
 	codexSkillsLabel  = "~/.codex/skills"
+
+	claudeInstructionsPath = ".claude/CLAUDE.md"
+	codexInstructionsPath  = ".codex/AGENTS.md"
+
+	sortitInstructionsBegin = "<!-- sortit-agent-instructions:start -->"
+	sortitInstructionsEnd   = "<!-- sortit-agent-instructions:end -->"
 )
 
 type agentSkillFormat string
@@ -30,7 +36,9 @@ const (
 type fileGroup struct {
 	templatePath string
 	destPath     string
-	replaceVer   bool
+	skillName    string
+	summary      string
+	format       agentSkillFormat
 }
 
 type agentInstallTarget struct {
@@ -54,6 +62,7 @@ func NewAgentsCmd(version string) *cobra.Command {
 func newAgentInstallCmd(version string) *cobra.Command {
 	var force bool
 	var formats []string
+	var instructions bool
 
 	cmd := &cobra.Command{
 		Use:   "install",
@@ -75,17 +84,22 @@ search, create, and explore workflows plus the rest of the issue operations.`,
 			if err != nil {
 				return err
 			}
-			return installSkillTargets(baseDir, targets, force, version, cmd.OutOrStdout())
+			return installSkillTargetsWithOptions(baseDir, targets, force, version, instructions, cmd.OutOrStdout())
 		},
 	}
 
 	cmd.Flags().BoolVar(&force, "force", false, "Overwrite an existing installation")
 	cmd.Flags().StringSliceVar(&formats, "format", nil, "Skill format(s) to install (claude,codex). Repeat flag or use comma-separated values")
+	cmd.Flags().BoolVar(&instructions, "instructions", false, "Also install managed always-on Sortit workflow instructions")
 
 	return cmd
 }
 
-func installSkillTargets(baseDir string, targets []agentInstallTarget, force bool, version string, out io.Writer) error {
+func installSkillTargets(baseDir string, targets []agentInstallTarget, version string, out io.Writer) error {
+	return installSkillTargetsWithOptions(baseDir, targets, false, version, false, out)
+}
+
+func installSkillTargetsWithOptions(baseDir string, targets []agentInstallTarget, force bool, version string, instructions bool, out io.Writer) error {
 	for _, target := range targets {
 		if err := checkExistingInstallation(baseDir, target, force, version, out); err != nil {
 			return err
@@ -106,6 +120,11 @@ func installSkillTargets(baseDir string, targets []agentInstallTarget, force boo
 				return err
 			}
 		}
+		if instructions {
+			if err := installInstructionFile(baseDir, target, version); err != nil {
+				return err
+			}
+		}
 	}
 
 	_, _ = fmt.Fprintf(out, "Installed %d Sortit skills:\n", len(skillDefinitions))
@@ -117,17 +136,101 @@ func installSkillTargets(baseDir string, targets []agentInstallTarget, force boo
 	for _, skill := range skillDefinitions {
 		_, _ = fmt.Fprintf(out, "  %s\n", skill.name)
 	}
+	if instructions {
+		_, _ = fmt.Fprintln(out)
+		_, _ = fmt.Fprintln(out, "Installed always-on Sortit workflow instructions.")
+	}
 
 	return nil
+}
+
+func installInstructionFile(baseDir string, target agentInstallTarget, version string) error {
+	path, err := instructionPathForTarget(target)
+	if err != nil {
+		return err
+	}
+	destPath := filepath.Join(baseDir, path)
+	if err := os.MkdirAll(filepath.Dir(destPath), 0o750); err != nil {
+		return fmt.Errorf("create directory %s: %w", filepath.Dir(destPath), err)
+	}
+
+	existing, err := os.ReadFile(destPath)
+	if err != nil && !os.IsNotExist(err) {
+		return fmt.Errorf("read %s: %w", destPath, err)
+	}
+
+	content := upsertManagedInstructionBlock(string(existing), sortitInstructionBlock(target.format, version))
+	if err := os.WriteFile(destPath, []byte(content), 0o600); err != nil {
+		return fmt.Errorf("write %s: %w", destPath, err)
+	}
+	return nil
+}
+
+func instructionPathForTarget(target agentInstallTarget) (string, error) {
+	switch target.format {
+	case agentSkillFormatClaude:
+		return claudeInstructionsPath, nil
+	case agentSkillFormatCodex:
+		return codexInstructionsPath, nil
+	default:
+		return "", fmt.Errorf("unknown agent format %q", target.format)
+	}
+}
+
+func sortitInstructionBlock(format agentSkillFormat, version string) string {
+	version = strings.TrimSpace(version)
+	if version == "" {
+		version = "dev"
+	}
+
+	agentNote := "Use the installed Sortit skills by name when a workflow matches."
+	switch format {
+	case agentSkillFormatClaude:
+		agentNote = "Claude Code should use the installed Sortit skills and prefer MCP tools when they are available."
+	case agentSkillFormatCodex:
+		agentNote = "Codex should use the installed $sortit-* skills and prefer MCP tools when they are available."
+	}
+
+	return sortitInstructionsBegin + "\n" +
+		"## Sortit Agent Workflow\n\n" +
+		"Use Sortit as the durable work loop during coding, review, planning, and debugging.\n\n" +
+		"- " + agentNote + "\n" +
+		"- Search Sortit before creating follow-on work.\n" +
+		"- Recall relevant memories before deciding — prior decisions, constraints, and patterns should guide the work, not be rediscovered or contradicted.\n" +
+		"- Record progress on the relevant issue when meaningful work is done.\n" +
+		"- Create or refine follow-on issues instead of leaving deferred work only in chat.\n" +
+		"- Create a memory for durable decisions, lessons, constraints, patterns, or references.\n" +
+		"- Use the Sortit wrap-up checklist before final responses for non-trivial work.\n" +
+		"- Leave uncertain corpus-wide cleanup as proposals for human review.\n\n" +
+		"Installed by `sortit agent install --instructions` (" + version + ").\n" +
+		sortitInstructionsEnd + "\n"
+}
+
+func upsertManagedInstructionBlock(existing, block string) string {
+	existing = strings.TrimRight(existing, "\n")
+	start := strings.Index(existing, sortitInstructionsBegin)
+	end := strings.Index(existing, sortitInstructionsEnd)
+	if start >= 0 && end >= start {
+		end += len(sortitInstructionsEnd)
+		replacement := strings.TrimRight(block, "\n")
+		out := existing[:start] + replacement + existing[end:]
+		return strings.TrimRight(out, "\n") + "\n"
+	}
+	if existing == "" {
+		return block
+	}
+	return existing + "\n\n" + block
 }
 
 func buildSkillFileGroups(target agentInstallTarget, skills []skillDefinition) []fileGroup {
 	groups := make([]fileGroup, 0, len(skills))
 	for _, skill := range skills {
 		groups = append(groups, fileGroup{
-			templatePath: skill.templatePath,
+			templatePath: skill.templatePath(target.format),
 			destPath:     filepath.Join(target.skillsDir, skill.name, "SKILL.md"),
-			replaceVer:   true,
+			skillName:    skill.name,
+			summary:      skill.summary,
+			format:       target.format,
 		})
 	}
 	return groups
@@ -143,14 +246,163 @@ func installFileGroup(baseDir string, group fileGroup, version string) error {
 	if err != nil {
 		return fmt.Errorf("read template %s: %w", group.templatePath, err)
 	}
-	if group.replaceVer {
-		content = []byte(strings.ReplaceAll(string(content), "{{VERSION}}", version))
+	content, err = renderSkillContent(group.format, group.skillName, content, version)
+	if err != nil {
+		return fmt.Errorf("render %s: %w", group.skillName, err)
 	}
 	if err := os.WriteFile(destPath, content, 0o600); err != nil {
 		return fmt.Errorf("write %s: %w", destPath, err)
 	}
+	if group.format == agentSkillFormatCodex {
+		metadata, err := renderCodexSkillMetadata(group.skillName, group.summary)
+		if err != nil {
+			return fmt.Errorf("render metadata for %s: %w", group.skillName, err)
+		}
+		agentsDir := filepath.Join(filepath.Dir(destPath), "agents")
+		if err := os.MkdirAll(agentsDir, 0o750); err != nil {
+			return fmt.Errorf("create directory %s: %w", agentsDir, err)
+		}
+		if err := os.WriteFile(filepath.Join(agentsDir, "openai.yaml"), metadata, 0o600); err != nil {
+			return fmt.Errorf("write metadata for %s: %w", group.skillName, err)
+		}
+	}
 
 	return nil
+}
+
+func renderSkillContent(format agentSkillFormat, name string, content []byte, version string) ([]byte, error) {
+	version = strings.TrimSpace(version)
+	if version == "" {
+		version = "dev"
+	}
+
+	switch format {
+	case agentSkillFormatClaude:
+		return []byte(strings.ReplaceAll(string(content), "{{VERSION}}", version)), nil
+	case agentSkillFormatCodex:
+		return renderCodexSkillContent(name, content, version)
+	default:
+		return nil, fmt.Errorf("unknown agent format %q", format)
+	}
+}
+
+func renderCodexSkillContent(name string, content []byte, version string) ([]byte, error) {
+	frontmatter, body, ok := splitFrontmatter(content)
+	if !ok {
+		return nil, fmt.Errorf("missing frontmatter")
+	}
+	description := frontmatterValue(frontmatter, "description")
+	if description == "" {
+		return nil, fmt.Errorf("missing description")
+	}
+
+	var b strings.Builder
+	b.WriteString("---\n")
+	b.WriteString("name: ")
+	b.WriteString(name)
+	b.WriteString("\n")
+	b.WriteString("description: ")
+	b.WriteString(encodeYAMLScalar(description))
+	b.WriteString("\n---\n")
+	b.Write(body)
+	if len(body) == 0 || body[len(body)-1] != '\n' {
+		b.WriteString("\n")
+	}
+	b.WriteString("\n<!-- sortit-version: ")
+	b.WriteString(version)
+	b.WriteString(" -->\n")
+	return []byte(b.String()), nil
+}
+
+// renderCodexSkillMetadata builds the Codex interface metadata (openai.yaml)
+// from the skill's short summary. The summary is kept separate from the
+// SKILL.md description so the description can be a longer, trigger-oriented
+// activation signal without bloating the display metadata.
+func renderCodexSkillMetadata(name, summary string) ([]byte, error) {
+	summary = strings.TrimSpace(summary)
+	if summary == "" {
+		return nil, fmt.Errorf("missing summary for %s", name)
+	}
+
+	var b strings.Builder
+	b.WriteString("interface:\n")
+	b.WriteString("  display_name: ")
+	b.WriteString(encodeYAMLScalar(displayNameForSkill(name)))
+	b.WriteString("\n")
+	b.WriteString("  short_description: ")
+	b.WriteString(encodeYAMLScalar(summary))
+	b.WriteString("\n")
+	b.WriteString("  default_prompt: ")
+	b.WriteString(encodeYAMLScalar(defaultPromptForSkill(name, summary)))
+	b.WriteString("\n")
+	return []byte(b.String()), nil
+}
+
+func splitFrontmatter(content []byte) (frontmatter, body []byte, ok bool) {
+	const marker = "---\n"
+	if !strings.HasPrefix(string(content), marker) {
+		return nil, nil, false
+	}
+	rest := content[len(marker):]
+	idx := strings.Index(string(rest), marker)
+	if idx < 0 {
+		return nil, nil, false
+	}
+	return rest[:idx], rest[idx+len(marker):], true
+}
+
+func frontmatterValue(frontmatter []byte, key string) string {
+	prefix := key + ":"
+	for _, line := range strings.Split(string(frontmatter), "\n") {
+		trimmed := strings.TrimSpace(line)
+		if !strings.HasPrefix(trimmed, prefix) {
+			continue
+		}
+		return strings.Trim(strings.TrimSpace(strings.TrimPrefix(trimmed, prefix)), `"'`)
+	}
+	return ""
+}
+
+func encodeYAMLScalar(raw string) string {
+	var b strings.Builder
+	b.WriteByte('"')
+	for _, r := range raw {
+		switch r {
+		case '\\', '"':
+			b.WriteByte('\\')
+			b.WriteRune(r)
+		default:
+			b.WriteRune(r)
+		}
+	}
+	b.WriteByte('"')
+	return b.String()
+}
+
+func displayNameForSkill(name string) string {
+	parts := strings.Split(name, "-")
+	for i, part := range parts {
+		if part == "" {
+			continue
+		}
+		parts[i] = strings.ToUpper(part[:1]) + part[1:]
+	}
+	return strings.Join(parts, " ")
+}
+
+func lowercaseFirst(raw string) string {
+	if raw == "" {
+		return raw
+	}
+	return strings.ToLower(raw[:1]) + raw[1:]
+}
+
+func defaultPromptForSkill(name, description string) string {
+	prompt := fmt.Sprintf("Use $%s to %s", name, lowercaseFirst(description))
+	if strings.HasSuffix(prompt, ".") || strings.HasSuffix(prompt, "!") || strings.HasSuffix(prompt, "?") {
+		return prompt
+	}
+	return prompt + "."
 }
 
 func checkExistingInstallation(baseDir string, target agentInstallTarget, force bool, version string, out io.Writer) error {
@@ -407,19 +659,32 @@ func isInteractive(in io.Reader, out io.Writer) bool {
 func extractVersion(content string) string {
 	lines := strings.Split(content, "\n")
 	inFrontmatter := false
+	bodyStart := 0
 
-	for _, line := range lines {
+	for i, line := range lines {
 		if strings.TrimSpace(line) == "---" {
 			if !inFrontmatter {
 				inFrontmatter = true
 				continue
 			}
+			bodyStart = i + 1
 			break
 		}
 
 		if inFrontmatter && strings.HasPrefix(line, "version:") {
 			return strings.TrimSpace(strings.TrimPrefix(line, "version:"))
 		}
+	}
+
+	const prefix = "<!-- sortit-version:"
+	const suffix = "-->"
+	for _, line := range lines[bodyStart:] {
+		trimmed := strings.TrimSpace(line)
+		if !strings.HasPrefix(trimmed, prefix) || !strings.HasSuffix(trimmed, suffix) {
+			continue
+		}
+		value := strings.TrimSuffix(strings.TrimPrefix(trimmed, prefix), suffix)
+		return strings.TrimSpace(value)
 	}
 
 	return ""

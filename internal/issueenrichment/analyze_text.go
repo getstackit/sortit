@@ -45,6 +45,21 @@ func (s *IssueEnricher) analyzeWithCandidateTaxonomy(ctx context.Context, raw st
 	return analyzed, candidates, nil
 }
 
+// EmbedText returns the float64 embedding for raw text — the same embedding the
+// enrichment pipeline computes for shortlisting and memory context. It lets
+// callers (e.g. query-time memory recall) reuse the configured embedder without
+// running a full tag analysis.
+func (s *IssueEnricher) EmbedText(ctx context.Context, raw string) ([]float64, error) {
+	if s.analyzer == nil {
+		return nil, fmt.Errorf("embed text: analyzer not configured")
+	}
+	result, err := s.analyzer.EmbedText(ctx, raw)
+	if err != nil {
+		return nil, fmt.Errorf("embed text: %w", err)
+	}
+	return Float32VectorToFloat64(result.Vector), nil
+}
+
 // relevantPriorDecisions retrieves the memories most similar to the text being
 // enriched and shapes them as tagging context, so a new issue restating a
 // settled decision is tagged consistently with it. Failures are non-fatal.

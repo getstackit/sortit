@@ -201,6 +201,7 @@ func (s *Server) Handler() http.Handler {
 		ListTags:         s.listTags,
 		SearchIssues:     s.searchIssues,
 		ExploreIssue:     s.exploreIssue,
+		Memories:         s.memories,
 		GetPersonProfile: s.getPersonProfile,
 		WorkCorrelations: s.workCorrelations,
 	})
@@ -365,6 +366,7 @@ func (s *Server) registerIssueRoutes(r chi.Router) {
 
 func (s *Server) registerMemoryRoutes(r chi.Router) {
 	r.Get("/memories", s.handleMemoryList)
+	r.Get("/memories/search", s.handleMemorySearch)
 	r.Post("/memories", s.handleMemoryCreate)
 	r.Get("/memories/proposals", s.handleMemoryProposalList)
 	r.Post("/memories/proposals/synthesize", s.handleMemoryProposalSynthesize)

@@ -23,7 +23,8 @@ The backend owns persistence, authentication, enrichment, search, map data, and 
 - `internal/issues`: issue domain types, stores, migrations, lifecycle/content/tag persistence.
 - `internal/issues/commands`: transactional mutation handlers for create, refine, progress, close, assign, split, combine, link, and re-enrich.
 - `internal/issues/views`: read models for issue detail, lists, activity, tags, lifecycle metrics, and comparisons.
-- `internal/issueenrichment`: AI-backed canonicalization, tagging, verification, and background enrichment jobs.
+- `internal/issueenrichment`: AI-backed canonicalization, tagging, verification, and background enrichment jobs. Enrichment also surfaces the most similar memories as prior-decision context for the tagger (skippable when enriching a memory itself).
+- `internal/memories`, `internal/memoryanalytics`: durable memory persistence, on-demand recall (`memory search`), retrieval as enrichment context, synthesis/curation proposals, and memory analytics.
 - `internal/ai`: analyzer abstraction, OpenAI implementation, and test stubs.
 - `internal/tags`: tag catalog, retrieval shortlists, embeddings, specificity scoring, and tag merge support.
 - `internal/map`, `internal/mapview`, `internal/issuemath`: factor decomposition, map projection, search/explore similarity, and map API data.
@@ -58,6 +59,7 @@ Issue enrichment is retrieval-first:
 - The issue text is embedded before tag classification.
 - The catalog service selects nearest tag embeddings plus a stable anchor set and any explicit tags.
 - The analyzer scores only that candidate set by default.
+- The most similar memories are surfaced to the tagger as documented prior-decision context (bounded by a similarity floor), so past decisions ground new enrichment.
 - Few-shot examples can be selected from the exemplar pool when available.
 - Verification uses tag alignment, specificity, candidate source, and grounded evidence to keep, down-rank, or flag tags.
 
