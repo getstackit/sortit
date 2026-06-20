@@ -614,12 +614,13 @@ func NewServer(cfg ServerConfig) *Server {
 	if claimer := enrichmentJobClaimerFromStore(baseStore); claimer != nil && uowBeginner != nil {
 		invalidator := mapProjectionInvalidatorFromIssueStore(baseStore)
 		enrichmentWorker = &issueenrichment.IssueEnrichmentWorker{
-			Logger:   workerLogger,
-			Store:    baseStore,
-			DB:       uowBeginner,
-			Jobs:     claimer,
-			Enricher: enricher,
-			Catalog:  catalog,
+			Logger:     workerLogger,
+			Store:      baseStore,
+			DB:         uowBeginner,
+			Jobs:       claimer,
+			Enricher:   enricher,
+			Catalog:    catalog,
+			Reinforcer: memoryService,
 			OnStateChange: func(ctx context.Context, applied bool) {
 				revisions.Bump()
 				if applied && invalidator != nil {

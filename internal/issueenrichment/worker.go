@@ -17,6 +17,13 @@ const (
 	defaultIssueEnrichmentRetryDelay   = 10 * time.Second
 )
 
+// ConceptReinforcer strengthens the concepts bound to a set of tags. The memory
+// service satisfies it; the interface lives here so the enrichment package
+// doesn't import memories (memories already imports enrichment).
+type ConceptReinforcer interface {
+	ReinforceConceptsForTags(ctx context.Context, tags []string) (int, error)
+}
+
 type IssueEnrichmentWorker struct {
 	Logger        *slog.Logger
 	Store         issues.Store
@@ -24,6 +31,7 @@ type IssueEnrichmentWorker struct {
 	Jobs          issues.EnrichmentJobClaimer
 	Enricher      *IssueEnricher
 	Catalog       *tags.CatalogService
+	Reinforcer    ConceptReinforcer
 	PollInterval  time.Duration
 	LeaseDuration time.Duration
 	RetryDelay    time.Duration
@@ -114,6 +122,7 @@ func (w *IssueEnrichmentWorker) ProcessOne(ctx context.Context) (bool, error) {
 		"issue_id", job.IssueID,
 	)
 	w.scoreAffectedTags(ctx, fields)
+	w.reinforceConcepts(ctx, fields)
 	return true, nil
 }
 
@@ -242,5 +251,22 @@ func (w *IssueEnrichmentWorker) scoreAffectedTags(ctx context.Context, fields is
 				"error", err,
 			)
 		}
+	}
+}
+
+// reinforceConcepts strengthens any concept whose subject tag the just-enriched
+// issue carries — the corpus reinforcing its load-bearing nouns. Best-effort and
+// non-transactional, mirroring scoreAffectedTags: a failure is logged, never
+// fatal to the enrichment job.
+func (w *IssueEnrichmentWorker) reinforceConcepts(ctx context.Context, fields issues.IssueFieldUpdate) {
+	if w.Reinforcer == nil || len(fields.TagScores) == 0 {
+		return
+	}
+	tagNames := make([]string, 0, len(fields.TagScores))
+	for _, ts := range fields.TagScores {
+		tagNames = append(tagNames, ts.Tag)
+	}
+	if _, err := w.Reinforcer.ReinforceConceptsForTags(ctx, tagNames); err != nil {
+		w.Logger.WarnContext(ctx, "failed to reinforce concepts after enrichment", "error", err)
 	}
 }

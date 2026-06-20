@@ -183,6 +183,53 @@ func TestCreateConceptBindsToSubjectTag(t *testing.T) {
 	}
 }
 
+func TestReinforceConceptsForTags(t *testing.T) {
+	store := issues.NewInMemoryStore(nil)
+	svc := NewService(store, nil, nil)
+	ctx := context.Background()
+
+	concept, err := svc.CreateMemory(ctx, CreateMemoryInput{
+		Body:       "Ridge profile.",
+		Kind:       domain.MemoryKindConcept,
+		SubjectTag: "ridge",
+	})
+	if err != nil {
+		t.Fatalf("create concept: %v", err)
+	}
+
+	// Dedupes "ridge" and skips the tag with no concept → exactly one reinforced.
+	n, err := svc.ReinforceConceptsForTags(ctx, []string{"ridge", "Ridge", "no-concept-tag"})
+	if err != nil {
+		t.Fatalf("reinforce: %v", err)
+	}
+	if n != 1 {
+		t.Fatalf("expected 1 concept reinforced, got %d", n)
+	}
+	got, err := svc.GetMemory(ctx, concept.ID)
+	if err != nil {
+		t.Fatalf("get concept: %v", err)
+	}
+	if got.ReinforcementCount != 1 || got.LastReinforcedAt == nil {
+		t.Fatalf("expected reinforcement count 1 with timestamp, got count=%d lastReinforced=%v", got.ReinforcementCount, got.LastReinforcedAt)
+	}
+
+	// Reinforcement accumulates across enrichments.
+	if _, err := svc.ReinforceConceptsForTags(ctx, []string{"ridge"}); err != nil {
+		t.Fatalf("reinforce again: %v", err)
+	}
+	got, err = svc.GetMemory(ctx, concept.ID)
+	if err != nil {
+		t.Fatalf("get concept after second reinforce: %v", err)
+	}
+	if got.ReinforcementCount != 2 {
+		t.Fatalf("expected reinforcement count 2, got %d", got.ReinforcementCount)
+	}
+	// The concept stays active and singular for its tag (unique-index invariant holds).
+	if got.Status != domain.MemoryStatusActive {
+		t.Fatalf("expected concept to remain active, got %s", got.Status)
+	}
+}
+
 func TestSupersedeMemory(t *testing.T) {
 	store := issues.NewInMemoryStore(nil)
 	svc := NewService(store, nil, nil)

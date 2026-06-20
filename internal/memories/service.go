@@ -198,6 +198,42 @@ func (s *Service) ConceptForTag(ctx context.Context, subjectTag string) (domain.
 	return s.store.GetActiveConceptBySubjectTag(ctx, subjectTag)
 }
 
+// ReinforceConceptsForTags strengthens the active concept bound to each given
+// tag — bumping ReinforcementCount and stamping LastReinforcedAt — so concepts
+// whose subject tags keep recurring in the corpus grow more prominent. This is
+// the reinforced-permanence model: related activity strengthens a memory rather
+// than letting it decay. Tags without an active concept are skipped; duplicates
+// are deduped so one enrichment reinforces a concept at most once. Returns the
+// number of concepts reinforced.
+func (s *Service) ReinforceConceptsForTags(ctx context.Context, tagNames []string) (int, error) {
+	seen := make(map[string]bool, len(tagNames))
+	now := time.Now().UTC()
+	reinforced := 0
+	for _, raw := range tagNames {
+		tag := domain.NormalizeTagName(raw)
+		if tag == "" || seen[tag] {
+			continue
+		}
+		seen[tag] = true
+
+		concept, err := s.store.GetActiveConceptBySubjectTag(ctx, tag)
+		if errors.Is(err, issues.ErrMemoryNotFound) {
+			continue
+		}
+		if err != nil {
+			return reinforced, fmt.Errorf("look up concept for %q: %w", tag, err)
+		}
+		concept.ReinforcementCount++
+		concept.LastReinforcedAt = &now
+		concept.UpdatedAt = now
+		if err := s.store.UpsertMemory(ctx, concept); err != nil {
+			return reinforced, fmt.Errorf("reinforce concept %q: %w", concept.ID, err)
+		}
+		reinforced++
+	}
+	return reinforced, nil
+}
+
 // SupersedeMemory marks a memory as superseded — the "system evolves" path.
 // supersededBy optionally records the memory that replaces it.
 func (s *Service) SupersedeMemory(ctx context.Context, id, supersededBy string) (domain.Memory, error) {
