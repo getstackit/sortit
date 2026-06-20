@@ -17,6 +17,10 @@ type Checkpoint struct {
 	UpdatedAt   time.Time       `json:"updatedAt"`
 }
 
+// phaseCompleted is the terminal Checkpoint.Phase value written once a
+// backfill/migration framework run finishes.
+const phaseCompleted = "completed"
+
 type ParityRun struct {
 	ID          string          `json:"id"`
 	Domain      string          `json:"domain"`

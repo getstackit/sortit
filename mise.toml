@@ -12,14 +12,14 @@ SORTIT_DATABASE_URL = "postgres://sortit:sortit@localhost:5432/sortit?sslmode=di
 SORTIT_TEST_DATABASE_URL = "postgres://sortit:sortit@localhost:5432/sortit_test?sslmode=disable"
 
 [tools]
-go = "1.26.2"
-node = "22"
+go = "1.26.4"
+node = "24"
 "go:golang.org/x/tools/cmd/goimports" = "latest"
 "go:github.com/DarthSim/overmind/v2" = "latest"
 "go:golang.org/x/vuln/cmd/govulncheck" = "latest"
 "aqua:watchexec/watchexec" = "latest"
 "aqua:sqlc-dev/sqlc" = "1.31.1"
-golangci-lint = "2.10.1"
+golangci-lint = "2.12.2"
 
 [tasks.install]
 description = "Install app dependencies"

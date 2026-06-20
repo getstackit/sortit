@@ -14,6 +14,15 @@ import (
 	issuemap "sortit/internal/map"
 )
 
+const (
+	// statusResponseKey is the JSON key for the operation-result envelope
+	// returned by action handlers (e.g. {"status": "ok"}).
+	statusResponseKey = "status"
+	// statusQueryParam is the URL query parameter used to filter list
+	// endpoints by issue/memory status.
+	statusQueryParam = "status"
+)
+
 // decodeJSON reads the JSON body of an HTTP request into a value of type T.
 // It limits the body size to 1 MB, disallows unknown fields, and closes the body.
 func decodeJSON[T any](r *http.Request) (T, error) {
@@ -101,7 +110,7 @@ func ParseEdgeThreshold(values url.Values) (*float64, error) {
 }
 
 func ParseIssueStatusFilter(values url.Values) (issueviews.IssueStatusFilter, error) {
-	raw := strings.TrimSpace(values.Get("status"))
+	raw := strings.TrimSpace(values.Get(statusQueryParam))
 	if raw == "" {
 		return issueviews.IssueStatusFilterOpen, nil
 	}

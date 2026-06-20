@@ -10,11 +10,11 @@
     "test": "vitest run"
   },
   "dependencies": {
-    "@base-ui/react": "^1.5.0",
+    "@base-ui/react": "^1.6.0",
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
     "cmdk": "^1.1.1",
-    "lucide-react": "^1.20.0",
+    "lucide-react": "^1.21.0",
     "marked": "^18.0.5",
     "motion": "^12.40.0",
     "next": "^16.2.9",
@@ -33,18 +33,18 @@
     "@testing-library/jest-dom": "^6.9.1",
     "@testing-library/react": "^16.3.2",
     "@testing-library/user-event": "^14.6.1",
-    "@types/node": "^25.9.3",
+    "@types/node": "^26.0.0",
     "@types/react": "^19.2.17",
     "@types/react-dom": "^19.2.3",
     "eslint": "^9.39.4",
     "eslint-config-next": "^16.2.9",
     "jsdom": "^29.1.1",
-    "react-grab": "^0.1.45",
+    "react-grab": "^0.1.47",
     "tailwindcss": "^4.3.1",
     "typescript": "^6.0.3",
     "vitest": "^4.1.9"
   },
   "overrides": {
-    "postcss": "8.5.12"
+    "postcss": "8.5.15"
   }
 }

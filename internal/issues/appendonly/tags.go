@@ -214,7 +214,7 @@ func (s *TagStore) BackfillBatch(ctx context.Context, checkpointName string, _ i
 	framework := NewFrameworkStore(s.db)
 	if err := framework.UpsertCheckpoint(ctx, Checkpoint{
 		Name:        checkpointName,
-		Phase:       "completed",
+		Phase:       phaseCompleted,
 		CursorJSON:  mustMarshalJSON(struct{}{}),
 		SummaryJSON: mustMarshalJSON(result),
 	}); err != nil {
