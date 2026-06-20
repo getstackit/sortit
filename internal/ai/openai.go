@@ -45,6 +45,11 @@ type OpenAICanonicalizer struct {
 	model  string
 }
 
+type OpenAIConceptProfiler struct {
+	client *openAIClient
+	model  string
+}
+
 type OpenAIEmbedder struct {
 	client         *openAIClient
 	model          string
@@ -121,6 +126,17 @@ func NewOpenAICanonicalizer(cfg OpenAIConfig) (*OpenAICanonicalizer, error) {
 		return nil, err
 	}
 	return &OpenAICanonicalizer{
+		client: client,
+		model:  withDefault(strings.TrimSpace(cfg.CanonicalModel), defaultOpenAICanonicalModel),
+	}, nil
+}
+
+func NewOpenAIConceptProfiler(cfg OpenAIConfig) (*OpenAIConceptProfiler, error) {
+	client, err := newOpenAIClient(cfg)
+	if err != nil {
+		return nil, err
+	}
+	return &OpenAIConceptProfiler{
 		client: client,
 		model:  withDefault(strings.TrimSpace(cfg.CanonicalModel), defaultOpenAICanonicalModel),
 	}, nil
@@ -523,6 +539,60 @@ func buildOpenAICanonicalizationSystemPrompt() string {
 	return "You turn an issue discussion into a single canonical issue description for triage, tagging, and semantic search. " +
 		"Preserve the latest understanding, concrete failures, requested changes, affected surfaces, and important constraints. " +
 		"Do not mention discussion mechanics, authors, or timestamps."
+}
+
+func (p *OpenAIConceptProfiler) GenerateConceptProfile(ctx context.Context, tag string, issueSummaries []string) (string, error) {
+	request := openAIChatCompletionRequest{
+		Model:       p.model,
+		Temperature: 0,
+		Messages: []openAIChatMessageRequest{
+			{
+				Role:    "system",
+				Content: buildOpenAIConceptProfileSystemPrompt(),
+			},
+			{
+				Role:    "user",
+				Content: buildOpenAIConceptProfilePrompt(tag, issueSummaries),
+			},
+		},
+	}
+
+	var response openAIChatCompletionResponse
+	if err := p.client.doJSON(ctx, "/chat/completions", request, &response); err != nil {
+		return "", err
+	}
+	if len(response.Choices) == 0 {
+		return "", errors.New("openai returned no completion choices")
+	}
+
+	return strings.TrimSpace(response.Choices[0].Message.Content), nil
+}
+
+func buildOpenAIConceptProfilePrompt(tag string, issueSummaries []string) string {
+	var builder strings.Builder
+	fmt.Fprintf(&builder, "Write a canonical profile for the concept tagged %q.\n", strings.TrimSpace(tag))
+	builder.WriteString("Cover what it is, why it exists, and how it behaves. Return plain text only.\n\n")
+
+	if len(issueSummaries) > 0 {
+		builder.WriteString("Issues that reference this concept:\n")
+		for index, summary := range issueSummaries {
+			summary = strings.TrimSpace(summary)
+			if summary == "" {
+				continue
+			}
+			fmt.Fprintf(&builder, "Issue %d:\n", index+1)
+			builder.WriteString(summary)
+			builder.WriteString("\n\n")
+		}
+	}
+
+	return strings.TrimSpace(builder.String())
+}
+
+func buildOpenAIConceptProfileSystemPrompt() string {
+	return "You write the canonical profile of a single engineering concept — a subsystem, component, or domain concept — for a durable knowledge base. " +
+		"Explain what it is, why it exists, and how it behaves, grounded in the example issues. Be concise and concrete. " +
+		"Return plain prose only; no preamble, no headings, and no mention of issue IDs, authors, or timestamps."
 }
 
 func withDefault(value string, fallback string) string {

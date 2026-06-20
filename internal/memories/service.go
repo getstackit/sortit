@@ -45,6 +45,14 @@ type CorpusReader interface {
 	List(ctx context.Context) ([]issues.Issue, error)
 }
 
+// ConceptProfiler generates the prose body for a concept memory from its subject
+// tag and a sample of issues that reference it. *ai.Analyzer satisfies it. It is
+// optional: without one, concept proposals keep their deterministic placeholder
+// body (the pure synthesizer stays pure; this only enriches concept drafts).
+type ConceptProfiler interface {
+	GenerateConceptProfile(ctx context.Context, tag string, issueSummaries []string) (string, error)
+}
+
 // Service is the application layer for memories.
 type Service struct {
 	store     issues.MemoryStore
@@ -52,6 +60,7 @@ type Service struct {
 	logger    *slog.Logger
 	proposals issues.MemoryProposalStore
 	corpus    CorpusReader
+	profiler  ConceptProfiler
 }
 
 // NewService constructs a memory service. enricher may be nil (memories are
@@ -69,6 +78,13 @@ func NewService(store issues.MemoryStore, enricher TextEnricher, logger *slog.Lo
 func (s *Service) UseSynthesis(proposals issues.MemoryProposalStore, corpus CorpusReader) {
 	s.proposals = proposals
 	s.corpus = corpus
+}
+
+// UseConceptProfiler enables LLM-generated bodies for synthesized concept
+// proposals. Optional: without it, concept proposals keep the deterministic
+// placeholder body the pure synthesizer drafts.
+func (s *Service) UseConceptProfiler(profiler ConceptProfiler) {
+	s.profiler = profiler
 }
 
 // CreateMemoryInput describes a new memory.
@@ -293,6 +309,10 @@ func (s *Service) SynthesizeProposals(ctx context.Context) ([]domain.MemoryPropo
 	// choices. They draft independently and dedup on different keys (subject_tag
 	// vs anchor tags), so a tag can earn both.
 	drafts = append(drafts, SynthesizeConceptProposals(corpusIssues, pending, active)...)
+	// Replace each concept draft's deterministic placeholder body with an
+	// LLM-generated profile, when a profiler is configured. Best-effort: a
+	// generation failure leaves the placeholder in place.
+	s.fillConceptBodies(ctx, drafts, corpusIssues)
 	created := make([]domain.MemoryProposal, 0, len(drafts))
 	now := time.Now().UTC()
 	for _, draft := range drafts {
@@ -306,6 +326,47 @@ func (s *Service) SynthesizeProposals(ctx context.Context) ([]domain.MemoryPropo
 	}
 	s.logger.InfoContext(ctx, "synthesized memory proposals", "count", len(created))
 	return created, nil
+}
+
+// fillConceptBodies replaces each concept draft's placeholder body with an
+// LLM-generated profile built from the tag and a sample of the issues that
+// reference it. No-op without a profiler; a per-draft failure keeps the
+// placeholder so synthesis never fails on generation.
+func (s *Service) fillConceptBodies(ctx context.Context, drafts []domain.MemoryProposal, corpus []issues.Issue) {
+	if s.profiler == nil {
+		return
+	}
+	byID := make(map[string]issues.Issue, len(corpus))
+	for _, issue := range corpus {
+		byID[issue.ID] = issue
+	}
+	for i := range drafts {
+		if drafts[i].Kind != domain.MemoryKindConcept {
+			continue
+		}
+		summaries := make([]string, 0, len(drafts[i].SourceIssueIDs))
+		for _, id := range drafts[i].SourceIssueIDs {
+			issue, ok := byID[id]
+			if !ok {
+				continue
+			}
+			if raw := strings.TrimSpace(issue.Raw); raw != "" {
+				summaries = append(summaries, raw)
+			}
+			if len(summaries) >= maxSourceIssuesPerProposal {
+				break
+			}
+		}
+		body, err := s.profiler.GenerateConceptProfile(ctx, drafts[i].SubjectTag, summaries)
+		if err != nil {
+			s.logger.WarnContext(ctx, "concept profile generation failed; keeping placeholder",
+				"subject_tag", drafts[i].SubjectTag, "error", err)
+			continue
+		}
+		if body = strings.TrimSpace(body); body != "" {
+			drafts[i].Body = body
+		}
+	}
 }
 
 // ListProposals returns synthesis proposals, optionally filtered by status.

@@ -4,6 +4,7 @@ import (
 	"cmp"
 	"context"
 	"encoding/binary"
+	"fmt"
 	"hash/fnv"
 	"math"
 	"slices"
@@ -192,6 +193,27 @@ func (c *StubCanonicalizer) CanonicalizeDiscussion(_ context.Context, posts []st
 	for _, post := range normalized[1:] {
 		builder.WriteString("\n\nAdditional context: ")
 		builder.WriteString(post)
+	}
+	return builder.String(), nil
+}
+
+type StubConceptProfiler struct{}
+
+func NewStubConceptProfiler() *StubConceptProfiler {
+	return &StubConceptProfiler{}
+}
+
+func (p *StubConceptProfiler) GenerateConceptProfile(_ context.Context, tag string, issueSummaries []string) (string, error) {
+	tag = strings.TrimSpace(tag)
+	var builder strings.Builder
+	fmt.Fprintf(&builder, "Concept profile for %q.", tag)
+	for _, summary := range issueSummaries {
+		summary = strings.TrimSpace(summary)
+		if summary == "" {
+			continue
+		}
+		builder.WriteString("\n- ")
+		builder.WriteString(summary)
 	}
 	return builder.String(), nil
 }

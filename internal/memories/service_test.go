@@ -3,6 +3,7 @@ package memories
 import (
 	"context"
 	"errors"
+	"strings"
 	"testing"
 
 	"sortit/internal/ai"
@@ -262,6 +263,72 @@ func TestSupersedeMemory(t *testing.T) {
 	if _, err := svc.SupersedeMemory(ctx, "missing", ""); !errors.Is(err, issues.ErrMemoryNotFound) {
 		t.Fatalf("expected ErrMemoryNotFound, got %v", err)
 	}
+}
+
+type fakeConceptProfiler struct {
+	gotTag       string
+	gotSummaries []string
+}
+
+func (f *fakeConceptProfiler) GenerateConceptProfile(_ context.Context, tag string, summaries []string) (string, error) {
+	f.gotTag = tag
+	f.gotSummaries = summaries
+	return "GENERATED PROFILE for " + tag, nil
+}
+
+func TestSynthesizeConceptProposalUsesProfiler(t *testing.T) {
+	corpus := make([]issues.Issue, 0, 6)
+	for i := range 6 {
+		corpus = append(corpus, taggedIssue("ridge"+string(rune('0'+i)), "ridge"))
+	}
+	ctx := context.Background()
+
+	// Without a profiler, the concept proposal keeps the deterministic placeholder.
+	plainStore := issues.NewInMemoryStore(corpus)
+	plain := NewService(plainStore, nil, nil)
+	plain.UseSynthesis(plainStore, plainStore)
+	plainCreated, err := plain.SynthesizeProposals(ctx)
+	if err != nil {
+		t.Fatalf("synthesize (no profiler): %v", err)
+	}
+	plainConcept := findConceptProposal(t, plainCreated)
+	if !strings.HasPrefix(plainConcept.Body, "Concept profile for") {
+		t.Fatalf("expected deterministic placeholder body, got %q", plainConcept.Body)
+	}
+
+	// With a profiler, the concept proposal body is LLM-generated from the tag and
+	// its issue summaries.
+	store := issues.NewInMemoryStore(corpus)
+	svc := NewService(store, nil, nil)
+	svc.UseSynthesis(store, store)
+	profiler := &fakeConceptProfiler{}
+	svc.UseConceptProfiler(profiler)
+
+	created, err := svc.SynthesizeProposals(ctx)
+	if err != nil {
+		t.Fatalf("synthesize (with profiler): %v", err)
+	}
+	concept := findConceptProposal(t, created)
+	if concept.Body != "GENERATED PROFILE for ridge" {
+		t.Fatalf("expected generated body, got %q", concept.Body)
+	}
+	if profiler.gotTag != "ridge" {
+		t.Fatalf("expected profiler called with subject tag, got %q", profiler.gotTag)
+	}
+	if len(profiler.gotSummaries) == 0 {
+		t.Fatal("expected issue summaries passed to the profiler")
+	}
+}
+
+func findConceptProposal(t *testing.T, proposals []domain.MemoryProposal) domain.MemoryProposal {
+	t.Helper()
+	for _, p := range proposals {
+		if p.Kind == domain.MemoryKindConcept {
+			return p
+		}
+	}
+	t.Fatalf("expected a concept proposal in %+v", proposals)
+	return domain.MemoryProposal{}
 }
 
 func TestSynthesizeAcceptAndRejectProposals(t *testing.T) {
