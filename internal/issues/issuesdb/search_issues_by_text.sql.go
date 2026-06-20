@@ -20,16 +20,16 @@ SELECT
   COALESCE(p.created_by, i.created_by) AS created_by,
   COALESCE(p.created_at_unix_nano, i.created_at_unix_nano) AS created_at_unix_nano,
   COALESCE(p.status, i.status) AS status,
-  COALESCE(p.closed_at_unix_nano, i.closed_at_unix_nano) AS closed_at_unix_nano,
-  COALESCE(p.closed_by, i.closed_by) AS closed_by,
-  COALESCE(p.closed_reason, i.closed_reason) AS closed_reason,
-  COALESCE(p.closed_reason_note, i.closed_reason_note) AS closed_reason_note,
+  COALESCE(p.closed_at_unix_nano, 0) AS closed_at_unix_nano,
+  COALESCE(p.closed_by, '') AS closed_by,
+  COALESCE(p.closed_reason, '') AS closed_reason,
+  COALESCE(p.closed_reason_note, '') AS closed_reason_note,
   COALESCE(c.tag_scores_json, i.tag_scores_json) AS tag_scores_json,
   COALESCE(c.embedding_vector::text, i.embedding_vector::text, '') AS embedding_text,
   COALESCE(p.assigned_to, i.assigned_to) AS assigned_to,
   (paradedb.score(c.*)
     * (0.3 + 0.7 * EXP(-0.693147 * (EXTRACT(EPOCH FROM NOW()) * 1e9 - c.updated_at_unix_nano) / (90.0 * 86400 * 1e9)))
-    * CASE COALESCE(p.closed_reason, i.closed_reason, '')
+    * CASE COALESCE(p.closed_reason, '')
         WHEN 'duplicate' THEN 0.3
         WHEN 'stale'     THEN 0.5
         WHEN 'wont_fix'  THEN 0.5

@@ -306,18 +306,15 @@ func TestPostgresStoreLifecycleProjectionReadCutover(t *testing.T) {
 		t.Fatalf("save issue: %v", err)
 	}
 
-	legacyClosedAt := issue.CreatedAt.Add(time.Hour)
+	// Desync the surviving legacy issues columns (status/assigned_to). The
+	// closed_* columns were dropped in migration 000032; lifecycle state now
+	// lives only in issue_lifecycle_projections.
 	if _, err := store.DB().ExecContext(
 		ctx,
 		`UPDATE issues
 		 SET status = 'closed',
-		     closed_at_unix_nano = $1,
-		     closed_by = 'Legacy',
-		     closed_reason = 'fixed',
-		     closed_reason_note = 'stale row',
 		     assigned_to = 'Legacy'
-		 WHERE id = $2`,
-		legacyClosedAt.UTC().UnixNano(),
+		 WHERE id = $1`,
 		issue.ID,
 	); err != nil {
 		t.Fatalf("desync legacy issue row: %v", err)

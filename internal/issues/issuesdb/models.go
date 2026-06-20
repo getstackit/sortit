@@ -94,13 +94,9 @@ type Issue struct {
 	CreatedBy         string
 	CreatedAtUnixNano int64
 	Status            string
-	ClosedAtUnixNano  int64
-	ClosedBy          string
 	TagScoresJson     json.RawMessage
 	AssignedTo        string
 	EmbeddingVector   interface{}
-	ClosedReason      string
-	ClosedReasonNote  string
 }
 
 type IssueContentFact struct {
@@ -178,10 +174,10 @@ type IssueLifecycleProjection struct {
 	CreatedBy         string
 	CreatedAtUnixNano int64
 	Status            string
-	ClosedAtUnixNano  int64
-	ClosedBy          string
-	ClosedReason      string
-	ClosedReasonNote  string
+	ClosedAtUnixNano  sql.NullInt64
+	ClosedBy          sql.NullString
+	ClosedReason      sql.NullString
+	ClosedReasonNote  sql.NullString
 	AssignedTo        string
 	LastFactID        string
 	FactCount         int64

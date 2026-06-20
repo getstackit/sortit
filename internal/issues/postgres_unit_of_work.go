@@ -112,10 +112,8 @@ func (u *PostgresUnitOfWork) SaveIssue(ctx context.Context, issue Issue) error {
 		CreatedBy:         record.CreatedBy,
 		CreatedAtUnixNano: record.CreatedAtUnixNano,
 		Status:            record.Status,
-		ClosedAtUnixNano:  record.ClosedAtUnixNano,
-		ClosedBy:          record.ClosedBy,
 		TagScoresJson:     record.TagScoresJSON,
-		Column10:          record.EmbeddingVector,
+		Column8:           record.EmbeddingVector,
 		AssignedTo:        record.AssignedTo,
 	}); err != nil {
 		return fmt.Errorf("save issue: %w", err)
