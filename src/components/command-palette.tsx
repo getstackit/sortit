@@ -2,7 +2,15 @@
 
 import { useCallback, useDeferredValue, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
-import { FileTextIcon, LoaderIcon, TagIcon } from "lucide-react";
+import {
+  FileTextIcon,
+  KeyboardIcon,
+  LoaderIcon,
+  PlusIcon,
+  SunMoonIcon,
+  TagIcon,
+} from "lucide-react";
+import type { LucideIcon } from "lucide-react";
 import {
   Command,
   CommandDialog,
@@ -12,20 +20,39 @@ import {
   CommandItem,
   CommandList,
   CommandSeparator,
+  CommandShortcut,
 } from "@/components/ui/command";
 import { StatusBadge } from "@/components/status-badge";
 import { TagBadge } from "@/components/tag-badge";
 import { UNIFIED_SEARCH_LIMIT, useUnifiedSearch } from "@/hooks/use-search";
 import { useRecentHistory } from "@/hooks/use-recent-history";
 import { issueHrefFromText } from "@/lib/issues";
+import { NAV_ITEMS } from "@/lib/nav";
 import { tagHref } from "@/lib/tags";
+import { toggleTheme } from "@/lib/theme";
 import type { IssueStatus, SearchIssueRecord } from "@/lib/issues";
 import type { RelatedTag } from "@/lib/search";
 
 type CommandPaletteProps = {
   open: boolean;
   onOpenChange: (open: boolean) => void;
+  onNewIssue?: () => void;
+  onShowShortcuts?: () => void;
 };
+
+type QuickAction = {
+  id: string;
+  label: string;
+  icon: LucideIcon;
+  keywords?: string[];
+  run: () => void;
+};
+
+function matchesQuery(query: string, ...haystacks: string[]) {
+  const normalized = query.trim().toLowerCase();
+  if (!normalized) return true;
+  return haystacks.some((haystack) => haystack.toLowerCase().includes(normalized));
+}
 
 type ResultItem =
   | { kind: "issue"; issue: SearchIssueRecord }
@@ -49,7 +76,12 @@ type PaletteItem =
       similarity?: number;
     };
 
-export function CommandPalette({ open, onOpenChange }: CommandPaletteProps) {
+export function CommandPalette({
+  open,
+  onOpenChange,
+  onNewIssue,
+  onShowShortcuts,
+}: CommandPaletteProps) {
   const router = useRouter();
   const [searchText, setSearchText] = useState("");
   const inputRef = useRef<HTMLInputElement>(null);
@@ -156,6 +188,14 @@ export function CommandPalette({ open, onOpenChange }: CommandPaletteProps) {
     [handleOpenChange, router]
   );
 
+  const navigateToHref = useCallback(
+    (href: string) => {
+      router.push(href);
+      handleOpenChange(false);
+    },
+    [handleOpenChange, router]
+  );
+
   const handlePaste = useCallback(
     (event: React.ClipboardEvent) => {
       const pastedText = event.clipboardData.getData("text");
@@ -166,11 +206,67 @@ export function CommandPalette({ open, onOpenChange }: CommandPaletteProps) {
     [navigateToDirectIssue]
   );
 
+  const quickActions = useMemo<QuickAction[]>(() => {
+    const list: QuickAction[] = [];
+    if (onNewIssue) {
+      list.push({
+        id: "new-issue",
+        label: "New issue",
+        icon: PlusIcon,
+        keywords: ["create", "add", "compose"],
+        run: () => {
+          onNewIssue();
+          handleOpenChange(false);
+        },
+      });
+    }
+    list.push({
+      id: "toggle-theme",
+      label: "Toggle theme",
+      icon: SunMoonIcon,
+      keywords: ["dark", "light", "appearance", "mode"],
+      run: () => {
+        toggleTheme();
+        handleOpenChange(false);
+      },
+    });
+    if (onShowShortcuts) {
+      list.push({
+        id: "keyboard-shortcuts",
+        label: "Keyboard shortcuts",
+        icon: KeyboardIcon,
+        keywords: ["help", "keys", "hotkeys"],
+        run: () => {
+          onShowShortcuts();
+          handleOpenChange(false);
+        },
+      });
+    }
+    return list;
+  }, [handleOpenChange, onNewIssue, onShowShortcuts]);
+
+  const pageMatches = useMemo(
+    () => NAV_ITEMS.filter((item) => matchesQuery(activeQuery, item.label, item.href)),
+    [activeQuery]
+  );
+
+  const actionMatches = useMemo(
+    () =>
+      quickActions.filter((action) =>
+        matchesQuery(activeQuery, action.label, ...(action.keywords ?? []))
+      ),
+    [activeQuery, quickActions]
+  );
+
   const hasQuery = activeQuery.length > 0;
-  const showRecent = !hasQuery;
+  const showPages = pageMatches.length > 0;
+  const showActions = actionMatches.length > 0;
+  const showRecent = !hasQuery && items.length > 0;
   const showResults = hasQuery && items.length > 0;
-  const showEmpty = hasQuery && !isLoading && items.length === 0;
-  const showRecentEmpty = !hasQuery && items.length === 0;
+  const showTopSection = showPages || showActions;
+  const showBottomSection = showRecent || showResults;
+  const showEmpty =
+    hasQuery && !isLoading && !showTopSection && items.length === 0;
 
   return (
     <CommandDialog
@@ -196,18 +292,40 @@ export function CommandPalette({ open, onOpenChange }: CommandPaletteProps) {
         </div>
 
         <CommandList>
-          {showRecentEmpty && (
-            <CommandEmpty>
-              <div className="flex flex-col items-center gap-1 py-6">
-                <p className="text-sm text-muted-foreground/80">
-                  Search issues and tags...
-                </p>
-                <p className="text-xs text-muted-foreground/50">
-                  Recently viewed issues and tags will show up here.
-                </p>
-              </div>
-            </CommandEmpty>
+          {showPages && (
+            <CommandGroup heading="Pages">
+              {pageMatches.map((item) => (
+                <CommandItem
+                  key={`page-${item.href}`}
+                  value={`page-${item.href}`}
+                  onSelect={() => navigateToHref(item.href)}
+                >
+                  <item.icon className="size-4 shrink-0 text-muted-foreground" />
+                  <span className="flex-1 truncate text-sm">{item.label}</span>
+                  {item.shortcut && (
+                    <CommandShortcut>G {item.shortcut.toUpperCase()}</CommandShortcut>
+                  )}
+                </CommandItem>
+              ))}
+            </CommandGroup>
           )}
+
+          {showActions && (
+            <CommandGroup heading="Quick actions">
+              {actionMatches.map((action) => (
+                <CommandItem
+                  key={`action-${action.id}`}
+                  value={`action-${action.id}`}
+                  onSelect={action.run}
+                >
+                  <action.icon className="size-4 shrink-0 text-muted-foreground" />
+                  <span className="flex-1 truncate text-sm">{action.label}</span>
+                </CommandItem>
+              ))}
+            </CommandGroup>
+          )}
+
+          {showTopSection && showBottomSection && <CommandSeparator />}
 
           {showEmpty && (
             <CommandEmpty>
@@ -222,7 +340,7 @@ export function CommandPalette({ open, onOpenChange }: CommandPaletteProps) {
             </CommandEmpty>
           )}
 
-          {showRecent && items.length > 0 && (
+          {showRecent && (
             <>
               <CommandGroup heading="Recently viewed">
                 {items.map((item) => {

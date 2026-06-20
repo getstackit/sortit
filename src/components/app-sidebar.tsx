@@ -17,19 +17,8 @@ import {
   SidebarMenuItem,
 } from "@/components/ui/sidebar";
 import type { IssueRecord } from "@/lib/issues";
+import { NAV_GROUPS, SHOW_DEV_NAV, navItemsForGroup } from "@/lib/nav";
 import { cn } from "@/lib/utils";
-import {
-  CircleDot,
-  Map,
-  Activity,
-  Tags,
-  Users,
-  BarChart3,
-  Layers,
-  BookMarked,
-  Settings,
-  Bug,
-} from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 
 type Thing = {
@@ -44,19 +33,6 @@ type AppSidebarProps = {
   navigateOnCreate?: boolean;
   showThingsSection?: boolean;
 };
-
-const navItems: { label: string; href: string; icon: LucideIcon }[] = [
-  { label: "Issues", href: "/", icon: CircleDot },
-  { label: "Map", href: "/map", icon: Map },
-  { label: "Activity", href: "/activity", icon: Activity },
-  { label: "Tag Map", href: "/tags", icon: Tags },
-  { label: "Regions", href: "/regions", icon: Layers },
-  { label: "Memories", href: "/memories", icon: BookMarked },
-  { label: "People", href: "/people", icon: Users },
-  { label: "Analytics", href: "/analytics", icon: BarChart3 },
-  { label: "Settings", href: "/settings", icon: Settings },
-  { label: "Debug", href: "/debug", icon: Bug },
-];
 
 function NavLink({
   href,
@@ -170,34 +146,43 @@ export function AppSidebar({
       />
 
       <SidebarContent className="app-scrollarea gap-5 px-3 py-4">
-        <SidebarGroup className="p-0 space-y-2">
-          <SidebarGroupLabel
-            className={cn(
-              "h-auto px-2 text-[11px] font-medium uppercase tracking-[0.16em] text-sidebar-foreground/50",
-              collapsed && "hidden"
-            )}
-          >
-            Views
-          </SidebarGroupLabel>
-          <SidebarGroupContent>
-            <SidebarMenu className="gap-1">
-              {navItems.map((item) => (
-                <SidebarMenuItem key={item.href}>
-                  <NavLink
-                    href={item.href}
-                    label={item.label}
-                    icon={item.icon}
-                    active={pathname === item.href}
-                    collapsed={collapsed}
-                    onClick={closeMobileSidebar}
-                  />
-                </SidebarMenuItem>
-              ))}
-            </SidebarMenu>
-          </SidebarGroupContent>
-        </SidebarGroup>
+        {NAV_GROUPS.map((group) => {
+          const items = navItemsForGroup(group.id, SHOW_DEV_NAV);
+          if (items.length === 0) {
+            return null;
+          }
 
-        {showThingsSection && (
+          return (
+            <SidebarGroup key={group.id} className="p-0 space-y-2">
+              <SidebarGroupLabel
+                className={cn(
+                  "h-auto px-2 text-[11px] font-medium uppercase tracking-[0.16em] text-sidebar-foreground/50",
+                  collapsed && "hidden"
+                )}
+              >
+                {group.label}
+              </SidebarGroupLabel>
+              <SidebarGroupContent>
+                <SidebarMenu className="gap-1">
+                  {items.map((item) => (
+                    <SidebarMenuItem key={item.href}>
+                      <NavLink
+                        href={item.href}
+                        label={item.label}
+                        icon={item.icon}
+                        active={pathname === item.href}
+                        collapsed={collapsed}
+                        onClick={closeMobileSidebar}
+                      />
+                    </SidebarMenuItem>
+                  ))}
+                </SidebarMenu>
+              </SidebarGroupContent>
+            </SidebarGroup>
+          );
+        })}
+
+        {showThingsSection && things.length > 0 && (
           <SidebarGroup className="min-h-0 flex-1 p-0 space-y-2">
             <SidebarGroupLabel
               className={cn(
@@ -209,11 +194,6 @@ export function AppSidebar({
             </SidebarGroupLabel>
             <SidebarGroupContent>
               <SidebarMenu className="gap-1">
-                {things.length === 0 && !collapsed && (
-                  <p className="rounded-xl px-2.5 py-2 text-xs text-sidebar-foreground/50">
-                    Nothing yet
-                  </p>
-                )}
                 {things.map((thing, index) => {
                   const href = thing.href ?? `#${thing.id}`;
                   const isActive = pathname === href;

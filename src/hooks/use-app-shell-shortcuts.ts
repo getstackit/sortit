@@ -2,19 +2,27 @@
 
 import { useEffect, useEffectEvent, useRef } from "react";
 import type { AppShortcutRegistration } from "@/components/app-shell";
+import { NAV_ITEMS } from "@/lib/nav";
 
 const SHORTCUT_SEQUENCE_TIMEOUT_MS = 1200;
 
-export const GLOBAL_SHORTCUTS = [
+/** `G <key>` go-to destinations, derived from the shared nav config. */
+const NAV_DESTINATIONS: Record<string, string> = Object.fromEntries(
+  NAV_ITEMS.filter((item) => item.shortcut).map((item) => [item.shortcut!, item.href])
+);
+
+const NAV_SHORTCUTS = NAV_ITEMS.filter((item) => item.shortcut).map((item) => ({
+  key: `G ${item.shortcut!.toUpperCase()}`,
+  description: `Go to ${item.label}`,
+}));
+
+export const GLOBAL_SHORTCUTS: { key: string; description: string }[] = [
   { key: "Cmd/Ctrl+B", description: "Toggle the sidebar" },
   { key: "N", description: "Open the new issue composer" },
-  { key: "G I", description: "Go to All Issues" },
-  { key: "G M", description: "Go to Map" },
-  { key: "G T", description: "Go to Tag Map" },
-  { key: "G D", description: "Go to Debug" },
+  ...NAV_SHORTCUTS,
   { key: "/", description: "Open command palette" },
   { key: "?", description: "Show keyboard shortcuts" },
-] as const;
+];
 
 type UseAppShellShortcutsOptions = {
   commandPaletteOpen: boolean;
@@ -113,14 +121,7 @@ export function useAppShellShortcuts({
         return;
       }
 
-      const destinations: Record<string, string> = {
-        i: "/",
-        m: "/map",
-        t: "/tags",
-        d: "/debug",
-      };
-
-      const href = destinations[key];
+      const href = NAV_DESTINATIONS[key];
       if (!href || overlayOpen) {
         return;
       }
