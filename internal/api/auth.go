@@ -98,7 +98,7 @@ func (s *Server) handleAuthLogout(w http.ResponseWriter, r *http.Request) {
 		writeInternalError(w, r, "failed to logout", err)
 		return
 	}
-	writeJSON(w, http.StatusOK, map[string]string{"status": "ok"})
+	writeJSON(w, http.StatusOK, map[string]string{statusResponseKey: "ok"})
 }
 
 func (s *Server) handleAuthTokenListOrCreate(w http.ResponseWriter, r *http.Request) {
@@ -167,7 +167,7 @@ func (s *Server) handleAuthTokenRevoke(w http.ResponseWriter, r *http.Request) {
 		writeInternalError(w, r, "failed to revoke api token", err)
 		return
 	}
-	writeJSON(w, http.StatusOK, map[string]string{"status": "revoked"})
+	writeJSON(w, http.StatusOK, map[string]string{statusResponseKey: "revoked"})
 }
 
 func (s *Server) handleAuthCLILogin(w http.ResponseWriter, r *http.Request) {

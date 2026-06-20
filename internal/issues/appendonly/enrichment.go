@@ -123,7 +123,7 @@ func (s *EnrichmentStore) BackfillBatch(
 	if len(candidates) == 0 {
 		if err := framework.UpsertCheckpoint(ctx, Checkpoint{
 			Name:        checkpointName,
-			Phase:       "completed",
+			Phase:       phaseCompleted,
 			CursorJSON:  mustMarshalJSON(cursor),
 			SummaryJSON: mustMarshalJSON(result),
 		}); err != nil {
@@ -161,7 +161,7 @@ func (s *EnrichmentStore) BackfillBatch(
 	cursor.LastIssueID = result.LastIssueID
 	phase := "backfilling"
 	if result.Complete {
-		phase = "completed"
+		phase = phaseCompleted
 	}
 	if err := framework.UpsertCheckpoint(ctx, Checkpoint{
 		Name:        checkpointName,

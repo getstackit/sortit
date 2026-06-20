@@ -42,6 +42,13 @@ linters:
   settings:
     misspell:
       locale: US
+    goconst:
+      # Tuned after the golangci-lint 2.12 bump made goconst far noisier.
+      # Constants in tests hurt readability, and low-occurrence literals are
+      # rarely worth hoisting — only flag strings repeated enough to be a real
+      # maintenance risk.
+      ignore-tests: true
+      min-occurrences: 5
     gosec:
       excludes:
         - G117

@@ -19,7 +19,7 @@ node = "22"
 "go:golang.org/x/vuln/cmd/govulncheck" = "latest"
 "aqua:watchexec/watchexec" = "latest"
 "aqua:sqlc-dev/sqlc" = "1.31.1"
-golangci-lint = "2.10.1"
+golangci-lint = "2.12.2"
 
 [tasks.install]
 description = "Install app dependencies"

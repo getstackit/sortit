@@ -78,7 +78,7 @@ func (s *Server) handleTagMerge(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	writeJSON(w, http.StatusOK, map[string]string{"status": "merged"})
+	writeJSON(w, http.StatusOK, map[string]string{statusResponseKey: "merged"})
 }
 
 func (s *Server) handleTagDismiss(w http.ResponseWriter, r *http.Request) {
@@ -99,7 +99,7 @@ func (s *Server) handleTagDismiss(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	writeJSON(w, http.StatusOK, map[string]string{"status": "dismissed"})
+	writeJSON(w, http.StatusOK, map[string]string{statusResponseKey: "dismissed"})
 }
 
 func (s *Server) handleTagDismissedList(w http.ResponseWriter, r *http.Request) {

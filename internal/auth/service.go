@@ -57,7 +57,7 @@ func (s *Service) BeginGitHubLogin(w http.ResponseWriter, r *http.Request, callb
 
 	setOAuthReturnToCookie(w, r, sanitizeReturnTo(r.URL.Query().Get("return_to")))
 
-	http.SetCookie(w, &http.Cookie{
+	http.SetCookie(w, &http.Cookie{ //nolint:gosec // G124 false positive: Secure is set conditionally via isSecureRequest(r); HttpOnly and SameSite=Lax are always set below.
 		Name:     oauthStateCookie,
 		Value:    state,
 		Path:     "/",
@@ -81,6 +81,7 @@ func (s *Service) CompleteGitHubLogin(w http.ResponseWriter, r *http.Request, ca
 		return err
 	}
 	clearOAuthReturnToCookie(w, r)
+	//nolint:gosec // G710 false positive: redirectTarget only returns webOrigin-prefixed or sanitizeReturnTo-allowlisted (leading-slash) relative paths.
 	http.Redirect(w, r, redirectTarget(s.webOrigin, returnTo), http.StatusFound)
 	return nil
 }
@@ -120,7 +121,7 @@ func (s *Service) setSessionCookie(w http.ResponseWriter, r *http.Request, userI
 		return err
 	}
 
-	http.SetCookie(w, &http.Cookie{
+	http.SetCookie(w, &http.Cookie{ //nolint:gosec // G124 false positive: Secure is set conditionally via isSecureRequest(r); HttpOnly and SameSite=Lax are always set below.
 		Name:     sessionCookieName,
 		Value:    rawSession,
 		Path:     "/",
@@ -159,7 +160,7 @@ func (s *Service) Logout(w http.ResponseWriter, r *http.Request) error {
 		}
 	}
 
-	http.SetCookie(w, &http.Cookie{
+	http.SetCookie(w, &http.Cookie{ //nolint:gosec // G124 false positive: Secure is set conditionally via isSecureRequest(r); HttpOnly and SameSite=Lax are always set below.
 		Name:     sessionCookieName,
 		Value:    "",
 		Path:     "/",
@@ -217,7 +218,7 @@ func redirectTarget(webOrigin, returnTo string) string {
 }
 
 func clearOAuthStateCookie(w http.ResponseWriter, r *http.Request) {
-	http.SetCookie(w, &http.Cookie{
+	http.SetCookie(w, &http.Cookie{ //nolint:gosec // G124 false positive: Secure is set conditionally via isSecureRequest(r); HttpOnly and SameSite=Lax are always set below.
 		Name:     oauthStateCookie,
 		Value:    "",
 		Path:     "/",
@@ -234,7 +235,7 @@ func setOAuthReturnToCookie(w http.ResponseWriter, r *http.Request, returnTo str
 		return
 	}
 
-	http.SetCookie(w, &http.Cookie{
+	http.SetCookie(w, &http.Cookie{ //nolint:gosec // G124 false positive: Secure is set conditionally via isSecureRequest(r); HttpOnly and SameSite=Lax are always set below.
 		Name:     oauthReturnToCookie,
 		Value:    returnTo,
 		Path:     "/",
@@ -246,7 +247,7 @@ func setOAuthReturnToCookie(w http.ResponseWriter, r *http.Request, returnTo str
 }
 
 func clearOAuthReturnToCookie(w http.ResponseWriter, r *http.Request) {
-	http.SetCookie(w, &http.Cookie{
+	http.SetCookie(w, &http.Cookie{ //nolint:gosec // G124 false positive: Secure is set conditionally via isSecureRequest(r); HttpOnly and SameSite=Lax are always set below.
 		Name:     oauthReturnToCookie,
 		Value:    "",
 		Path:     "/",

@@ -209,8 +209,8 @@ func (s *Server) Handler() http.Handler {
 
 	r.Get("/", func(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusOK, map[string]string{
-			"name":   "sortit-server",
-			"status": "ok",
+			"name":            "sortit-server",
+			statusResponseKey: "ok",
 		})
 	})
 
