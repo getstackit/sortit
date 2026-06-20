@@ -15,11 +15,21 @@ type stubEnricher struct {
 	result issueenrichment.AnalyzeTextResult
 	err    error
 	gotRaw string
+
+	// embed and embedErr drive EmbedText, used by recall.
+	embed    []float64
+	embedErr error
+	gotEmbed string
 }
 
 func (s *stubEnricher) AnalyzeText(_ context.Context, raw string, _ issueenrichment.AnalyzeTextOptions) (issueenrichment.AnalyzeTextResult, error) {
 	s.gotRaw = raw
 	return s.result, s.err
+}
+
+func (s *stubEnricher) EmbedText(_ context.Context, raw string) ([]float64, error) {
+	s.gotEmbed = raw
+	return s.embed, s.embedErr
 }
 
 func TestCreateMemoryEnrichesAndPersists(t *testing.T) {

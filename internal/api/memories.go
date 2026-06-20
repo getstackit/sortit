@@ -4,6 +4,7 @@ import (
 	"errors"
 	"io"
 	"net/http"
+	"strconv"
 	"strings"
 
 	"github.com/go-chi/chi/v5"
@@ -15,6 +16,55 @@ import (
 
 type memoriesResponse struct {
 	Memories []domain.Memory `json:"memories"`
+}
+
+type recalledMemoriesResponse struct {
+	Memories []memories.RecalledMemory `json:"memories"`
+}
+
+// handleMemorySearch recalls active memories most similar to a query — the read
+// side of the memory loop, so prior decisions surface before an agent acts.
+func (s *Server) handleMemorySearch(w http.ResponseWriter, r *http.Request) {
+	if s.memories == nil {
+		writeError(w, http.StatusServiceUnavailable, "memories are not available")
+		return
+	}
+
+	query := strings.TrimSpace(r.URL.Query().Get("q"))
+	if query == "" {
+		query = strings.TrimSpace(r.URL.Query().Get("query"))
+	}
+	if query == "" {
+		writeError(w, http.StatusBadRequest, "query is required")
+		return
+	}
+
+	limit, err := ParsePositiveIntQuery(r.URL.Query(), "limit")
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "invalid limit query")
+		return
+	}
+
+	opts := memories.RecallOptions{}
+	if limit != nil {
+		opts.Limit = *limit
+	}
+	if raw := strings.TrimSpace(r.URL.Query().Get("min_similarity")); raw != "" {
+		minSimilarity, err := strconv.ParseFloat(raw, 64)
+		if err != nil {
+			writeError(w, http.StatusBadRequest, "invalid min_similarity query")
+			return
+		}
+		opts.MinSimilarity = minSimilarity
+	}
+
+	results, err := s.memories.RecallMemories(r.Context(), query, opts)
+	if err != nil {
+		writeInternalError(w, r, "failed to recall memories", err)
+		return
+	}
+
+	writeJSON(w, http.StatusOK, recalledMemoriesResponse{Memories: results})
 }
 
 type createMemoryRequest struct {

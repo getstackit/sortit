@@ -189,6 +189,23 @@ func NewHandler(cfg ServerConfig) http.Handler {
 	)
 
 	s.AddTool(
+		mcp.NewTool("search_memories",
+			mcp.WithDescription("Recall the durable Sortit memories most relevant to a query — prior decisions, lessons, constraints, patterns, and references. Consult this before deciding what to do, the same way you search issues before creating one. Results are ranked by similarity."),
+			mcp.WithString("query",
+				mcp.Required(),
+				mcp.Description("Natural-language description of what you're about to work on, decide, or look up."),
+			),
+			mcp.WithNumber("limit",
+				mcp.Description("Maximum number of memories to return. Defaults to 5."),
+			),
+			mcp.WithNumber("min_similarity",
+				mcp.Description("Drop results below this cosine similarity (0 to 1). Defaults to 0, returning the full ranked top set."),
+			),
+		),
+		h.handleSearchMemories,
+	)
+
+	s.AddTool(
 		mcp.NewTool("synthesize_memory_proposals",
 			mcp.WithDescription("Scan the corpus and draft memory proposals for human review. Agents propose; humans accept or reject."),
 		),
@@ -512,6 +529,30 @@ func (h *handlers) handleGetMemory(ctx context.Context, req mcp.CallToolRequest)
 	}
 
 	return jsonResult(memory)
+}
+
+func (h *handlers) handleSearchMemories(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+	if h.memories == nil {
+		return mcp.NewToolResultError("memories are not available"), nil
+	}
+	query, result := requireTrimmedString(req, "query")
+	if result != nil {
+		return result, nil
+	}
+	limit := req.GetInt("limit", 0)
+	if limit < 0 {
+		return mcp.NewToolResultError("limit must be >= 0"), nil
+	}
+
+	results, err := h.memories.RecallMemories(ctx, query, memories.RecallOptions{
+		Limit:         limit,
+		MinSimilarity: req.GetFloat("min_similarity", 0),
+	})
+	if err != nil {
+		return toolResultError(err), nil
+	}
+
+	return jsonResult(map[string]any{"memories": results})
 }
 
 func (h *handlers) handleSynthesizeMemoryProposals(ctx context.Context, _ mcp.CallToolRequest) (*mcp.CallToolResult, error) {

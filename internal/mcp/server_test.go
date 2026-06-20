@@ -267,6 +267,61 @@ func TestHandleListMemoriesRejectsInvalidStatus(t *testing.T) {
 	}
 }
 
+func TestHandleSearchMemories(t *testing.T) {
+	t.Parallel()
+
+	handler := newTestHandlers()
+	if _, err := handler.memories.CreateMemory(context.Background(), memories.CreateMemoryInput{
+		Title:     "Safari export uses the print pipeline",
+		Body:      "Use the print pipeline for Safari PDF export because direct canvas export loses pagination.",
+		Kind:      domain.MemoryKindDecision,
+		CreatedBy: "Casey",
+	}); err != nil {
+		t.Fatalf("seed memory: %v", err)
+	}
+
+	result, err := handler.handleSearchMemories(context.Background(), toolRequest(map[string]any{
+		"query": "how does Safari PDF export work",
+		"limit": 5,
+	}))
+	if err != nil {
+		t.Fatalf("handleSearchMemories returned error: %v", err)
+	}
+	if result.IsError {
+		t.Fatalf("expected success result, got error: %s", firstText(result))
+	}
+
+	payload, ok := result.StructuredContent.(map[string]any)
+	if !ok {
+		t.Fatalf("expected map structured content, got %T", result.StructuredContent)
+	}
+	items, ok := payload["memories"].([]memories.RecalledMemory)
+	if !ok {
+		t.Fatalf("expected recalled memories payload, got %#v", payload["memories"])
+	}
+	if len(items) == 0 {
+		t.Fatal("expected at least one recalled memory")
+	}
+	if items[0].Body == "" {
+		t.Fatal("expected recalled memory to carry its body")
+	}
+}
+
+func TestHandleSearchMemoriesRequiresQuery(t *testing.T) {
+	t.Parallel()
+
+	handler := newTestHandlers()
+	result, err := handler.handleSearchMemories(context.Background(), toolRequest(map[string]any{
+		"query": "   ",
+	}))
+	if err != nil {
+		t.Fatalf("handleSearchMemories returned error: %v", err)
+	}
+	if !result.IsError {
+		t.Fatal("expected MCP error result for empty query")
+	}
+}
+
 func TestHandleListMemoryProposals(t *testing.T) {
 	t.Parallel()
 

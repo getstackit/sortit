@@ -35,6 +35,9 @@ const maxDerivedAnchorTags = 3
 // satisfies this; it may be nil when no analyzer is configured.
 type TextEnricher interface {
 	AnalyzeText(ctx context.Context, raw string, opts issueenrichment.AnalyzeTextOptions) (issueenrichment.AnalyzeTextResult, error)
+	// EmbedText returns the embedding for raw text without a full tag analysis,
+	// powering query-time memory recall.
+	EmbedText(ctx context.Context, raw string) ([]float64, error)
 }
 
 // CorpusReader exposes the issue corpus that synthesis reads from.
