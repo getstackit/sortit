@@ -137,12 +137,28 @@ describe("CommandPalette", () => {
     ).toBeInTheDocument();
   });
 
-  it("keeps an explanatory empty state before anything has been viewed", () => {
+  it("offers page navigation before any history exists", async () => {
+    const user = userEvent.setup();
+
     render(<CommandPalette open onOpenChange={() => {}} />);
 
-    expect(screen.getByText("Search issues and tags...")).toBeInTheDocument();
-    expect(
-      screen.getByText("Recently viewed issues and tags will show up here.")
-    ).toBeInTheDocument();
+    expect(screen.getByText("Pages")).toBeInTheDocument();
+
+    await user.click(screen.getByRole("option", { name: /issues/i }));
+
+    expect(push).toHaveBeenCalledWith("/");
+  });
+
+  it("runs a quick action from the palette", async () => {
+    const user = userEvent.setup();
+    const onNewIssue = vi.fn();
+
+    render(
+      <CommandPalette open onOpenChange={() => {}} onNewIssue={onNewIssue} />
+    );
+
+    await user.click(screen.getByRole("option", { name: /new issue/i }));
+
+    expect(onNewIssue).toHaveBeenCalled();
   });
 });

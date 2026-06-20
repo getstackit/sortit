@@ -52,6 +52,17 @@ describe("AppShell shortcuts", () => {
     });
   });
 
+  it("navigates to destinations generated from the nav config", async () => {
+    render(<AppShell sidebar={<div>Sidebar</div>}>Body</AppShell>);
+
+    fireEvent.keyDown(window, { key: "g" });
+    fireEvent.keyDown(window, { key: "a" });
+
+    await waitFor(() => {
+      expect(push).toHaveBeenCalledWith("/activity");
+    });
+  });
+
   it("runs page shortcuts when not typing", async () => {
     const focusSearch = vi.fn();
 

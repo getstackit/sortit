@@ -204,7 +204,12 @@ export function AppShell({
           </main>
         </div>
       </div>
-      <CommandPalette open={commandPaletteOpen} onOpenChange={setCommandPaletteOpen} />
+      <CommandPalette
+        open={commandPaletteOpen}
+        onOpenChange={setCommandPaletteOpen}
+        onNewIssue={openComposer}
+        onShowShortcuts={openShortcutHelp}
+      />
       <Dialog open={shortcutHelpOpen} onOpenChange={setShortcutHelpOpen}>
         <DialogContent className="sm:max-w-2xl">
           <DialogHeader>
