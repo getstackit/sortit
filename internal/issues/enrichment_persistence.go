@@ -128,9 +128,9 @@ func loadEnrichmentProjectionState(
 	if err := db.QueryRowContext(
 		ctx,
 		`SELECT i.id,
-		        COALESCE(p.status, i.enrichment_status) AS status,
-		        COALESCE(p.error, i.enrichment_error) AS error,
-		        COALESCE(p.target_sequence, i.enrichment_target_sequence) AS target_sequence,
+		        COALESCE(p.status, 'complete') AS status,
+		        COALESCE(p.error, '') AS error,
+		        COALESCE(p.target_sequence, 1) AS target_sequence,
 		        COALESCE(j.attempt_count, p.attempt_count, 0) AS attempt_count,
 		        COALESCE(j.lease_expires_at_unix_nano, p.lease_expires_at_unix_nano, 0) AS lease_expires_at_unix_nano,
 		        COALESCE(p.latest_event_id, '') AS latest_event_id

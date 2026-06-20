@@ -88,22 +88,19 @@ type Event struct {
 }
 
 type Issue struct {
-	ID                       string
-	Raw                      string
-	TagsJson                 json.RawMessage
-	CreatedBy                string
-	CreatedAtUnixNano        int64
-	Status                   string
-	ClosedAtUnixNano         int64
-	ClosedBy                 string
-	TagScoresJson            json.RawMessage
-	AssignedTo               string
-	EmbeddingVector          interface{}
-	EnrichmentStatus         string
-	EnrichmentError          string
-	EnrichmentTargetSequence int64
-	ClosedReason             string
-	ClosedReasonNote         string
+	ID                string
+	Raw               string
+	TagsJson          json.RawMessage
+	CreatedBy         string
+	CreatedAtUnixNano int64
+	Status            string
+	ClosedAtUnixNano  int64
+	ClosedBy          string
+	TagScoresJson     json.RawMessage
+	AssignedTo        string
+	EmbeddingVector   interface{}
+	ClosedReason      string
+	ClosedReasonNote  string
 }
 
 type IssueContentFact struct {

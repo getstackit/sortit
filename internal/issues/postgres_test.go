@@ -718,18 +718,8 @@ func TestPostgresStoreEnrichmentProjectionReadAndWriteCutover(t *testing.T) {
 		t.Fatalf("enqueue enrichment job: %v", err)
 	}
 
-	if _, err := store.DB().ExecContext(
-		ctx,
-		`UPDATE issues
-		 SET enrichment_status = 'complete',
-		     enrichment_error = 'legacy stale state',
-		     enrichment_target_sequence = 1
-		 WHERE id = $1`,
-		issue.ID,
-	); err != nil {
-		t.Fatalf("desync legacy enrichment columns: %v", err)
-	}
-
+	// Enrichment state is sourced solely from issue_enrichment_projections; the
+	// legacy issues.enrichment_* columns were dropped in migration 000031.
 	loaded, err := store.Get(ctx, issue.ID)
 	if err != nil {
 		t.Fatalf("get issue through enrichment cutover: %v", err)

@@ -204,9 +204,6 @@ CREATE TABLE "public"."issues" (
     "tag_scores_json" jsonb NOT NULL,
     "assigned_to" text NOT NULL,
     "embedding_vector" vector,
-    "enrichment_status" text NOT NULL,
-    "enrichment_error" text NOT NULL,
-    "enrichment_target_sequence" bigint NOT NULL,
     "closed_reason" text NOT NULL,
     "closed_reason_note" text NOT NULL
 );
@@ -391,9 +388,6 @@ ALTER TABLE ONLY "public"."issue_snapshots" ALTER COLUMN "embedding_json" SET DE
 ALTER TABLE ONLY "public"."issues" ALTER COLUMN "tags_json" SET DEFAULT '[]'::jsonb;
 ALTER TABLE ONLY "public"."issues" ALTER COLUMN "tag_scores_json" SET DEFAULT '[]'::jsonb;
 ALTER TABLE ONLY "public"."issues" ALTER COLUMN "assigned_to" SET DEFAULT ''::text;
-ALTER TABLE ONLY "public"."issues" ALTER COLUMN "enrichment_status" SET DEFAULT 'complete'::text;
-ALTER TABLE ONLY "public"."issues" ALTER COLUMN "enrichment_error" SET DEFAULT ''::text;
-ALTER TABLE ONLY "public"."issues" ALTER COLUMN "enrichment_target_sequence" SET DEFAULT 1;
 ALTER TABLE ONLY "public"."issues" ALTER COLUMN "closed_reason" SET DEFAULT ''::text;
 ALTER TABLE ONLY "public"."issues" ALTER COLUMN "closed_reason_note" SET DEFAULT ''::text;
 ALTER TABLE ONLY "public"."memories" ALTER COLUMN "title" SET DEFAULT ''::text;

@@ -1266,9 +1266,9 @@ func loadIssueEnrichmentStates(
 	rows, err := db.QueryContext(
 		ctx,
 		`SELECT i.id,
-		        COALESCE(p.status, i.enrichment_status) AS enrichment_status,
-		        COALESCE(p.error, i.enrichment_error) AS enrichment_error,
-		        COALESCE(p.target_sequence, i.enrichment_target_sequence) AS enrichment_target_sequence
+		        COALESCE(p.status, 'complete') AS enrichment_status,
+		        COALESCE(p.error, '') AS enrichment_error,
+		        COALESCE(p.target_sequence, 1) AS enrichment_target_sequence
 		 FROM issues i
 		 LEFT JOIN issue_enrichment_projections p ON p.issue_id = i.id
 		 WHERE i.id = ANY($1)`,
