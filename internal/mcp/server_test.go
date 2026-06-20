@@ -267,6 +267,40 @@ func TestHandleListMemoriesRejectsInvalidStatus(t *testing.T) {
 	}
 }
 
+func TestHandleSearchIssuesSurfacesMemories(t *testing.T) {
+	t.Parallel()
+
+	handler := newTestHandlers()
+	createTestIssue(t, handler, "Safari PDF export fails after tapping share twice", "Casey")
+	if _, err := handler.memories.CreateMemory(context.Background(), memories.CreateMemoryInput{
+		Title:     "Safari export uses the print pipeline",
+		Body:      "Use the print pipeline for Safari PDF export because direct canvas export loses pagination.",
+		Kind:      domain.MemoryKindDecision,
+		CreatedBy: "Casey",
+	}); err != nil {
+		t.Fatalf("seed memory: %v", err)
+	}
+
+	result, err := handler.handleSearchIssues(context.Background(), toolRequest(map[string]any{
+		"query": "safari pdf export",
+		"limit": 5,
+	}))
+	if err != nil {
+		t.Fatalf("handleSearchIssues returned error: %v", err)
+	}
+	if result.IsError {
+		t.Fatalf("expected success result, got error: %s", firstText(result))
+	}
+
+	payload, ok := result.StructuredContent.(searchIssuesResult)
+	if !ok {
+		t.Fatalf("expected searchIssuesResult structured content, got %T", result.StructuredContent)
+	}
+	if len(payload.Memories) == 0 {
+		t.Fatal("expected related memories surfaced alongside issue search results")
+	}
+}
+
 func TestHandleSearchMemories(t *testing.T) {
 	t.Parallel()
 
@@ -363,9 +397,9 @@ func TestHandleSearchIssues(t *testing.T) {
 		t.Fatalf("expected success result, got error: %s", firstText(result))
 	}
 
-	response, ok := result.StructuredContent.(issuemap.SearchResponse)
+	response, ok := result.StructuredContent.(searchIssuesResult)
 	if !ok {
-		t.Fatalf("expected issuemap.SearchResponse structured content, got %T", result.StructuredContent)
+		t.Fatalf("expected searchIssuesResult structured content, got %T", result.StructuredContent)
 	}
 	if len(response.RelatedIssues) == 0 {
 		t.Fatal("expected related issues in search response")

@@ -15,11 +15,24 @@ import (
 	"sortit/internal/issues"
 	issuecmd "sortit/internal/issues/commands"
 	issueviews "sortit/internal/issues/views"
+	issuemap "sortit/internal/map"
 	"sortit/internal/mapview"
 	"sortit/internal/memories"
 	"sortit/internal/people"
 	"sortit/internal/search"
 )
+
+// searchIssuesMemoryLimit caps how many related memories ride along with issue
+// search results — a passive surfacing, not an exhaustive recall.
+const searchIssuesMemoryLimit = 3
+
+// searchIssuesResult augments issue search with the memories most relevant to
+// the same query, so an agent that searches before creating also sees prior
+// decisions, constraints, and patterns without a separate recall call.
+type searchIssuesResult struct {
+	issuemap.SearchResponse
+	Memories []memories.RecalledMemory `json:"memories,omitempty"`
+}
 
 type ServerConfig struct {
 	CreateIssue      issuecmd.CreateIssueHandler
@@ -640,7 +653,18 @@ func (h *handlers) handleSearchIssues(ctx context.Context, req mcp.CallToolReque
 		return toolResultError(err), nil
 	}
 
-	return jsonResult(response)
+	result := searchIssuesResult{SearchResponse: response}
+	// Surface the memories most relevant to the same query, so searching before
+	// creating also brings prior decisions into the loop without a separate
+	// call. Best-effort: a recall failure must not fail the issue search. (The
+	// query is re-embedded here; issue search does not return its embedding.)
+	if h.memories != nil {
+		if recalled, rerr := h.memories.RecallMemories(ctx, query, memories.RecallOptions{Limit: searchIssuesMemoryLimit}); rerr == nil {
+			result.Memories = recalled
+		}
+	}
+
+	return jsonResult(result)
 }
 
 func (h *handlers) handleRefineIssues(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
