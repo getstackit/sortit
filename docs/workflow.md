@@ -89,7 +89,7 @@ sortit issues explore issue-000001
 
 The **map** is the visual counterpart: position comes from tag/factor structure (issues near each other share tag relevance), while edges come from text-embedding similarity. Two issues can sit far apart but be edge-connected (different tags, similar wording), or sit close with no edge (similar structure, actually different topics). Both are signals worth curating on.
 
-Agents can also run librarian-style curation passes. Candidate detection finds suspicious duplicates, stale issues, enrichment problems, and quiet or redundant memories; the agent reads the actual issues, memories, and code context, then files **propose-only** curation moves. A human accepts or rejects those proposals.
+Agents can also run librarian-style curation passes — packaged as the **sortit-curate** skill (Skill tool, or `/sortit-curate`). Candidate detection finds suspicious duplicates, stale issues, enrichment problems, and quiet or redundant memories; the agent reads the actual issues, memories, and code context, then files **propose-only** curation moves. A human accepts or rejects those proposals. The loop is: pull candidates → judge with code context → file proposals → summarize for review.
 
 ```bash
 sortit curation candidates duplicates
@@ -219,6 +219,6 @@ That feedback edge is what makes the corpus an asset rather than a log — and w
 5. **Assign** owners; humans and agents use **next** to pull personalized work.
 6. When work teaches something durable, create or accept a **memory** with source issues as provenance.
 7. **Close** what's done; **reopen** what regresses.
-8. Periodically, an agent runs a librarian pass: **diagnose** tag health, draft curation proposals, synthesize memory proposals, and summarize what needs human review.
+8. Periodically, an agent runs a librarian pass (the **sortit-curate** skill): **diagnose** tag health, draft curation proposals, synthesize memory proposals, and summarize what needs human review.
 
 The discipline that makes Sortit compound is small, repeatable, and cheap per use: search before you create, save follow-on work instead of losing it in chat, separate *refine* from *progress*, curate relationships explicitly, and turn durable lessons into memories with provenance. Each habit costs a moment now and pays out on every future retrieval. Skip them and the corpus depreciates — duplicates pile up, tags drift, knowledge leaks into chat. Keep them and every task starts from a richer, sharper corpus than the last.

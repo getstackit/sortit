@@ -200,7 +200,11 @@ sortit agent install --format=claude --instructions   # also add managed always-
 
 Each format gets an independently authored skill tree (Claude-oriented frontmatter
 and the Skill tool / `/sortit-*` handoffs; Codex-oriented metadata and `$sortit-*`
-invocation). `--instructions` upserts a managed Sortit workflow block into the
+invocation). Most skills map one-to-one onto a verb above, but two are composite:
+**sortit-curate** runs the full librarian pass — pull curation candidates, judge them
+against the code, and file propose-only moves (curation candidates and proposals live
+on the CLI/API, not as MCP tools) — and **sortit-wrap-up** runs the end-of-turn
+checklist. `--instructions` upserts a managed Sortit workflow block into the
 agent's persistent instruction file (`~/.claude/CLAUDE.md` or `~/.codex/AGENTS.md`)
 that reinforces search-before-create, recall-before-decide, progress-vs-refine, and
 the wrap-up checklist. See [Workflow](./workflow.md) for the disciplines these skills
