@@ -30,5 +30,6 @@ Useful flags:
 2. If results are broad, add tags, assignee, or `--status all`.
 3. Open the strongest hit with `command sortit issues get <id>`.
 4. If the user wants nearby work around a hit, hand off to the **sortit-explore** skill (Skill tool, or `/sortit-explore <id>`).
+5. Recall durable decisions and constraints too — searching issues finds open work, but a prior decision may already settle the question. Hand off to the **sortit-recall** skill (Skill tool, or `/sortit-recall <query>`). MCP `search_issues` also returns related memories alongside its results.
 
-After presenting hits, use AskUserQuestion to offer the next step: open a specific hit (`command sortit issues get <id>`), explore nearby work (sortit-explore), or refine the search.
+After presenting hits, use AskUserQuestion to offer the next step: open a specific hit (`command sortit issues get <id>`), explore nearby work (sortit-explore), recall related memories (sortit-recall), or refine the search.

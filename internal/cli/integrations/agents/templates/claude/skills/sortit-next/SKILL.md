@@ -30,7 +30,13 @@ If `sortit mine` returns open issues:
 command sortit issues get <issue-id>
 ```
 
-3. If the user wants adjacent work or a broader thread, explore it. Hand off to the **sortit-explore** skill (Skill tool, or `/sortit-explore <issue-id>`), or run:
+3. Recall durable knowledge before starting — prior decisions, constraints, and patterns for this area should guide the work, not be rediscovered. Hand off to the **sortit-recall** skill (Skill tool, or `/sortit-recall <query>`), or run:
+
+```bash
+command sortit memory search "<the issue's area or summary>"
+```
+
+4. If the user wants adjacent work or a broader thread, explore it. Hand off to the **sortit-explore** skill (Skill tool, or `/sortit-explore <issue-id>`), or run:
 
 ```bash
 command sortit issues explore <issue-id>

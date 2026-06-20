@@ -24,13 +24,19 @@ If `sortit mine` returns open issues:
 command sortit issues get <issue-id>
 ```
 
-3. If the user wants adjacent work or a broader thread, explore it:
+3. Recall durable knowledge before starting — prior decisions, constraints, and patterns for this area should guide the work, not be rediscovered. Use `$sortit-recall`, or run:
+
+```bash
+command sortit memory search "<the issue's area or summary>"
+```
+
+4. If the user wants adjacent work or a broader thread, explore it:
 
 ```bash
 command sortit issues explore <issue-id>
 ```
 
-Use `$sortit-get` for full issue details and `$sortit-explore` for nearby work.
+Use `$sortit-get` for full issue details, `$sortit-recall` for prior decisions, and `$sortit-explore` for nearby work.
 
 ## Fallback Flow
 

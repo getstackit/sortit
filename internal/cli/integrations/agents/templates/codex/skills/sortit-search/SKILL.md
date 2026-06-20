@@ -27,3 +27,4 @@ Useful flags:
 2. If results are broad, add tags, assignee, or `--status all`.
 3. Open the strongest hit with `command sortit issues get <id>`.
 4. If the user wants nearby work around a hit, use `$sortit-explore`.
+5. Recall durable decisions and constraints too — searching issues finds open work, but a prior decision may already settle the question. Use `$sortit-recall`. MCP `search_issues` also returns related memories alongside its results.

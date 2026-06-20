@@ -196,6 +196,7 @@ func sortitInstructionBlock(format agentSkillFormat, version string) string {
 		"Use Sortit as the durable work loop during coding, review, planning, and debugging.\n\n" +
 		"- " + agentNote + "\n" +
 		"- Search Sortit before creating follow-on work.\n" +
+		"- Recall relevant memories before deciding — prior decisions, constraints, and patterns should guide the work, not be rediscovered or contradicted.\n" +
 		"- Record progress on the relevant issue when meaningful work is done.\n" +
 		"- Create or refine follow-on issues instead of leaving deferred work only in chat.\n" +
 		"- Create a memory for durable decisions, lessons, constraints, patterns, or references.\n" +

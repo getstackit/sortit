@@ -28,6 +28,7 @@ var skillDefinitions = []skillDefinition{
 	{name: "sortit-refine", summary: "Append refinement context to issues"},
 	{name: "sortit-progress", summary: "Log progress on issues"},
 	{name: "sortit-memory", summary: "Create or review durable Sortit memories"},
+	{name: "sortit-recall", summary: "Recall durable memories relevant to the task"},
 	{name: "sortit-wrap-up", summary: "Run the end-of-turn Sortit checklist"},
 	{name: "sortit-close", summary: "Close one or more issues"},
 	{name: "sortit-assign", summary: "Assign or unassign issues"},

@@ -21,7 +21,8 @@ Sortit current without turning the user's chat into the only record.
    - If a match exists, refine or progress that issue instead.
 
 3. Durable knowledge learned?
-   - Hand off to the **sortit-memory** skill (Skill tool, or `/sortit-memory`).
+   - Recall first — hand off to the **sortit-recall** skill (Skill tool, or `/sortit-recall <topic>`), or run `command sortit memory search "<topic>"` — so you reinforce or supersede an existing memory instead of creating a near-duplicate.
+   - Then hand off to the **sortit-memory** skill (Skill tool, or `/sortit-memory`).
    - Create a memory for clear decisions, lessons, constraints, patterns, or references.
    - Prefer a proposal/synthesis path when the knowledge is inferred or needs human review.
 
@@ -38,5 +39,7 @@ Sortit current without turning the user's chat into the only record.
 2. Search before creating follow-on issues.
 3. Use progress for work done; use refine for changes to what the issue is.
 4. Create memories only when future humans or agents should retrieve the fact.
-5. Keep final responses concise: mention the Sortit issue IDs or memory IDs that
+5. Recall before you decide. If this turn made a decision without recalling
+   related memories, recall now — and surface any prior decision it contradicts.
+6. Keep final responses concise: mention the Sortit issue IDs or memory IDs that
    matter, not every command run.

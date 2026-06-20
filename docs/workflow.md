@@ -59,6 +59,8 @@ If a strong match exists, refine or add progress to it instead of creating a nea
 
 Agents should do this automatically. Before filing follow-on work from a code review, failed test, user report, or implementation note, the agent should search the corpus, inspect any relevant memories, and bring back the strongest related context. That context belongs in the work loop before the agent decides whether to create, refine, progress, link, or split.
 
+Recall is a first-class operation, not just an enrichment side effect. `sortit memory search "<what you're about to do>"` (or the `search_memories` MCP tool) returns the durable decisions, constraints, and patterns most relevant to the work, ranked by similarity — so an agent recalls before it decides, the same way it searches before it creates. MCP issue search also rides related memories along with its results, so the habit of searching first surfaces prior decisions for free.
+
 ### 2. Capture
 
 Drop the raw text in. Don't pre-format, pre-categorize, or summarize — the canonicalizer and tagger do that. The more faithful the raw signal (real error text, the customer's actual words), the better the enrichment.
@@ -143,6 +145,8 @@ For agents, `next` is the bridge between the corpus and the current work loop. I
 Issues track work. **Memories** track durable knowledge: decisions, lessons, constraints, patterns, and references that should remain useful after the issue closes. Memories live in the same tag and embedding space as issues, show up as map landmarks, and are retrieved during enrichment as prior-decision context.
 
 This retrieval is where memory compounds hardest: a decision recorded once is pulled back in as context on *every* future related issue — one deposit, many payouts. The more faithfully you anchor it (`--source-issue` for provenance, `--anchor-tag` for placement), the more often and more precisely it pays out.
+
+That payout is no longer only automatic. Agents can recall memories on demand with `sortit memory search` (or the `search_memories` MCP tool), and MCP issue search returns related memories alongside issues — so prior decisions reach the work loop whether or not an enrichment happens to pull them in. Recall before you decide; deposit when you learn.
 
 Create a memory when the team learns something that should guide future work:
 

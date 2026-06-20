@@ -11,6 +11,17 @@ Memories are permanent knowledge artifacts. Use them for knowledge that should
 outlive an issue or chat: decisions, lessons, constraints, patterns, and
 references.
 
+## Recall Before You Decide
+
+Memory is a two-way loop. Before deciding or implementing, **recall** the durable
+knowledge that bears on the task — prior decisions and constraints should guide
+the work, not be rediscovered or contradicted. Hand off to the **sortit-recall**
+skill (Skill tool, or `/sortit-recall <query>`), or recall directly:
+
+```bash
+command sortit memory search "how does Safari PDF export work"
+```
+
 ## When To Create A Memory
 
 Create a memory when the session contains durable phrasing such as:
