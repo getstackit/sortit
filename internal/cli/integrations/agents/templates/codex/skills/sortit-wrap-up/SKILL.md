@@ -25,7 +25,7 @@ Sortit current without turning the user's chat into the only record.
    - Prefer a proposal/synthesis path when the knowledge is inferred or needs human review.
 
 4. Related work found?
-   - Use `command sortit issues explore <id>`.
+   - Use `command sortit issues explore <id>` (or `$sortit-explore`).
    - Link, split, combine, or draft curation proposals when the relationship is clear.
 
 5. Human review needed?

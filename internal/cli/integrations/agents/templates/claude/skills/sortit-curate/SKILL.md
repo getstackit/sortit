@@ -1,7 +1,7 @@
 ---
 name: sortit-curate
 description: Act as the Sortit librarian — sweep the corpus for curation candidates (duplicates, stale issues, enrichment health, quiet/redundant memories), judge them against the codebase, and file propose-only moves for a human to accept. Use to run a curation pass or keep the issue/memory graph healthy.
-allowed-tools: Bash(command sortit:*), Bash(sortit:*), Read, Grep, Glob
+allowed-tools: Bash(command sortit:*), Bash(sortit:*), Read, Grep, Glob, Skill
 version: {{VERSION}}
 ---
 
@@ -49,6 +49,11 @@ evidence:
 
 When unsure, **don't propose**. A noisy queue erodes trust faster than a missed
 duplicate.
+
+Hand off to the **sortit-explore** skill (Skill tool, or `/sortit-explore <id>`) to
+pull adjacent work around a candidate issue, and the **sortit-diagnose** skill (Skill
+tool, or `/sortit-diagnose`) to inspect factor-model quality before proposing
+re-enrichment.
 
 ## 3. File propose-only moves
 

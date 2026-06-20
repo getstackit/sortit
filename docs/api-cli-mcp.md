@@ -34,6 +34,29 @@ Authenticated issue routes:
 - `POST /api/v1/issues/combine`
 - `POST /api/v1/issues/link`
 
+Memory routes:
+
+- `GET /api/v1/memories`
+- `GET /api/v1/memories/search`
+- `POST /api/v1/memories`
+- `GET /api/v1/memories/{id}`
+- `POST /api/v1/memories/{id}/supersede`
+- `POST /api/v1/memories/{id}/archive`
+- `GET /api/v1/memories/proposals`
+- `POST /api/v1/memories/proposals/synthesize`
+- proposal accept/reject under `/api/v1/memories/proposals/{id}/accept` and `/reject`
+
+Curation routes (propose-only; a human accepts or rejects each move):
+
+- `GET /api/v1/curation/candidates/duplicates`
+- `GET /api/v1/curation/candidates/stale`
+- `GET /api/v1/curation/candidates/health`
+- `GET /api/v1/curation/candidates/memories`
+- `GET /api/v1/curation/proposals`
+- `POST /api/v1/curation/proposals`
+- `GET /api/v1/curation/proposals/{id}`
+- proposal accept/reject under `/api/v1/curation/proposals/{id}/accept` and `/reject`
+
 Other authenticated routes:
 
 - `GET /api/v1/tags`
@@ -94,7 +117,18 @@ go run ./apps/cli tags list
 go run ./apps/cli people profile "Ada"
 go run ./apps/cli people correlations
 go run ./apps/cli mine
+go run ./apps/cli memory search "Safari export pipeline decision"
+go run ./apps/cli memory create --title "Safari export uses the print pipeline" --kind decision --anchor-tag export --source-issue issue-000001 "Use the print pipeline for Safari PDF export."
+go run ./apps/cli memory proposals synthesize
+go run ./apps/cli curation candidates duplicates
+go run ./apps/cli curation proposals list
 ```
+
+Memory and curation are first-class CLI surfaces: `memory search` is on-demand
+recall (the read side of memory), `memory create` records durable knowledge with
+provenance (`--source-issue`) and placement (`--anchor-tag`), and the `curation`
+group drafts propose-only moves a human accepts or rejects. See
+[Workflow](./workflow.md) for when to reach for each.
 
 The CLI defaults to `http://localhost:8081/api/v1` unless configured otherwise. It also accepts `--api-url`, `--token`, and `--config`.
 
@@ -132,6 +166,12 @@ Available MCP tools:
 - `search_issues`
 - `get_issue`
 - `list_tags`
+- `create_memory`
+- `list_memories`
+- `get_memory`
+- `search_memories`
+- `synthesize_memory_proposals`
+- `list_memory_proposals`
 - `refine_issues`
 - `progress_issues`
 - `close_issues`
@@ -142,3 +182,26 @@ Available MCP tools:
 - `explore_issue`
 - `get_person_profile`
 - `work_correlations`
+
+Issue search also returns related memories alongside its results, so recall reaches
+the work loop even without a separate `search_memories` call.
+
+## Agent skills
+
+The same verbs are installed as agent skills so assistants can run the workflow
+without leaving their task loop. `sortit agent install` writes per-format skill
+files and is itself authored per agent:
+
+```bash
+sortit agent install --format=claude       # ~/.claude/skills/sortit-*
+sortit agent install --format=codex        # ~/.codex/skills/sortit-*
+sortit agent install --format=claude --instructions   # also add managed always-on guidance
+```
+
+Each format gets an independently authored skill tree (Claude-oriented frontmatter
+and the Skill tool / `/sortit-*` handoffs; Codex-oriented metadata and `$sortit-*`
+invocation). `--instructions` upserts a managed Sortit workflow block into the
+agent's persistent instruction file (`~/.claude/CLAUDE.md` or `~/.codex/AGENTS.md`)
+that reinforces search-before-create, recall-before-decide, progress-vs-refine, and
+the wrap-up checklist. See [Workflow](./workflow.md) for the disciplines these skills
+encode.
