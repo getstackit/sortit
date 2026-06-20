@@ -301,6 +301,23 @@ type IssueDetailReader interface {
 	GetIssueDetail(context.Context, string) (Issue, error)
 }
 
+// IssueActivity is the minimal set of issue events needed to compute velocity:
+// the issue's posts (refinements/progress) and its links. It deliberately omits
+// operations, participants, references, and enrichment so velocity hydration can
+// batch-load many issues without paying for full issue detail.
+type IssueActivity struct {
+	Posts []IssuePost
+	Links []IssueLink
+}
+
+// IssueActivityReader batch-loads velocity inputs for many issues in a fixed
+// number of queries, replacing the per-issue GetIssueDetail fan-out that search
+// and explore hydration would otherwise perform. The returned map is keyed by
+// issue ID; callers should treat a missing key as "no activity".
+type IssueActivityReader interface {
+	LoadIssueActivity(context.Context, []string) (map[string]IssueActivity, error)
+}
+
 type IssueDetailStore interface {
 	GetIssueDetailBase(context.Context, string) (Issue, error)
 	ListIssueDetailPosts(context.Context, string) ([]IssuePost, error)
