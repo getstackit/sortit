@@ -616,6 +616,80 @@ func TestDebugFactorWeightsEndpointReturnsReviewQueue(t *testing.T) {
 	}
 }
 
+func TestDebugTagHealthEndpointFlagsMisTaggedIssue(t *testing.T) {
+	const reviewIssueID = "issue-review"
+
+	store := newPostgresIssueStore(t, nil)
+	if err := store.Replace(context.Background(), []issues.Issue{
+		// Balanced so the corpus mean is zero and centering is a no-op; the
+		// well-tagged opens and closed ballast stay out of the drift list.
+		{ID: "issue-a", Raw: "a", Status: issues.StatusOpen, TagScores: []issues.TagRelevance{{Tag: "alpha", Relevance: 1}}, Embedding: []float64{1, 0}, CreatedBy: "Casey", CreatedAt: issues.FixtureIssues()[0].CreatedAt},
+		{ID: "issue-b", Raw: "b", Status: issues.StatusOpen, TagScores: []issues.TagRelevance{{Tag: "alpha", Relevance: 1}}, Embedding: []float64{1, 0}, CreatedBy: "Casey", CreatedAt: issues.FixtureIssues()[1].CreatedAt},
+		{ID: "issue-c", Raw: "c", Status: issues.StatusOpen, TagScores: []issues.TagRelevance{{Tag: "alpha", Relevance: 1}}, Embedding: []float64{1, 0}, CreatedBy: "Casey", CreatedAt: issues.FixtureIssues()[2].CreatedAt},
+		{ID: "issue-d", Raw: "d", Status: issues.StatusOpen, TagScores: []issues.TagRelevance{{Tag: "alpha", Relevance: 1}}, Embedding: []float64{1, 0}, CreatedBy: "Casey", CreatedAt: issues.FixtureIssues()[3].CreatedAt},
+		{ID: "issue-ballast-a", Raw: "ballast", Status: issues.StatusClosed, TagScores: []issues.TagRelevance{{Tag: "alpha", Relevance: 1}}, Embedding: []float64{-1, 0}, CreatedBy: "Casey", CreatedAt: issues.FixtureIssues()[0].CreatedAt},
+		{ID: "issue-ballast-b", Raw: "ballast", Status: issues.StatusClosed, TagScores: []issues.TagRelevance{{Tag: "alpha", Relevance: 1}}, Embedding: []float64{-1, 0}, CreatedBy: "Casey", CreatedAt: issues.FixtureIssues()[1].CreatedAt},
+		{ID: "issue-ballast-c", Raw: "ballast", Status: issues.StatusClosed, TagScores: []issues.TagRelevance{{Tag: "alpha", Relevance: 1}}, Embedding: []float64{-1, 0}, CreatedBy: "Casey", CreatedAt: issues.FixtureIssues()[2].CreatedAt},
+		{ID: "issue-ballast-d", Raw: "ballast", Status: issues.StatusClosed, TagScores: []issues.TagRelevance{{Tag: "alpha", Relevance: 1}}, Embedding: []float64{-1, 0}, CreatedBy: "Casey", CreatedAt: issues.FixtureIssues()[3].CreatedAt},
+		{ID: "issue-ballast-e", Raw: "ballast", Status: issues.StatusClosed, TagScores: []issues.TagRelevance{{Tag: "alpha", Relevance: 1}}, Embedding: []float64{0, -1}, CreatedBy: "Casey", CreatedAt: issues.FixtureIssues()[4].CreatedAt},
+		{
+			ID:        reviewIssueID,
+			Raw:       "beta concept hidden behind alpha tag",
+			Status:    issues.StatusOpen,
+			CreatedBy: "Casey",
+			CreatedAt: issues.FixtureIssues()[4].CreatedAt,
+			TagScores: []issues.TagRelevance{
+				{Tag: "alpha", Relevance: 0.91, Suggested: true, Description: "legacy broad alpha bucket"},
+			},
+			Embedding: []float64{0, 1},
+		},
+	}); err != nil {
+		t.Fatalf("replace issues: %v", err)
+	}
+	if err := store.UpsertTags(context.Background(), []issues.Tag{
+		{Name: "alpha", Embedding: []float64{1, 0}},
+		{Name: "beta", Embedding: []float64{0, 1}},
+	}); err != nil {
+		t.Fatalf("upsert tags: %v", err)
+	}
+
+	server := NewServer(ServerConfig{
+		CORSOrigins: []string{"http://localhost:3000"},
+		APIPrefixes: []string{"/api"},
+		IssueStore:  store,
+	})
+
+	req := httptest.NewRequest(http.MethodGet, "/api/ui/debug/tag-health", nil)
+	rec := httptest.NewRecorder()
+	server.Handler().ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d", rec.Code)
+	}
+
+	var payload diagnostics.DebugTagHealthResult
+	if err := json.NewDecoder(rec.Body).Decode(&payload); err != nil {
+		t.Fatalf("decode payload: %v", err)
+	}
+
+	if !payload.Computed {
+		t.Fatal("expected drift computed")
+	}
+	if len(payload.HighDriftIssues) == 0 {
+		t.Fatal("expected a high-drift issue")
+	}
+	top := payload.HighDriftIssues[0]
+	if top.ID != reviewIssueID {
+		t.Fatalf("expected %s first, got %#v", reviewIssueID, payload.HighDriftIssues)
+	}
+	if len(top.SpuriousTags) == 0 || top.SpuriousTags[0].Tag != "alpha" || top.SpuriousTags[0].Delta >= 0 {
+		t.Fatalf("expected alpha spurious (Δ<0), got %#v", top.SpuriousTags)
+	}
+	if len(top.MissingTags) == 0 || top.MissingTags[0].Tag != "beta" || top.MissingTags[0].Delta <= 0 {
+		t.Fatalf("expected beta missing (Δ>0), got %#v", top.MissingTags)
+	}
+}
+
 func TestDebugInvalidateMapProjectionEndpoint(t *testing.T) {
 	store := &debugInvalidationStore{Store: issues.NewInMemoryStore(nil)}
 	server := NewServer(ServerConfig{
