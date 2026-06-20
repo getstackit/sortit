@@ -504,6 +504,29 @@ func (s *PostgresStore) GetIssueDetail(ctx context.Context, id string) (Issue, e
 	return applyIssueEnrichmentStates([]Issue{issue}, states)[0], nil
 }
 
+// LoadIssueActivity batch-loads the velocity inputs (posts + links) for the
+// given issue IDs in two queries, regardless of how many issues are requested.
+// It replaces the per-issue GetIssueDetail fan-out that search/explore velocity
+// hydration would otherwise perform (one GetIssueDetail per candidate, each
+// running 5-6 queries) with a single pair of batched reads.
+func (s *PostgresStore) LoadIssueActivity(ctx context.Context, ids []string) (map[string]IssueActivity, error) {
+	ids = normalizeIssueIDs(ids)
+	if len(ids) == 0 {
+		return map[string]IssueActivity{}, nil
+	}
+
+	q := loggingIssueQuerier{inner: s.queries, logger: s.logger}
+	postRows, err := q.ListIssuePostsForIssues(ctx, ids)
+	if err != nil {
+		return nil, fmt.Errorf("list issue posts for issues: %w", err)
+	}
+	linkRows, err := q.ListIssueLinksForIssues(ctx, ids)
+	if err != nil {
+		return nil, fmt.Errorf("list issue links for issues: %w", err)
+	}
+	return groupIssueActivity(ids, postRows, linkRows), nil
+}
+
 func (s *PostgresStore) GetIssueDetailBase(ctx context.Context, id string) (Issue, error) {
 	return getIssueDetailBase(ctx, loggingIssueQuerier{
 		inner:  s.queries,
@@ -1020,7 +1043,9 @@ type issueQuerier interface {
 	GetIssue(context.Context, string) (issuesdb.GetIssueRow, error)
 	ListIssueReferencesByIDs(context.Context, []string) ([]issuesdb.ListIssueReferencesByIDsRow, error)
 	ListIssuePosts(context.Context, string) ([]issuesdb.IssuePost, error)
+	ListIssuePostsForIssues(context.Context, []string) ([]issuesdb.IssuePost, error)
 	ListIssueLinksForIssue(context.Context, issuesdb.ListIssueLinksForIssueParams) ([]issuesdb.IssueLink, error)
+	ListIssueLinksForIssues(context.Context, []string) ([]issuesdb.IssueLink, error)
 	ListIssueOperationsForIssue(context.Context, string) ([]issuesdb.IssueOperation, error)
 	ListIssueOperationParticipantsForOperations(context.Context, []string) ([]issuesdb.IssueOperationParticipant, error)
 }
@@ -1058,6 +1083,16 @@ func (q loggingIssueQuerier) ListIssuePosts(ctx context.Context, id string) (row
 	return q.inner.ListIssuePosts(ctx, id)
 }
 
+func (q loggingIssueQuerier) ListIssuePostsForIssues(ctx context.Context, ids []string) (rows []issuesdb.IssuePost, err error) {
+	defer func(start time.Time) {
+		logSQLQueryTiming(ctx, q.logger, "ListIssuePostsForIssues", start,
+			slog.Int("issue_count", len(ids)),
+			slog.Int("row_count", len(rows)),
+		)
+	}(time.Now())
+	return q.inner.ListIssuePostsForIssues(ctx, ids)
+}
+
 func (q loggingIssueQuerier) ListIssueLinksForIssue(
 	ctx context.Context,
 	arg issuesdb.ListIssueLinksForIssueParams,
@@ -1070,6 +1105,16 @@ func (q loggingIssueQuerier) ListIssueLinksForIssue(
 		)
 	}(time.Now())
 	return q.inner.ListIssueLinksForIssue(ctx, arg)
+}
+
+func (q loggingIssueQuerier) ListIssueLinksForIssues(ctx context.Context, ids []string) (rows []issuesdb.IssueLink, err error) {
+	defer func(start time.Time) {
+		logSQLQueryTiming(ctx, q.logger, "ListIssueLinksForIssues", start,
+			slog.Int("issue_count", len(ids)),
+			slog.Int("row_count", len(rows)),
+		)
+	}(time.Now())
+	return q.inner.ListIssueLinksForIssues(ctx, ids)
 }
 
 func (q loggingIssueQuerier) ListIssueOperationsForIssue(
@@ -1431,6 +1476,65 @@ func issueLinkFromQuery(row issuesdb.IssueLink) IssueLink {
 		Note:          strings.TrimSpace(row.Note),
 		OperationID:   strings.TrimSpace(row.OperationID),
 	}
+}
+
+// normalizeIssueIDs trims whitespace and drops empty/duplicate IDs while
+// preserving first-seen order, so batch loads never send blank or repeated keys.
+func normalizeIssueIDs(ids []string) []string {
+	out := make([]string, 0, len(ids))
+	seen := make(map[string]struct{}, len(ids))
+	for _, raw := range ids {
+		id := strings.TrimSpace(raw)
+		if id == "" {
+			continue
+		}
+		if _, ok := seen[id]; ok {
+			continue
+		}
+		seen[id] = struct{}{}
+		out = append(out, id)
+	}
+	return out
+}
+
+// groupIssueActivity buckets batch-loaded post and link rows by issue ID. Every
+// requested ID gets an entry (empty when it has no activity). A link is an
+// activity event for both endpoints it touches, mirroring the per-issue
+// ListIssueLinksForIssue(source=id, target=id) load that velocity hydration
+// previously relied on; a self-referential link is attached only once.
+func groupIssueActivity(ids []string, postRows []issuesdb.IssuePost, linkRows []issuesdb.IssueLink) map[string]IssueActivity {
+	requested := make(map[string]struct{}, len(ids))
+	activity := make(map[string]IssueActivity, len(ids))
+	for _, id := range ids {
+		requested[id] = struct{}{}
+		activity[id] = IssueActivity{}
+	}
+
+	for _, row := range postRows {
+		if _, ok := requested[row.IssueID]; !ok {
+			continue
+		}
+		entry := activity[row.IssueID]
+		entry.Posts = append(entry.Posts, issuePostFromQuery(row))
+		activity[row.IssueID] = entry
+	}
+
+	for _, row := range linkRows {
+		link := issueLinkFromQuery(row)
+		for _, endpoint := range []string{link.SourceIssueID, link.TargetIssueID} {
+			if _, ok := requested[endpoint]; !ok {
+				continue
+			}
+			entry := activity[endpoint]
+			entry.Links = append(entry.Links, link)
+			activity[endpoint] = entry
+			if link.SourceIssueID == link.TargetIssueID {
+				break
+			}
+		}
+	}
+
+	return activity
 }
 
 func issueOperationFromQuery(row issuesdb.IssueOperation) IssueOperation {

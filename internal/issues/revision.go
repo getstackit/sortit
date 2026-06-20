@@ -279,6 +279,24 @@ func (s *ObservedStore) GetIssueDetail(ctx context.Context, id string) (Issue, e
 	return s.base.Get(ctx, id)
 }
 
+func (s *ObservedStore) LoadIssueActivity(ctx context.Context, ids []string) (map[string]IssueActivity, error) {
+	if reader, ok := s.base.(IssueActivityReader); ok {
+		return reader.LoadIssueActivity(ctx, ids)
+	}
+	// Fallback for bases without batch support (e.g. the in-memory store): derive
+	// activity from per-issue detail. This mirrors the pre-batch hydration, so a
+	// non-batching base behaves exactly as before.
+	activity := make(map[string]IssueActivity, len(ids))
+	for _, id := range ids {
+		detail, err := s.GetIssueDetail(ctx, id)
+		if err != nil {
+			continue
+		}
+		activity[id] = IssueActivity{Posts: detail.Discussion, Links: detail.Links}
+	}
+	return activity, nil
+}
+
 func (s *ObservedStore) GetIssueDetailBase(ctx context.Context, id string) (Issue, error) {
 	if detailStore, ok := s.base.(IssueDetailStore); ok {
 		return detailStore.GetIssueDetailBase(ctx, id)
