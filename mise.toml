@@ -31,12 +31,15 @@ run = "goimports -w ."
 
 [tasks.compile]
 description = "Check Go compilation"
+# fmt rewrites .go files; wait for it when both run in the same invocation (e.g.
+# check:go) so we never compile a half-formatted tree. Does not trigger fmt on its own.
+wait_for = ["fmt"]
 run = "go build ./apps/... ./cmd/... ./internal/..."
 
 [tasks.test]
 description = "Run backend and frontend tests"
 run = """
-  go test ./apps/... ./cmd/... ./internal/...
+  go test -timeout=300s ./apps/... ./cmd/... ./internal/...
   npm run test
 """
 
@@ -62,6 +65,9 @@ run = "sh scripts/db-backup.sh"
 
 [tasks."lint:go"]
 description = "Run golangci-lint"
+# fmt rewrites .go files; wait for it when both run in the same invocation (check /
+# check:go) so we never lint a half-formatted tree. Does not trigger fmt on its own.
+wait_for = ["fmt"]
 run = """
   GOCACHE="${GOCACHE:-/tmp/sortit-gocache}" GOLANGCI_LINT_CACHE="${GOLANGCI_LINT_CACHE:-/tmp/sortit-golangci-lint-cache}" golangci-lint run ./apps/... ./cmd/... ./internal/...
 """
@@ -91,7 +97,10 @@ depends = ["lint:go", "lint:web"]
 
 [tasks."test:fast"]
 description = "Run backend tests"
-run = "go test ./apps/... ./cmd/... ./internal/..."
+# fmt rewrites .go files; wait for it when both run in the same invocation (check /
+# check:go) so we never test a half-formatted tree. Does not trigger fmt on its own.
+wait_for = ["fmt"]
+run = "go test -timeout=300s ./apps/... ./cmd/... ./internal/..."
 
 [tasks."check:web"]
 description = "Run frontend tests and build"
