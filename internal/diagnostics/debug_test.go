@@ -67,7 +67,7 @@ func TestDebugFactorWeightsReportsFallbackState(t *testing.T) {
 	}
 }
 
-func TestDebugFactorWeightsIncludesLowR2IssueStatus(t *testing.T) {
+func TestDebugFactorWeightsLowR2ExcludesClosedIssues(t *testing.T) {
 	ctx := context.Background()
 	store := issues.NewInMemoryStore([]issues.Issue{
 		// Embeddings sum to zero so runtime corpus-mean centering is a no-op
@@ -93,14 +93,87 @@ func TestDebugFactorWeightsIncludesLowR2IssueStatus(t *testing.T) {
 	}
 
 	statusByID := make(map[string]issues.IssueStatus, len(result.LowR2Issues))
+	found := make(map[string]bool, len(result.LowR2Issues))
 	for _, item := range result.LowR2Issues {
 		statusByID[item.ID] = item.Status
+		found[item.ID] = true
+	}
+	if !found["issue-open-low"] {
+		t.Fatal("expected issue-open-low in the low-R2 list")
 	}
 	if statusByID["issue-open-low"] != issues.StatusOpen {
 		t.Fatalf("issue-open-low status = %q, want %q", statusByID["issue-open-low"], issues.StatusOpen)
 	}
-	if statusByID["issue-closed-low"] != issues.StatusClosed {
-		t.Fatalf("issue-closed-low status = %q, want %q", statusByID["issue-closed-low"], issues.StatusClosed)
+	// The closed low-R² issue must be excluded — closed issues are not
+	// re-classification candidates.
+	if found["issue-closed-low"] {
+		t.Fatal("expected closed issues to be excluded from the low-R2 list")
+	}
+}
+
+func TestDebugFactorWeightsLowR2DeterministicOrder(t *testing.T) {
+	ctx := context.Background()
+	// Six open issues whose embeddings are orthogonal to the only tag, so they
+	// all land at R²=0 — the tie pile that used to surface in a random
+	// map-iteration order, truncated arbitrarily. Closed ballast (excluded from
+	// the list) zeroes the corpus mean so centering is a no-op. The seed order
+	// is deliberately shuffled; the result must come out sorted by (R², ID) and
+	// be identical across calls.
+	store := issues.NewInMemoryStore([]issues.Issue{
+		{ID: "issue-5", Raw: "5", Status: issues.StatusOpen, TagScores: []issues.TagRelevance{{Tag: "alpha", Relevance: 1}}, Embedding: unitVec64([]float64{0, 1, 0, 0})},
+		{ID: "issue-1", Raw: "1", Status: issues.StatusOpen, TagScores: []issues.TagRelevance{{Tag: "alpha", Relevance: 1}}, Embedding: unitVec64([]float64{0, 1, 0, 0})},
+		{ID: "issue-3", Raw: "3", Status: issues.StatusOpen, TagScores: []issues.TagRelevance{{Tag: "alpha", Relevance: 1}}, Embedding: unitVec64([]float64{0, 1, 0, 0})},
+		{ID: "issue-6", Raw: "6", Status: issues.StatusOpen, TagScores: []issues.TagRelevance{{Tag: "alpha", Relevance: 1}}, Embedding: unitVec64([]float64{0, 1, 0, 0})},
+		{ID: "issue-2", Raw: "2", Status: issues.StatusOpen, TagScores: []issues.TagRelevance{{Tag: "alpha", Relevance: 1}}, Embedding: unitVec64([]float64{0, 1, 0, 0})},
+		{ID: "issue-4", Raw: "4", Status: issues.StatusOpen, TagScores: []issues.TagRelevance{{Tag: "alpha", Relevance: 1}}, Embedding: unitVec64([]float64{0, 1, 0, 0})},
+		{ID: "ballast-1", Raw: "b", Status: issues.StatusClosed, TagScores: []issues.TagRelevance{{Tag: "alpha", Relevance: 1}}, Embedding: unitVec64([]float64{0, -1, 0, 0})},
+		{ID: "ballast-2", Raw: "b", Status: issues.StatusClosed, TagScores: []issues.TagRelevance{{Tag: "alpha", Relevance: 1}}, Embedding: unitVec64([]float64{0, -1, 0, 0})},
+		{ID: "ballast-3", Raw: "b", Status: issues.StatusClosed, TagScores: []issues.TagRelevance{{Tag: "alpha", Relevance: 1}}, Embedding: unitVec64([]float64{0, -1, 0, 0})},
+		{ID: "ballast-4", Raw: "b", Status: issues.StatusClosed, TagScores: []issues.TagRelevance{{Tag: "alpha", Relevance: 1}}, Embedding: unitVec64([]float64{0, -1, 0, 0})},
+		{ID: "ballast-5", Raw: "b", Status: issues.StatusClosed, TagScores: []issues.TagRelevance{{Tag: "alpha", Relevance: 1}}, Embedding: unitVec64([]float64{0, -1, 0, 0})},
+		{ID: "ballast-6", Raw: "b", Status: issues.StatusClosed, TagScores: []issues.TagRelevance{{Tag: "alpha", Relevance: 1}}, Embedding: unitVec64([]float64{0, -1, 0, 0})},
+	})
+	tagStore := &debugTagStore{}
+	catalog := tags.NewCatalogService(tagStore, nil, nil)
+	if err := catalog.EnsureStoredTags(ctx, []issues.Tag{
+		{Name: "alpha", Embedding: unitVec64([]float64{1, 0, 0, 0})},
+	}); err != nil {
+		t.Fatalf("ensure stored tags: %v", err)
+	}
+
+	handler := DebugFactorWeightsHandler{Store: store, Catalog: catalog}
+	want := []string{"issue-1", "issue-2", "issue-3", "issue-4", "issue-5", "issue-6"}
+
+	var first []string
+	for call := range 5 {
+		result, err := handler.Handle(ctx)
+		if err != nil {
+			t.Fatalf("handle debug factor weights: %v", err)
+		}
+		got := make([]string, len(result.LowR2Issues))
+		for i, item := range result.LowR2Issues {
+			got[i] = item.ID
+		}
+		if call == 0 {
+			first = got
+			if len(got) != len(want) {
+				t.Fatalf("low-R2 IDs = %v, want %v", got, want)
+			}
+			for i := range want {
+				if got[i] != want[i] {
+					t.Fatalf("low-R2 order = %v, want %v", got, want)
+				}
+			}
+			continue
+		}
+		if len(got) != len(first) {
+			t.Fatalf("call %d low-R2 IDs = %v, first call = %v", call, got, first)
+		}
+		for i := range first {
+			if got[i] != first[i] {
+				t.Fatalf("call %d low-R2 order = %v, first call = %v", call, got, first)
+			}
+		}
 	}
 }
 
