@@ -239,6 +239,31 @@ func (s *ObservedStore) UpsertMemoryProposal(ctx context.Context, proposal domai
 	return ErrMemoryProposalNotFound
 }
 
+func (s *ObservedStore) ListCurationProposals(ctx context.Context, status domain.CurationProposalStatus) ([]domain.CurationProposal, error) {
+	if ps, ok := s.base.(CurationProposalStore); ok {
+		return ps.ListCurationProposals(ctx, status)
+	}
+	return nil, nil
+}
+
+func (s *ObservedStore) GetCurationProposal(ctx context.Context, id string) (domain.CurationProposal, error) {
+	if ps, ok := s.base.(CurationProposalStore); ok {
+		return ps.GetCurationProposal(ctx, id)
+	}
+	return domain.CurationProposal{}, ErrCurationProposalNotFound
+}
+
+func (s *ObservedStore) UpsertCurationProposal(ctx context.Context, proposal domain.CurationProposal) error {
+	if ps, ok := s.base.(CurationProposalStore); ok {
+		if err := ps.UpsertCurationProposal(ctx, proposal); err != nil {
+			return err
+		}
+		s.tracker.Bump()
+		return nil
+	}
+	return ErrCurationProposalNotFound
+}
+
 func (s *ObservedStore) List(ctx context.Context) ([]Issue, error) {
 	return s.base.List(ctx)
 }

@@ -6,6 +6,7 @@ import (
 	"net/url"
 	"os"
 	"slices"
+	"strconv"
 	"strings"
 	"time"
 
@@ -109,6 +110,7 @@ Date:    ` + date,
 	rootCmd.AddCommand(newMineCmd(&opts))
 	rootCmd.AddCommand(newIssueCmd(&opts))
 	rootCmd.AddCommand(newMemoryCmd(&opts))
+	rootCmd.AddCommand(newCurationCmd(&opts))
 	rootCmd.AddCommand(newTagsCmd(&opts))
 	rootCmd.AddCommand(newPeopleCmd(&opts))
 	rootCmd.AddCommand(newDebugCmd(&opts))
@@ -682,6 +684,13 @@ func (q queryParams) add(key, value string) queryParams {
 func (q queryParams) addInt(key string, value int) queryParams {
 	if value > 0 {
 		q[key] = fmt.Sprintf("%d", value)
+	}
+	return q
+}
+
+func (q queryParams) addFloat(key string, value float64) queryParams {
+	if value > 0 {
+		q[key] = strconv.FormatFloat(value, 'f', -1, 64)
 	}
 	return q
 }

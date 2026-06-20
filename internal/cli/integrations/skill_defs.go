@@ -22,4 +22,5 @@ var skillDefinitions = []skillDefinition{
 	{name: "sortit-next", templatePath: "agents/templates/skills/sortit-next/SKILL.md"},
 	{name: "sortit-auth", templatePath: "agents/templates/skills/sortit-auth/SKILL.md"},
 	{name: "sortit-diagnose", templatePath: "agents/templates/skills/sortit-diagnose/SKILL.md"},
+	{name: "sortit-curate", templatePath: "agents/templates/skills/sortit-curate/SKILL.md"},
 }

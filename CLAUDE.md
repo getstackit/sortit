@@ -29,3 +29,23 @@ stackit submit                    # Submit all PRs
 
 Run `/stackit` for the full skill, or `/stack-status` to check current state.
 <!-- stackit:end -->
+
+## Validation & Pre-Submit Gate
+
+**Run `mise run check` and get it green before every `stackit submit`.** Submitting a
+red PR wastes a review cycle and, in a stack, blocks every PR above it. CI runs
+golangci-lint, eslint, backend tests (`go test`), web tests (vitest), and the web
+build — `mise run check` mirrors that locally.
+
+```bash
+mise run check        # fmt + lint + backend tests + web tests + build
+stackit submit        # only when check is green
+```
+
+- Backend tests need PostgreSQL up (`docker compose up -d`).
+- In a stack, fix a failure in the branch that introduced it (`stackit absorb`, or
+  `stackit checkout <branch>` → edit → `stackit modify -a`) so it propagates up via
+  restack — a green tip with red ancestors still fails the ancestor PRs' CI.
+
+See `.claude/rules/validation.md` (validation levels, golangci cache caveat) and
+`.claude/rules/stackit-workflow.md` (stack commands, fix routing) for detail.
