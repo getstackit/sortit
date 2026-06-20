@@ -130,9 +130,35 @@ type FactorWeights = {
   reviewQueue: ReviewQueue;
 };
 
+type DriftTag = {
+  tag: string;
+  anchor: number;
+  ridge: number;
+  delta: number;
+};
+
+type DriftIssue = {
+  id: string;
+  raw: string;
+  status: "open" | "closed";
+  driftCosine: number;
+  spuriousTags: DriftTag[];
+  missingTags: DriftTag[];
+};
+
+type TagHealth = {
+  issueCount: number;
+  driftedCount: number;
+  computed: boolean;
+  lambdaUnscored: number;
+  driftThreshold: number;
+  highDriftIssues: DriftIssue[];
+};
+
 const SECTION_LINKS = [
   { id: "prompt", title: "Prompt" },
   { id: "factor-weights", title: "Factor weights" },
+  { id: "tag-health", title: "Tag health" },
   { id: "candidates", title: "Candidates" },
   { id: "tags", title: "Tags" },
   { id: "embedding", title: "Embedding" },
@@ -315,6 +341,9 @@ export default function DebugPage() {
   const [factorWeights, setFactorWeights] = useState<FactorWeights | null>(null);
   const [factorWeightsLoading, setFactorWeightsLoading] = useState(false);
   const [factorWeightsError, setFactorWeightsError] = useState<string | null>(null);
+  const [tagHealth, setTagHealth] = useState<TagHealth | null>(null);
+  const [tagHealthLoading, setTagHealthLoading] = useState(false);
+  const [tagHealthError, setTagHealthError] = useState<string | null>(null);
   const [showOnlyOpenLowR2Issues, setShowOnlyOpenLowR2Issues] = useState(false);
   const [reviewActionMessage, setReviewActionMessage] = useState<string | null>(null);
   const [reviewActionError, setReviewActionError] = useState<string | null>(null);
@@ -488,6 +517,32 @@ export default function DebugPage() {
       );
     } finally {
       setFactorWeightsLoading(false);
+    }
+  }
+
+  async function loadTagHealth() {
+    setTagHealthLoading(true);
+    setTagHealthError(null);
+
+    try {
+      const response = await fetch(uiAPIURL("/debug/tag-health"), {
+        credentials: "include",
+      });
+
+      if (!response.ok) {
+        throw new Error(`Request failed with ${response.status}`);
+      }
+
+      const payload = (await response.json()) as TagHealth;
+      setTagHealth(payload);
+    } catch (caughtError) {
+      setTagHealthError(
+        caughtError instanceof Error
+          ? caughtError.message
+          : "Failed to load tag health"
+      );
+    } finally {
+      setTagHealthLoading(false);
     }
   }
 
@@ -712,6 +767,144 @@ export default function DebugPage() {
                 </div>
               )}
             </div>
+          </section>
+
+          <section id="tag-health" className="app-surface p-5">
+            <div className="flex items-center justify-between gap-3">
+              <div>
+                <p className="text-xs font-medium uppercase tracking-[0.18em] text-muted-foreground">
+                  Tag health — AI/embedding drift
+                </p>
+                <p className="mt-1 text-sm text-muted-foreground">
+                  Open issues whose assigned tags disagree with their embedding
+                  geometry. Spurious tags are over-claimed by the analyzer;
+                  missing tags are catalog tags the embedding wants but the
+                  analyzer did not assign. The primary tag-health signal.
+                </p>
+              </div>
+              <Button
+                variant="outline"
+                onClick={loadTagHealth}
+                disabled={tagHealthLoading}
+              >
+                {tagHealthLoading ? "Loading..." : "Load drift"}
+              </Button>
+            </div>
+
+            {tagHealthError && (
+              <div className="mt-4 app-status-warning">{tagHealthError}</div>
+            )}
+
+            {tagHealth && (
+              <div className="mt-4 space-y-4">
+                <div className="grid gap-3 lg:grid-cols-4">
+                  <div className="app-subtle-surface px-4 py-3">
+                    <p className="text-[11px] uppercase tracking-[0.16em] text-muted-foreground">
+                      Drifted issues
+                    </p>
+                    <p className="mt-1 text-lg font-medium">
+                      {tagHealth.driftedCount}
+                    </p>
+                  </div>
+                  <div className="app-subtle-surface px-4 py-3">
+                    <p className="text-[11px] uppercase tracking-[0.16em] text-muted-foreground">
+                      Total issues
+                    </p>
+                    <p className="mt-1 text-lg font-medium">
+                      {tagHealth.issueCount}
+                    </p>
+                  </div>
+                  <div className="app-subtle-surface px-4 py-3">
+                    <p className="text-[11px] uppercase tracking-[0.16em] text-muted-foreground">
+                      Drift threshold
+                    </p>
+                    <p className="mt-1 text-lg font-medium">
+                      {tagHealth.driftThreshold.toFixed(2)}
+                    </p>
+                  </div>
+                  <div className="app-subtle-surface px-4 py-3">
+                    <p className="text-[11px] uppercase tracking-[0.16em] text-muted-foreground">
+                      λ unscored
+                    </p>
+                    <p className="mt-1 text-lg font-medium">
+                      {tagHealth.lambdaUnscored.toFixed(3)}
+                    </p>
+                  </div>
+                </div>
+
+                {tagHealth.highDriftIssues?.length > 0 ? (
+                  <div className="space-y-2">
+                    {tagHealth.highDriftIssues.map((issue) => (
+                      <div
+                        key={issue.id}
+                        className="app-subtle-surface px-4 py-3"
+                      >
+                        <div className="flex items-start justify-between gap-4">
+                          <div className="min-w-0">
+                            <p className="text-sm font-medium">{issue.id}</p>
+                            <p className="mt-1 truncate text-sm text-muted-foreground">
+                              {issue.raw}
+                            </p>
+                          </div>
+                          <div className="flex shrink-0 items-center gap-2">
+                            <Badge
+                              variant="outline"
+                              className="text-xs text-foreground"
+                            >
+                              {issue.status}
+                            </Badge>
+                            <Badge
+                              variant="outline"
+                              className="text-xs text-foreground"
+                            >
+                              drift {issue.driftCosine.toFixed(2)}
+                            </Badge>
+                          </div>
+                        </div>
+                        {issue.spuriousTags.length > 0 && (
+                          <div className="mt-2 flex flex-wrap items-center gap-1.5">
+                            <span className="text-[11px] uppercase tracking-[0.16em] text-muted-foreground">
+                              Spurious
+                            </span>
+                            {issue.spuriousTags.map((tag) => (
+                              <Badge
+                                key={tag.tag}
+                                variant="destructive"
+                                className="text-xs"
+                              >
+                                {tag.tag} {tag.delta.toFixed(2)}
+                              </Badge>
+                            ))}
+                          </div>
+                        )}
+                        {issue.missingTags.length > 0 && (
+                          <div className="mt-1.5 flex flex-wrap items-center gap-1.5">
+                            <span className="text-[11px] uppercase tracking-[0.16em] text-muted-foreground">
+                              Missing
+                            </span>
+                            {issue.missingTags.map((tag) => (
+                              <Badge
+                                key={tag.tag}
+                                variant="secondary"
+                                className="text-xs"
+                              >
+                                {tag.tag} +{tag.delta.toFixed(2)}
+                              </Badge>
+                            ))}
+                          </div>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                ) : (
+                  <div className="app-subtle-surface px-4 py-3 text-sm text-muted-foreground">
+                    {tagHealth.computed
+                      ? "No open issues exceed the drift threshold."
+                      : "Not enough corpus to compute drift."}
+                  </div>
+                )}
+              </div>
+            )}
           </section>
 
           <section
