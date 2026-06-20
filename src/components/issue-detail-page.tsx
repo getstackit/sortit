@@ -1759,7 +1759,7 @@ export function IssueDetailPage({ issueID }: { issueID: string }) {
                                 </div>
                               </div>
                             )}
-                            {r2Data.residualNeighbors.length > 0 && (
+                            {r2Data.residualNeighbors?.length > 0 && (
                               <div>
                                 <p className="text-[11px] font-medium text-muted-foreground">
                                   Issues sharing unexplained concept
