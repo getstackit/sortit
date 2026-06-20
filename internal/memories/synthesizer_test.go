@@ -48,6 +48,58 @@ func TestSynthesizeMemoryProposals(t *testing.T) {
 	}
 }
 
+func taggedIssue(id, tag string) issues.Issue {
+	return issues.Issue{
+		ID:        id,
+		Status:    issues.StatusOpen,
+		Raw:       id + " body",
+		Tags:      []string{tag},
+		TagScores: []domain.TagRelevance{{Tag: tag, Relevance: 0.8}},
+	}
+}
+
+func TestSynthesizeConceptProposals(t *testing.T) {
+	corpus := make([]issues.Issue, 0, 7)
+	for i := range 6 { // 6 issues carry "ridge" → load-bearing
+		corpus = append(corpus, taggedIssue("r"+string(rune('0'+i)), "ridge"))
+	}
+	corpus = append(corpus, taggedIssue("b1", "backend")) // only 1 → below threshold
+
+	drafts := SynthesizeConceptProposals(corpus, nil, nil)
+	if len(drafts) != 1 {
+		t.Fatalf("expected 1 concept draft (ridge has 6, backend 1), got %d: %+v", len(drafts), drafts)
+	}
+	d := drafts[0]
+	if d.Kind != domain.MemoryKindConcept {
+		t.Fatalf("expected concept kind, got %s", d.Kind)
+	}
+	if d.SubjectTag != "ridge" {
+		t.Fatalf("expected subject tag ridge, got %q", d.SubjectTag)
+	}
+	if len(d.AnchorTags) != 1 || d.AnchorTags[0] != "ridge" {
+		t.Fatalf("expected ridge anchor, got %+v", d.AnchorTags)
+	}
+	if len(d.SourceIssueIDs) != 6 {
+		t.Fatalf("expected 6 source issues, got %d", len(d.SourceIssueIDs))
+	}
+
+	// A tag that already has an active concept is skipped (idempotent reruns).
+	covered := SynthesizeConceptProposals(corpus, nil, []domain.Memory{
+		{Kind: domain.MemoryKindConcept, Status: domain.MemoryStatusActive, SubjectTag: "ridge"},
+	})
+	if len(covered) != 0 {
+		t.Fatalf("expected ridge concept skipped when already covered, got %+v", covered)
+	}
+
+	// A pending concept proposal also covers the tag.
+	coveredPending := SynthesizeConceptProposals(corpus, []domain.MemoryProposal{
+		{Kind: domain.MemoryKindConcept, SubjectTag: "ridge"},
+	}, nil)
+	if len(coveredPending) != 0 {
+		t.Fatalf("expected ridge concept skipped when a pending proposal exists, got %+v", coveredPending)
+	}
+}
+
 func TestSynthesizeMemoryProposalsSkipsCovered(t *testing.T) {
 	closed := []issues.Issue{
 		closedDecision("i1", searchTag, "default to ridge", "by_design"),

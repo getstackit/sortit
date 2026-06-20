@@ -172,6 +172,32 @@ func (s *Server) handleGetMemory(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, memory)
 }
 
+// handleMemoryConcept returns the active concept memory bound to a subject tag,
+// powering the tag↔concept cross-link on tag detail pages.
+func (s *Server) handleMemoryConcept(w http.ResponseWriter, r *http.Request) {
+	if s.memories == nil {
+		writeError(w, http.StatusServiceUnavailable, "memories are not available")
+		return
+	}
+	subjectTag := strings.TrimSpace(r.URL.Query().Get("subjectTag"))
+	if subjectTag == "" {
+		writeError(w, http.StatusBadRequest, "subjectTag is required")
+		return
+	}
+
+	memory, err := s.memories.ConceptForTag(r.Context(), subjectTag)
+	if err != nil {
+		if errors.Is(err, issues.ErrMemoryNotFound) {
+			writeError(w, http.StatusNotFound, "no concept for tag")
+			return
+		}
+		writeInternalError(w, r, "failed to load concept", err)
+		return
+	}
+
+	writeJSON(w, http.StatusOK, memory)
+}
+
 type supersedeMemoryRequest struct {
 	SupersededBy string `json:"supersededBy,omitempty"`
 }

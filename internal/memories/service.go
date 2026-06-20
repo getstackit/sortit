@@ -192,6 +192,12 @@ func (s *Service) ListMemories(ctx context.Context, opts issues.MemoryListOption
 	return s.store.ListMemories(ctx, opts)
 }
 
+// ConceptForTag returns the active concept memory bound to subjectTag, or
+// issues.ErrMemoryNotFound. It powers the tag↔concept cross-link.
+func (s *Service) ConceptForTag(ctx context.Context, subjectTag string) (domain.Memory, error) {
+	return s.store.GetActiveConceptBySubjectTag(ctx, subjectTag)
+}
+
 // SupersedeMemory marks a memory as superseded — the "system evolves" path.
 // supersededBy optionally records the memory that replaces it.
 func (s *Service) SupersedeMemory(ctx context.Context, id, supersededBy string) (domain.Memory, error) {
@@ -247,6 +253,10 @@ func (s *Service) SynthesizeProposals(ctx context.Context) ([]domain.MemoryPropo
 	}
 
 	drafts := SynthesizeMemoryProposals(corpusIssues, pending, active)
+	// Concepts profile load-bearing tags; decisions consolidate closed-issue
+	// choices. They draft independently and dedup on different keys (subject_tag
+	// vs anchor tags), so a tag can earn both.
+	drafts = append(drafts, SynthesizeConceptProposals(corpusIssues, pending, active)...)
 	created := make([]domain.MemoryProposal, 0, len(drafts))
 	now := time.Now().UTC()
 	for _, draft := range drafts {
