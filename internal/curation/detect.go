@@ -22,6 +22,7 @@ type Detector struct {
 	detail        issues.IssueDetailReader
 	explorer      IssueExplorer
 	factorWeights FactorWeightsReporter
+	tagHealth     TagHealthReporter
 	logger        *slog.Logger
 }
 
@@ -37,11 +38,18 @@ type FactorWeightsReporter interface {
 	Handle(ctx context.Context) (diagnostics.DebugFactorWeightsResult, error)
 }
 
+// TagHealthReporter is the drift diagnostic surface — the primary tag-health
+// signal. diagnostics.DebugTagHealthHandler satisfies it.
+type TagHealthReporter interface {
+	Handle(ctx context.Context) (diagnostics.DebugTagHealthResult, error)
+}
+
 // NewDetector constructs a candidate detector. detail may be nil (stale
-// detection then falls back to whatever metrics List already carries);
-// factorWeights may be nil (health detection then skips low-R² and taxonomy
-// gaps, surfacing only enrichment failures).
-func NewDetector(reader issues.Reader, detail issues.IssueDetailReader, explorer IssueExplorer, factorWeights FactorWeightsReporter, logger *slog.Logger) *Detector {
+// detection then falls back to whatever metrics List already carries).
+// Either diagnostic may be nil: tagHealth nil skips drift detection;
+// factorWeights nil skips the secondary low-R²/taxonomy-gap signals. With both
+// nil, health detection surfaces only enrichment failures.
+func NewDetector(reader issues.Reader, detail issues.IssueDetailReader, explorer IssueExplorer, factorWeights FactorWeightsReporter, tagHealth TagHealthReporter, logger *slog.Logger) *Detector {
 	if logger == nil {
 		logger = slog.Default()
 	}
@@ -50,6 +58,7 @@ func NewDetector(reader issues.Reader, detail issues.IssueDetailReader, explorer
 		detail:        detail,
 		explorer:      explorer,
 		factorWeights: factorWeights,
+		tagHealth:     tagHealth,
 		logger:        logger.With("component", "curation.detect"),
 	}
 }
@@ -249,10 +258,17 @@ func (d *Detector) DetectStaleIssues(ctx context.Context, params StaleParams) ([
 // worth re-enriching.
 type HealthIssue struct {
 	IssueID         string   `json:"issueId"`
-	Reason          string   `json:"reason"` // "enrichment_failed" | "low_r2"
+	Reason          string   `json:"reason"` // "enrichment_failed" | "high_drift" | "low_r2"
 	Summary         string   `json:"summary"`
 	R2              *float64 `json:"r2,omitempty"`
 	EnrichmentError string   `json:"enrichmentError,omitempty"`
+	// Drift attribution, set when Reason is "high_drift": DriftCosine is the
+	// geometry-vs-tagging agreement, SpuriousTags are over-claimed assigned
+	// tags, MissingTags are catalog tags the embedding wants but the analyzer
+	// did not assign.
+	DriftCosine  *float64 `json:"driftCosine,omitempty"`
+	SpuriousTags []string `json:"spuriousTags,omitempty"`
+	MissingTags  []string `json:"missingTags,omitempty"`
 }
 
 // TaxonomyGap is a tag that aligns poorly with an issue it was scored on,
@@ -300,6 +316,33 @@ func (d *Detector) DetectHealthIssues(ctx context.Context, params HealthParams) 
 				Reason:          "enrichment_failed",
 				Summary:         firstLine(issue.Raw),
 				EnrichmentError: strings.TrimSpace(issue.EnrichmentError),
+			})
+		}
+	}
+
+	// Drift is the primary tag-health signal: it flags issues whose assigned
+	// tags disagree with the embedding geometry and attributes the divergence to
+	// specific over-claimed (spurious) and missing tags. Processed before the
+	// rank-1 low-R² pass so an issue caught by both surfaces as the more specific
+	// "high_drift".
+	if d.tagHealth != nil {
+		result, err := d.tagHealth.Handle(ctx)
+		if err != nil {
+			return HealthReport{}, err
+		}
+		for _, drift := range result.HighDriftIssues {
+			if _, dup := seen[drift.ID]; dup {
+				continue
+			}
+			seen[drift.ID] = struct{}{}
+			cosine := drift.DriftCosine
+			report.Issues = append(report.Issues, HealthIssue{
+				IssueID:      drift.ID,
+				Reason:       "high_drift",
+				Summary:      firstLine(drift.Raw),
+				DriftCosine:  &cosine,
+				SpuriousTags: driftTagNames(drift.SpuriousTags),
+				MissingTags:  driftTagNames(drift.MissingTags),
 			})
 		}
 	}
@@ -413,6 +456,20 @@ func firstLine(raw string) string {
 
 func round1(v float64) float64 { return float64(int64(v*10+0.5)) / 10 }
 func round3(v float64) float64 { return float64(int64(v*1000+0.5)) / 1000 }
+
+// driftTagNames projects drift tag rows to their tag names for the health
+// report, dropping the per-tag deltas (the full breakdown lives on the
+// /debug/tag-health endpoint).
+func driftTagNames(tags []diagnostics.DebugDriftTag) []string {
+	if len(tags) == 0 {
+		return nil
+	}
+	names := make([]string, len(tags))
+	for i, t := range tags {
+		names[i] = t.Tag
+	}
+	return names
+}
 
 // unionFind is a small disjoint-set over issue ids for clustering.
 type unionFind struct {

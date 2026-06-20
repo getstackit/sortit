@@ -17,6 +17,76 @@ func (f fakeFactorWeights) Handle(_ context.Context) (diagnostics.DebugFactorWei
 	return f.result, f.err
 }
 
+type fakeTagHealth struct {
+	result diagnostics.DebugTagHealthResult
+	err    error
+}
+
+func (f fakeTagHealth) Handle(_ context.Context) (diagnostics.DebugTagHealthResult, error) {
+	return f.result, f.err
+}
+
+func TestDetectHealthIssuesDriftIsPrimaryAndDedupesLowR2(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+
+	store := issues.NewInMemoryStore([]issues.Issue{
+		{ID: "drift", Raw: "tagged alpha but really beta", Status: issues.StatusOpen, EnrichmentStatus: issues.EnrichmentStatusComplete},
+		{ID: "novel", Raw: "concept no tag covers", Status: issues.StatusOpen, EnrichmentStatus: issues.EnrichmentStatusComplete},
+	})
+
+	th := fakeTagHealth{result: diagnostics.DebugTagHealthResult{
+		Computed: true,
+		HighDriftIssues: []diagnostics.DebugDriftIssue{{
+			ID:           "drift",
+			Raw:          "tagged alpha but really beta",
+			DriftCosine:  0.30,
+			SpuriousTags: []diagnostics.DebugDriftTag{{Tag: "alpha", Delta: -0.6}},
+			MissingTags:  []diagnostics.DebugDriftTag{{Tag: "beta", Delta: 0.9}},
+		}},
+	}}
+	// The rank-1 path also flags "drift" (low R²) — drift must win the dedup —
+	// and uniquely flags "novel" (an uncovered concept drift doesn't catch).
+	fw := fakeFactorWeights{result: diagnostics.DebugFactorWeightsResult{
+		LowR2Issues: []diagnostics.DebugLowR2Issue{
+			{ID: "drift", Raw: "tagged alpha but really beta", R2: 0.05},
+			{ID: "novel", Raw: "concept no tag covers", R2: 0.08},
+		},
+	}}
+
+	det := NewDetector(store, store, fakeExplorer{}, fw, th, nil)
+	report, err := det.DetectHealthIssues(ctx, HealthParams{})
+	if err != nil {
+		t.Fatalf("detect: %v", err)
+	}
+
+	byID := map[string]HealthIssue{}
+	for _, h := range report.Issues {
+		if _, dup := byID[h.IssueID]; dup {
+			t.Fatalf("issue %q surfaced twice (should dedupe)", h.IssueID)
+		}
+		byID[h.IssueID] = h
+	}
+
+	drift := byID["drift"]
+	if drift.Reason != "high_drift" {
+		t.Fatalf("expected drift issue to win as high_drift, got %q", drift.Reason)
+	}
+	if drift.DriftCosine == nil || *drift.DriftCosine != 0.30 {
+		t.Fatalf("expected drift cosine 0.30, got %+v", drift.DriftCosine)
+	}
+	if len(drift.SpuriousTags) != 1 || drift.SpuriousTags[0] != "alpha" {
+		t.Fatalf("expected alpha spurious, got %+v", drift.SpuriousTags)
+	}
+	if len(drift.MissingTags) != 1 || drift.MissingTags[0] != "beta" {
+		t.Fatalf("expected beta missing, got %+v", drift.MissingTags)
+	}
+	// The rank-1 lens still surfaces the uncovered-concept issue as low_r2.
+	if byID["novel"].Reason != "low_r2" {
+		t.Fatalf("expected novel issue as low_r2, got %q", byID["novel"].Reason)
+	}
+}
+
 func TestDetectHealthIssuesMergesFailedAndLowR2(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
@@ -38,7 +108,7 @@ func TestDetectHealthIssuesMergesFailedAndLowR2(t *testing.T) {
 		},
 	}}
 
-	det := NewDetector(store, store, fakeExplorer{}, fw, nil)
+	det := NewDetector(store, store, fakeExplorer{}, fw, nil, nil)
 	report, err := det.DetectHealthIssues(ctx, HealthParams{IncludeFailed: true})
 	if err != nil {
 		t.Fatalf("detect: %v", err)
@@ -73,7 +143,7 @@ func TestDetectHealthIssuesWithoutFactorWeights(t *testing.T) {
 		{ID: "fail", Raw: "broke", Status: issues.StatusOpen, EnrichmentStatus: issues.EnrichmentStatusFailed, EnrichmentError: "boom"},
 	})
 
-	det := NewDetector(store, store, fakeExplorer{}, nil, nil)
+	det := NewDetector(store, store, fakeExplorer{}, nil, nil, nil)
 	report, err := det.DetectHealthIssues(ctx, HealthParams{IncludeFailed: true})
 	if err != nil {
 		t.Fatalf("detect: %v", err)

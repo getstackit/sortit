@@ -687,7 +687,8 @@ func NewServer(cfg ServerConfig) *Server {
 		RidgeLambda:  ridgeLambdaCache,
 	}
 	curationDetector := curation.NewDetector(store, store, exploreHandler,
-		diagnostics.DebugFactorWeightsHandler{Store: store, Catalog: catalog}, logger)
+		diagnostics.DebugFactorWeightsHandler{Store: store, Catalog: catalog},
+		diagnostics.DebugTagHealthHandler{Store: store, Catalog: catalog, Centering: centeringCache}, logger)
 	curationMemoryDetector := curation.NewMemoryDetector(store, store, logger)
 
 	return &Server{
