@@ -18,6 +18,7 @@ node = "22"
 "go:github.com/DarthSim/overmind/v2" = "latest"
 "go:golang.org/x/vuln/cmd/govulncheck" = "latest"
 "aqua:watchexec/watchexec" = "latest"
+"aqua:sqlc-dev/sqlc" = "1.31.1"
 golangci-lint = "2.10.1"
 
 [tasks.install]
@@ -46,6 +47,14 @@ run = "go run ./cmd/check-schema-drift"
 [tasks."generate:schema"]
 description = "Regenerate internal/issues/sqlc/schema.sql from a fresh migrated PostgreSQL schema"
 run = "go run ./cmd/generate-schema-sql"
+
+[tasks."generate:sqlc"]
+description = "Regenerate internal/issues/issuesdb from the sqlc queries and schema"
+run = "sqlc generate"
+
+[tasks."check:sqlc-drift"]
+description = "Verify internal/issues/issuesdb matches a fresh sqlc generate (no uncommitted drift)"
+run = "sqlc diff"
 
 [tasks."db:backup"]
 description = "Backup the local PostgreSQL app database"
