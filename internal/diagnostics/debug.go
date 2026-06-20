@@ -257,33 +257,39 @@ func (h DebugFactorWeightsHandler) Handle(ctx context.Context) (DebugFactorWeigh
 
 	decomp := issuemath.ComputeFactorDecomposition(storeIssues, tagNames, issueEmbeddings, tagEmbeddings)
 
-	// Build index for looking up issue data by ID.
-	issueByID := make(map[string]issues.Issue, len(storeIssues))
-	for _, issue := range storeIssues {
-		issueByID[issue.ID] = issue
-	}
-
-	// Collect low-R² issues (below 0.15) sorted ascending — these are
+	// Collect low-R² issues (below 0.15) among open issues only — closed issues
+	// are not re-classification candidates (the review queue below applies the
+	// same filter). Iterate the issue slice rather than the decomposition's map
+	// so the result is deterministic, then sort by R² ascending with an ID
+	// tiebreak before truncating — otherwise the many issues tied at R²=0
+	// surface a different, randomly-ordered 20 on every call. These are
 	// candidates for new tags or re-classification.
 	var lowR2 []DebugLowR2Issue
-	decomp.AllR2(func(id string, r2 float64) {
-		if r2 < 0.15 {
-			issue := issueByID[id]
-			tags := make([]string, 0, len(issue.TagScores))
-			for _, ts := range issue.TagScores {
-				tags = append(tags, ts.Tag)
-			}
-			lowR2 = append(lowR2, DebugLowR2Issue{
-				ID:     id,
-				Raw:    truncateRaw(issue.Raw),
-				Status: issue.Status,
-				R2:     math.Round(r2*1000) / 1000,
-				Tags:   tags,
-			})
+	for _, issue := range storeIssues {
+		if issue.Status != issues.StatusOpen {
+			continue
 		}
-	})
-	slices.SortFunc(lowR2, func(a, b DebugLowR2Issue) int {
-		return cmp.Compare(a.R2, b.R2)
+		r2, ok := decomp.IssueR2(issue.ID)
+		if !ok || r2 >= 0.15 {
+			continue
+		}
+		tags := make([]string, 0, len(issue.TagScores))
+		for _, ts := range issue.TagScores {
+			tags = append(tags, ts.Tag)
+		}
+		lowR2 = append(lowR2, DebugLowR2Issue{
+			ID:     issue.ID,
+			Raw:    truncateRaw(issue.Raw),
+			Status: issue.Status,
+			R2:     math.Round(r2*1000) / 1000,
+			Tags:   tags,
+		})
+	}
+	slices.SortStableFunc(lowR2, func(a, b DebugLowR2Issue) int {
+		if c := cmp.Compare(a.R2, b.R2); c != 0 {
+			return c
+		}
+		return cmp.Compare(a.ID, b.ID)
 	})
 	if len(lowR2) > 20 {
 		lowR2 = lowR2[:20]
