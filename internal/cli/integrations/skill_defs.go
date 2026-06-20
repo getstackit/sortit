@@ -12,6 +12,8 @@ var skillDefinitions = []skillDefinition{
 	{name: "sortit-get", templatePath: "agents/templates/skills/sortit-get/SKILL.md"},
 	{name: "sortit-refine", templatePath: "agents/templates/skills/sortit-refine/SKILL.md"},
 	{name: "sortit-progress", templatePath: "agents/templates/skills/sortit-progress/SKILL.md"},
+	{name: "sortit-memory", templatePath: "agents/templates/skills/sortit-memory/SKILL.md"},
+	{name: "sortit-wrap-up", templatePath: "agents/templates/skills/sortit-wrap-up/SKILL.md"},
 	{name: "sortit-close", templatePath: "agents/templates/skills/sortit-close/SKILL.md"},
 	{name: "sortit-assign", templatePath: "agents/templates/skills/sortit-assign/SKILL.md"},
 	{name: "sortit-split", templatePath: "agents/templates/skills/sortit-split/SKILL.md"},

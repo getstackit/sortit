@@ -11,10 +11,12 @@ import (
 	"github.com/mark3labs/mcp-go/server"
 
 	"sortit/internal/auth"
+	"sortit/internal/domain"
 	"sortit/internal/issues"
 	issuecmd "sortit/internal/issues/commands"
 	issueviews "sortit/internal/issues/views"
 	"sortit/internal/mapview"
+	"sortit/internal/memories"
 	"sortit/internal/people"
 	"sortit/internal/search"
 )
@@ -32,6 +34,7 @@ type ServerConfig struct {
 	ListTags         issueviews.ListTagsHandler
 	SearchIssues     search.SearchIssuesHandler
 	ExploreIssue     mapview.ExploreIssueHandler
+	Memories         *memories.Service
 	GetPersonProfile people.GetPersonProfileHandler
 	WorkCorrelations people.WorkCorrelationsHandler
 }
@@ -58,6 +61,7 @@ func NewHandler(cfg ServerConfig) http.Handler {
 		listTags:         cfg.ListTags,
 		searchIssues:     cfg.SearchIssues,
 		exploreIssue:     cfg.ExploreIssue,
+		memories:         cfg.Memories,
 		getPersonProfile: cfg.GetPersonProfile,
 		workCorrelations: cfg.WorkCorrelations,
 	}
@@ -121,6 +125,84 @@ func NewHandler(cfg ServerConfig) http.Handler {
 			mcp.WithDescription("List stored Sortit tags with descriptions, creation timestamps, and embeddings when available."),
 		),
 		h.handleListTags,
+	)
+
+	s.AddTool(
+		mcp.NewTool("create_memory",
+			mcp.WithDescription("Create a permanent Sortit memory for durable knowledge: decisions, lessons, constraints, patterns, or references that should outlive an issue or chat."),
+			mcp.WithString("body",
+				mcp.Required(),
+				mcp.Description("The durable memory body. Capture what future humans and agents should know."),
+			),
+			mcp.WithString("title",
+				mcp.Description("Short title shown as the memory landmark label."),
+			),
+			mcp.WithString("kind",
+				mcp.Description("Memory kind: decision, lesson, constraint, pattern, or reference. Defaults to decision."),
+			),
+			mcp.WithArray("anchor_tags",
+				mcp.Description("High-value tags this memory centers on."),
+				mcp.WithStringItems(),
+			),
+			mcp.WithString("anchor_region",
+				mcp.Description("Optional region or cluster ID this memory anchors to."),
+			),
+			mcp.WithArray("source_issue_ids",
+				mcp.Description("Issue IDs that taught this memory."),
+				mcp.WithStringItems(),
+			),
+			mcp.WithNumber("confidence",
+				mcp.Description("Confidence in the memory from 0 to 1. Defaults to 1."),
+			),
+			mcp.WithString("created_by",
+				mcp.Description("Who authored the memory. Defaults to 'Claude'."),
+			),
+		),
+		h.handleCreateMemory,
+	)
+
+	s.AddTool(
+		mcp.NewTool("list_memories",
+			mcp.WithDescription("List Sortit memories for durable decisions, lessons, constraints, patterns, and references."),
+			mcp.WithString("status",
+				mcp.Description("Optional memory status filter: active, superseded, archived, or all. Defaults to active."),
+			),
+			mcp.WithNumber("limit",
+				mcp.Description("Maximum number of memories to return."),
+			),
+			mcp.WithNumber("offset",
+				mcp.Description("Number of memories to skip before returning."),
+			),
+		),
+		h.handleListMemories,
+	)
+
+	s.AddTool(
+		mcp.NewTool("get_memory",
+			mcp.WithDescription("Get a Sortit memory by ID."),
+			mcp.WithString("id",
+				mcp.Required(),
+				mcp.Description("The memory ID, for example mem-000003."),
+			),
+		),
+		h.handleGetMemory,
+	)
+
+	s.AddTool(
+		mcp.NewTool("synthesize_memory_proposals",
+			mcp.WithDescription("Scan the corpus and draft memory proposals for human review. Agents propose; humans accept or reject."),
+		),
+		h.handleSynthesizeMemoryProposals,
+	)
+
+	s.AddTool(
+		mcp.NewTool("list_memory_proposals",
+			mcp.WithDescription("List synthesized memory proposals awaiting human review."),
+			mcp.WithString("status",
+				mcp.Description("Optional proposal status filter: pending, accepted, rejected, or all. Defaults to pending."),
+			),
+		),
+		h.handleListMemoryProposals,
 	)
 
 	s.AddTool(
@@ -314,6 +396,7 @@ type handlers struct {
 	listTags         issueviews.ListTagsHandler
 	searchIssues     search.SearchIssuesHandler
 	exploreIssue     mapview.ExploreIssueHandler
+	memories         *memories.Service
 	getPersonProfile people.GetPersonProfileHandler
 	workCorrelations people.WorkCorrelationsHandler
 }
@@ -356,6 +439,108 @@ func (h *handlers) handleListTags(ctx context.Context, _ mcp.CallToolRequest) (*
 	}
 
 	return jsonResult(tags)
+}
+
+func (h *handlers) handleCreateMemory(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+	if h.memories == nil {
+		return mcp.NewToolResultError("memories are not available"), nil
+	}
+	body, result := requireTrimmedString(req, "body")
+	if result != nil {
+		return result, nil
+	}
+
+	memory, err := h.memories.CreateMemory(ctx, memories.CreateMemoryInput{
+		Title:          strings.TrimSpace(req.GetString("title", "")),
+		Body:           body,
+		Kind:           domain.MemoryKind(strings.TrimSpace(req.GetString("kind", ""))),
+		AnchorTags:     req.GetStringSlice("anchor_tags", nil),
+		AnchorRegion:   strings.TrimSpace(req.GetString("anchor_region", "")),
+		CreatedBy:      actorForContext(ctx, req.GetString("created_by", "Claude")),
+		Source:         domain.MemorySourceManual,
+		SourceIssueIDs: req.GetStringSlice("source_issue_ids", nil),
+		Confidence:     req.GetFloat("confidence", 0),
+	})
+	if err != nil {
+		return toolResultError(err), nil
+	}
+
+	return jsonResult(memory)
+}
+
+func (h *handlers) handleListMemories(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+	if h.memories == nil {
+		return mcp.NewToolResultError("memories are not available"), nil
+	}
+	status, ok := parseMemoryStatusFilter(req.GetString("status", "active"))
+	if !ok {
+		return mcp.NewToolResultError("status must be one of: active, superseded, archived, all"), nil
+	}
+	limit := req.GetInt("limit", 0)
+	if limit < 0 {
+		return mcp.NewToolResultError("limit must be >= 0"), nil
+	}
+	offset := req.GetInt("offset", 0)
+	if offset < 0 {
+		return mcp.NewToolResultError("offset must be >= 0"), nil
+	}
+
+	items, err := h.memories.ListMemories(ctx, issues.MemoryListOptions{
+		Status: status,
+		Limit:  limit,
+		Offset: offset,
+	})
+	if err != nil {
+		return toolResultError(err), nil
+	}
+
+	return jsonResult(map[string]any{"memories": items})
+}
+
+func (h *handlers) handleGetMemory(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+	if h.memories == nil {
+		return mcp.NewToolResultError("memories are not available"), nil
+	}
+	id, result := requireTrimmedString(req, "id")
+	if result != nil {
+		return result, nil
+	}
+
+	memory, err := h.memories.GetMemory(ctx, id)
+	if err != nil {
+		return toolResultError(err), nil
+	}
+
+	return jsonResult(memory)
+}
+
+func (h *handlers) handleSynthesizeMemoryProposals(ctx context.Context, _ mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+	if h.memories == nil {
+		return mcp.NewToolResultError("memories are not available"), nil
+	}
+	proposals, err := h.memories.SynthesizeProposals(ctx)
+	if err != nil {
+		return toolResultError(err), nil
+	}
+
+	return jsonResult(map[string]any{"proposals": proposals})
+}
+
+func (h *handlers) handleListMemoryProposals(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+	if h.memories == nil {
+		return mcp.NewToolResultError("memories are not available"), nil
+	}
+	status, ok := parseMemoryProposalStatusFilter(req.GetString("status", "pending"))
+	if !ok {
+		return mcp.NewToolResultError("status must be one of: pending, accepted, rejected, all"), nil
+	}
+
+	proposals, err := h.memories.ListProposals(ctx, status)
+	if err != nil {
+		return toolResultError(err), nil
+	}
+
+	return jsonResult(map[string]any{"proposals": proposals})
 }
 
 func (h *handlers) handleSearchIssues(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
@@ -629,7 +814,7 @@ func (h *handlers) handleGetPersonProfile(ctx context.Context, req mcp.CallToolR
 		return result, nil
 	}
 
-	status, ok := parseStatusFilter(req.GetString("status", "all"), false)
+	status, ok := parseStatusFilter(req.GetString("status", statusFilterAll), false)
 	if !ok {
 		return mcp.NewToolResultError("status must be one of: open, closed, all"), nil
 	}
@@ -643,7 +828,7 @@ func (h *handlers) handleGetPersonProfile(ctx context.Context, req mcp.CallToolR
 }
 
 func (h *handlers) handleWorkCorrelations(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
-	status, ok := parseStatusFilter(req.GetString("status", "all"), false)
+	status, ok := parseStatusFilter(req.GetString("status", statusFilterAll), false)
 	if !ok {
 		return mcp.NewToolResultError("status must be one of: open, closed, all"), nil
 	}
@@ -700,6 +885,8 @@ func requireIssueIDs(req mcp.CallToolRequest) ([]string, *mcp.CallToolResult) {
 	return ids, nil
 }
 
+const statusFilterAll = "all"
+
 func parseStatusFilter(raw string, defaultOpen bool) (issueviews.IssueStatusFilter, bool) {
 	switch strings.ToLower(strings.TrimSpace(raw)) {
 	case "":
@@ -711,8 +898,38 @@ func parseStatusFilter(raw string, defaultOpen bool) (issueviews.IssueStatusFilt
 		return issueviews.IssueStatusFilterOpen, true
 	case "closed":
 		return issueviews.IssueStatusFilterClosed, true
-	case "all":
+	case statusFilterAll:
 		return issueviews.IssueStatusFilterAll, true
+	default:
+		return "", false
+	}
+}
+
+func parseMemoryStatusFilter(raw string) (domain.MemoryStatus, bool) {
+	switch strings.ToLower(strings.TrimSpace(raw)) {
+	case "", "active":
+		return domain.MemoryStatusActive, true
+	case "superseded":
+		return domain.MemoryStatusSuperseded, true
+	case "archived":
+		return domain.MemoryStatusArchived, true
+	case statusFilterAll:
+		return "", true
+	default:
+		return "", false
+	}
+}
+
+func parseMemoryProposalStatusFilter(raw string) (domain.MemoryProposalStatus, bool) {
+	switch strings.ToLower(strings.TrimSpace(raw)) {
+	case "", "pending":
+		return domain.MemoryProposalStatusPending, true
+	case "accepted":
+		return domain.MemoryProposalStatusAccepted, true
+	case "rejected":
+		return domain.MemoryProposalStatusRejected, true
+	case statusFilterAll:
+		return "", true
 	default:
 		return "", false
 	}
@@ -751,6 +968,12 @@ func toolErrorMessage(err error) string {
 		return "issue not found"
 	case errors.Is(err, issues.ErrIssueClosed):
 		return "issue is closed"
+	case errors.Is(err, issues.ErrMemoryNotFound):
+		return "memory not found"
+	case errors.Is(err, issues.ErrMemoryProposalNotFound):
+		return "memory proposal not found"
+	case errors.Is(err, memories.ErrProposalNotPending):
+		return "memory proposal is not pending"
 	default:
 		return err.Error()
 	}

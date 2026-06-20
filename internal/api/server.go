@@ -201,6 +201,7 @@ func (s *Server) Handler() http.Handler {
 		ListTags:         s.listTags,
 		SearchIssues:     s.searchIssues,
 		ExploreIssue:     s.exploreIssue,
+		Memories:         s.memories,
 		GetPersonProfile: s.getPersonProfile,
 		WorkCorrelations: s.workCorrelations,
 	})

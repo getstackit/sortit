@@ -15,7 +15,7 @@ func TestInstallSkillTargets(t *testing.T) {
 	var out bytes.Buffer
 
 	targets := targetsForFormats([]agentSkillFormat{agentSkillFormatClaude, agentSkillFormatCodex})
-	if err := installSkillTargets(baseDir, targets, false, "1.2.3", &out); err != nil {
+	if err := installSkillTargets(baseDir, targets, "1.2.3", &out); err != nil {
 		t.Fatalf("installSkillTargets() error = %v", err)
 	}
 
@@ -33,8 +33,15 @@ func TestInstallSkillTargets(t *testing.T) {
 	if err != nil {
 		t.Fatalf("read installed codex skill: %v", err)
 	}
-	if !strings.Contains(string(codexContent), "version: 1.2.3") {
-		t.Fatalf("installed codex skill missing version replacement: %s", string(codexContent))
+	codexText := string(codexContent)
+	if strings.Contains(codexText, "\nversion: 1.2.3") {
+		t.Fatalf("installed codex skill should keep frontmatter minimal: %s", codexText)
+	}
+	if !strings.Contains(codexText, "<!-- sortit-version: 1.2.3 -->") {
+		t.Fatalf("installed codex skill missing hidden version marker: %s", codexText)
+	}
+	if !strings.Contains(codexText, `description: "Search Sortit issues from natural-language symptoms, product areas, or customer quotes. Use when you need to find the best existing issues before creating or editing anything."`) {
+		t.Fatalf("installed codex skill missing encoded description: %s", codexText)
 	}
 
 	if _, err := os.Stat(filepath.Join(baseDir, claudeSkillsDir, "sortit-create", "SKILL.md")); err != nil {
@@ -46,11 +53,82 @@ func TestInstallSkillTargets(t *testing.T) {
 	if _, err := os.Stat(filepath.Join(baseDir, codexSkillsDir, "sortit-next", "SKILL.md")); err != nil {
 		t.Fatalf("stat codex next skill: %v", err)
 	}
-	if _, err := os.Stat(filepath.Join(baseDir, codexSkillsDir, "sortit-search", "agents", "openai.yaml")); !os.IsNotExist(err) {
-		t.Fatalf("codex install should not include openai metadata, err=%v", err)
+	if _, err := os.Stat(filepath.Join(baseDir, codexSkillsDir, "sortit-memory", "SKILL.md")); err != nil {
+		t.Fatalf("stat codex memory skill: %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(baseDir, codexSkillsDir, "sortit-wrap-up", "SKILL.md")); err != nil {
+		t.Fatalf("stat codex wrap-up skill: %v", err)
+	}
+	metadata, err := os.ReadFile(filepath.Join(baseDir, codexSkillsDir, "sortit-search", "agents", "openai.yaml"))
+	if err != nil {
+		t.Fatalf("read codex metadata: %v", err)
+	}
+	metadataText := string(metadata)
+	if !strings.Contains(metadataText, `display_name: "Sortit Search"`) {
+		t.Fatalf("codex metadata missing display name: %s", metadataText)
+	}
+	if !strings.Contains(metadataText, `default_prompt: "Use $sortit-search to search Sortit issues from natural-language symptoms, product areas, or customer quotes. Use when you need to find the best existing issues before creating or editing anything."`) {
+		t.Fatalf("codex metadata missing default prompt: %s", metadataText)
 	}
 	if _, err := os.Stat(filepath.Join(baseDir, claudeSkillsDir, "sortit-search", "agents", "openai.yaml")); !os.IsNotExist(err) {
 		t.Fatalf("claude install should not include openai metadata, err=%v", err)
+	}
+}
+
+func TestInstallSkillTargetsWithInstructions(t *testing.T) {
+	t.Parallel()
+
+	baseDir := t.TempDir()
+	existingCodexPath := filepath.Join(baseDir, codexInstructionsPath)
+	if err := os.MkdirAll(filepath.Dir(existingCodexPath), 0o755); err != nil {
+		t.Fatalf("mkdir codex instructions dir: %v", err)
+	}
+	if err := os.WriteFile(existingCodexPath, []byte("# Existing\n\nKeep this.\n"), 0o600); err != nil {
+		t.Fatalf("write existing codex instructions: %v", err)
+	}
+
+	var out bytes.Buffer
+	targets := targetsForFormats([]agentSkillFormat{agentSkillFormatClaude, agentSkillFormatCodex})
+	if err := installSkillTargetsWithOptions(baseDir, targets, false, "1.2.3", true, &out); err != nil {
+		t.Fatalf("installSkillTargetsWithOptions() error = %v", err)
+	}
+
+	claudeContent, err := os.ReadFile(filepath.Join(baseDir, claudeInstructionsPath))
+	if err != nil {
+		t.Fatalf("read claude instructions: %v", err)
+	}
+	if !strings.Contains(string(claudeContent), "Sortit Agent Workflow") {
+		t.Fatalf("claude instructions missing workflow block: %s", string(claudeContent))
+	}
+
+	codexContent, err := os.ReadFile(existingCodexPath)
+	if err != nil {
+		t.Fatalf("read codex instructions: %v", err)
+	}
+	codexText := string(codexContent)
+	if !strings.Contains(codexText, "Keep this.") {
+		t.Fatalf("codex instructions should preserve existing content: %s", codexText)
+	}
+	if strings.Count(codexText, sortitInstructionsBegin) != 1 {
+		t.Fatalf("expected one managed block, got: %s", codexText)
+	}
+
+	if err := installSkillTargetsWithOptions(baseDir, targets, true, "1.2.4", true, &out); err != nil {
+		t.Fatalf("reinstall with instructions error = %v", err)
+	}
+	codexContent, err = os.ReadFile(existingCodexPath)
+	if err != nil {
+		t.Fatalf("read codex instructions after reinstall: %v", err)
+	}
+	codexText = string(codexContent)
+	if strings.Count(codexText, sortitInstructionsBegin) != 1 {
+		t.Fatalf("expected managed block replacement, got: %s", codexText)
+	}
+	if !strings.Contains(codexText, "1.2.4") {
+		t.Fatalf("expected updated version in managed block: %s", codexText)
+	}
+	if !strings.Contains(codexText, "$sortit-* skills") {
+		t.Fatalf("expected codex-specific instructions: %s", codexText)
 	}
 }
 
@@ -61,12 +139,12 @@ func TestInstallSkillTargetsRequiresForceForDifferentVersion(t *testing.T) {
 	var out bytes.Buffer
 	targets := targetsForFormats([]agentSkillFormat{agentSkillFormatCodex})
 
-	if err := installSkillTargets(baseDir, targets, false, "1.0.0", &out); err != nil {
+	if err := installSkillTargets(baseDir, targets, "1.0.0", &out); err != nil {
 		t.Fatalf("initial installSkillTargets() error = %v", err)
 	}
 
 	out.Reset()
-	err := installSkillTargets(baseDir, targets, false, "2.0.0", &out)
+	err := installSkillTargets(baseDir, targets, "2.0.0", &out)
 	if err == nil {
 		t.Fatal("expected error for existing installation without force")
 	}
@@ -82,7 +160,7 @@ func TestInstallSkillTargetsClearsManagedSkillDirectories(t *testing.T) {
 	var out bytes.Buffer
 	targets := targetsForFormats([]agentSkillFormat{agentSkillFormatCodex})
 
-	staleDir := filepath.Join(baseDir, codexSkillsDir, "sortit-search", "agents")
+	staleDir := filepath.Join(baseDir, codexSkillsDir, "sortit-search", "stale")
 	if err := os.MkdirAll(staleDir, 0o755); err != nil {
 		t.Fatalf("mkdir stale dir: %v", err)
 	}
@@ -99,7 +177,7 @@ func TestInstallSkillTargetsClearsManagedSkillDirectories(t *testing.T) {
 		t.Fatalf("write unmanaged file: %v", err)
 	}
 
-	if err := installSkillTargets(baseDir, targets, false, "1.2.3", &out); err != nil {
+	if err := installSkillTargets(baseDir, targets, "1.2.3", &out); err != nil {
 		t.Fatalf("installSkillTargets() error = %v", err)
 	}
 
@@ -108,6 +186,24 @@ func TestInstallSkillTargetsClearsManagedSkillDirectories(t *testing.T) {
 	}
 	if _, err := os.Stat(unmanagedPath); err != nil {
 		t.Fatalf("expected unmanaged skill to remain, err=%v", err)
+	}
+}
+
+func TestExtractVersionFromCodexMarker(t *testing.T) {
+	t.Parallel()
+
+	content := `---
+name: sortit-search
+description: "Search issues"
+---
+
+# Sortit Search
+
+<!-- sortit-version: 2.0.0 -->
+`
+
+	if got := extractVersion(content); got != "2.0.0" {
+		t.Fatalf("extractVersion() = %q, want %q", got, "2.0.0")
 	}
 }
 

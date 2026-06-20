@@ -16,6 +16,8 @@ The work, then, is not *data entry*. It's a collaboration loop:
 - **Coordinate** humans and agents through ownership, progress, proposals, and review queues.
 - **Remember** decisions, lessons, constraints, patterns, and references as durable memories.
 
+**Why this pays off: the corpus is an asset that appreciates.** Every well-formed deposit — an issue with faithful raw text, an explicit link, a memory with a source issue — makes the *next* search sharper, the next enrichment better-grounded, and the next `next` more relevant. The cost is paid once, at capture; the value is collected on every future retrieval. Done consistently, work stops being a series of disposable tasks and becomes a growing body of knowledge that makes each subsequent task cheaper. Done carelessly — duplicates, drift, knowledge left in chat — it depreciates just as fast.
+
 ## Three surfaces, one system
 
 Every step below can be done from any of three places, against the same backend:
@@ -24,21 +26,26 @@ Every step below can be done from any of three places, against the same backend:
 - **Web app** — the human review and exploration surface: search, map, issue detail, memory detail, proposals, people, tags, settings. Use it to inspect the corpus, accept or reject proposed moves, and understand the shape of the work.
 - **CLI** (`sortit ...`) — the scriptable and terminal-first surface. It backs both local automation and agent skills.
 
-Pick whichever fits the moment. The verbs are the same everywhere, but the expected default is: agents keep the corpus warm during work; humans review, steer, and make higher-judgment calls from the website or CLI.
+Pick whichever fits the moment. The verbs are the same everywhere, but the expected default is: agents leave the corpus warmer than they found it — every task deposits back (search before create to concentrate signal, capture follow-on so nothing leaks to chat, source memories so deposits compound) — while humans review, steer, and make higher-judgment calls from the website or CLI.
+
+Agent installation should respect the agent, not just copy the same markdown everywhere. `sortit agent install --format=claude` installs Claude Code skill files with Claude-oriented frontmatter and workflow language. `sortit agent install --format=codex` installs Codex skill files with Codex-oriented metadata so the `$sortit-*` skills are easier to discover and invoke. Use `--instructions` when you want managed always-on guidance added to the agent's persistent instruction file.
 
 ## The loop
 
 ```
-              ┌─────────► search ──────────┐
-              │                            │
-   capture ───┤                            ├──► curate ──► move forward ──► remember
-              │   (find before you add)    │   (combine /   (refine /        (memory /
-              └────────────────────────────┘    link /       progress /       proposal)
-                                                 split)        assign / next)
-                                                                  │
-                                                                  ▼
-                                                               resolve
+        search ──► use context ──► capture / refine / progress
+          ▲                                   │
+          │                                   ▼
+ a richer │                         curate · link · split
+ corpus   │                         remember · resolve
+ makes    │                                   │
+ the next └────────── deposits into ◄─────────┘
+ loop                  THE CORPUS
+ sharper       issues · relationships · memories · tags
+        (every deposit sharpens future search, enrichment, map, next)
 ```
+
+It's a flywheel, not a checklist. The arrow on the left is the whole point: each loop retrieves from a corpus that prior loops made richer, so the work compounds instead of resetting.
 
 ### 1. Search before you capture
 
@@ -66,7 +73,7 @@ Use capture for follow-on work too. When an agent discovers a nearby defect, mis
 
 ### 3. Curate the graph
 
-Sortit's value compounds when the issue graph reflects reality. Three explicit moves keep it honest:
+Sortit's value compounds only when the issue graph reflects reality — and it depreciates when it doesn't. Duplicate sprawl, drift, and orphaned items quietly erode every search and map that reads from them. Three explicit moves keep the graph honest, and because relationships are explicit, each move makes a whole neighborhood more retrievable, not just one issue:
 
 - **Combine** when several issues are genuinely the *same* thing. They consolidate into one canonical issue; the others point at it. Use this for duplicates you want collapsed.
 - **Link** when issues are distinct but *related* — and should stay separate. Relationships are explicit (`related_to`, `duplicate_of`, `parent_of` / `child_of`, `derived_from`, `merged_into`), so the connection is recorded without losing either issue.
@@ -135,6 +142,8 @@ For agents, `next` is the bridge between the corpus and the current work loop. I
 
 Issues track work. **Memories** track durable knowledge: decisions, lessons, constraints, patterns, and references that should remain useful after the issue closes. Memories live in the same tag and embedding space as issues, show up as map landmarks, and are retrieved during enrichment as prior-decision context.
 
+This retrieval is where memory compounds hardest: a decision recorded once is pulled back in as context on *every* future related issue — one deposit, many payouts. The more faithfully you anchor it (`--source-issue` for provenance, `--anchor-tag` for placement), the more often and more precisely it pays out.
+
 Create a memory when the team learns something that should guide future work:
 
 ```bash
@@ -186,6 +195,17 @@ Beyond the single-issue loop, Sortit treats your issues as a body of knowledge:
 
 - **Curation proposals** — agent-drafted moves wait in a review queue. Humans accept or reject proposals to combine duplicates, close stale work, re-enrich issues, archive obsolete memories, or supersede redundant memories. This keeps agents useful without letting them silently rewrite the corpus.
 
+## What compounds
+
+The payoff isn't any single issue — it's the assets that appreciate as the loop runs, each with a feedback edge where its output improves the input to the next loop:
+
+- **The issue graph.** Explicit relationships mean one curation move makes a whole neighborhood retrievable, not a single issue. Combine, link, and split concentrate signal instead of letting it scatter.
+- **Memories.** The strongest compounding engine: a decision recorded once is pulled in as prior-decision context on *every* future related enrichment. One deposit, many payouts.
+- **The tag taxonomy.** Better tags sharpen the map, search, people profiles, and `next` — which surfaces better work, which produces better-tagged issues. Maintaining the taxonomy (merge synonyms, dismiss noise, re-enrich drift) keeps the cycle turning.
+- **People profiles.** The more work flows through Sortit, the sharper each profile gets, and the more relevant `next` and correlations become.
+
+That feedback edge is what makes the corpus an asset rather than a log — and what makes neglect (duplicates, drift, stranded chat knowledge, stale issues) actively expensive rather than merely untidy.
+
 ## A typical session
 
 1. A human or agent starts work. The agent **searches** Sortit, pulls related issues and memories, and uses that context before acting.
@@ -197,4 +217,4 @@ Beyond the single-issue loop, Sortit treats your issues as a body of knowledge:
 7. **Close** what's done; **reopen** what regresses.
 8. Periodically, an agent runs a librarian pass: **diagnose** tag health, draft curation proposals, synthesize memory proposals, and summarize what needs human review.
 
-The discipline that makes Sortit pay off is small and repeatable: agents search before they create, save follow-on work instead of losing it in chat, separate *refine* from *progress*, curate relationships explicitly, and turn durable lessons into memories humans can trust.
+The discipline that makes Sortit compound is small, repeatable, and cheap per use: search before you create, save follow-on work instead of losing it in chat, separate *refine* from *progress*, curate relationships explicitly, and turn durable lessons into memories with provenance. Each habit costs a moment now and pays out on every future retrieval. Skip them and the corpus depreciates — duplicates pile up, tags drift, knowledge leaks into chat. Keep them and every task starts from a richer, sharper corpus than the last.
