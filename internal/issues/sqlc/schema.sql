@@ -142,10 +142,10 @@ CREATE TABLE "public"."issue_lifecycle_projections" (
     "created_by" text NOT NULL,
     "created_at_unix_nano" bigint NOT NULL,
     "status" text NOT NULL,
-    "closed_at_unix_nano" bigint NOT NULL,
-    "closed_by" text NOT NULL,
-    "closed_reason" text NOT NULL,
-    "closed_reason_note" text NOT NULL,
+    "closed_at_unix_nano" bigint,
+    "closed_by" text,
+    "closed_reason" text,
+    "closed_reason_note" text,
     "assigned_to" text NOT NULL,
     "last_fact_id" text NOT NULL,
     "fact_count" bigint NOT NULL,
@@ -199,16 +199,9 @@ CREATE TABLE "public"."issues" (
     "created_by" text NOT NULL,
     "created_at_unix_nano" bigint NOT NULL,
     "status" text NOT NULL,
-    "closed_at_unix_nano" bigint NOT NULL,
-    "closed_by" text NOT NULL,
     "tag_scores_json" jsonb NOT NULL,
     "assigned_to" text NOT NULL,
-    "embedding_vector" vector,
-    "enrichment_status" text NOT NULL,
-    "enrichment_error" text NOT NULL,
-    "enrichment_target_sequence" bigint NOT NULL,
-    "closed_reason" text NOT NULL,
-    "closed_reason_note" text NOT NULL
+    "embedding_vector" vector
 );
 CREATE TABLE "public"."map_projections" (
     "revision" bigint NOT NULL,
@@ -374,10 +367,6 @@ ALTER TABLE ONLY "public"."issue_lifecycle_facts" ALTER COLUMN "source_id" SET D
 ALTER TABLE ONLY "public"."issue_lifecycle_facts" ALTER COLUMN "inferred" SET DEFAULT false;
 ALTER TABLE ONLY "public"."issue_lifecycle_projections" ALTER COLUMN "created_by" SET DEFAULT ''::text;
 ALTER TABLE ONLY "public"."issue_lifecycle_projections" ALTER COLUMN "status" SET DEFAULT 'open'::text;
-ALTER TABLE ONLY "public"."issue_lifecycle_projections" ALTER COLUMN "closed_at_unix_nano" SET DEFAULT 0;
-ALTER TABLE ONLY "public"."issue_lifecycle_projections" ALTER COLUMN "closed_by" SET DEFAULT ''::text;
-ALTER TABLE ONLY "public"."issue_lifecycle_projections" ALTER COLUMN "closed_reason" SET DEFAULT ''::text;
-ALTER TABLE ONLY "public"."issue_lifecycle_projections" ALTER COLUMN "closed_reason_note" SET DEFAULT ''::text;
 ALTER TABLE ONLY "public"."issue_lifecycle_projections" ALTER COLUMN "assigned_to" SET DEFAULT ''::text;
 ALTER TABLE ONLY "public"."issue_lifecycle_projections" ALTER COLUMN "last_fact_id" SET DEFAULT ''::text;
 ALTER TABLE ONLY "public"."issue_lifecycle_projections" ALTER COLUMN "fact_count" SET DEFAULT 0;
@@ -391,11 +380,6 @@ ALTER TABLE ONLY "public"."issue_snapshots" ALTER COLUMN "embedding_json" SET DE
 ALTER TABLE ONLY "public"."issues" ALTER COLUMN "tags_json" SET DEFAULT '[]'::jsonb;
 ALTER TABLE ONLY "public"."issues" ALTER COLUMN "tag_scores_json" SET DEFAULT '[]'::jsonb;
 ALTER TABLE ONLY "public"."issues" ALTER COLUMN "assigned_to" SET DEFAULT ''::text;
-ALTER TABLE ONLY "public"."issues" ALTER COLUMN "enrichment_status" SET DEFAULT 'complete'::text;
-ALTER TABLE ONLY "public"."issues" ALTER COLUMN "enrichment_error" SET DEFAULT ''::text;
-ALTER TABLE ONLY "public"."issues" ALTER COLUMN "enrichment_target_sequence" SET DEFAULT 1;
-ALTER TABLE ONLY "public"."issues" ALTER COLUMN "closed_reason" SET DEFAULT ''::text;
-ALTER TABLE ONLY "public"."issues" ALTER COLUMN "closed_reason_note" SET DEFAULT ''::text;
 ALTER TABLE ONLY "public"."memories" ALTER COLUMN "title" SET DEFAULT ''::text;
 ALTER TABLE ONLY "public"."memories" ALTER COLUMN "body" SET DEFAULT ''::text;
 ALTER TABLE ONLY "public"."memories" ALTER COLUMN "kind" SET DEFAULT 'decision'::text;

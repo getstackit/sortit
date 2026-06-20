@@ -88,22 +88,15 @@ type Event struct {
 }
 
 type Issue struct {
-	ID                       string
-	Raw                      string
-	TagsJson                 json.RawMessage
-	CreatedBy                string
-	CreatedAtUnixNano        int64
-	Status                   string
-	ClosedAtUnixNano         int64
-	ClosedBy                 string
-	TagScoresJson            json.RawMessage
-	AssignedTo               string
-	EmbeddingVector          interface{}
-	EnrichmentStatus         string
-	EnrichmentError          string
-	EnrichmentTargetSequence int64
-	ClosedReason             string
-	ClosedReasonNote         string
+	ID                string
+	Raw               string
+	TagsJson          json.RawMessage
+	CreatedBy         string
+	CreatedAtUnixNano int64
+	Status            string
+	TagScoresJson     json.RawMessage
+	AssignedTo        string
+	EmbeddingVector   interface{}
 }
 
 type IssueContentFact struct {
@@ -181,10 +174,10 @@ type IssueLifecycleProjection struct {
 	CreatedBy         string
 	CreatedAtUnixNano int64
 	Status            string
-	ClosedAtUnixNano  int64
-	ClosedBy          string
-	ClosedReason      string
-	ClosedReasonNote  string
+	ClosedAtUnixNano  sql.NullInt64
+	ClosedBy          sql.NullString
+	ClosedReason      sql.NullString
+	ClosedReasonNote  sql.NullString
 	AssignedTo        string
 	LastFactID        string
 	FactCount         int64

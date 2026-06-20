@@ -278,10 +278,10 @@ func loadLifecycleProjectionState(ctx context.Context, db issuesdb.DBTX, issueID
 		        COALESCE(p.created_by, i.created_by) AS created_by,
 		        COALESCE(p.created_at_unix_nano, i.created_at_unix_nano) AS created_at_unix_nano,
 		        COALESCE(p.status, i.status) AS status,
-		        COALESCE(p.closed_at_unix_nano, i.closed_at_unix_nano) AS closed_at_unix_nano,
-		        COALESCE(p.closed_by, i.closed_by) AS closed_by,
-		        COALESCE(p.closed_reason, i.closed_reason) AS closed_reason,
-		        COALESCE(p.closed_reason_note, i.closed_reason_note) AS closed_reason_note,
+		        COALESCE(p.closed_at_unix_nano, 0) AS closed_at_unix_nano,
+		        COALESCE(p.closed_by, '') AS closed_by,
+		        COALESCE(p.closed_reason, '') AS closed_reason,
+		        COALESCE(p.closed_reason_note, '') AS closed_reason_note,
 		        COALESCE(p.assigned_to, i.assigned_to) AS assigned_to,
 		        COALESCE(p.fact_count, 0) AS fact_count
 		 FROM issues i
@@ -368,9 +368,19 @@ func upsertLifecycleProjection(
 	state lifecycleProjectionState,
 	lastFactID string,
 ) error {
-	closedAtUnixNano := int64(0)
+	// Open issues store NULL for the closed_* columns; only closed issues carry
+	// values (issue_lifecycle_projections.closed_* is nullable as of 000032).
+	var (
+		closedAtUnixNano any
+		closedBy         any
+		closedReason     any
+		closedReasonNote any
+	)
 	if state.ClosedAt != nil {
 		closedAtUnixNano = state.ClosedAt.UTC().UnixNano()
+		closedBy = strings.TrimSpace(state.ClosedBy)
+		closedReason = strings.TrimSpace(state.ClosedReason)
+		closedReasonNote = strings.TrimSpace(state.ClosedReasonNote)
 	}
 
 	if _, err := db.ExecContext(
@@ -406,9 +416,9 @@ func upsertLifecycleProjection(
 		state.CreatedAt.UTC().UnixNano(),
 		string(normalizeIssueStatus(state.Status)),
 		closedAtUnixNano,
-		strings.TrimSpace(state.ClosedBy),
-		strings.TrimSpace(state.ClosedReason),
-		strings.TrimSpace(state.ClosedReasonNote),
+		closedBy,
+		closedReason,
+		closedReasonNote,
 		strings.TrimSpace(state.AssignedTo),
 		strings.TrimSpace(lastFactID),
 		state.FactCount,
