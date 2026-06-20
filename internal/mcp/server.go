@@ -562,8 +562,9 @@ func (h *handlers) handleSearchMemories(ctx context.Context, req mcp.CallToolReq
 	}
 
 	results, err := h.memories.RecallMemories(ctx, query, memories.RecallOptions{
-		Limit:         limit,
-		MinSimilarity: req.GetFloat("min_similarity", 0),
+		Limit:                  limit,
+		MinSimilarity:          req.GetFloat("min_similarity", 0),
+		IncludeSubjectConcepts: true,
 	})
 	if err != nil {
 		return toolResultError(err), nil

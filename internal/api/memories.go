@@ -45,7 +45,7 @@ func (s *Server) handleMemorySearch(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	opts := memories.RecallOptions{}
+	opts := memories.RecallOptions{IncludeSubjectConcepts: true}
 	if limit != nil {
 		opts.Limit = *limit
 	}
