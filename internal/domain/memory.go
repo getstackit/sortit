@@ -13,6 +13,11 @@ const (
 	MemoryKindConstraint MemoryKind = "constraint"
 	MemoryKindPattern    MemoryKind = "pattern"
 	MemoryKindReference  MemoryKind = "reference"
+	// MemoryKindConcept is the rich, recallable profile of a single noun — the
+	// subject tag the rest of the corpus orbits. Unlike the other kinds (which
+	// are predicates: a choice, a lesson, a rule), a concept's subject *is* the
+	// tag. It is bound 1:1 to that tag via Memory.SubjectTag.
+	MemoryKindConcept MemoryKind = "concept"
 )
 
 // MemoryStatus tracks a memory's lifecycle. Unlike issues, memories are never
@@ -40,11 +45,15 @@ const (
 // similarity engine can find it, but it carries a fundamentally different
 // temporal model (reinforced permanence) and lifecycle.
 type Memory struct {
-	ID           string         `json:"id"`
-	Title        string         `json:"title"`
-	Body         string         `json:"body"`
-	Kind         MemoryKind     `json:"kind"`
-	AnchorTags   []string       `json:"anchorTags,omitempty"`
+	ID         string     `json:"id"`
+	Title      string     `json:"title"`
+	Body       string     `json:"body"`
+	Kind       MemoryKind `json:"kind"`
+	AnchorTags []string   `json:"anchorTags,omitempty"`
+	// SubjectTag is the single tag a concept memory profiles (kind=concept). It
+	// is the 1:1 binding to the tag node: the tag stays the lightweight label,
+	// this memory is its rich, recallable definition. Empty for every other kind.
+	SubjectTag   string         `json:"subjectTag,omitempty"`
 	AnchorRegion string         `json:"anchorRegion,omitempty"`
 	TagScores    []TagRelevance `json:"tagScores"`
 	Status       MemoryStatus   `json:"status"`
@@ -69,11 +78,22 @@ type Memory struct {
 // NormalizeMemoryKind coerces a kind to a known value, defaulting to decision.
 func NormalizeMemoryKind(kind MemoryKind) MemoryKind {
 	switch kind {
-	case MemoryKindDecision, MemoryKindLesson, MemoryKindConstraint, MemoryKindPattern, MemoryKindReference:
+	case MemoryKindDecision, MemoryKindLesson, MemoryKindConstraint, MemoryKindPattern, MemoryKindReference, MemoryKindConcept:
 		return kind
 	default:
 		return MemoryKindDecision
 	}
+}
+
+// NormalizeSubjectTag returns the subject tag a memory should store for its
+// kind: a normalized tag name for concept memories (their 1:1 binding to a tag
+// node), empty for every other kind. It does not assert presence — the service
+// layer rejects a concept whose subject tag normalizes to empty.
+func NormalizeSubjectTag(kind MemoryKind, subjectTag string) string {
+	if NormalizeMemoryKind(kind) != MemoryKindConcept {
+		return ""
+	}
+	return NormalizeTagName(subjectTag)
 }
 
 // NormalizeMemoryStatus coerces a status to a known value, defaulting to active.

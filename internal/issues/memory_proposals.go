@@ -22,7 +22,7 @@ type MemoryProposalStore interface {
 	UpsertMemoryProposal(ctx context.Context, proposal domain.MemoryProposal) error
 }
 
-const memoryProposalSelectColumns = `id, title, body, kind, anchor_tags_json, anchor_region,
+const memoryProposalSelectColumns = `id, title, body, kind, subject_tag, anchor_tags_json, anchor_region,
 	source_issue_ids_json, confidence, status, rationale, accepted_memory_id,
 	created_at_unix_nano, updated_at_unix_nano`
 
@@ -97,14 +97,15 @@ func (s *PostgresStore) UpsertMemoryProposal(ctx context.Context, proposal domai
 
 	_, err = s.db.ExecContext(ctx,
 		`INSERT INTO memory_proposals
-		   (id, title, body, kind, anchor_tags_json, anchor_region, source_issue_ids_json,
+		   (id, title, body, kind, subject_tag, anchor_tags_json, anchor_region, source_issue_ids_json,
 		    confidence, status, rationale, accepted_memory_id,
 		    created_at_unix_nano, updated_at_unix_nano)
-		 VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13)
+		 VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14)
 		 ON CONFLICT (id) DO UPDATE SET
 		   title = EXCLUDED.title,
 		   body = EXCLUDED.body,
 		   kind = EXCLUDED.kind,
+		   subject_tag = EXCLUDED.subject_tag,
 		   anchor_tags_json = EXCLUDED.anchor_tags_json,
 		   anchor_region = EXCLUDED.anchor_region,
 		   source_issue_ids_json = EXCLUDED.source_issue_ids_json,
@@ -117,6 +118,7 @@ func (s *PostgresStore) UpsertMemoryProposal(ctx context.Context, proposal domai
 		strings.TrimSpace(proposal.Title),
 		strings.TrimSpace(proposal.Body),
 		string(domain.NormalizeMemoryKind(proposal.Kind)),
+		domain.NormalizeSubjectTag(proposal.Kind, proposal.SubjectTag),
 		anchorTagsJSON,
 		strings.TrimSpace(proposal.AnchorRegion),
 		sourceIssueIDsJSON,
@@ -135,13 +137,13 @@ func (s *PostgresStore) UpsertMemoryProposal(ctx context.Context, proposal domai
 
 func scanMemoryProposal(row memoryRow) (domain.MemoryProposal, error) {
 	var (
-		id, title, body, kind, anchorRegion, status, rationale, acceptedMemoryID string
-		anchorTagsJSON, sourceIssueIDsJSON                                       []byte
-		confidence                                                               float64
-		createdAtNS, updatedAtNS                                                 int64
+		id, title, body, kind, subjectTag, anchorRegion, status, rationale, acceptedMemoryID string
+		anchorTagsJSON, sourceIssueIDsJSON                                                   []byte
+		confidence                                                                           float64
+		createdAtNS, updatedAtNS                                                             int64
 	)
 	if err := row.Scan(
-		&id, &title, &body, &kind, &anchorTagsJSON, &anchorRegion,
+		&id, &title, &body, &kind, &subjectTag, &anchorTagsJSON, &anchorRegion,
 		&sourceIssueIDsJSON, &confidence, &status, &rationale, &acceptedMemoryID,
 		&createdAtNS, &updatedAtNS,
 	); err != nil {
@@ -162,6 +164,7 @@ func scanMemoryProposal(row memoryRow) (domain.MemoryProposal, error) {
 		Title:            title,
 		Body:             body,
 		Kind:             domain.NormalizeMemoryKind(domain.MemoryKind(kind)),
+		SubjectTag:       subjectTag,
 		AnchorTags:       anchorTags,
 		AnchorRegion:     anchorRegion,
 		SourceIssueIDs:   sourceIssueIDs,

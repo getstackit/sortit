@@ -46,7 +46,7 @@ type MemoryStore interface {
 	SearchMemories(ctx context.Context, query []float64, limit int) ([]MemorySimilarity, error)
 }
 
-const memorySelectColumns = `id, title, body, kind, anchor_tags_json, anchor_region,
+const memorySelectColumns = `id, title, body, kind, subject_tag, anchor_tags_json, anchor_region,
 	tag_scores_json, COALESCE(embedding_vector::text, ''), status, superseded_by,
 	source, source_issue_ids_json, confidence, created_by,
 	created_at_unix_nano, updated_at_unix_nano,
@@ -119,15 +119,16 @@ func (s *PostgresStore) UpsertMemory(ctx context.Context, memory domain.Memory) 
 	}
 	_, err = s.db.ExecContext(ctx,
 		`INSERT INTO memories
-		   (id, title, body, kind, anchor_tags_json, anchor_region, tag_scores_json,
+		   (id, title, body, kind, subject_tag, anchor_tags_json, anchor_region, tag_scores_json,
 		    embedding_vector, status, superseded_by, source, source_issue_ids_json,
 		    confidence, created_by, created_at_unix_nano, updated_at_unix_nano,
 		    last_reinforced_at_unix_nano, reinforcement_count)
-		 VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18)
+		 VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19)
 		 ON CONFLICT (id) DO UPDATE SET
 		   title = EXCLUDED.title,
 		   body = EXCLUDED.body,
 		   kind = EXCLUDED.kind,
+		   subject_tag = EXCLUDED.subject_tag,
 		   anchor_tags_json = EXCLUDED.anchor_tags_json,
 		   anchor_region = EXCLUDED.anchor_region,
 		   tag_scores_json = EXCLUDED.tag_scores_json,
@@ -140,7 +141,7 @@ func (s *PostgresStore) UpsertMemory(ctx context.Context, memory domain.Memory) 
 		   updated_at_unix_nano = EXCLUDED.updated_at_unix_nano,
 		   last_reinforced_at_unix_nano = EXCLUDED.last_reinforced_at_unix_nano,
 		   reinforcement_count = EXCLUDED.reinforcement_count`,
-		record.id, record.title, record.body, record.kind, record.anchorTagsJSON,
+		record.id, record.title, record.body, record.kind, record.subjectTag, record.anchorTagsJSON,
 		record.anchorRegion, record.tagScoresJSON, record.embeddingVector, record.status,
 		record.supersededBy, record.source, record.sourceIssueIDsJSON, record.confidence,
 		record.createdBy, record.createdAtNS, record.updatedAtNS,
@@ -213,6 +214,7 @@ type memoryRecord struct {
 	title              string
 	body               string
 	kind               string
+	subjectTag         string
 	anchorTagsJSON     json.RawMessage
 	anchorRegion       string
 	tagScoresJSON      json.RawMessage
@@ -265,6 +267,7 @@ func memoryRecordFrom(memory domain.Memory) (memoryRecord, error) {
 		title:              strings.TrimSpace(memory.Title),
 		body:               strings.TrimSpace(memory.Body),
 		kind:               string(domain.NormalizeMemoryKind(memory.Kind)),
+		subjectTag:         domain.NormalizeSubjectTag(memory.Kind, memory.SubjectTag),
 		anchorTagsJSON:     anchorTagsJSON,
 		anchorRegion:       strings.TrimSpace(memory.AnchorRegion),
 		tagScoresJSON:      tagScoresJSON,
@@ -293,15 +296,15 @@ func scanMemoryWithSimilarity(row memoryRow) (domain.Memory, float64, error) {
 
 func scanMemoryRow(row memoryRow, withSimilarity bool) (domain.Memory, float64, error) {
 	var (
-		id, title, body, kind, anchorRegion, status, supersededBy, source, createdBy string
-		anchorTagsJSON, tagScoresJSON, sourceIssueIDsJSON                            []byte
-		embeddingText                                                                string
-		confidence                                                                   float64
-		createdAtNS, updatedAtNS, lastReinforcedAtNS, reinforcementCount             int64
-		similarity                                                                   float64
+		id, title, body, kind, subjectTag, anchorRegion, status, supersededBy, source, createdBy string
+		anchorTagsJSON, tagScoresJSON, sourceIssueIDsJSON                                        []byte
+		embeddingText                                                                            string
+		confidence                                                                               float64
+		createdAtNS, updatedAtNS, lastReinforcedAtNS, reinforcementCount                         int64
+		similarity                                                                               float64
 	)
 	dest := []any{
-		&id, &title, &body, &kind, &anchorTagsJSON, &anchorRegion, &tagScoresJSON,
+		&id, &title, &body, &kind, &subjectTag, &anchorTagsJSON, &anchorRegion, &tagScoresJSON,
 		&embeddingText, &status, &supersededBy, &source, &sourceIssueIDsJSON,
 		&confidence, &createdBy, &createdAtNS, &updatedAtNS,
 		&lastReinforcedAtNS, &reinforcementCount,
@@ -341,6 +344,7 @@ func scanMemoryRow(row memoryRow, withSimilarity bool) (domain.Memory, float64, 
 		Title:              title,
 		Body:               body,
 		Kind:               domain.NormalizeMemoryKind(domain.MemoryKind(kind)),
+		SubjectTag:         subjectTag,
 		AnchorTags:         anchorTags,
 		AnchorRegion:       anchorRegion,
 		TagScores:          tagScores,

@@ -116,3 +116,69 @@ func TestPostgresStoreMemoryCRUDAndSearch(t *testing.T) {
 		t.Fatalf("expected ErrMemoryNotFound after delete, got %v", err)
 	}
 }
+
+func TestPostgresStoreConceptSubjectTag(t *testing.T) {
+	store := newPostgresTestStore(t)
+	ctx := context.Background()
+
+	// A concept memory round-trips its subject tag (normalized).
+	concept := domain.Memory{
+		ID:         "mem-concept-1",
+		Title:      "Ridge regression",
+		Body:       "Our search ranking uses diagonal-penalty ridge regression.",
+		Kind:       domain.MemoryKindConcept,
+		SubjectTag: "Ridge Regression",
+		Status:     domain.MemoryStatusActive,
+		Embedding:  []float64{1, 0, 0},
+	}
+	if err := store.UpsertMemory(ctx, concept); err != nil {
+		t.Fatalf("upsert concept: %v", err)
+	}
+	got, err := store.GetMemory(ctx, concept.ID)
+	if err != nil {
+		t.Fatalf("get concept: %v", err)
+	}
+	if got.Kind != domain.MemoryKindConcept || got.SubjectTag != "ridge regression" {
+		t.Fatalf("concept subject tag round-trip mismatch: %+v", got)
+	}
+
+	// A non-concept memory never carries a subject tag, even if one is supplied.
+	decision := domain.Memory{
+		ID:         "mem-decision-1",
+		Body:       "some decision",
+		Kind:       domain.MemoryKindDecision,
+		SubjectTag: "ridge regression",
+		Status:     domain.MemoryStatusActive,
+	}
+	if err := store.UpsertMemory(ctx, decision); err != nil {
+		t.Fatalf("upsert decision: %v", err)
+	}
+	gotDecision, err := store.GetMemory(ctx, decision.ID)
+	if err != nil {
+		t.Fatalf("get decision: %v", err)
+	}
+	if gotDecision.SubjectTag != "" {
+		t.Fatalf("non-concept must not carry a subject tag, got %q", gotDecision.SubjectTag)
+	}
+
+	// The partial unique index allows at most one active concept per subject tag.
+	dup := domain.Memory{
+		ID:         "mem-concept-dup",
+		Body:       "duplicate concept for the same tag",
+		Kind:       domain.MemoryKindConcept,
+		SubjectTag: "ridge regression",
+		Status:     domain.MemoryStatusActive,
+	}
+	if err := store.UpsertMemory(ctx, dup); err == nil {
+		t.Fatal("expected unique-index violation for a second active concept on the same tag")
+	}
+
+	// Superseding the first frees the tag for a new active concept.
+	got.Status = domain.MemoryStatusSuperseded
+	if err := store.UpsertMemory(ctx, got); err != nil {
+		t.Fatalf("supersede concept: %v", err)
+	}
+	if err := store.UpsertMemory(ctx, dup); err != nil {
+		t.Fatalf("expected the freed tag to accept a new active concept: %v", err)
+	}
+}
