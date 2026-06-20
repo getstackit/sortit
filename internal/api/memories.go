@@ -71,6 +71,7 @@ type createMemoryRequest struct {
 	Title          string   `json:"title,omitempty"`
 	Body           string   `json:"body"`
 	Kind           string   `json:"kind,omitempty"`
+	SubjectTag     string   `json:"subjectTag,omitempty"`
 	AnchorTags     []string `json:"anchorTags,omitempty"`
 	AnchorRegion   string   `json:"anchorRegion,omitempty"`
 	CreatedBy      string   `json:"createdBy,omitempty"`
@@ -98,6 +99,7 @@ func (s *Server) handleMemoryCreate(w http.ResponseWriter, r *http.Request) {
 		Title:          request.Title,
 		Body:           request.Body,
 		Kind:           domain.MemoryKind(strings.TrimSpace(request.Kind)),
+		SubjectTag:     strings.TrimSpace(request.SubjectTag),
 		AnchorTags:     request.AnchorTags,
 		AnchorRegion:   request.AnchorRegion,
 		CreatedBy:      actorForRequest(r, request.CreatedBy),

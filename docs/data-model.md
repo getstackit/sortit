@@ -108,7 +108,11 @@ and embedding space with issues.
 `memories` is the current-state table for memory records. It stores:
 
 - memory ID, title, and body
-- kind (`decision`, `lesson`, `constraint`, `pattern`, `reference`)
+- kind (`decision`, `lesson`, `constraint`, `pattern`, `reference`, `concept`)
+- `subject_tag` — for `concept` memories only, the single tag the concept
+  profiles. A concept is bound 1:1 to its subject tag; a partial unique index
+  (`kind='concept' AND status='active'`) enforces at most one active concept per
+  tag and serves as the synthesis idempotency guard. Empty for every other kind.
 - anchor tags (`anchor_tags_json`), anchor region, and tag scores
 - embedding vector for semantic recall and map placement
 - status and `superseded_by` (permanence is the default; supersede/archive are explicit)

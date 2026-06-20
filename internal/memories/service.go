@@ -73,10 +73,13 @@ func (s *Service) UseSynthesis(proposals issues.MemoryProposalStore, corpus Corp
 
 // CreateMemoryInput describes a new memory.
 type CreateMemoryInput struct {
-	Title          string
-	Body           string
-	Kind           domain.MemoryKind
-	AnchorTags     []string
+	Title      string
+	Body       string
+	Kind       domain.MemoryKind
+	AnchorTags []string
+	// SubjectTag is required when Kind is concept: the single tag the concept
+	// profiles. Ignored for every other kind.
+	SubjectTag     string
 	AnchorRegion   string
 	CreatedBy      string
 	Source         domain.MemorySource
@@ -96,12 +99,26 @@ func (s *Service) CreateMemory(ctx context.Context, input CreateMemoryInput) (do
 		confidence = 1
 	}
 
+	kind := domain.NormalizeMemoryKind(input.Kind)
+	subjectTag := domain.NormalizeSubjectTag(kind, input.SubjectTag)
+	if kind == domain.MemoryKindConcept && subjectTag == "" {
+		return domain.Memory{}, fmt.Errorf("a concept memory requires a subject tag")
+	}
+
+	anchorTags := normalizeTagList(input.AnchorTags)
+	if kind == domain.MemoryKindConcept {
+		// A concept is anchored on the tag it profiles, so recall and enrichment
+		// see it sitting on its subject node. The subject leads the anchor set.
+		anchorTags = normalizeTagList(append([]string{subjectTag}, anchorTags...))
+	}
+
 	memory := domain.Memory{
 		ID:             issues.NewMemoryID(),
 		Title:          strings.TrimSpace(input.Title),
 		Body:           body,
-		Kind:           domain.NormalizeMemoryKind(input.Kind),
-		AnchorTags:     normalizeTagList(input.AnchorTags),
+		Kind:           kind,
+		SubjectTag:     subjectTag,
+		AnchorTags:     anchorTags,
 		AnchorRegion:   strings.TrimSpace(input.AnchorRegion),
 		Status:         domain.MemoryStatusActive,
 		Source:         domain.NormalizeMemorySource(input.Source),
@@ -114,17 +131,55 @@ func (s *Service) CreateMemory(ctx context.Context, input CreateMemoryInput) (do
 
 	s.enrich(ctx, &memory)
 
+	// A concept is bound 1:1 to its tag: supersede any existing active concept
+	// for the same subject before inserting, or the unique index would reject it.
+	if err := s.supersedePriorConcept(ctx, memory); err != nil {
+		return domain.Memory{}, err
+	}
+
 	if err := s.store.UpsertMemory(ctx, memory); err != nil {
 		return domain.Memory{}, fmt.Errorf("save memory: %w", err)
 	}
 	s.logger.InfoContext(ctx, "memory created",
 		"memory_id", memory.ID,
 		"kind", memory.Kind,
+		"subject_tag", memory.SubjectTag,
 		"anchor_tags", len(memory.AnchorTags),
 		"scored_tags", len(memory.TagScores),
 		"has_embedding", len(memory.Embedding) > 0,
 	)
 	return memory, nil
+}
+
+// supersedePriorConcept retires the active concept (if any) already bound to the
+// new memory's subject tag, pointing it at the replacement. No-op for non-concept
+// memories. This keeps the 1:1 concept↔tag binding the unique index enforces.
+func (s *Service) supersedePriorConcept(ctx context.Context, replacement domain.Memory) error {
+	if replacement.Kind != domain.MemoryKindConcept {
+		return nil
+	}
+	prior, err := s.store.GetActiveConceptBySubjectTag(ctx, replacement.SubjectTag)
+	if errors.Is(err, issues.ErrMemoryNotFound) {
+		return nil
+	}
+	if err != nil {
+		return fmt.Errorf("look up prior concept: %w", err)
+	}
+	if prior.ID == replacement.ID {
+		return nil
+	}
+	prior.Status = domain.MemoryStatusSuperseded
+	prior.SupersededBy = replacement.ID
+	prior.UpdatedAt = time.Now().UTC()
+	if err := s.store.UpsertMemory(ctx, prior); err != nil {
+		return fmt.Errorf("supersede prior concept %q: %w", prior.ID, err)
+	}
+	s.logger.InfoContext(ctx, "superseded prior concept",
+		"subject_tag", replacement.SubjectTag,
+		"prior_id", prior.ID,
+		"replacement_id", replacement.ID,
+	)
+	return nil
 }
 
 // GetMemory returns one memory or issues.ErrMemoryNotFound.
@@ -234,6 +289,7 @@ func (s *Service) AcceptProposal(ctx context.Context, id, acceptedBy string) (do
 		Body:           proposal.Body,
 		Kind:           proposal.Kind,
 		AnchorTags:     proposal.AnchorTags,
+		SubjectTag:     proposal.SubjectTag,
 		AnchorRegion:   proposal.AnchorRegion,
 		CreatedBy:      strings.TrimSpace(acceptedBy),
 		Source:         domain.MemorySourceSynthesized,

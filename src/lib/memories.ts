@@ -7,7 +7,8 @@ export type MemoryKind =
   | "lesson"
   | "constraint"
   | "pattern"
-  | "reference";
+  | "reference"
+  | "concept";
 
 export type MemoryStatus = "active" | "superseded" | "archived";
 export type MemorySource = "manual" | "synthesized";
@@ -18,6 +19,7 @@ export type MemoryRecord = {
   title: string;
   body: string;
   kind: MemoryKind;
+  subjectTag?: string;
   anchorTags?: string[];
   anchorRegion?: string;
   tagScores?: IssueTagScore[];
@@ -40,6 +42,7 @@ export type MemoryProposalRecord = {
   title: string;
   body: string;
   kind: MemoryKind;
+  subjectTag?: string;
   anchorTags?: string[];
   anchorRegion?: string;
   sourceIssueIds?: string[];
@@ -55,6 +58,7 @@ export type CreateMemoryInput = {
   title?: string;
   body: string;
   kind?: MemoryKind;
+  subjectTag?: string;
   anchorTags?: string[];
   anchorRegion?: string;
 };

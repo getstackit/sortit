@@ -142,7 +142,7 @@ func NewHandler(cfg ServerConfig) http.Handler {
 
 	s.AddTool(
 		mcp.NewTool("create_memory",
-			mcp.WithDescription("Create a permanent Sortit memory for durable knowledge: decisions, lessons, constraints, patterns, or references that should outlive an issue or chat."),
+			mcp.WithDescription("Create a permanent Sortit memory for durable knowledge: decisions, lessons, constraints, patterns, references, or concepts that should outlive an issue or chat."),
 			mcp.WithString("body",
 				mcp.Required(),
 				mcp.Description("The durable memory body. Capture what future humans and agents should know."),
@@ -151,7 +151,10 @@ func NewHandler(cfg ServerConfig) http.Handler {
 				mcp.Description("Short title shown as the memory landmark label."),
 			),
 			mcp.WithString("kind",
-				mcp.Description("Memory kind: decision, lesson, constraint, pattern, or reference. Defaults to decision."),
+				mcp.Description("Memory kind: decision, lesson, constraint, pattern, reference, or concept. Defaults to decision. A concept is the canonical profile of a single noun and requires subject_tag."),
+			),
+			mcp.WithString("subject_tag",
+				mcp.Description("For kind=concept only: the single tag this concept profiles (its 1:1 subject). Required for concepts, ignored otherwise."),
 			),
 			mcp.WithArray("anchor_tags",
 				mcp.Description("High-value tags this memory centers on."),
@@ -176,7 +179,7 @@ func NewHandler(cfg ServerConfig) http.Handler {
 
 	s.AddTool(
 		mcp.NewTool("list_memories",
-			mcp.WithDescription("List Sortit memories for durable decisions, lessons, constraints, patterns, and references."),
+			mcp.WithDescription("List Sortit memories for durable decisions, lessons, constraints, patterns, references, and concepts."),
 			mcp.WithString("status",
 				mcp.Description("Optional memory status filter: active, superseded, archived, or all. Defaults to active."),
 			),
@@ -203,7 +206,7 @@ func NewHandler(cfg ServerConfig) http.Handler {
 
 	s.AddTool(
 		mcp.NewTool("search_memories",
-			mcp.WithDescription("Recall the durable Sortit memories most relevant to a query — prior decisions, lessons, constraints, patterns, and references. Consult this before deciding what to do, the same way you search issues before creating one. Results are ranked by similarity."),
+			mcp.WithDescription("Recall the durable Sortit memories most relevant to a query — prior decisions, lessons, constraints, patterns, references, and concepts (the canonical profile of a noun). Consult this before deciding what to do, the same way you search issues before creating one. Results are ranked by similarity."),
 			mcp.WithString("query",
 				mcp.Required(),
 				mcp.Description("Natural-language description of what you're about to work on, decide, or look up."),
@@ -484,6 +487,7 @@ func (h *handlers) handleCreateMemory(ctx context.Context, req mcp.CallToolReque
 		Title:          strings.TrimSpace(req.GetString("title", "")),
 		Body:           body,
 		Kind:           domain.MemoryKind(strings.TrimSpace(req.GetString("kind", ""))),
+		SubjectTag:     strings.TrimSpace(req.GetString("subject_tag", "")),
 		AnchorTags:     req.GetStringSlice("anchor_tags", nil),
 		AnchorRegion:   strings.TrimSpace(req.GetString("anchor_region", "")),
 		CreatedBy:      actorForContext(ctx, req.GetString("created_by", "Claude")),

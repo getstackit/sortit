@@ -142,7 +142,7 @@ For agents, `next` is the bridge between the corpus and the current work loop. I
 
 ### 6. Remember what should outlive the issue
 
-Issues track work. **Memories** track durable knowledge: decisions, lessons, constraints, patterns, and references that should remain useful after the issue closes. Memories live in the same tag and embedding space as issues, show up as map landmarks, and are retrieved during enrichment as prior-decision context.
+Issues track work. **Memories** track durable knowledge: decisions, lessons, constraints, patterns, references, and concepts that should remain useful after the issue closes. The first five are statements; a **concept** is different — it is the canonical profile of a single noun (a subsystem, component, or domain concept), bound 1:1 to the tag it profiles, so the rest of the corpus has a stable node to orbit. Memories live in the same tag and embedding space as issues, show up as map landmarks, and are retrieved during enrichment as prior-decision context.
 
 This retrieval is where memory compounds hardest: a decision recorded once is pulled back in as context on *every* future related issue — one deposit, many payouts. The more faithfully you anchor it (`--source-issue` for provenance, `--anchor-tag` for placement), the more often and more precisely it pays out.
 

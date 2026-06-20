@@ -133,6 +133,56 @@ func TestCreateMemoryNilEnricher(t *testing.T) {
 	}
 }
 
+func TestCreateConceptBindsToSubjectTag(t *testing.T) {
+	store := issues.NewInMemoryStore(nil)
+	svc := NewService(store, nil, nil)
+	ctx := context.Background()
+
+	// A concept requires a subject tag.
+	if _, err := svc.CreateMemory(ctx, CreateMemoryInput{
+		Body: "a concept without a subject",
+		Kind: domain.MemoryKindConcept,
+	}); err == nil {
+		t.Fatal("expected error creating a concept without a subject tag")
+	}
+
+	concept, err := svc.CreateMemory(ctx, CreateMemoryInput{
+		Title:      "Ridge regression",
+		Body:       "Our search ranking uses diagonal-penalty ridge regression.",
+		Kind:       domain.MemoryKindConcept,
+		SubjectTag: "Ridge Regression",
+	})
+	if err != nil {
+		t.Fatalf("create concept: %v", err)
+	}
+	if concept.SubjectTag != "ridge regression" {
+		t.Fatalf("expected normalized subject tag, got %q", concept.SubjectTag)
+	}
+	if len(concept.AnchorTags) == 0 || concept.AnchorTags[0] != "ridge regression" {
+		t.Fatalf("expected the subject tag to lead the anchor set, got %v", concept.AnchorTags)
+	}
+
+	// A second concept for the same tag supersedes the first (1:1 binding).
+	replacement, err := svc.CreateMemory(ctx, CreateMemoryInput{
+		Body:       "Updated ridge definition.",
+		Kind:       domain.MemoryKindConcept,
+		SubjectTag: "ridge regression",
+	})
+	if err != nil {
+		t.Fatalf("create replacement concept: %v", err)
+	}
+	prior, err := svc.GetMemory(ctx, concept.ID)
+	if err != nil {
+		t.Fatalf("get prior concept: %v", err)
+	}
+	if prior.Status != domain.MemoryStatusSuperseded || prior.SupersededBy != replacement.ID {
+		t.Fatalf("expected prior concept superseded by replacement, got status=%s supersededBy=%q", prior.Status, prior.SupersededBy)
+	}
+	if replacement.Status != domain.MemoryStatusActive {
+		t.Fatalf("expected replacement active, got %s", replacement.Status)
+	}
+}
+
 func TestSupersedeMemory(t *testing.T) {
 	store := issues.NewInMemoryStore(nil)
 	svc := NewService(store, nil, nil)

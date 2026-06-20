@@ -15,7 +15,7 @@ import type {
   MemoryRecord,
 } from "@/lib/memories";
 
-const KINDS: MemoryKind[] = ["decision", "lesson", "constraint", "pattern", "reference"];
+const KINDS: MemoryKind[] = ["decision", "lesson", "constraint", "pattern", "reference", "concept"];
 
 export type MemoriesViewProps = {
   memories: MemoryRecord[];
@@ -41,17 +41,24 @@ export function MemoriesView({
   const [title, setTitle] = useState("");
   const [body, setBody] = useState("");
   const [kind, setKind] = useState<MemoryKind>("decision");
+  const [subjectTag, setSubjectTag] = useState("");
   const [anchorTags, setAnchorTags] = useState("");
   const [submitting, setSubmitting] = useState(false);
 
+  // A concept is bound 1:1 to a tag, so it needs a subject tag before it can be
+  // created.
+  const conceptMissingSubject = kind === "concept" && !subjectTag.trim();
+  const canSubmit = !!body.trim() && !submitting && !conceptMissingSubject;
+
   async function submit() {
-    if (!body.trim() || submitting) return;
+    if (!canSubmit) return;
     setSubmitting(true);
     try {
       await onCreate({
         title: title.trim() || undefined,
         body: body.trim(),
         kind,
+        subjectTag: kind === "concept" ? subjectTag.trim() : undefined,
         anchorTags: anchorTags
           .split(",")
           .map((t) => t.trim())
@@ -59,6 +66,7 @@ export function MemoriesView({
       });
       setTitle("");
       setBody("");
+      setSubjectTag("");
       setAnchorTags("");
     } finally {
       setSubmitting(false);
@@ -106,16 +114,25 @@ export function MemoriesView({
                 </button>
               ))}
             </div>
-            <Input
-              placeholder="anchor tags (comma separated)"
-              value={anchorTags}
-              onChange={(e) => setAnchorTags(e.target.value)}
-              className="h-8 max-w-xs flex-1 text-xs"
-            />
+            {kind === "concept" ? (
+              <Input
+                placeholder="subject tag — the noun this concept profiles (required)"
+                value={subjectTag}
+                onChange={(e) => setSubjectTag(e.target.value)}
+                className="h-8 max-w-xs flex-1 text-xs"
+              />
+            ) : (
+              <Input
+                placeholder="anchor tags (comma separated)"
+                value={anchorTags}
+                onChange={(e) => setAnchorTags(e.target.value)}
+                className="h-8 max-w-xs flex-1 text-xs"
+              />
+            )}
             <Button
               size="sm"
               className="ml-auto"
-              disabled={!body.trim() || submitting}
+              disabled={!canSubmit}
               onClick={() => void submit()}
             >
               {submitting ? "Saving…" : "Create memory"}

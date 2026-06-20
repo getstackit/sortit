@@ -44,6 +44,10 @@ type MemoryStore interface {
 	// SearchMemories returns the memories most similar to the query embedding,
 	// nearest first. Only active memories with an embedding participate.
 	SearchMemories(ctx context.Context, query []float64, limit int) ([]MemorySimilarity, error)
+	// GetActiveConceptBySubjectTag returns the single active concept memory bound
+	// to the given subject tag, or ErrMemoryNotFound. The partial unique index
+	// guarantees at most one row.
+	GetActiveConceptBySubjectTag(ctx context.Context, subjectTag string) (domain.Memory, error)
 }
 
 const memorySelectColumns = `id, title, body, kind, subject_tag, anchor_tags_json, anchor_region,
@@ -99,6 +103,29 @@ func (s *PostgresStore) GetMemory(ctx context.Context, id string) (domain.Memory
 	}
 	row := s.db.QueryRowContext(ctx,
 		`SELECT `+memorySelectColumns+` FROM memories WHERE id = $1`, id,
+	)
+	memory, err := scanMemory(row)
+	if errors.Is(err, sql.ErrNoRows) {
+		return domain.Memory{}, ErrMemoryNotFound
+	}
+	if err != nil {
+		return domain.Memory{}, err
+	}
+	return memory, nil
+}
+
+// GetActiveConceptBySubjectTag returns the active concept bound to subjectTag,
+// or ErrMemoryNotFound. Index-backed by memories_concept_subject_tag_unique_idx.
+func (s *PostgresStore) GetActiveConceptBySubjectTag(ctx context.Context, subjectTag string) (domain.Memory, error) {
+	subjectTag = domain.NormalizeTagName(subjectTag)
+	if subjectTag == "" {
+		return domain.Memory{}, ErrMemoryNotFound
+	}
+	row := s.db.QueryRowContext(ctx,
+		`SELECT `+memorySelectColumns+`
+		 FROM memories
+		 WHERE kind = 'concept' AND status = 'active' AND subject_tag = $1
+		 LIMIT 1`, subjectTag,
 	)
 	memory, err := scanMemory(row)
 	if errors.Is(err, sql.ErrNoRows) {

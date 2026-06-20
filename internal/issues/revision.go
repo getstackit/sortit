@@ -185,6 +185,13 @@ func (s *ObservedStore) GetMemory(ctx context.Context, id string) (domain.Memory
 	return domain.Memory{}, ErrMemoryNotFound
 }
 
+func (s *ObservedStore) GetActiveConceptBySubjectTag(ctx context.Context, subjectTag string) (domain.Memory, error) {
+	if ms, ok := s.base.(MemoryStore); ok {
+		return ms.GetActiveConceptBySubjectTag(ctx, subjectTag)
+	}
+	return domain.Memory{}, ErrMemoryNotFound
+}
+
 func (s *ObservedStore) UpsertMemory(ctx context.Context, memory domain.Memory) error {
 	if ms, ok := s.base.(MemoryStore); ok {
 		if err := ms.UpsertMemory(ctx, memory); err != nil {
