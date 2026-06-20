@@ -17,6 +17,7 @@ func newDebugCmd(opts *rootOptions) *cobra.Command {
 	}
 	cmd.AddCommand(newDebugEvalTagsCmd(opts))
 	cmd.AddCommand(newDebugFactorWeightsCmd(opts))
+	cmd.AddCommand(newDebugTagHealthCmd(opts))
 	cmd.AddCommand(newDebugIssueR2Cmd(opts))
 	return cmd
 }
@@ -56,6 +57,21 @@ func newDebugFactorWeightsCmd(opts *rootOptions) *cobra.Command {
 			client := opts.client()
 			var response diagnostics.DebugFactorWeightsResult
 			if err := client.Get(cmd.Context(), "/debug/factor-weights", &response); err != nil {
+				return err
+			}
+			return printJSON(cmd, response)
+		},
+	}
+}
+
+func newDebugTagHealthCmd(opts *rootOptions) *cobra.Command {
+	return &cobra.Command{
+		Use:   "tag-health",
+		Short: "Show open issues whose tagging drifts from their embedding (spurious/missing tags)",
+		RunE: func(cmd *cobra.Command, _ []string) error {
+			client := opts.client()
+			var response diagnostics.DebugTagHealthResult
+			if err := client.Get(cmd.Context(), "/debug/tag-health", &response); err != nil {
 				return err
 			}
 			return printJSON(cmd, response)

@@ -78,6 +78,7 @@ type Server struct {
 	debugAnalyzeIssue      diagnostics.DebugAnalyzeIssueHandler
 	debugEvalTags          diagnostics.DebugEvalTagsHandler
 	debugFactorWeights     diagnostics.DebugFactorWeightsHandler
+	debugTagHealth         diagnostics.DebugTagHealthHandler
 	debugIssueR2           diagnostics.DebugIssueR2Handler
 	debugTagCooccurrence   diagnostics.DebugTagCooccurrenceHandler
 	debugRidgeScore        diagnostics.DebugRidgeScoreHandler
@@ -286,6 +287,7 @@ func (s *Server) registerDedicatedAPIRoutes(r chi.Router) {
 			r.Use(middleware.Timeout(debugRequestTimeout))
 			r.Get("/eval-tags", s.handleDebugEvalTags)
 			r.Get("/factor-weights", s.handleDebugFactorWeights)
+			r.Get("/tag-health", s.handleDebugTagHealth)
 			r.Get("/issues/{id}/r2", s.handleDebugIssueR2)
 			r.Get("/tag-cooccurrence", s.handleDebugTagCooccurrence)
 			r.Get("/issues/{id}/ridge", s.handleDebugRidgeScore)
@@ -332,6 +334,7 @@ func (s *Server) registerUIRoutes(r chi.Router) {
 			r.Post("/tags/rescore", s.handleDebugRescoreTags)
 			r.Get("/eval-tags", s.handleDebugEvalTags)
 			r.Get("/factor-weights", s.handleDebugFactorWeights)
+			r.Get("/tag-health", s.handleDebugTagHealth)
 			r.Get("/issues/{id}/r2", s.handleDebugIssueR2)
 			r.Get("/tag-cooccurrence", s.handleDebugTagCooccurrence)
 			r.Get("/issues/{id}/ridge", s.handleDebugRidgeScore)
@@ -684,7 +687,8 @@ func NewServer(cfg ServerConfig) *Server {
 		RidgeLambda:  ridgeLambdaCache,
 	}
 	curationDetector := curation.NewDetector(store, store, exploreHandler,
-		diagnostics.DebugFactorWeightsHandler{Store: store, Catalog: catalog}, logger)
+		diagnostics.DebugFactorWeightsHandler{Store: store, Catalog: catalog},
+		diagnostics.DebugTagHealthHandler{Store: store, Catalog: catalog, Centering: centeringCache}, logger)
 	curationMemoryDetector := curation.NewMemoryDetector(store, store, logger)
 
 	return &Server{
@@ -753,6 +757,7 @@ func NewServer(cfg ServerConfig) *Server {
 		debugAnalyzeIssue:    diagnostics.DebugAnalyzeIssueHandler{Analyzer: cfg.Analyzer, Catalog: catalog, Enricher: enricher, Store: store},
 		debugEvalTags:        diagnostics.DebugEvalTagsHandler{Analyzer: cfg.Analyzer, Catalog: catalog, Enricher: enricher},
 		debugFactorWeights:   diagnostics.DebugFactorWeightsHandler{Store: store, Catalog: catalog},
+		debugTagHealth:       diagnostics.DebugTagHealthHandler{Store: store, Catalog: catalog, Centering: centeringCache},
 		debugIssueR2:         diagnostics.DebugIssueR2Handler{Store: store, Catalog: catalog},
 		debugTagCooccurrence: diagnostics.DebugTagCooccurrenceHandler{Store: store, Cache: cooccurrenceCache},
 		debugRidgeScore:      diagnostics.DebugRidgeScoreHandler{Store: store, Catalog: catalog, Centering: centeringCache},
