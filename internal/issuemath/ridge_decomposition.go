@@ -3,6 +3,9 @@ package issuemath
 import (
 	"math"
 
+	"gonum.org/v1/gonum/floats"
+	"gonum.org/v1/gonum/mat"
+
 	"sortit/internal/issues"
 	"sortit/internal/scoring"
 	"sortit/internal/vectors"
@@ -117,6 +120,7 @@ func ComputeRidgeDecomposition(
 		tagIndex[tag] = i
 	}
 	tagMatrix := ridgeTagMatrix(tagNames, tagEmbeddings, embDim)
+	solver := newRidgeSolver(tagMatrix, embDim)
 
 	d := RidgeDecomposition{
 		index:          make(map[string]int, len(items)),
@@ -134,7 +138,7 @@ func ComputeRidgeDecomposition(
 		}
 		totalVar := dotProduct(e, e)
 
-		rv, residualVar := ridgeVectorsFor(e, item.TagScores, tagIndex, tagMatrix, embDim, lambdaScored, lambdaUnscored, totalVar)
+		rv, residualVar := ridgeVectorsFor(solver, e, item.TagScores, tagIndex, embDim, lambdaScored, lambdaUnscored, totalVar)
 		d.put(item.ID, rv)
 		sumResidualVar += residualVar
 		sumTotalVar += totalVar
@@ -177,8 +181,9 @@ func DecomposeRidgeEmbedding(
 		tagIndex[tag] = i
 	}
 	tagMatrix := ridgeTagMatrix(tagNames, tagEmbeddings, embDim)
+	solver := newRidgeSolver(tagMatrix, embDim)
 
-	rv, _ := ridgeVectorsFor(embedding, tagScores, tagIndex, tagMatrix, embDim, lambdaScored, lambdaUnscored, dotProduct(embedding, embedding))
+	rv, _ := ridgeVectorsFor(solver, embedding, tagScores, tagIndex, embDim, lambdaScored, lambdaUnscored, dotProduct(embedding, embedding))
 	return rv
 }
 
@@ -216,30 +221,110 @@ func factorZero(v RidgeVectors, mode RidgeSimilarityMode) bool {
 	return isZeroVector(v.Loading)
 }
 
+// ridgeSolver factors the per-issue anchored-ridge solve into a one-time
+// setup and a cheap per-embedding solve. The tag matrix T and the base gram
+// T Tᵀ are identical for every issue in a corpus (they depend only on the tag
+// catalog), so building them once instead of per issue removes the dominant
+// cost of a corpus decomposition — at production embedding dimensions T Tᵀ
+// (O(K²·D)) dwarfs the per-issue Cholesky solve. The per-issue arithmetic is
+// the same gonum operations on the same operands as the standalone
+// ComputeRidgeScoresDiagonal, so the loadings are bit-for-bit identical.
+type ridgeSolver struct {
+	tagMatrix [][]float64
+	dim       int
+	tagCount  int
+
+	tMat     *mat.Dense
+	baseGram *mat.Dense
+
+	// Scratch reused across solve calls. gram holds baseGram plus the
+	// per-issue diagonal penalty; out holds the latest loadings and is
+	// overwritten on the next solve, so callers that retain it must copy.
+	gram       mat.Dense
+	projection mat.VecDense
+	rhs        *mat.VecDense
+	f          mat.VecDense
+	out        []float64
+}
+
+// newRidgeSolver precomputes T and T Tᵀ. Every row of tagMatrix must already
+// be dim-length (ridgeTagMatrix guarantees this); zero rows for missing tag
+// embeddings are fine and contribute nothing to the gram.
+func newRidgeSolver(tagMatrix [][]float64, dim int) *ridgeSolver {
+	tagCount := len(tagMatrix)
+	tMat := mat.NewDense(tagCount, dim, nil)
+	for i, vec := range tagMatrix {
+		tMat.SetRow(i, vec)
+	}
+	var baseGram mat.Dense
+	baseGram.Mul(tMat, tMat.T())
+	return &ridgeSolver{
+		tagMatrix: tagMatrix,
+		dim:       dim,
+		tagCount:  tagCount,
+		tMat:      tMat,
+		baseGram:  &baseGram,
+		gram:      *mat.NewDense(tagCount, tagCount, nil),
+		rhs:       mat.NewVecDense(tagCount, nil),
+		out:       make([]float64, tagCount),
+	}
+}
+
+// solve returns f = (T Tᵀ + diag(lambdas))⁻¹ (T e + diag(lambdas) r). The
+// returned slice is solver-owned scratch, valid until the next solve call.
+// Returns nil when the inputs disagree on shape or the system is singular.
+func (s *ridgeSolver) solve(e, anchor, lambdas []float64) []float64 {
+	if len(e) != s.dim || len(anchor) != s.tagCount || len(lambdas) != s.tagCount {
+		return nil
+	}
+
+	// A = T Tᵀ + Λ (copy the shared base gram, then add the per-issue diagonal).
+	s.gram.Copy(s.baseGram)
+	for i := range s.tagCount {
+		s.gram.Set(i, i, s.gram.At(i, i)+lambdas[i])
+	}
+
+	// projection = T e.
+	eVec := mat.NewVecDense(s.dim, e)
+	s.projection.MulVec(s.tMat, eVec)
+
+	// rhs = T e + Λ r.
+	for i := range s.tagCount {
+		s.rhs.SetVec(i, s.projection.AtVec(i)+lambdas[i]*anchor[i])
+	}
+
+	if err := s.f.SolveVec(&s.gram, s.rhs); err != nil {
+		return nil
+	}
+	for i := range s.tagCount {
+		s.out[i] = s.f.AtVec(i)
+	}
+	return s.out
+}
+
 // ridgeVectorsFor solves the ridge system for one embedding and assembles
 // its decomposition, returning the vectors and the residual variance.
 func ridgeVectorsFor(
+	solver *ridgeSolver,
 	e []float64,
 	tagScores []issues.TagRelevance,
 	tagIndex map[string]int,
-	tagMatrix [][]float64,
 	embDim int,
 	lambdaScored, lambdaUnscored, totalVar float64,
 ) (RidgeVectors, float64) {
-	anchor, lambdas := ridgeAnchorAndLambdas(tagScores, tagIndex, len(tagMatrix), lambdaScored, lambdaUnscored)
-	f := ComputeRidgeScoresDiagonal(tagMatrix, e, anchor, lambdas)
+	anchor, lambdas := ridgeAnchorAndLambdas(tagScores, tagIndex, solver.tagCount, lambdaScored, lambdaUnscored)
+	f := solver.solve(e, anchor, lambdas)
 	if f == nil || isZeroVector(f) {
 		return residualOnlyRidgeVectors(e, math.Sqrt(totalVar)), totalVar
 	}
 
-	recon := reconstructEmbedding(f, tagMatrix, embDim)
+	recon := reconstructEmbedding(f, solver.tagMatrix, embDim)
 	if isZeroVector(recon) {
 		return residualOnlyRidgeVectors(e, math.Sqrt(totalVar)), totalVar
 	}
 	residual := make([]float64, embDim)
-	for d := range embDim {
-		residual[d] = e[d] - recon[d]
-	}
+	copy(residual, e)
+	floats.Sub(residual, recon)
 
 	reconNorm := math.Sqrt(dotProduct(recon, recon))
 	residualVar := dotProduct(residual, residual)
@@ -330,17 +415,15 @@ func ridgeAnchorAndLambdas(
 }
 
 // reconstructEmbedding computes Tᵀf — the linear combination of tag
-// embeddings weighted by the ridge loadings.
+// embeddings weighted by the ridge loadings. Each nonzero loading contributes
+// an AXPY (recon += fk·row) through gonum's floats kernel.
 func reconstructEmbedding(f []float64, tagMatrix [][]float64, embDim int) []float64 {
 	recon := make([]float64, embDim)
 	for k, fk := range f {
 		if fk == 0 {
 			continue
 		}
-		row := tagMatrix[k]
-		for d := range embDim {
-			recon[d] += fk * row[d]
-		}
+		floats.AddScaled(recon, fk, tagMatrix[k])
 	}
 	return recon
 }

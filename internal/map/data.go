@@ -3,6 +3,8 @@ package issuemap
 import (
 	"math"
 
+	"gonum.org/v1/gonum/floats"
+
 	"sortit/internal/issues"
 )
 
@@ -32,16 +34,10 @@ func round(value float64) float64 {
 }
 
 func normalizeVector(vector []float64) {
-	var magnitude float64
-	for _, value := range vector {
-		magnitude += value * value
-	}
+	// floats.Dot(v, v) is the sum of squares through the unrolled kernel.
+	magnitude := floats.Dot(vector, vector)
 	if magnitude == 0 {
 		return
 	}
-
-	scale := math.Sqrt(magnitude)
-	for i := range vector {
-		vector[i] /= scale
-	}
+	floats.Scale(1/math.Sqrt(magnitude), vector)
 }
