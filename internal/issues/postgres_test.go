@@ -306,18 +306,15 @@ func TestPostgresStoreLifecycleProjectionReadCutover(t *testing.T) {
 		t.Fatalf("save issue: %v", err)
 	}
 
-	legacyClosedAt := issue.CreatedAt.Add(time.Hour)
+	// Desync the surviving legacy issues columns (status/assigned_to). The
+	// closed_* columns were dropped in migration 000032; lifecycle state now
+	// lives only in issue_lifecycle_projections.
 	if _, err := store.DB().ExecContext(
 		ctx,
 		`UPDATE issues
 		 SET status = 'closed',
-		     closed_at_unix_nano = $1,
-		     closed_by = 'Legacy',
-		     closed_reason = 'fixed',
-		     closed_reason_note = 'stale row',
 		     assigned_to = 'Legacy'
-		 WHERE id = $2`,
-		legacyClosedAt.UTC().UnixNano(),
+		 WHERE id = $1`,
 		issue.ID,
 	); err != nil {
 		t.Fatalf("desync legacy issue row: %v", err)
@@ -718,18 +715,8 @@ func TestPostgresStoreEnrichmentProjectionReadAndWriteCutover(t *testing.T) {
 		t.Fatalf("enqueue enrichment job: %v", err)
 	}
 
-	if _, err := store.DB().ExecContext(
-		ctx,
-		`UPDATE issues
-		 SET enrichment_status = 'complete',
-		     enrichment_error = 'legacy stale state',
-		     enrichment_target_sequence = 1
-		 WHERE id = $1`,
-		issue.ID,
-	); err != nil {
-		t.Fatalf("desync legacy enrichment columns: %v", err)
-	}
-
+	// Enrichment state is sourced solely from issue_enrichment_projections; the
+	// legacy issues.enrichment_* columns were dropped in migration 000031.
 	loaded, err := store.Get(ctx, issue.ID)
 	if err != nil {
 		t.Fatalf("get issue through enrichment cutover: %v", err)

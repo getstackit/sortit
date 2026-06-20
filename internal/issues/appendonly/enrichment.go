@@ -232,9 +232,9 @@ func (s *EnrichmentStore) listEnrichmentStateRows(ctx context.Context) ([]enrich
 	rows, err := s.db.QueryContext(
 		ctx,
 		`SELECT i.id,
-		        COALESCE(p.status, i.enrichment_status) AS enrichment_status,
-		        COALESCE(p.error, i.enrichment_error) AS enrichment_error,
-		        COALESCE(p.target_sequence, i.enrichment_target_sequence) AS enrichment_target_sequence,
+		        COALESCE(p.status, 'complete') AS enrichment_status,
+		        COALESCE(p.error, '') AS enrichment_error,
+		        COALESCE(p.target_sequence, 1) AS enrichment_target_sequence,
 		        COALESCE(j.attempt_count, 0) AS attempt_count,
 		        COALESCE(j.lease_expires_at_unix_nano, 0) AS lease_expires_at_unix_nano,
 		        i.created_at_unix_nano,

@@ -341,9 +341,19 @@ func (s *LifecycleStore) upsertProjection(
 	tx *sql.Tx,
 	projection LifecycleProjection,
 ) error {
-	var closedAtUnixNano int64
+	// Open issues store NULL for the closed_* columns; only closed issues carry
+	// values (issue_lifecycle_projections.closed_* is nullable as of 000032).
+	var (
+		closedAtUnixNano any
+		closedBy         any
+		closedReason     any
+		closedReasonNote any
+	)
 	if projection.ClosedAt != nil {
 		closedAtUnixNano = projection.ClosedAt.UTC().UnixNano()
+		closedBy = projection.ClosedBy
+		closedReason = projection.ClosedReason
+		closedReasonNote = projection.ClosedReasonNote
 	}
 
 	updatedAt := projection.UpdatedAt.UTC()
@@ -384,9 +394,9 @@ func (s *LifecycleStore) upsertProjection(
 		projection.CreatedAt.UTC().UnixNano(),
 		string(projection.Status),
 		closedAtUnixNano,
-		projection.ClosedBy,
-		projection.ClosedReason,
-		projection.ClosedReasonNote,
+		closedBy,
+		closedReason,
+		closedReasonNote,
 		projection.AssignedTo,
 		projection.LastFactID,
 		projection.FactCount,
@@ -405,10 +415,10 @@ func (s *LifecycleStore) loadAllProjections(ctx context.Context) (map[string]Lif
 		        created_by,
 		        created_at_unix_nano,
 		        status,
-		        closed_at_unix_nano,
-		        closed_by,
-		        closed_reason,
-		        closed_reason_note,
+		        COALESCE(closed_at_unix_nano, 0) AS closed_at_unix_nano,
+		        COALESCE(closed_by, '') AS closed_by,
+		        COALESCE(closed_reason, '') AS closed_reason,
+		        COALESCE(closed_reason_note, '') AS closed_reason_note,
 		        assigned_to,
 		        last_fact_id,
 		        fact_count,

@@ -872,10 +872,8 @@ func (s *PostgresStore) Replace(ctx context.Context, next []Issue) error {
 			CreatedBy:         record.CreatedBy,
 			CreatedAtUnixNano: record.CreatedAtUnixNano,
 			Status:            record.Status,
-			ClosedAtUnixNano:  record.ClosedAtUnixNano,
-			ClosedBy:          record.ClosedBy,
 			TagScoresJson:     record.TagScoresJSON,
-			Column10:          record.EmbeddingVector,
+			Column8:           record.EmbeddingVector,
 			AssignedTo:        record.AssignedTo,
 		}); err != nil {
 			return fmt.Errorf("replace issue %q: %w", issue.ID, err)
@@ -1266,9 +1264,9 @@ func loadIssueEnrichmentStates(
 	rows, err := db.QueryContext(
 		ctx,
 		`SELECT i.id,
-		        COALESCE(p.status, i.enrichment_status) AS enrichment_status,
-		        COALESCE(p.error, i.enrichment_error) AS enrichment_error,
-		        COALESCE(p.target_sequence, i.enrichment_target_sequence) AS enrichment_target_sequence
+		        COALESCE(p.status, 'complete') AS enrichment_status,
+		        COALESCE(p.error, '') AS enrichment_error,
+		        COALESCE(p.target_sequence, 1) AS enrichment_target_sequence
 		 FROM issues i
 		 LEFT JOIN issue_enrichment_projections p ON p.issue_id = i.id
 		 WHERE i.id = ANY($1)`,
