@@ -100,6 +100,29 @@ Tags are normalized by name and can store:
 
 Suggested tags whose names start with `suggested-` are filtered out of the active runtime catalog by the catalog service. Tag merge and dismiss workflows are represented through tag persistence and tag-related API routes.
 
+## Memory And Curation State
+
+Memories are durable, permanent-by-default knowledge artifacts that share the tag
+and embedding space with issues.
+
+`memories` is the current-state table for memory records. It stores:
+
+- memory ID, title, and body
+- kind (`decision`, `lesson`, `constraint`, `pattern`, `reference`)
+- anchor tags (`anchor_tags_json`), anchor region, and tag scores
+- embedding vector for semantic recall and map placement
+- status and `superseded_by` (permanence is the default; supersede/archive are explicit)
+- provenance: `source` and `source_issue_ids_json`
+- confidence, creator, timestamps, and reinforcement signal
+  (`last_reinforced_at_unix_nano`, `reinforcement_count`)
+
+`memory_proposals` holds synthesized memory drafts awaiting human review, with
+`rationale`, `confidence`, `status`, and `accepted_memory_id` once accepted.
+
+`curation_proposals` holds propose-only librarian moves (combine, close-stale,
+re-enrich, archive/supersede memory) that a human accepts or rejects; agents never
+mutate the corpus directly.
+
 ## Search And Vector Data
 
 Later migrations add vector columns and HNSW indexes for issue content and tag projections. The application still keeps compatibility JSON fields where needed, while vector-backed paths support semantic retrieval and map/search features.

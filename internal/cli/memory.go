@@ -22,6 +22,17 @@ type memoriesListResponse struct {
 	Memories []domain.Memory `json:"memories"`
 }
 
+// recalledMemory mirrors the API's memories.RecalledMemory: a memory plus its
+// similarity to the recall query.
+type recalledMemory struct {
+	domain.Memory
+	Similarity float64 `json:"similarity"`
+}
+
+type memoriesSearchResponse struct {
+	Memories []recalledMemory `json:"memories"`
+}
+
 type supersedeMemoryRequest struct {
 	SupersededBy string `json:"supersededBy,omitempty"`
 }
@@ -34,6 +45,7 @@ func newMemoryCmd(opts *rootOptions) *cobra.Command {
 	memoryCmd.AddCommand(newMemoryCreateCmd(opts))
 	memoryCmd.AddCommand(newMemoryGetCmd(opts))
 	memoryCmd.AddCommand(newMemoryListCmd(opts))
+	memoryCmd.AddCommand(newMemorySearchCmd(opts))
 	memoryCmd.AddCommand(newMemorySupersedeCmd(opts))
 	memoryCmd.AddCommand(newMemoryArchiveCmd(opts))
 	memoryCmd.AddCommand(newMemoryProposalsCmd(opts))
@@ -207,6 +219,36 @@ func newMemoryListCmd(opts *rootOptions) *cobra.Command {
 	cmd.Flags().StringVar(&status, "status", "", "Status filter: active, superseded, archived, all")
 	cmd.Flags().IntVar(&limit, "limit", 0, "Maximum number of results")
 	cmd.Flags().IntVar(&offset, "offset", 0, "Number of results to skip")
+	return cmd
+}
+
+func newMemorySearchCmd(opts *rootOptions) *cobra.Command {
+	var (
+		limit         int
+		minSimilarity float64
+	)
+
+	cmd := &cobra.Command{
+		Use:   "search <query>",
+		Short: "Recall memories most relevant to a query",
+		Args:  cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			client := opts.client()
+			params := newQueryParams().
+				add("q", strings.TrimSpace(args[0])).
+				addInt("limit", limit).
+				addFloat("min_similarity", minSimilarity)
+
+			var response memoriesSearchResponse
+			if err := client.Get(cmd.Context(), "/memories/search"+params.encode(), &response); err != nil {
+				return err
+			}
+			return printJSON(cmd, response)
+		},
+	}
+
+	cmd.Flags().IntVar(&limit, "limit", 0, "Maximum number of results")
+	cmd.Flags().Float64Var(&minSimilarity, "min-similarity", 0, "Drop results below this cosine similarity (0 to 1)")
 	return cmd
 }
 

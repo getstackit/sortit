@@ -10,6 +10,7 @@ import (
 
 	"sortit/internal/ai"
 	"sortit/internal/auth"
+	"sortit/internal/domain"
 	issueenrichment "sortit/internal/issueenrichment"
 	"sortit/internal/issueevents"
 	"sortit/internal/issues"
@@ -17,10 +18,14 @@ import (
 	issueviews "sortit/internal/issues/views"
 	issuemap "sortit/internal/map"
 	"sortit/internal/mapview"
+	"sortit/internal/memories"
 	"sortit/internal/people"
 	"sortit/internal/search"
 	"sortit/internal/tags"
 )
+
+// testActorJordan is the sample actor name reused across these MCP tests.
+const testActorJordan = "Jordan"
 
 func TestHandleCreateIssue(t *testing.T) {
 	t.Parallel()
@@ -153,12 +158,232 @@ func TestHandleListTags(t *testing.T) {
 	}
 }
 
+func TestHandleCreateAndGetMemory(t *testing.T) {
+	t.Parallel()
+
+	handler := newTestHandlers()
+	source := createTestIssue(t, handler, "Safari PDF export uses the print pipeline", "Casey")
+
+	result, err := handler.handleCreateMemory(context.Background(), toolRequest(map[string]any{
+		"title":            "Safari export uses print pipeline",
+		"body":             "Use the print pipeline for Safari PDF export because direct canvas export loses pagination metadata.",
+		"kind":             "decision",
+		"anchor_tags":      []string{"export"},
+		"source_issue_ids": []string{source.ID},
+		"created_by":       testActorJordan,
+	}))
+	if err != nil {
+		t.Fatalf("handleCreateMemory returned error: %v", err)
+	}
+	if result.IsError {
+		t.Fatalf("expected success result, got error: %s", firstText(result))
+	}
+
+	created, ok := result.StructuredContent.(domain.Memory)
+	if !ok {
+		t.Fatalf("expected domain.Memory structured content, got %T", result.StructuredContent)
+	}
+	if created.ID == "" {
+		t.Fatal("expected memory ID")
+	}
+	if created.CreatedBy != testActorJordan {
+		t.Fatalf("expected CreatedBy Jordan, got %q", created.CreatedBy)
+	}
+	if created.Kind != domain.MemoryKindDecision {
+		t.Fatalf("expected decision memory, got %q", created.Kind)
+	}
+	if len(created.SourceIssueIDs) != 1 || created.SourceIssueIDs[0] != source.ID {
+		t.Fatalf("expected source issue provenance, got %#v", created.SourceIssueIDs)
+	}
+
+	getResult, err := handler.handleGetMemory(context.Background(), toolRequest(map[string]any{
+		"id": " " + created.ID + " ",
+	}))
+	if err != nil {
+		t.Fatalf("handleGetMemory returned error: %v", err)
+	}
+	if getResult.IsError {
+		t.Fatalf("expected success result, got error: %s", firstText(getResult))
+	}
+	fetched := getResult.StructuredContent.(domain.Memory)
+	if fetched.ID != created.ID {
+		t.Fatalf("expected fetched memory %q, got %q", created.ID, fetched.ID)
+	}
+}
+
+func TestHandleListMemories(t *testing.T) {
+	t.Parallel()
+
+	handler := newTestHandlers()
+	_, err := handler.memories.CreateMemory(context.Background(), memories.CreateMemoryInput{
+		Title:     "Use print pipeline",
+		Body:      "Use the print pipeline for Safari PDF export.",
+		Kind:      domain.MemoryKindDecision,
+		CreatedBy: "Casey",
+	})
+	if err != nil {
+		t.Fatalf("seed memory: %v", err)
+	}
+
+	result, err := handler.handleListMemories(context.Background(), toolRequest(map[string]any{
+		"status": "active",
+		"limit":  5,
+	}))
+	if err != nil {
+		t.Fatalf("handleListMemories returned error: %v", err)
+	}
+	if result.IsError {
+		t.Fatalf("expected success result, got error: %s", firstText(result))
+	}
+
+	payload, ok := result.StructuredContent.(map[string]any)
+	if !ok {
+		t.Fatalf("expected map structured content, got %T", result.StructuredContent)
+	}
+	items, ok := payload["memories"].([]domain.Memory)
+	if !ok {
+		t.Fatalf("expected memories payload, got %#v", payload["memories"])
+	}
+	if len(items) != 1 {
+		t.Fatalf("expected one memory, got %d", len(items))
+	}
+}
+
+func TestHandleListMemoriesRejectsInvalidStatus(t *testing.T) {
+	t.Parallel()
+
+	handler := newTestHandlers()
+	result, err := handler.handleListMemories(context.Background(), toolRequest(map[string]any{
+		"status": "quiet",
+	}))
+	if err != nil {
+		t.Fatalf("handleListMemories returned error: %v", err)
+	}
+	if !result.IsError {
+		t.Fatal("expected MCP error result")
+	}
+	if !strings.Contains(firstText(result), "status must be one of") {
+		t.Fatalf("expected status validation error, got %q", firstText(result))
+	}
+}
+
+func TestHandleSearchIssuesSurfacesMemories(t *testing.T) {
+	t.Parallel()
+
+	handler := newTestHandlers()
+	createTestIssue(t, handler, "Safari PDF export fails after tapping share twice", "Casey")
+	if _, err := handler.memories.CreateMemory(context.Background(), memories.CreateMemoryInput{
+		Title:     "Safari export uses the print pipeline",
+		Body:      "Use the print pipeline for Safari PDF export because direct canvas export loses pagination.",
+		Kind:      domain.MemoryKindDecision,
+		CreatedBy: "Casey",
+	}); err != nil {
+		t.Fatalf("seed memory: %v", err)
+	}
+
+	result, err := handler.handleSearchIssues(context.Background(), toolRequest(map[string]any{
+		"query": "safari pdf export",
+		"limit": 5,
+	}))
+	if err != nil {
+		t.Fatalf("handleSearchIssues returned error: %v", err)
+	}
+	if result.IsError {
+		t.Fatalf("expected success result, got error: %s", firstText(result))
+	}
+
+	payload, ok := result.StructuredContent.(searchIssuesResult)
+	if !ok {
+		t.Fatalf("expected searchIssuesResult structured content, got %T", result.StructuredContent)
+	}
+	if len(payload.Memories) == 0 {
+		t.Fatal("expected related memories surfaced alongside issue search results")
+	}
+}
+
+func TestHandleSearchMemories(t *testing.T) {
+	t.Parallel()
+
+	handler := newTestHandlers()
+	if _, err := handler.memories.CreateMemory(context.Background(), memories.CreateMemoryInput{
+		Title:     "Safari export uses the print pipeline",
+		Body:      "Use the print pipeline for Safari PDF export because direct canvas export loses pagination.",
+		Kind:      domain.MemoryKindDecision,
+		CreatedBy: "Casey",
+	}); err != nil {
+		t.Fatalf("seed memory: %v", err)
+	}
+
+	result, err := handler.handleSearchMemories(context.Background(), toolRequest(map[string]any{
+		"query": "how does Safari PDF export work",
+		"limit": 5,
+	}))
+	if err != nil {
+		t.Fatalf("handleSearchMemories returned error: %v", err)
+	}
+	if result.IsError {
+		t.Fatalf("expected success result, got error: %s", firstText(result))
+	}
+
+	payload, ok := result.StructuredContent.(map[string]any)
+	if !ok {
+		t.Fatalf("expected map structured content, got %T", result.StructuredContent)
+	}
+	items, ok := payload["memories"].([]memories.RecalledMemory)
+	if !ok {
+		t.Fatalf("expected recalled memories payload, got %#v", payload["memories"])
+	}
+	if len(items) == 0 {
+		t.Fatal("expected at least one recalled memory")
+	}
+	if items[0].Body == "" {
+		t.Fatal("expected recalled memory to carry its body")
+	}
+}
+
+func TestHandleSearchMemoriesRequiresQuery(t *testing.T) {
+	t.Parallel()
+
+	handler := newTestHandlers()
+	result, err := handler.handleSearchMemories(context.Background(), toolRequest(map[string]any{
+		"query": "   ",
+	}))
+	if err != nil {
+		t.Fatalf("handleSearchMemories returned error: %v", err)
+	}
+	if !result.IsError {
+		t.Fatal("expected MCP error result for empty query")
+	}
+}
+
+func TestHandleListMemoryProposals(t *testing.T) {
+	t.Parallel()
+
+	handler := newTestHandlers()
+	result, err := handler.handleListMemoryProposals(context.Background(), toolRequest(map[string]any{
+		"status": "pending",
+	}))
+	if err != nil {
+		t.Fatalf("handleListMemoryProposals returned error: %v", err)
+	}
+	if result.IsError {
+		t.Fatalf("expected success result, got error: %s", firstText(result))
+	}
+	payload, ok := result.StructuredContent.(map[string]any)
+	if !ok {
+		t.Fatalf("expected map structured content, got %T", result.StructuredContent)
+	}
+	if _, ok := payload["proposals"].([]domain.MemoryProposal); !ok {
+		t.Fatalf("expected proposals payload, got %#v", payload["proposals"])
+	}
+}
+
 func TestHandleSearchIssues(t *testing.T) {
 	t.Parallel()
 
 	handler := newTestHandlers()
 	createTestIssue(t, handler, "Safari crashes when exporting a PDF", "Casey")
-	createTestIssue(t, handler, "PDF export fails in Safari after tapping share twice", "Jordan")
+	createTestIssue(t, handler, "PDF export fails in Safari after tapping share twice", testActorJordan)
 
 	result, err := handler.handleSearchIssues(context.Background(), toolRequest(map[string]any{
 		"query":  "safari pdf export",
@@ -172,9 +397,9 @@ func TestHandleSearchIssues(t *testing.T) {
 		t.Fatalf("expected success result, got error: %s", firstText(result))
 	}
 
-	response, ok := result.StructuredContent.(issuemap.SearchResponse)
+	response, ok := result.StructuredContent.(searchIssuesResult)
 	if !ok {
-		t.Fatalf("expected issuemap.SearchResponse structured content, got %T", result.StructuredContent)
+		t.Fatalf("expected searchIssuesResult structured content, got %T", result.StructuredContent)
 	}
 	if len(response.RelatedIssues) == 0 {
 		t.Fatal("expected related issues in search response")
@@ -212,7 +437,7 @@ func TestHandleRefineIssues(t *testing.T) {
 	result, err := handler.handleRefineIssues(context.Background(), toolRequest(map[string]any{
 		"ids":        []string{" " + created.ID + " "},
 		"raw":        "Happens after tapping share twice on iPad.",
-		"created_by": "Jordan",
+		"created_by": testActorJordan,
 	}))
 	if err != nil {
 		t.Fatalf("handleRefineIssues returned error: %v", err)
@@ -234,7 +459,7 @@ func TestHandleRefineIssues(t *testing.T) {
 	if len(response.Results[0].Issue.Discussion) != 2 {
 		t.Fatalf("expected discussion in refined issue, got %#v", response.Results[0].Issue.Discussion)
 	}
-	if response.Results[0].Issue.Discussion[1].CreatedBy != "Jordan" {
+	if response.Results[0].Issue.Discussion[1].CreatedBy != testActorJordan {
 		t.Fatalf("expected refinement author Jordan, got %q", response.Results[0].Issue.Discussion[1].CreatedBy)
 	}
 }
@@ -277,7 +502,7 @@ func TestHandleProgressIssues(t *testing.T) {
 	result, err := handler.handleProgressIssues(context.Background(), toolRequest(map[string]any{
 		"ids":        []string{" " + created.ID + " "},
 		"raw":        "Identified the root cause in the share handler.",
-		"created_by": "Jordan",
+		"created_by": testActorJordan,
 	}))
 	if err != nil {
 		t.Fatalf("handleProgressIssues returned error: %v", err)
@@ -309,7 +534,7 @@ func TestHandleCloseIssues(t *testing.T) {
 
 	result, err := handler.handleCloseIssues(context.Background(), toolRequest(map[string]any{
 		"ids":       []string{" " + created.ID + " "},
-		"closed_by": "Jordan",
+		"closed_by": testActorJordan,
 	}))
 	if err != nil {
 		t.Fatalf("handleCloseIssues returned error: %v", err)
@@ -328,7 +553,7 @@ func TestHandleCloseIssues(t *testing.T) {
 	if response.Results[0].Issue.Status != issues.StatusClosed {
 		t.Fatalf("expected closed issue, got %q", response.Results[0].Issue.Status)
 	}
-	if response.Results[0].Issue.ClosedBy != "Jordan" {
+	if response.Results[0].Issue.ClosedBy != testActorJordan {
 		t.Fatalf("expected ClosedBy Jordan, got %q", response.Results[0].Issue.ClosedBy)
 	}
 }
@@ -368,7 +593,7 @@ func TestHandleAssignIssuesAllowsUnassign(t *testing.T) {
 	created := createTestIssue(t, handler, "Safari crashes when exporting a PDF", "Casey")
 	_, err := handler.assignIssues.Handle(context.Background(), issuecmd.AssignIssues{
 		IDs:        []string{created.ID},
-		AssignedTo: "Jordan",
+		AssignedTo: testActorJordan,
 	})
 	if err != nil {
 		t.Fatalf("seed assign: %v", err)
@@ -398,7 +623,7 @@ func TestHandleAssignIssuesRequiresIDs(t *testing.T) {
 
 	result, err := handler.handleAssignIssues(context.Background(), toolRequest(map[string]any{
 		"ids":         []string{" ", " "},
-		"assigned_to": "Jordan",
+		"assigned_to": testActorJordan,
 	}))
 	if err != nil {
 		t.Fatalf("handleAssignIssues returned error: %v", err)
@@ -416,7 +641,7 @@ func TestHandleExploreIssue(t *testing.T) {
 
 	handler := newTestHandlers()
 	target := createTestIssue(t, handler, "Safari crashes when exporting a PDF", "Casey")
-	createTestIssue(t, handler, "PDF export fails in Safari after tapping share twice", "Jordan")
+	createTestIssue(t, handler, "PDF export fails in Safari after tapping share twice", testActorJordan)
 
 	result, err := handler.handleExploreIssue(context.Background(), toolRequest(map[string]any{
 		"id":    " " + target.ID + " ",
@@ -476,6 +701,9 @@ func newTestHandlers() *handlers {
 	store := issues.NewInMemoryStore(nil)
 	catalog := tags.NewCatalogService(nil, analyzer, slog.Default())
 	enricher := issueenrichment.NewIssueEnricher(analyzer, catalog, slog.Default())
+	enricher.UseMemoryContext(store)
+	memoryService := memories.NewService(store, enricher, slog.Default())
+	memoryService.UseSynthesis(store, store)
 	runner := &issuecmd.CommandRunner{DB: store}
 	eventBus := issueevents.NewEventBus()
 
@@ -497,6 +725,7 @@ func newTestHandlers() *handlers {
 		listTags:         issueviews.ListTagsHandler{Catalog: catalog},
 		searchIssues:     search.SearchIssuesHandler{Analyzer: analyzer, Catalog: catalog, Store: store},
 		exploreIssue:     mapview.ExploreIssueHandler{Reader: store, DetailReader: store, Catalog: catalog},
+		memories:         memoryService,
 		getPersonProfile: people.GetPersonProfileHandler{Store: store},
 		workCorrelations: people.WorkCorrelationsHandler{Store: store},
 	}
