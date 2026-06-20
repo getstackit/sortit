@@ -24,6 +24,7 @@ import (
 	"sortit/internal/tags"
 )
 
+// testActorJordan is the sample actor name reused across these MCP tests.
 const testActorJordan = "Jordan"
 
 func TestHandleCreateIssue(t *testing.T) {

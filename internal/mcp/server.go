@@ -885,6 +885,8 @@ func requireIssueIDs(req mcp.CallToolRequest) ([]string, *mcp.CallToolResult) {
 	return ids, nil
 }
 
+// statusFilterAll is the "all" status-filter token shared by the status parsers
+// and by tool handlers that default the status argument to "all".
 const statusFilterAll = "all"
 
 func parseStatusFilter(raw string, defaultOpen bool) (issueviews.IssueStatusFilter, bool) {

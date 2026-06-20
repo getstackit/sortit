@@ -40,7 +40,10 @@ func TestInstallSkillTargets(t *testing.T) {
 	if !strings.Contains(codexText, "<!-- sortit-version: 1.2.3 -->") {
 		t.Fatalf("installed codex skill missing hidden version marker: %s", codexText)
 	}
-	if !strings.Contains(codexText, `description: "Search Sortit issues from natural-language symptoms, product areas, or customer quotes. Use when you need to find the best existing issues before creating or editing anything."`) {
+	if !strings.Contains(codexText, "name: sortit-search") {
+		t.Fatalf("installed codex skill missing name in frontmatter: %s", codexText)
+	}
+	if !strings.Contains(codexText, `description: "Search Sortit issues`) {
 		t.Fatalf("installed codex skill missing encoded description: %s", codexText)
 	}
 
@@ -67,7 +70,10 @@ func TestInstallSkillTargets(t *testing.T) {
 	if !strings.Contains(metadataText, `display_name: "Sortit Search"`) {
 		t.Fatalf("codex metadata missing display name: %s", metadataText)
 	}
-	if !strings.Contains(metadataText, `default_prompt: "Use $sortit-search to search Sortit issues from natural-language symptoms, product areas, or customer quotes. Use when you need to find the best existing issues before creating or editing anything."`) {
+	if !strings.Contains(metadataText, `short_description: "Search Sortit issues by symptom, area, or quote"`) {
+		t.Fatalf("codex metadata missing short description: %s", metadataText)
+	}
+	if !strings.Contains(metadataText, `default_prompt: "Use $sortit-search to search Sortit issues by symptom, area, or quote."`) {
 		t.Fatalf("codex metadata missing default prompt: %s", metadataText)
 	}
 	if _, err := os.Stat(filepath.Join(baseDir, claudeSkillsDir, "sortit-search", "agents", "openai.yaml")); !os.IsNotExist(err) {

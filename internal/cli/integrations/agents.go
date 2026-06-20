@@ -37,6 +37,7 @@ type fileGroup struct {
 	templatePath string
 	destPath     string
 	skillName    string
+	summary      string
 	format       agentSkillFormat
 }
 
@@ -224,9 +225,10 @@ func buildSkillFileGroups(target agentInstallTarget, skills []skillDefinition) [
 	groups := make([]fileGroup, 0, len(skills))
 	for _, skill := range skills {
 		groups = append(groups, fileGroup{
-			templatePath: skill.templatePath,
+			templatePath: skill.templatePath(target.format),
 			destPath:     filepath.Join(target.skillsDir, skill.name, "SKILL.md"),
 			skillName:    skill.name,
+			summary:      skill.summary,
 			format:       target.format,
 		})
 	}
@@ -251,7 +253,7 @@ func installFileGroup(baseDir string, group fileGroup, version string) error {
 		return fmt.Errorf("write %s: %w", destPath, err)
 	}
 	if group.format == agentSkillFormatCodex {
-		metadata, err := renderCodexSkillMetadata(group.skillName, content)
+		metadata, err := renderCodexSkillMetadata(group.skillName, group.summary)
 		if err != nil {
 			return fmt.Errorf("render metadata for %s: %w", group.skillName, err)
 		}
@@ -311,10 +313,14 @@ func renderCodexSkillContent(name string, content []byte, version string) ([]byt
 	return []byte(b.String()), nil
 }
 
-func renderCodexSkillMetadata(name string, content []byte) ([]byte, error) {
-	description, err := skillDescription(content)
-	if err != nil {
-		return nil, err
+// renderCodexSkillMetadata builds the Codex interface metadata (openai.yaml)
+// from the skill's short summary. The summary is kept separate from the
+// SKILL.md description so the description can be a longer, trigger-oriented
+// activation signal without bloating the display metadata.
+func renderCodexSkillMetadata(name, summary string) ([]byte, error) {
+	summary = strings.TrimSpace(summary)
+	if summary == "" {
+		return nil, fmt.Errorf("missing summary for %s", name)
 	}
 
 	var b strings.Builder
@@ -323,24 +329,12 @@ func renderCodexSkillMetadata(name string, content []byte) ([]byte, error) {
 	b.WriteString(encodeYAMLScalar(displayNameForSkill(name)))
 	b.WriteString("\n")
 	b.WriteString("  short_description: ")
-	b.WriteString(encodeYAMLScalar(description))
+	b.WriteString(encodeYAMLScalar(summary))
 	b.WriteString("\n")
 	b.WriteString("  default_prompt: ")
-	b.WriteString(encodeYAMLScalar(defaultPromptForSkill(name, description)))
+	b.WriteString(encodeYAMLScalar(defaultPromptForSkill(name, summary)))
 	b.WriteString("\n")
 	return []byte(b.String()), nil
-}
-
-func skillDescription(content []byte) (string, error) {
-	frontmatter, _, ok := splitFrontmatter(content)
-	if !ok {
-		return "", fmt.Errorf("missing frontmatter")
-	}
-	description := frontmatterValue(frontmatter, "description")
-	if description == "" {
-		return "", fmt.Errorf("missing description")
-	}
-	return description, nil
 }
 
 func splitFrontmatter(content []byte) (frontmatter, body []byte, ok bool) {
