@@ -79,10 +79,18 @@ type DuplicateCluster struct {
 // DuplicateParams tunes duplicate detection. Zero values fall back to defaults.
 type DuplicateParams struct {
 	MinSimilarity float64 // edge threshold to link two issues (default 0.85)
-	MaxSeeds      int     // cap seed issues explored; 0 = all open issues
+	MaxSeeds      int     // cap seed issues explored (default 25; pass a large value to scan all)
 	ExploreLimit  int     // per-seed related-issue limit (default 10)
 	Limit         int     // max clusters returned; 0 = all
 }
+
+// defaultDuplicateMaxSeeds caps the default sweep. Each seed runs a full semantic
+// explore (vector search + per-candidate detail hydration + a factor
+// decomposition), so an uncapped sweep is O(n²) over the corpus and times out on
+// large corpora. The seeds are the freshest open issues (sorted by creation desc
+// below) — the most likely to have just-filed duplicates. Pass an explicit, large
+// MaxSeeds to widen or fully scan.
+const defaultDuplicateMaxSeeds = 25
 
 func (p DuplicateParams) withDefaults() DuplicateParams {
 	if p.MinSimilarity <= 0 {
@@ -90,6 +98,9 @@ func (p DuplicateParams) withDefaults() DuplicateParams {
 	}
 	if p.ExploreLimit <= 0 {
 		p.ExploreLimit = 10
+	}
+	if p.MaxSeeds <= 0 {
+		p.MaxSeeds = defaultDuplicateMaxSeeds
 	}
 	return p
 }
