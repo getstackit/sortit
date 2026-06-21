@@ -108,6 +108,54 @@ func TestInMemoryStoreListMemoriesFilterAndOrder(t *testing.T) {
 	}
 }
 
+func TestInMemoryStoreOverviewSingleton(t *testing.T) {
+	store := NewInMemoryStore(nil)
+	ctx := context.Background()
+
+	if _, err := store.GetActiveOverview(ctx); !errors.Is(err, ErrMemoryNotFound) {
+		t.Fatalf("expected ErrMemoryNotFound with no overview, got %v", err)
+	}
+
+	first := domain.Memory{
+		ID:     "ov-1",
+		Body:   "Sortit is an issue tracker built around a factor model.",
+		Kind:   domain.MemoryKindOverview,
+		Status: domain.MemoryStatusActive,
+	}
+	if err := store.UpsertMemory(ctx, first); err != nil {
+		t.Fatalf("upsert first overview: %v", err)
+	}
+	got, err := store.GetActiveOverview(ctx)
+	if err != nil {
+		t.Fatalf("get active overview: %v", err)
+	}
+	if got.ID != "ov-1" || got.Kind != domain.MemoryKindOverview {
+		t.Fatalf("unexpected active overview: %+v", got)
+	}
+
+	// At most one active overview: a second active row is rejected.
+	second := domain.Memory{ID: "ov-2", Body: "second", Kind: domain.MemoryKindOverview, Status: domain.MemoryStatusActive}
+	if err := store.UpsertMemory(ctx, second); err == nil {
+		t.Fatal("expected singleton violation for a second active overview")
+	}
+
+	// Superseding the first frees the singleton for the second.
+	first.Status = domain.MemoryStatusSuperseded
+	if err := store.UpsertMemory(ctx, first); err != nil {
+		t.Fatalf("supersede first overview: %v", err)
+	}
+	if err := store.UpsertMemory(ctx, second); err != nil {
+		t.Fatalf("expected freed singleton to accept the second overview: %v", err)
+	}
+	got, err = store.GetActiveOverview(ctx)
+	if err != nil {
+		t.Fatalf("get active overview after supersede: %v", err)
+	}
+	if got.ID != "ov-2" {
+		t.Fatalf("expected the second overview active, got %+v", got)
+	}
+}
+
 func TestInMemoryStoreSearchMemories(t *testing.T) {
 	store := NewInMemoryStore(nil)
 	ctx := context.Background()

@@ -48,6 +48,10 @@ type MemoryStore interface {
 	// to the given subject tag, or ErrMemoryNotFound. The partial unique index
 	// guarantees at most one row.
 	GetActiveConceptBySubjectTag(ctx context.Context, subjectTag string) (domain.Memory, error)
+	// GetActiveOverview returns the single active overview memory — the project's
+	// identity frame — or ErrMemoryNotFound. The partial unique index guarantees
+	// at most one row.
+	GetActiveOverview(ctx context.Context) (domain.Memory, error)
 }
 
 const memorySelectColumns = `id, title, body, kind, subject_tag, anchor_tags_json, anchor_region,
@@ -126,6 +130,25 @@ func (s *PostgresStore) GetActiveConceptBySubjectTag(ctx context.Context, subjec
 		 FROM memories
 		 WHERE kind = 'concept' AND status = 'active' AND subject_tag = $1
 		 LIMIT 1`, subjectTag,
+	)
+	memory, err := scanMemory(row)
+	if errors.Is(err, sql.ErrNoRows) {
+		return domain.Memory{}, ErrMemoryNotFound
+	}
+	if err != nil {
+		return domain.Memory{}, err
+	}
+	return memory, nil
+}
+
+// GetActiveOverview returns the active overview memory — the project's identity
+// frame — or ErrMemoryNotFound. Index-backed by memories_overview_unique_idx.
+func (s *PostgresStore) GetActiveOverview(ctx context.Context) (domain.Memory, error) {
+	row := s.db.QueryRowContext(ctx,
+		`SELECT `+memorySelectColumns+`
+		 FROM memories
+		 WHERE kind = 'overview' AND status = 'active'
+		 LIMIT 1`,
 	)
 	memory, err := scanMemory(row)
 	if errors.Is(err, sql.ErrNoRows) {

@@ -114,6 +114,55 @@ func TestMemoryConceptEndpoint(t *testing.T) {
 	}
 }
 
+func TestMemoryOverviewEndpoint(t *testing.T) {
+	store := newPostgresIssueStore(t, nil)
+	server := NewServer(ServerConfig{
+		APIPrefixes: []string{"/api"},
+		IssueStore:  store,
+	})
+
+	// No overview yet: 200 with an empty memory (the editor renders an empty
+	// panel rather than special-casing a 404).
+	req := httptest.NewRequest(http.MethodGet, "/api/ui/memories/overview", nil)
+	rec := httptest.NewRecorder()
+	server.Handler().ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200 for empty overview, got %d (%s)", rec.Code, rec.Body.String())
+	}
+	var empty domain.Memory
+	if err := json.NewDecoder(rec.Body).Decode(&empty); err != nil {
+		t.Fatalf("decode empty overview: %v", err)
+	}
+	if empty.ID != "" || empty.Body != "" {
+		t.Fatalf("expected an empty overview, got %#v", empty)
+	}
+
+	// After seeding, the endpoint returns the active overview.
+	if err := store.UpsertMemory(context.Background(), domain.Memory{
+		ID:     "mem-overview",
+		Title:  "Sortit",
+		Body:   "Sortit is an issue tracker built around a factor model over tag relevance.",
+		Kind:   domain.MemoryKindOverview,
+		Status: domain.MemoryStatusActive,
+	}); err != nil {
+		t.Fatalf("seed overview: %v", err)
+	}
+
+	req = httptest.NewRequest(http.MethodGet, "/api/ui/memories/overview", nil)
+	rec = httptest.NewRecorder()
+	server.Handler().ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d (%s)", rec.Code, rec.Body.String())
+	}
+	var overview domain.Memory
+	if err := json.NewDecoder(rec.Body).Decode(&overview); err != nil {
+		t.Fatalf("decode overview: %v", err)
+	}
+	if overview.ID != "mem-overview" || overview.Kind != domain.MemoryKindOverview {
+		t.Fatalf("unexpected overview: %#v", overview)
+	}
+}
+
 func TestMemorySearchEndpointRequiresQuery(t *testing.T) {
 	store := newPostgresIssueStore(t, nil)
 	server := NewServer(ServerConfig{

@@ -178,11 +178,21 @@ func (s *Service) CreateMemory(ctx context.Context, input CreateMemoryInput) (do
 		UpdatedAt:      time.Now().UTC(),
 	}
 
-	s.enrich(ctx, &memory)
+	// The overview is the project's identity frame, fetched only via
+	// GetActiveOverview and read for its prose — never recalled by similarity. We
+	// deliberately skip enrichment so it carries no embedding and thus never
+	// surfaces in SearchMemories alongside ordinary memories.
+	if kind != domain.MemoryKindOverview {
+		s.enrich(ctx, &memory)
+	}
 
-	// A concept is bound 1:1 to its tag: supersede any existing active concept
-	// for the same subject before inserting, or the unique index would reject it.
+	// A concept is bound 1:1 to its tag, and the overview is a global singleton:
+	// supersede any existing active row before inserting, or the unique index
+	// would reject it. Each helper no-ops for the other kinds.
 	if err := s.supersedePriorConcept(ctx, memory); err != nil {
+		return domain.Memory{}, err
+	}
+	if err := s.supersedePriorOverview(ctx, memory); err != nil {
 		return domain.Memory{}, err
 	}
 
@@ -261,9 +271,47 @@ func (s *Service) supersedePriorConcept(ctx context.Context, replacement domain.
 	return nil
 }
 
+// supersedePriorOverview retires the active overview (if any) before inserting a
+// replacement. No-op for non-overview memories. The overview is a global
+// singleton, so this keeps the at-most-one-active invariant the unique index
+// enforces.
+func (s *Service) supersedePriorOverview(ctx context.Context, replacement domain.Memory) error {
+	if replacement.Kind != domain.MemoryKindOverview {
+		return nil
+	}
+	prior, err := s.store.GetActiveOverview(ctx)
+	if errors.Is(err, issues.ErrMemoryNotFound) {
+		return nil
+	}
+	if err != nil {
+		return fmt.Errorf("look up prior overview: %w", err)
+	}
+	if prior.ID == replacement.ID {
+		return nil
+	}
+	prior.Status = domain.MemoryStatusSuperseded
+	prior.SupersededBy = replacement.ID
+	prior.UpdatedAt = time.Now().UTC()
+	if err := s.store.UpsertMemory(ctx, prior); err != nil {
+		return fmt.Errorf("supersede prior overview %q: %w", prior.ID, err)
+	}
+	s.logger.InfoContext(ctx, "superseded prior overview",
+		"prior_id", prior.ID,
+		"replacement_id", replacement.ID,
+	)
+	return nil
+}
+
 // GetMemory returns one memory or issues.ErrMemoryNotFound.
 func (s *Service) GetMemory(ctx context.Context, id string) (domain.Memory, error) {
 	return s.store.GetMemory(ctx, id)
+}
+
+// Overview returns the active overview memory — the project's identity frame —
+// or issues.ErrMemoryNotFound. It powers the frame the analyzer grounds tagging
+// in and the in-product overview editor.
+func (s *Service) Overview(ctx context.Context) (domain.Memory, error) {
+	return s.store.GetActiveOverview(ctx)
 }
 
 // ListMemories returns memories matching opts, most-recent first.

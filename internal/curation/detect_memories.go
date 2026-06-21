@@ -125,10 +125,13 @@ func (d *MemoryDetector) DetectQuietMemories(ctx context.Context, params QuietPa
 		if len(mem.Embedding) == 0 {
 			continue
 		}
-		if mem.Kind == domain.MemoryKindConcept {
+		if mem.Kind == domain.MemoryKindConcept || mem.Kind == domain.MemoryKindOverview {
 			// Concepts are durable nodes — the canonical profile of a noun — and
 			// stay valuable even when the corpus isn't actively churning around
-			// them. Don't propose archiving a concept for being quiet.
+			// them. The overview is the project's identity singleton, valuable
+			// regardless of reinforcement. Don't propose archiving either for being
+			// quiet. (The overview also carries no embedding, so it never reaches
+			// here, but guard by kind for clarity.)
 			continue
 		}
 		ageDays := now.Sub(mem.CreatedAt).Hours() / 24
@@ -190,10 +193,11 @@ func (d *MemoryDetector) DetectRedundantMemories(ctx context.Context, params Red
 	// vector-search round-trips. Concepts profile a distinct noun (the 1:1
 	// subject-tag index already prevents same-tag concept duplicates) and play an
 	// orthogonal role to decisions/lessons about the same area, so they are never
-	// redundant-supersede candidates.
+	// redundant-supersede candidates. The overview is the project's singleton
+	// frame (and carries no embedding), so it is excluded too.
 	candidates := make([]domain.Memory, 0, len(mems))
 	for _, mem := range mems {
-		if len(mem.Embedding) == 0 || mem.Kind == domain.MemoryKindConcept {
+		if len(mem.Embedding) == 0 || mem.Kind == domain.MemoryKindConcept || mem.Kind == domain.MemoryKindOverview {
 			continue
 		}
 		candidates = append(candidates, mem)

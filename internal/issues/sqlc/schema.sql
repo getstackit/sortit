@@ -516,6 +516,7 @@ CREATE INDEX issues_status_idx ON public.issues USING btree (status);
 CREATE UNIQUE INDEX memories_concept_subject_tag_unique_idx ON public.memories USING btree (subject_tag) WHERE ((kind = 'concept'::text) AND (status = 'active'::text));
 CREATE INDEX memories_created_idx ON public.memories USING btree (created_at_unix_nano DESC, id);
 CREATE INDEX memories_embedding_vector_cosine_hnsw_idx ON public.memories USING hnsw (((embedding_vector)::vector(1536)) vector_cosine_ops) WHERE ((embedding_vector IS NOT NULL) AND (vector_dims(embedding_vector) = 1536));
+CREATE UNIQUE INDEX memories_overview_unique_idx ON public.memories USING btree (kind) WHERE ((kind = 'overview'::text) AND (status = 'active'::text));
 CREATE INDEX memories_status_idx ON public.memories USING btree (status);
 CREATE INDEX memory_proposals_status_created_idx ON public.memory_proposals USING btree (status, created_at_unix_nano DESC, id);
 CREATE INDEX sessions_expires_at_unix_nano_idx ON public.sessions USING btree (expires_at_unix_nano);

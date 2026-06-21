@@ -198,6 +198,29 @@ func (s *Server) handleMemoryConcept(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, memory)
 }
 
+// handleMemoryOverview returns the active overview memory — the project's
+// identity frame — powering the in-product overview editor. A 200 with an empty
+// body field (not a 404) signals "no overview set yet", so the editor can render
+// an empty edit panel without special-casing the error.
+func (s *Server) handleMemoryOverview(w http.ResponseWriter, r *http.Request) {
+	if s.memories == nil {
+		writeError(w, http.StatusServiceUnavailable, "memories are not available")
+		return
+	}
+
+	memory, err := s.memories.Overview(r.Context())
+	if err != nil {
+		if errors.Is(err, issues.ErrMemoryNotFound) {
+			writeJSON(w, http.StatusOK, domain.Memory{})
+			return
+		}
+		writeInternalError(w, r, "failed to load overview", err)
+		return
+	}
+
+	writeJSON(w, http.StatusOK, memory)
+}
+
 type supersedeMemoryRequest struct {
 	SupersededBy string `json:"supersededBy,omitempty"`
 }

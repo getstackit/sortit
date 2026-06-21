@@ -117,6 +117,55 @@ func TestPostgresStoreMemoryCRUDAndSearch(t *testing.T) {
 	}
 }
 
+func TestPostgresStoreOverviewSingleton(t *testing.T) {
+	store := newPostgresTestStore(t)
+	ctx := context.Background()
+
+	if _, err := store.GetActiveOverview(ctx); !errors.Is(err, ErrMemoryNotFound) {
+		t.Fatalf("expected ErrMemoryNotFound with no overview, got %v", err)
+	}
+
+	first := domain.Memory{
+		ID:     "ov-pg-1",
+		Title:  "Sortit",
+		Body:   "Sortit is an issue tracker built around a factor model over tag relevance.",
+		Kind:   domain.MemoryKindOverview,
+		Status: domain.MemoryStatusActive,
+	}
+	if err := store.UpsertMemory(ctx, first); err != nil {
+		t.Fatalf("upsert first overview: %v", err)
+	}
+	got, err := store.GetActiveOverview(ctx)
+	if err != nil {
+		t.Fatalf("get active overview: %v", err)
+	}
+	if got.ID != "ov-pg-1" || got.Kind != domain.MemoryKindOverview {
+		t.Fatalf("unexpected active overview: %+v", got)
+	}
+
+	// The partial unique index allows at most one active overview.
+	second := domain.Memory{ID: "ov-pg-2", Body: "second", Kind: domain.MemoryKindOverview, Status: domain.MemoryStatusActive}
+	if err := store.UpsertMemory(ctx, second); err == nil {
+		t.Fatal("expected unique-index violation for a second active overview")
+	}
+
+	// Superseding the first frees the singleton for a new active overview.
+	first.Status = domain.MemoryStatusSuperseded
+	if err := store.UpsertMemory(ctx, first); err != nil {
+		t.Fatalf("supersede first overview: %v", err)
+	}
+	if err := store.UpsertMemory(ctx, second); err != nil {
+		t.Fatalf("expected the freed singleton to accept a new active overview: %v", err)
+	}
+	got, err = store.GetActiveOverview(ctx)
+	if err != nil {
+		t.Fatalf("get active overview after supersede: %v", err)
+	}
+	if got.ID != "ov-pg-2" {
+		t.Fatalf("expected the second overview active, got %+v", got)
+	}
+}
+
 func TestPostgresStoreConceptSubjectTag(t *testing.T) {
 	store := newPostgresTestStore(t)
 	ctx := context.Background()

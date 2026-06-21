@@ -82,6 +82,16 @@ func (s *InMemoryStore) UpsertMemory(_ context.Context, memory domain.Memory) er
 			}
 		}
 	}
+	// Mirror memories_overview_unique_idx: the overview is a global singleton, so
+	// at most one active overview may exist.
+	if memory.Kind == domain.MemoryKindOverview && memory.Status == domain.MemoryStatusActive {
+		for id, other := range s.memories {
+			if id != memory.ID && other.Kind == domain.MemoryKindOverview &&
+				other.Status == domain.MemoryStatusActive {
+				return fmt.Errorf("an active overview already exists")
+			}
+		}
+	}
 	s.memories[memory.ID] = domain.CloneMemory(memory)
 	return nil
 }
@@ -96,6 +106,17 @@ func (s *InMemoryStore) GetActiveConceptBySubjectTag(_ context.Context, subjectT
 	for _, memory := range s.memories {
 		if memory.Kind == domain.MemoryKindConcept &&
 			memory.Status == domain.MemoryStatusActive && memory.SubjectTag == subjectTag {
+			return domain.CloneMemory(memory), nil
+		}
+	}
+	return domain.Memory{}, ErrMemoryNotFound
+}
+
+func (s *InMemoryStore) GetActiveOverview(_ context.Context) (domain.Memory, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	for _, memory := range s.memories {
+		if memory.Kind == domain.MemoryKindOverview && memory.Status == domain.MemoryStatusActive {
 			return domain.CloneMemory(memory), nil
 		}
 	}
