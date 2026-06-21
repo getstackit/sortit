@@ -113,6 +113,10 @@ and embedding space with issues.
   profiles. A concept is bound 1:1 to its subject tag; a partial unique index
   (`kind='concept' AND status='active'`) enforces at most one active concept per
   tag and serves as the synthesis idempotency guard. Empty for every other kind.
+  Authoring a concept also **registers its subject tag in the catalog** (embedded
+  from the concept body), so concepts grow the project's tagging vocabulary — see
+  [Tag Taxonomy Health](./scoring-search-map.md#tag-taxonomy-health) and
+  [onboarding.md](./onboarding.md).
 - anchor tags (`anchor_tags_json`), anchor region, and tag scores
 - embedding vector for semantic recall and map placement
 - status and `superseded_by` (permanence is the default; supersede/archive are explicit)

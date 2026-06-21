@@ -193,7 +193,7 @@ Beyond the single-issue loop, Sortit treats your issues as a body of knowledge:
   sortit tags list
   ```
 
-- **Tag quality / diagnosis** — because tags drive search, the map, and people profiles, the taxonomy is worth maintaining. Diagnose surfaces where the factor model is weak (low R²) and which issues need re-enrichment; tags can also be **merged** (collapse synonyms) or **dismissed** (suppress noise). Healthy tags make every other surface sharper.
+- **Tag quality / diagnosis** — because tags drive search, the map, and people profiles, the taxonomy is worth maintaining. Diagnose surfaces where the factor model is weak (low R²) and which issues need re-enrichment; tags can also be **merged** (collapse synonyms) or **dismissed** (suppress noise). The deepest lever is seeding project-specific **concepts**, which grow the tagging vocabulary so issues stop falling back to generic tags — see [Tag Taxonomy Health](./scoring-search-map.md#tag-taxonomy-health) and [onboarding.md](./onboarding.md). Healthy tags make every other surface sharper.
 
 - **Memories** — permanent knowledge artifacts share the same retrieval space as issues. Use memory detail pages, memory lists, and map landmarks to inspect decisions, constraints, patterns, references, and lessons that should influence future work.
 
