@@ -65,7 +65,7 @@ func TestSynthesizeConceptProposals(t *testing.T) {
 	}
 	corpus = append(corpus, taggedIssue("b1", "backend")) // only 1 → below threshold
 
-	drafts := SynthesizeConceptProposals(corpus, nil, nil)
+	drafts := SynthesizeConceptProposals(corpus, nil, nil, nil)
 	if len(drafts) != 1 {
 		t.Fatalf("expected 1 concept draft (ridge has 6, backend 1), got %d: %+v", len(drafts), drafts)
 	}
@@ -86,7 +86,7 @@ func TestSynthesizeConceptProposals(t *testing.T) {
 	// A tag that already has an active concept is skipped (idempotent reruns).
 	covered := SynthesizeConceptProposals(corpus, nil, []domain.Memory{
 		{Kind: domain.MemoryKindConcept, Status: domain.MemoryStatusActive, SubjectTag: "ridge"},
-	})
+	}, nil)
 	if len(covered) != 0 {
 		t.Fatalf("expected ridge concept skipped when already covered, got %+v", covered)
 	}
@@ -94,9 +94,38 @@ func TestSynthesizeConceptProposals(t *testing.T) {
 	// A pending concept proposal also covers the tag.
 	coveredPending := SynthesizeConceptProposals(corpus, []domain.MemoryProposal{
 		{Kind: domain.MemoryKindConcept, SubjectTag: "ridge"},
-	}, nil)
+	}, nil, nil)
 	if len(coveredPending) != 0 {
 		t.Fatalf("expected ridge concept skipped when a pending proposal exists, got %+v", coveredPending)
+	}
+}
+
+func TestSynthesizeConceptProposalsSpecificityGate(t *testing.T) {
+	corpus := make([]issues.Issue, 0, 12)
+	for i := range 6 { // 6 issues carry the specific tag
+		corpus = append(corpus, taggedIssue("s"+string(rune('0'+i)), "ridge-regression"))
+	}
+	for i := range 6 { // 6 issues carry a generic bucket tag
+		corpus = append(corpus, taggedIssue("g"+string(rune('0'+i)), "backend"))
+	}
+
+	spec := map[string]float64{
+		"ridge-regression": 0.7,  // specific → eligible
+		"backend":          0.13, // generic bucket → gated out
+	}
+
+	drafts := SynthesizeConceptProposals(corpus, nil, nil, spec)
+	if len(drafts) != 1 {
+		t.Fatalf("expected only the specific tag to yield a concept, got %d: %+v", len(drafts), drafts)
+	}
+	if drafts[0].SubjectTag != "ridge-regression" {
+		t.Fatalf("expected ridge-regression concept, got %q", drafts[0].SubjectTag)
+	}
+
+	// Without specificity data, both qualify (gate is a no-op).
+	ungated := SynthesizeConceptProposals(corpus, nil, nil, nil)
+	if len(ungated) != 2 {
+		t.Fatalf("expected both tags to qualify without specificity data, got %d", len(ungated))
 	}
 }
 

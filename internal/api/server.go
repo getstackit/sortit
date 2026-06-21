@@ -610,6 +610,9 @@ func NewServer(cfg ServerConfig) *Server {
 	memoryService := memories.NewService(store, enricher, logger)
 	memoryService.UseSynthesis(store, store)
 	memoryService.UseConceptProfiler(commandAnalyzer)
+	if tagStore != nil {
+		memoryService.UseTagCatalog(tagStore)
+	}
 	var enrichmentWorker *issueenrichment.IssueEnrichmentWorker
 	workerLogger := logger.With("component", "enrichment_worker")
 	if claimer := enrichmentJobClaimerFromStore(baseStore); claimer != nil && uowBeginner != nil {

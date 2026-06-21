@@ -53,14 +53,22 @@ type ConceptProfiler interface {
 	GenerateConceptProfile(ctx context.Context, tag string, issueSummaries []string) (string, error)
 }
 
+// TagCatalogReader exposes tag specificity so concept synthesis can skip generic
+// bucket tags. The issue store satisfies it. Optional: without it, concept
+// synthesis falls back to frequency only.
+type TagCatalogReader interface {
+	ListTags(ctx context.Context) ([]issues.Tag, error)
+}
+
 // Service is the application layer for memories.
 type Service struct {
-	store     issues.MemoryStore
-	enricher  TextEnricher
-	logger    *slog.Logger
-	proposals issues.MemoryProposalStore
-	corpus    CorpusReader
-	profiler  ConceptProfiler
+	store      issues.MemoryStore
+	enricher   TextEnricher
+	logger     *slog.Logger
+	proposals  issues.MemoryProposalStore
+	corpus     CorpusReader
+	profiler   ConceptProfiler
+	tagCatalog TagCatalogReader
 }
 
 // NewService constructs a memory service. enricher may be nil (memories are
@@ -85,6 +93,13 @@ func (s *Service) UseSynthesis(proposals issues.MemoryProposalStore, corpus Corp
 // placeholder body the pure synthesizer drafts.
 func (s *Service) UseConceptProfiler(profiler ConceptProfiler) {
 	s.profiler = profiler
+}
+
+// UseTagCatalog enables the specificity gate for concept synthesis, so generic
+// bucket tags don't become concepts. Optional: without it, concept synthesis
+// gates on frequency only.
+func (s *Service) UseTagCatalog(reader TagCatalogReader) {
+	s.tagCatalog = reader
 }
 
 // CreateMemoryInput describes a new memory.
@@ -307,8 +322,9 @@ func (s *Service) SynthesizeProposals(ctx context.Context) ([]domain.MemoryPropo
 	drafts := SynthesizeMemoryProposals(corpusIssues, pending, active)
 	// Concepts profile load-bearing tags; decisions consolidate closed-issue
 	// choices. They draft independently and dedup on different keys (subject_tag
-	// vs anchor tags), so a tag can earn both.
-	drafts = append(drafts, SynthesizeConceptProposals(corpusIssues, pending, active)...)
+	// vs anchor tags), so a tag can earn both. Concept synthesis is also gated by
+	// tag specificity so generic bucket tags don't become concepts.
+	drafts = append(drafts, SynthesizeConceptProposals(corpusIssues, pending, active, s.tagSpecificities(ctx))...)
 	// Replace each concept draft's deterministic placeholder body with an
 	// LLM-generated profile, when a profiler is configured. Best-effort: a
 	// generation failure leaves the placeholder in place.
@@ -326,6 +342,27 @@ func (s *Service) SynthesizeProposals(ctx context.Context) ([]domain.MemoryPropo
 	}
 	s.logger.InfoContext(ctx, "synthesized memory proposals", "count", len(created))
 	return created, nil
+}
+
+// tagSpecificities loads the catalog's per-tag specificity scores for the
+// concept specificity gate. Returns nil when no catalog reader is configured or
+// the load fails — concept synthesis then gates on frequency alone.
+func (s *Service) tagSpecificities(ctx context.Context) map[string]float64 {
+	if s.tagCatalog == nil {
+		return nil
+	}
+	tags, err := s.tagCatalog.ListTags(ctx)
+	if err != nil {
+		s.logger.WarnContext(ctx, "load tag specificities for concept synthesis failed; gating on frequency only", "error", err)
+		return nil
+	}
+	out := make(map[string]float64, len(tags))
+	for _, tag := range tags {
+		if tag.Specificity != nil {
+			out[domain.NormalizeTagName(tag.Name)] = *tag.Specificity
+		}
+	}
+	return out
 }
 
 // fillConceptBodies replaces each concept draft's placeholder body with an

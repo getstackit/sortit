@@ -28,6 +28,12 @@ const (
 	// conceptTagRelevanceFloor is the minimum tag relevance for an issue to count
 	// as "carrying" that tag when tallying load-bearing tags.
 	conceptTagRelevanceFloor = 0.3
+	// conceptSpecificityFloor is the minimum tag specificity for a tag to be a
+	// concept subject. Generic bucket tags (improvement, backend, ui, …) score
+	// well below this and are frequent but not meaningful nouns, so they are
+	// skipped. Tags whose specificity is unknown are not gated (frequency already
+	// flags them as load-bearing). Tunable; see the calibration in the design.
+	conceptSpecificityFloor = 0.2
 	// maxConceptSampleIssues caps the representative issues cited in a concept draft.
 	maxConceptSampleIssues = 6
 	// conceptConfidenceScale controls how quickly concept confidence saturates
@@ -85,15 +91,18 @@ func SynthesizeMemoryProposals(
 
 // SynthesizeConceptProposals drafts concept memory proposals for load-bearing
 // tags — nouns that recur across many issues and so deserve a canonical profile.
-// It is pure and deterministic. Tags that already have an active concept or a
-// pending concept proposal are skipped here; the partial unique index on
-// subject_tag is the final guard at accept time, so even concurrent accepts can
-// never create two active concepts for one tag. Drafts carry no embedding —
-// enrichment happens on accept.
+// It is pure and deterministic. A tag must be both frequent (>= minIssuesForConcept
+// issues) and specific (specificity >= conceptSpecificityFloor) to qualify, so
+// generic bucket tags don't become concepts. tagSpecificity maps normalized tag
+// names to their catalog specificity; tags absent from it are not gated. Tags
+// that already have an active concept or a pending concept proposal are skipped;
+// the partial unique index on subject_tag is the final guard at accept time.
+// Drafts carry no embedding — enrichment happens on accept.
 func SynthesizeConceptProposals(
 	corpusIssues []issues.Issue,
 	existingPending []domain.MemoryProposal,
 	activeMemories []domain.Memory,
+	tagSpecificity map[string]float64,
 ) []domain.MemoryProposal {
 	covered := coveredConceptTags(existingPending, activeMemories)
 
@@ -111,6 +120,9 @@ func SynthesizeConceptProposals(
 	for tag, group := range byTag {
 		if len(group) < minIssuesForConcept {
 			continue
+		}
+		if spec, ok := tagSpecificity[tag]; ok && spec < conceptSpecificityFloor {
+			continue // generic bucket tag — frequent but not a meaningful noun
 		}
 		drafts = append(drafts, draftConceptProposal(tag, group))
 	}
