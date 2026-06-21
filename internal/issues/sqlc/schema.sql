@@ -317,6 +317,19 @@ CREATE TABLE "public"."tags" (
     "specificity_computed_at" timestamp with time zone,
     "embedding_vector" vector
 );
+CREATE TABLE "public"."user_profile_facts" (
+    "id" text NOT NULL,
+    "user_id" text NOT NULL,
+    "sequence" bigint NOT NULL,
+    "login" text NOT NULL,
+    "display_name" text NOT NULL,
+    "avatar_url" text NOT NULL,
+    "email" text NOT NULL,
+    "observed_at_unix_nano" bigint NOT NULL,
+    "source" text NOT NULL,
+    "source_id" text NOT NULL,
+    "inferred" boolean NOT NULL
+);
 CREATE TABLE "public"."users" (
     "id" text NOT NULL,
     "login" text NOT NULL,
@@ -444,6 +457,13 @@ ALTER TABLE ONLY "public"."tag_projections" ALTER COLUMN "status" SET DEFAULT 'a
 ALTER TABLE ONLY "public"."tag_projections" ALTER COLUMN "canonical_name" SET DEFAULT ''::text;
 ALTER TABLE ONLY "public"."tag_projections" ALTER COLUMN "last_event_id" SET DEFAULT ''::text;
 ALTER TABLE ONLY "public"."tag_projections" ALTER COLUMN "event_count" SET DEFAULT 0;
+ALTER TABLE ONLY "public"."user_profile_facts" ALTER COLUMN "login" SET DEFAULT ''::text;
+ALTER TABLE ONLY "public"."user_profile_facts" ALTER COLUMN "display_name" SET DEFAULT ''::text;
+ALTER TABLE ONLY "public"."user_profile_facts" ALTER COLUMN "avatar_url" SET DEFAULT ''::text;
+ALTER TABLE ONLY "public"."user_profile_facts" ALTER COLUMN "email" SET DEFAULT ''::text;
+ALTER TABLE ONLY "public"."user_profile_facts" ALTER COLUMN "source" SET DEFAULT ''::text;
+ALTER TABLE ONLY "public"."user_profile_facts" ALTER COLUMN "source_id" SET DEFAULT ''::text;
+ALTER TABLE ONLY "public"."user_profile_facts" ALTER COLUMN "inferred" SET DEFAULT false;
 
 ALTER TABLE ONLY "public"."api_token_facts" ADD CONSTRAINT "api_token_facts_pkey" PRIMARY KEY (id);
 ALTER TABLE ONLY "public"."api_tokens" ADD CONSTRAINT "api_tokens_pkey" PRIMARY KEY (id);
@@ -499,6 +519,7 @@ ALTER TABLE ONLY "public"."tag_events" ADD CONSTRAINT "tag_events_pkey" PRIMARY 
 ALTER TABLE ONLY "public"."tag_merge_history" ADD CONSTRAINT "tag_merge_history_pkey" PRIMARY KEY (id);
 ALTER TABLE ONLY "public"."tag_projections" ADD CONSTRAINT "tag_projections_pkey" PRIMARY KEY (name);
 ALTER TABLE ONLY "public"."tags" ADD CONSTRAINT "tags_pkey" PRIMARY KEY (name);
+ALTER TABLE ONLY "public"."user_profile_facts" ADD CONSTRAINT "user_profile_facts_pkey" PRIMARY KEY (id);
 ALTER TABLE ONLY "public"."users" ADD CONSTRAINT "users_pkey" PRIMARY KEY (id);
 
 CREATE UNIQUE INDEX api_token_facts_source_idx ON public.api_token_facts USING btree (source, source_id);
@@ -553,3 +574,6 @@ CREATE INDEX tag_projections_canonical_name_idx ON public.tag_projections USING 
 CREATE INDEX tag_projections_embedding_vector_cosine_hnsw_idx ON public.tag_projections USING hnsw (((embedding_vector)::vector(1536)) vector_cosine_ops) WHERE ((embedding_vector IS NOT NULL) AND (vector_dims(embedding_vector) = 1536));
 CREATE INDEX tag_projections_status_name_idx ON public.tag_projections USING btree (status, name);
 CREATE INDEX tags_embedding_vector_cosine_hnsw_idx ON public.tags USING hnsw (((embedding_vector)::vector(1536)) vector_cosine_ops) WHERE ((embedding_vector IS NOT NULL) AND (vector_dims(embedding_vector) = 1536));
+CREATE UNIQUE INDEX user_profile_facts_source_idx ON public.user_profile_facts USING btree (source, source_id);
+CREATE INDEX user_profile_facts_user_observed_idx ON public.user_profile_facts USING btree (user_id, observed_at_unix_nano, sequence, id);
+CREATE UNIQUE INDEX user_profile_facts_user_sequence_idx ON public.user_profile_facts USING btree (user_id, sequence);

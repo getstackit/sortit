@@ -363,3 +363,17 @@ type User struct {
 	CreatedAtUnixNano int64
 	UpdatedAtUnixNano int64
 }
+
+type UserProfileFact struct {
+	ID                 string
+	UserID             string
+	Sequence           int64
+	Login              string
+	DisplayName        string
+	AvatarUrl          string
+	Email              string
+	ObservedAtUnixNano int64
+	Source             string
+	SourceID           string
+	Inferred           bool
+}

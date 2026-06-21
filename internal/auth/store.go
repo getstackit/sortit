@@ -26,6 +26,13 @@ func NewStore(db *sql.DB) *Store {
 
 func (s *Store) UpsertOAuthUser(ctx context.Context, oauthUser OAuthUser) (User, error) {
 	now := time.Now().UTC()
+	incoming := profileSnapshot{
+		Login:       strings.TrimSpace(oauthUser.Login),
+		DisplayName: displayName(oauthUser.DisplayName, oauthUser.Login),
+		AvatarURL:   strings.TrimSpace(oauthUser.AvatarURL),
+		Email:       strings.TrimSpace(oauthUser.Email),
+	}
+
 	tx, err := s.db.BeginTx(ctx, nil)
 	if err != nil {
 		return User{}, fmt.Errorf("begin auth upsert tx: %w", err)
@@ -41,18 +48,29 @@ func (s *Store) UpsertOAuthUser(ctx context.Context, oauthUser OAuthUser) (User,
 	).Scan(&userID)
 	switch {
 	case err == nil:
+		// Existing user: write the latest-profile projection and append a
+		// profile-change fact only when the observed profile actually changed,
+		// so routine logins don't churn the projection or the fact log.
+		current, err := loadCurrentProfile(ctx, tx, userID)
+		if err != nil {
+			return User{}, err
+		}
+		if !current.equal(incoming) {
+			if err := s.applyProfileChange(ctx, tx, userID, incoming, now); err != nil {
+				return User{}, err
+			}
+		}
 	case errors.Is(err, sql.ErrNoRows):
 		userID = newID("user")
 		if _, err := tx.ExecContext(
 			ctx,
 			`INSERT INTO users (id, login, display_name, avatar_url, email, created_at_unix_nano, updated_at_unix_nano)
-			 VALUES ($1, $2, $3, $4, $5, $6, $7)`,
+			 VALUES ($1, $2, $3, $4, $5, $6, $6)`,
 			userID,
-			strings.TrimSpace(oauthUser.Login),
-			displayName(oauthUser.DisplayName, oauthUser.Login),
-			strings.TrimSpace(oauthUser.AvatarURL),
-			strings.TrimSpace(oauthUser.Email),
-			now.UnixNano(),
+			incoming.Login,
+			incoming.DisplayName,
+			incoming.AvatarURL,
+			incoming.Email,
 			now.UnixNano(),
 		); err != nil {
 			return User{}, fmt.Errorf("insert user: %w", err)
@@ -69,23 +87,12 @@ func (s *Store) UpsertOAuthUser(ctx context.Context, oauthUser OAuthUser) (User,
 		); err != nil {
 			return User{}, fmt.Errorf("insert auth account: %w", err)
 		}
+		// Seed the initial profile fact (sequence 1) alongside the projection.
+		if err := insertUserProfileFact(ctx, tx, userID, 1, incoming, now, "user_create", userID+":created"); err != nil {
+			return User{}, err
+		}
 	default:
 		return User{}, fmt.Errorf("lookup auth account: %w", err)
-	}
-
-	if _, err := tx.ExecContext(
-		ctx,
-		`UPDATE users
-		 SET login = $1, display_name = $2, avatar_url = $3, email = $4, updated_at_unix_nano = $5
-		 WHERE id = $6`,
-		strings.TrimSpace(oauthUser.Login),
-		displayName(oauthUser.DisplayName, oauthUser.Login),
-		strings.TrimSpace(oauthUser.AvatarURL),
-		strings.TrimSpace(oauthUser.Email),
-		now.UnixNano(),
-		userID,
-	); err != nil {
-		return User{}, fmt.Errorf("update user profile: %w", err)
 	}
 
 	user, err := selectUser(ctx, tx, userID)
@@ -98,6 +105,46 @@ func (s *Store) UpsertOAuthUser(ctx context.Context, oauthUser OAuthUser) (User,
 	}
 
 	return user, nil
+}
+
+// applyProfileChange writes the latest-profile projection and appends a
+// matching append-only profile-change fact in the same transaction.
+func (s *Store) applyProfileChange(
+	ctx context.Context,
+	tx *sql.Tx,
+	userID string,
+	profile profileSnapshot,
+	observedAt time.Time,
+) error {
+	if _, err := tx.ExecContext(
+		ctx,
+		`UPDATE users
+		 SET login = $1, display_name = $2, avatar_url = $3, email = $4, updated_at_unix_nano = $5
+		 WHERE id = $6`,
+		profile.Login,
+		profile.DisplayName,
+		profile.AvatarURL,
+		profile.Email,
+		observedAt.UTC().UnixNano(),
+		userID,
+	); err != nil {
+		return fmt.Errorf("update user profile: %w", err)
+	}
+
+	sequence, err := nextUserProfileFactSequence(ctx, tx, userID)
+	if err != nil {
+		return err
+	}
+	return insertUserProfileFact(
+		ctx,
+		tx,
+		userID,
+		sequence,
+		profile,
+		observedAt,
+		"user_login",
+		fmt.Sprintf("%s:%d", userID, sequence),
+	)
 }
 
 func (s *Store) CreateSession(ctx context.Context, userID string, expiresAt time.Time) (string, error) {
