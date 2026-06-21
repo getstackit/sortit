@@ -16,12 +16,20 @@ All commands are `mise` tasks defined in `mise.toml`.
 | Lint (both) | `mise run lint` | golangci-lint + eslint | Any lint-only verification |
 | Backend tests | `mise run test:fast` | `go test ./apps/... ./cmd/... ./internal/...` | Go logic changes (needs test DB) |
 | Web checks | `mise run check:web` | `npm run test` + `npm run build` | Web component / API-contract changes |
+| Drift checks | `mise run check:schema-drift` / `check:sqlc-drift` | `schema.sql` + `issuesdb` generated code vs migrations | After any migration / sqlc query change |
 | Go checks | `mise run check:go` | fmt + lint:go + compile + test:fast | Multi-package Go changes |
-| **Full check** | `mise run check` | fmt + lint + test:fast + check:web | **Before every `stackit submit`** |
+| **Full check** | `mise run check` | fmt + lint + schema/sqlc drift + test:fast + check:web | **Before every `stackit submit`** |
 
-> The backend tests (`test:fast`, `check:go`, `check`) need PostgreSQL up
-> (`docker compose up -d`), matching `SORTIT_TEST_DATABASE_URL`. If the DB is
-> down, start it first — a skipped/failed DB is not a passing run.
+> The backend tests and the schema-drift check (`test:fast`, `check:schema-drift`,
+> `check:go`, `check`) need PostgreSQL up (`docker compose up -d`), matching
+> `SORTIT_TEST_DATABASE_URL`. If the DB is down, start it first — a skipped/failed
+> DB is not a passing run.
+>
+> The drift checks (`check:schema-drift`, `check:sqlc-drift`) guard generated
+> artifacts: after editing a migration, regenerate with `mise run generate:schema`
+> and `mise run generate:sqlc` and commit the result, or CI's `Test` job fails on
+> drift before tests even run. `mise run check` now runs both, so a green local
+> check matches CI.
 
 ## Decision Guide
 
@@ -34,12 +42,12 @@ All commands are `mise` tasks defined in `mise.toml`.
 
 ## Pre-Submit Gate (REQUIRED before `stackit submit`)
 
-CI runs golangci-lint, eslint, backend tests, web tests, and the web build. A red
-PR wastes a review cycle and blocks the rest of the stack. **Never run `stackit
-submit` until `mise run check` passes locally.**
+CI runs golangci-lint, eslint, schema/sqlc drift checks, backend tests, web tests,
+and the web build. A red PR wastes a review cycle and blocks the rest of the stack.
+**Never run `stackit submit` until `mise run check` passes locally.**
 
 ```bash
-mise run check        # fmt + lint + backend tests + web tests + build
+mise run check        # fmt + lint + schema/sqlc drift + backend tests + web tests + build
 # only when green:
 stackit submit
 ```

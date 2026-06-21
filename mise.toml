@@ -45,6 +45,9 @@ run = """
 
 [tasks."check:schema-drift"]
 description = "Verify internal/issues/sqlc/schema.sql matches a fresh migrated PostgreSQL schema"
+# fmt rewrites .go files; this compiles cmd/check-schema-drift, so wait for fmt when both
+# run in the same invocation (check) to avoid compiling a half-formatted tree.
+wait_for = ["fmt"]
 run = "go run ./cmd/check-schema-drift"
 
 [tasks."generate:schema"]
@@ -57,6 +60,10 @@ run = "sqlc generate"
 
 [tasks."check:sqlc-drift"]
 description = "Verify internal/issues/issuesdb matches a fresh sqlc generate (no uncommitted drift)"
+# sqlc diff compares its fresh generation against the committed generated .go files, which
+# fmt rewrites; wait for fmt when both run in the same invocation (check) to avoid a false
+# drift against a half-formatted file.
+wait_for = ["fmt"]
 run = "sqlc diff"
 
 [tasks."db:backup"]
@@ -114,8 +121,8 @@ description = "Run Go checks (format, lint, compile, backend tests)"
 depends = ["fmt", "lint:go", "compile", "test:fast"]
 
 [tasks.check]
-description = "Run all checks (format, lint, backend tests, frontend tests, build)"
-depends = ["fmt", "lint", "test:fast", "check:web"]
+description = "Run all checks (format, lint, schema + sqlc drift, backend tests, frontend tests, build)"
+depends = ["fmt", "lint", "check:schema-drift", "check:sqlc-drift", "test:fast", "check:web"]
 
 [tasks."web:dev"]
 description = "Run the Next.js app in development mode"
