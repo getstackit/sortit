@@ -9,26 +9,34 @@ import (
 	"sortit/internal/domain"
 	"sortit/internal/issues"
 	"sortit/internal/memoryanalytics"
+	"sortit/internal/vectors"
 )
 
 // MemoryReader is the read surface memory candidate detection rides on.
 // issues.MemoryStore satisfies it.
 type MemoryReader interface {
 	ListMemories(ctx context.Context, opts issues.MemoryListOptions) ([]domain.Memory, error)
-	SearchMemories(ctx context.Context, query []float64, limit int) ([]issues.MemorySimilarity, error)
+}
+
+// ReinforcementSource supplies the slim issue projection quiet-memory detection
+// needs: each embedded issue with its most-recent activity time. The production
+// store and the in-memory store both implement ListReinforcementCandidates, so
+// detection never pulls the full issue hydration just to read embeddings.
+type ReinforcementSource interface {
+	ListReinforcementCandidates(ctx context.Context) ([]issues.EmbeddingActivity, error)
 }
 
 // MemoryDetector surfaces memory-side curation candidates: quiet memories worth
 // archiving and redundant memories worth superseding. Like the issue detectors,
 // it only reads and computes — it never mutates or proposes.
 type MemoryDetector struct {
-	issues   issues.Reader
+	issues   ReinforcementSource
 	memories MemoryReader
 	logger   *slog.Logger
 }
 
 // NewMemoryDetector constructs a memory candidate detector.
-func NewMemoryDetector(issueReader issues.Reader, memories MemoryReader, logger *slog.Logger) *MemoryDetector {
+func NewMemoryDetector(issueReader ReinforcementSource, memories MemoryReader, logger *slog.Logger) *MemoryDetector {
 	if logger == nil {
 		logger = slog.Default()
 	}
@@ -149,22 +157,18 @@ func (d *MemoryDetector) DetectQuietMemories(ctx context.Context, params QuietPa
 }
 
 func (d *MemoryDetector) reinforcementCandidates(ctx context.Context) ([]memoryanalytics.ReinforcementCandidate, error) {
-	all, err := d.issues.List(ctx)
+	rows, err := d.issues.ListReinforcementCandidates(ctx)
 	if err != nil {
 		return nil, err
 	}
-	candidates := make([]memoryanalytics.ReinforcementCandidate, 0, len(all))
-	for _, issue := range all {
-		if len(issue.Embedding) == 0 {
+	candidates := make([]memoryanalytics.ReinforcementCandidate, 0, len(rows))
+	for _, row := range rows {
+		if len(row.Embedding) == 0 {
 			continue
 		}
-		at := issue.CreatedAt
-		if issue.ClosedAt != nil && issue.ClosedAt.After(at) {
-			at = *issue.ClosedAt
-		}
 		candidates = append(candidates, memoryanalytics.ReinforcementCandidate{
-			Embedding:  issue.Embedding,
-			ActivityAt: at,
+			Embedding:  row.Embedding,
+			ActivityAt: row.ActivityAt,
 		})
 	}
 	return candidates, nil
@@ -180,51 +184,37 @@ func (d *MemoryDetector) DetectRedundantMemories(ctx context.Context, params Red
 	if err != nil {
 		return nil, err
 	}
-	byID := make(map[string]domain.Memory, len(mems))
+
+	// We already hold every active memory, so redundancy is a single in-memory
+	// O(n^2) similarity sweep over the embedded, non-concept ones — no per-memory
+	// vector-search round-trips. Concepts profile a distinct noun (the 1:1
+	// subject-tag index already prevents same-tag concept duplicates) and play an
+	// orthogonal role to decisions/lessons about the same area, so they are never
+	// redundant-supersede candidates.
+	candidates := make([]domain.Memory, 0, len(mems))
 	for _, mem := range mems {
-		byID[mem.ID] = mem
+		if len(mem.Embedding) == 0 || mem.Kind == domain.MemoryKindConcept {
+			continue
+		}
+		candidates = append(candidates, mem)
 	}
 
 	pairs := make([]RedundantMemoryPair, 0)
-	seen := map[string]struct{}{}
-	for _, mem := range mems {
-		if len(mem.Embedding) == 0 {
-			continue
-		}
-		if mem.Kind == domain.MemoryKindConcept {
-			// A concept profiles a distinct noun; the 1:1 subject-tag index already
-			// prevents same-tag concept duplicates. It shares a topic with decisions
-			// or lessons about the same area but plays an orthogonal role, so it is
-			// never a redundant-supersede candidate.
-			continue
-		}
-		neighbors, err := d.memories.SearchMemories(ctx, mem.Embedding, 6)
-		if err != nil {
-			return nil, err
-		}
-		for _, neighbor := range neighbors {
-			other := neighbor.Memory
-			if other.ID == mem.ID {
+	for i := range candidates {
+		a := candidates[i]
+		for j := i + 1; j < len(candidates); j++ {
+			b := candidates[j]
+			if len(a.Embedding) != len(b.Embedding) {
 				continue
 			}
-			if other.Kind == domain.MemoryKindConcept {
-				continue // concepts are not dedup targets (see above)
-			}
-			if _, ok := byID[other.ID]; !ok {
-				continue // not active
-			}
-			if neighbor.Similarity < params.MinSimilarity {
+			sim := vectors.CosineSimilarity(a.Embedding, b.Embedding)
+			if sim < params.MinSimilarity {
 				continue
 			}
-			key := pairKey(mem.ID, other.ID)
-			if _, ok := seen[key]; ok {
-				continue
-			}
-			seen[key] = struct{}{}
-			keep, supersede := chooseKeeper(mem, other)
+			keep, supersede := chooseKeeper(a, b)
 			pairs = append(pairs, RedundantMemoryPair{
 				MemoryIDs:          []string{keep.ID, supersede.ID},
-				Similarity:         round3(neighbor.Similarity),
+				Similarity:         round3(sim),
 				SuggestedKeep:      keep.ID,
 				SuggestedSupersede: supersede.ID,
 			})
@@ -251,11 +241,4 @@ func chooseKeeper(a, b domain.Memory) (domain.Memory, domain.Memory) {
 		return a, b
 	}
 	return b, a
-}
-
-func pairKey(a, b string) string {
-	if a < b {
-		return a + "|" + b
-	}
-	return b + "|" + a
 }

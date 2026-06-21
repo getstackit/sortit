@@ -304,6 +304,29 @@ func (s *ObservedStore) LoadIssueActivity(ctx context.Context, ids []string) (ma
 	return activity, nil
 }
 
+func (s *ObservedStore) ListReinforcementCandidates(ctx context.Context) ([]EmbeddingActivity, error) {
+	if reader, ok := s.base.(ReinforcementCandidateReader); ok {
+		return reader.ListReinforcementCandidates(ctx)
+	}
+	// Fallback for bases without the slim projection: derive from the full List.
+	// Mirrors the pre-optimization behavior exactly.
+	all, err := s.base.List(ctx)
+	if err != nil {
+		return nil, err
+	}
+	out := make([]EmbeddingActivity, 0, len(all))
+	for _, issue := range all {
+		if len(issue.Embedding) == 0 {
+			continue
+		}
+		out = append(out, EmbeddingActivity{
+			Embedding:  append([]float64(nil), issue.Embedding...),
+			ActivityAt: issueActivityAt(issue),
+		})
+	}
+	return out, nil
+}
+
 func (s *ObservedStore) GetIssueDetailBase(ctx context.Context, id string) (Issue, error) {
 	if detailStore, ok := s.base.(IssueDetailStore); ok {
 		return detailStore.GetIssueDetailBase(ctx, id)

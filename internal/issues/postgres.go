@@ -345,6 +345,61 @@ func (s *PostgresStore) ListCompareIssues(ctx context.Context, ids []string) ([]
 	return items, nil
 }
 
+// ListReinforcementCandidates returns the embedding and most-recent activity
+// time of every embedded issue. It is the slim projection behind memory
+// reinforcement scoring: unlike List, it skips enrichment-state loading and deep
+// cloning that reinforcement scoring never reads, so it stays cheap as the issue
+// corpus grows.
+func (s *PostgresStore) ListReinforcementCandidates(ctx context.Context) ([]EmbeddingActivity, error) {
+	rows, err := s.db.QueryContext(
+		ctx,
+		`SELECT COALESCE(c.embedding_vector::text, i.embedding_vector::text, '') AS embedding_text,
+		        COALESCE(p.created_at_unix_nano, i.created_at_unix_nano) AS created_at_unix_nano,
+		        COALESCE(p.closed_at_unix_nano, 0) AS closed_at_unix_nano
+		 FROM issues i
+		 LEFT JOIN issue_content_projections c ON c.issue_id = i.id
+		 LEFT JOIN issue_lifecycle_projections p ON p.issue_id = i.id
+		 WHERE COALESCE(c.embedding_vector, i.embedding_vector) IS NOT NULL`,
+	)
+	if err != nil {
+		return nil, fmt.Errorf("list reinforcement candidates: %w", err)
+	}
+	defer rows.Close() //nolint:errcheck
+
+	out := make([]EmbeddingActivity, 0)
+	for rows.Next() {
+		var (
+			embeddingText string
+			createdAtNano int64
+			closedAtNano  int64
+		)
+		if err := rows.Scan(&embeddingText, &createdAtNano, &closedAtNano); err != nil {
+			return nil, fmt.Errorf("scan reinforcement candidate: %w", err)
+		}
+		embedding, err := parseEmbeddingText(embeddingText)
+		if err != nil {
+			return nil, fmt.Errorf("decode reinforcement candidate embedding: %w", err)
+		}
+		if len(embedding) == 0 {
+			continue
+		}
+		at := time.Unix(0, createdAtNano).UTC()
+		if closedAtNano > 0 {
+			if closedAt := time.Unix(0, closedAtNano).UTC(); closedAt.After(at) {
+				at = closedAt
+			}
+		}
+		out = append(out, EmbeddingActivity{
+			Embedding:  append([]float64(nil), embedding...),
+			ActivityAt: at,
+		})
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("iterate reinforcement candidates: %w", err)
+	}
+	return out, nil
+}
+
 func (s *PostgresStore) ListFiltered(ctx context.Context, opts ListOptions) ([]Issue, error) {
 	rows, err := s.queries.ListIssuesFiltered(ctx, normalizeListIssuesFilteredParams(listIssuesFilteredParams{
 		status:     opts.Status,
