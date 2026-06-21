@@ -240,8 +240,8 @@ type IssueSnapshot struct {
 	Raw               string
 	TagsJson          json.RawMessage
 	TagScoresJson     json.RawMessage
-	EmbeddingJson     json.RawMessage
 	CreatedAtUnixNano int64
+	EmbeddingVector   interface{}
 }
 
 type MapProjection struct {
