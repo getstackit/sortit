@@ -155,7 +155,7 @@ func NewOpenAIEmbedder(cfg OpenAIConfig) (*OpenAIEmbedder, error) {
 	}, nil
 }
 
-func (t *OpenAITagger) Score(ctx context.Context, text string, tags []Tag, examples []FewShotExample, priorDecisions []PriorDecision, _ ConceptFrame) (ScoreResult, error) {
+func (t *OpenAITagger) Score(ctx context.Context, text string, tags []Tag, examples []FewShotExample, priorDecisions []PriorDecision, frame ConceptFrame) (ScoreResult, error) {
 	request := openAIChatCompletionRequest{
 		Model:       t.model,
 		Temperature: 0,
@@ -165,7 +165,7 @@ func (t *OpenAITagger) Score(ctx context.Context, text string, tags []Tag, examp
 		Messages: []openAIChatMessageRequest{
 			{
 				Role:    "system",
-				Content: buildOpenAITaggingSystemPrompt(),
+				Content: buildOpenAITaggingSystemPrompt(frame),
 			},
 			{
 				Role:    "user",
@@ -413,8 +413,53 @@ func truncateExampleText(text string, maxWords int) string {
 	return strings.Join(words[:maxWords], " ") + "…"
 }
 
-func buildOpenAITaggingSystemPrompt() string {
-	return "Classify issue text against the supplied taxonomy and return a JSON object with two keys: tags and negated_tags. " +
+// conceptFramePreamble renders the project's identity frame as grounding that
+// prefixes the tagging system prompt. It is the stable, cacheable prefix: the
+// overview and concept set change rarely, so a re-enrich batch reuses it. The
+// wording is adoption-first — it tells the model to prefer the project's own
+// concept names over generic substitutes when an issue genuinely concerns a
+// concept, with a lighter evidence-and-no-unrelated-nouns guard (the verifier and
+// the corpus show over-application is the rarer failure than under-adoption). An
+// empty frame renders nothing, so the prompt is byte-identical to the pre-frame
+// prompt on a fresh install.
+func conceptFramePreamble(frame ConceptFrame) string {
+	if frame.IsEmpty() {
+		return ""
+	}
+	var b strings.Builder
+	b.WriteString("You are tagging issues for the following project. ")
+	if overview := strings.TrimSpace(frame.Overview); overview != "" {
+		b.WriteString("Project: ")
+		b.WriteString(overview)
+		if !strings.HasSuffix(overview, ".") {
+			b.WriteString(".")
+		}
+		b.WriteString(" ")
+	}
+	if len(frame.Concepts) > 0 {
+		b.WriteString("This project's core concepts (its own vocabulary): ")
+		for _, c := range frame.Concepts {
+			tag := strings.TrimSpace(c.SubjectTag)
+			if tag == "" {
+				continue
+			}
+			b.WriteString("- ")
+			b.WriteString(tag)
+			if profile := strings.TrimSpace(c.Profile); profile != "" {
+				b.WriteString(" — ")
+				b.WriteString(profile)
+			}
+			b.WriteString(" ")
+		}
+	}
+	b.WriteString("Use this to place each issue within the project and to prefer the project's own concept names: when an issue genuinely concerns one of these concepts, assign that concept's tag rather than a generic substitute. ")
+	b.WriteString("They are context, not a checklist — assign a concept only on evidence in the issue text, and don't attach an unrelated project noun. ")
+	return b.String()
+}
+
+func buildOpenAITaggingSystemPrompt(frame ConceptFrame) string {
+	return conceptFramePreamble(frame) +
+		"Classify issue text against the supplied taxonomy and return a JSON object with two keys: tags and negated_tags. " +
 		"tags must be an array of objects sorted by descending relevance. " +
 		"Each object must include tag and relevance. " +
 		"Each object may also include an evidence array of 1 to 3 short verbatim quotes copied character-for-character from the issue text that justify the tag. " +

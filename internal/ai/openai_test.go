@@ -107,7 +107,7 @@ func TestBuildOpenAITaggingPromptOmitsExamplesSectionWhenEmpty(t *testing.T) {
 }
 
 func TestBuildOpenAITaggingSystemPromptAllowsConstrainedSuggestions(t *testing.T) {
-	prompt := buildOpenAITaggingSystemPrompt()
+	prompt := buildOpenAITaggingSystemPrompt(ConceptFrame{})
 
 	for _, expected := range []string{
 		"Use supplied taxonomy tags by default.",
@@ -125,8 +125,52 @@ func TestBuildOpenAITaggingSystemPromptAllowsConstrainedSuggestions(t *testing.T
 	}
 }
 
+func TestBuildOpenAITaggingSystemPromptConceptFrame(t *testing.T) {
+	// An empty frame renders no grounding — the prompt is byte-identical to the
+	// bare prompt, guarding the fresh-install no-op.
+	if pre := conceptFramePreamble(ConceptFrame{}); pre != "" {
+		t.Fatalf("empty frame should render no preamble, got %q", pre)
+	}
+	base := buildOpenAITaggingSystemPrompt(ConceptFrame{})
+	if strings.Contains(base, "You are tagging issues for the following project") {
+		t.Fatal("empty frame must not add grounding to the prompt")
+	}
+
+	frame := ConceptFrame{
+		Overview: "Sortit is an issue tracker built around a factor model over tag relevance",
+		Concepts: []ConceptDigest{
+			{SubjectTag: "ridge regression", Profile: "the diagonal-penalty ranking model"},
+			{SubjectTag: "factor model", Profile: "low-rank decomposition of tag relevance"},
+		},
+	}
+	grounded := buildOpenAITaggingSystemPrompt(frame)
+
+	for _, expected := range []string{
+		"You are tagging issues for the following project.",
+		"Project: Sortit is an issue tracker built around a factor model over tag relevance.",
+		"This project's core concepts (its own vocabulary):",
+		"- ridge regression — the diagonal-penalty ranking model",
+		"- factor model — low-rank decomposition of tag relevance",
+		"assign that concept's tag rather than a generic substitute.",
+		"don't attach an unrelated project noun.",
+	} {
+		if !strings.Contains(grounded, expected) {
+			t.Fatalf("expected grounded prompt to contain %q", expected)
+		}
+	}
+
+	// The grounding is the prefix (largest cacheable prefix), and the base
+	// classification instructions follow byte-for-byte unchanged.
+	if !strings.HasPrefix(grounded, "You are tagging issues for the following project.") {
+		t.Fatal("frame grounding must prefix the system prompt")
+	}
+	if !strings.HasSuffix(grounded, base) {
+		t.Fatal("grounded prompt must be preamble + the unchanged base prompt")
+	}
+}
+
 func TestBuildOpenAITaggingPromptsRequestOptionalEvidence(t *testing.T) {
-	systemPrompt := buildOpenAITaggingSystemPrompt()
+	systemPrompt := buildOpenAITaggingSystemPrompt(ConceptFrame{})
 	for _, expected := range []string{
 		"may also include an evidence array",
 		"verbatim quotes copied character-for-character from the issue text",
@@ -150,7 +194,7 @@ func TestBuildOpenAITaggingPromptsRequestOptionalEvidence(t *testing.T) {
 }
 
 func TestBuildOpenAITaggingPromptInstructsNegatedTags(t *testing.T) {
-	systemPrompt := buildOpenAITaggingSystemPrompt()
+	systemPrompt := buildOpenAITaggingSystemPrompt(ConceptFrame{})
 	for _, expected := range []string{
 		"negated_tags",
 		"EXPLICITLY REFUTES",
