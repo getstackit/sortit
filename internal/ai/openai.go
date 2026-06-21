@@ -18,6 +18,10 @@ const (
 	defaultOpenAITagModel       = "gpt-5.4-nano"
 	defaultOpenAICanonicalModel = "gpt-5.4-mini"
 	defaultOpenAIEmbeddingModel = "text-embedding-3-small"
+
+	// Chat message roles.
+	chatRoleSystem = "system"
+	chatRoleUser   = "user"
 )
 
 type OpenAIConfig struct {
@@ -155,7 +159,7 @@ func NewOpenAIEmbedder(cfg OpenAIConfig) (*OpenAIEmbedder, error) {
 	}, nil
 }
 
-func (t *OpenAITagger) Score(ctx context.Context, text string, tags []Tag, examples []FewShotExample, priorDecisions []PriorDecision) (ScoreResult, error) {
+func (t *OpenAITagger) Score(ctx context.Context, text string, tags []Tag, examples []FewShotExample, priorDecisions []PriorDecision, frame ConceptFrame) (ScoreResult, error) {
 	request := openAIChatCompletionRequest{
 		Model:       t.model,
 		Temperature: 0,
@@ -164,11 +168,11 @@ func (t *OpenAITagger) Score(ctx context.Context, text string, tags []Tag, examp
 		},
 		Messages: []openAIChatMessageRequest{
 			{
-				Role:    "system",
-				Content: buildOpenAITaggingSystemPrompt(),
+				Role:    chatRoleSystem,
+				Content: buildOpenAITaggingSystemPrompt(frame),
 			},
 			{
-				Role:    "user",
+				Role:    chatRoleUser,
 				Content: buildOpenAITaggingPrompt(text, tags, examples, priorDecisions...),
 			},
 		},
@@ -203,11 +207,11 @@ func (c *OpenAICanonicalizer) CanonicalizeDiscussion(ctx context.Context, posts 
 		Temperature: 0,
 		Messages: []openAIChatMessageRequest{
 			{
-				Role:    "system",
+				Role:    chatRoleSystem,
 				Content: buildOpenAICanonicalizationSystemPrompt(),
 			},
 			{
-				Role:    "user",
+				Role:    chatRoleUser,
 				Content: buildOpenAICanonicalizationPrompt(posts),
 			},
 		},
@@ -413,8 +417,53 @@ func truncateExampleText(text string, maxWords int) string {
 	return strings.Join(words[:maxWords], " ") + "…"
 }
 
-func buildOpenAITaggingSystemPrompt() string {
-	return "Classify issue text against the supplied taxonomy and return a JSON object with two keys: tags and negated_tags. " +
+// conceptFramePreamble renders the project's identity frame as grounding that
+// prefixes the tagging system prompt. It is the stable, cacheable prefix: the
+// overview and concept set change rarely, so a re-enrich batch reuses it. The
+// wording is adoption-first — it tells the model to prefer the project's own
+// concept names over generic substitutes when an issue genuinely concerns a
+// concept, with a lighter evidence-and-no-unrelated-nouns guard (the verifier and
+// the corpus show over-application is the rarer failure than under-adoption). An
+// empty frame renders nothing, so the prompt is byte-identical to the pre-frame
+// prompt on a fresh install.
+func conceptFramePreamble(frame ConceptFrame) string {
+	if frame.IsEmpty() {
+		return ""
+	}
+	var b strings.Builder
+	b.WriteString("You are tagging issues for the following project. ")
+	if overview := strings.TrimSpace(frame.Overview); overview != "" {
+		b.WriteString("Project: ")
+		b.WriteString(overview)
+		if !strings.HasSuffix(overview, ".") {
+			b.WriteString(".")
+		}
+		b.WriteString(" ")
+	}
+	if len(frame.Concepts) > 0 {
+		b.WriteString("This project's core concepts (its own vocabulary): ")
+		for _, c := range frame.Concepts {
+			tag := strings.TrimSpace(c.SubjectTag)
+			if tag == "" {
+				continue
+			}
+			b.WriteString("- ")
+			b.WriteString(tag)
+			if profile := strings.TrimSpace(c.Profile); profile != "" {
+				b.WriteString(" — ")
+				b.WriteString(profile)
+			}
+			b.WriteString(" ")
+		}
+	}
+	b.WriteString("Use this to place each issue within the project and to prefer the project's own concept names: when an issue genuinely concerns one of these concepts, assign that concept's tag rather than a generic substitute. ")
+	b.WriteString("They are context, not a checklist — assign a concept only on evidence in the issue text, and don't attach an unrelated project noun. ")
+	return b.String()
+}
+
+func buildOpenAITaggingSystemPrompt(frame ConceptFrame) string {
+	return conceptFramePreamble(frame) +
+		"Classify issue text against the supplied taxonomy and return a JSON object with two keys: tags and negated_tags. " +
 		"tags must be an array of objects sorted by descending relevance. " +
 		"Each object must include tag and relevance. " +
 		"Each object may also include an evidence array of 1 to 3 short verbatim quotes copied character-for-character from the issue text that justify the tag. " +
@@ -457,11 +506,11 @@ func (t *OpenAITagger) ScoreSpecificity(ctx context.Context, tag Tag, catalog []
 		},
 		Messages: []openAIChatMessageRequest{
 			{
-				Role:    "system",
+				Role:    chatRoleSystem,
 				Content: buildOpenAISpecificitySystemPrompt(),
 			},
 			{
-				Role:    "user",
+				Role:    chatRoleUser,
 				Content: buildOpenAISpecificityPrompt(tag, catalog),
 			},
 		},
@@ -547,11 +596,11 @@ func (p *OpenAIConceptProfiler) GenerateConceptProfile(ctx context.Context, tag 
 		Temperature: 0,
 		Messages: []openAIChatMessageRequest{
 			{
-				Role:    "system",
+				Role:    chatRoleSystem,
 				Content: buildOpenAIConceptProfileSystemPrompt(),
 			},
 			{
-				Role:    "user",
+				Role:    chatRoleUser,
 				Content: buildOpenAIConceptProfilePrompt(tag, issueSummaries),
 			},
 		},
@@ -566,6 +615,75 @@ func (p *OpenAIConceptProfiler) GenerateConceptProfile(ctx context.Context, tag 
 	}
 
 	return strings.TrimSpace(response.Choices[0].Message.Content), nil
+}
+
+type openAIClusterConceptResponse struct {
+	Name    string `json:"name"`
+	Profile string `json:"profile"`
+}
+
+// ProposeConceptFromCluster names and profiles a new concept from a cluster of
+// issues sharing an unexplained residual. It returns the proposed subject tag and
+// its profile as a JSON object, primed by the project frame so the invented name
+// fits the project's vocabulary.
+func (p *OpenAIConceptProfiler) ProposeConceptFromCluster(ctx context.Context, issueSummaries []string, frame ConceptFrame) (string, string, error) {
+	request := openAIChatCompletionRequest{
+		Model:       p.model,
+		Temperature: 0,
+		ResponseFormat: &openAIResponseFormat{
+			Type: "json_object",
+		},
+		Messages: []openAIChatMessageRequest{
+			{
+				Role:    chatRoleSystem,
+				Content: buildOpenAIClusterConceptSystemPrompt(frame),
+			},
+			{
+				Role:    chatRoleUser,
+				Content: buildOpenAIClusterConceptPrompt(issueSummaries),
+			},
+		},
+	}
+
+	var response openAIChatCompletionResponse
+	if err := p.client.doJSON(ctx, "/chat/completions", request, &response); err != nil {
+		return "", "", err
+	}
+	if len(response.Choices) == 0 {
+		return "", "", errors.New("openai returned no completion choices")
+	}
+
+	var payload openAIClusterConceptResponse
+	if err := json.Unmarshal([]byte(response.Choices[0].Message.Content), &payload); err != nil {
+		return "", "", fmt.Errorf("decode cluster concept response: %w", err)
+	}
+	return strings.TrimSpace(payload.Name), strings.TrimSpace(payload.Profile), nil
+}
+
+func buildOpenAIClusterConceptSystemPrompt(frame ConceptFrame) string {
+	return conceptFramePreamble(frame) +
+		"A set of issues shares a concept the existing tags fail to capture — they cluster together in the unexplained residual of the tag model. " +
+		"Name that shared concept and profile it. " +
+		"Return a JSON object with two keys: name and profile. " +
+		"name is a short, lowercase, reusable subject tag (1 to 3 words) naming the concrete subsystem, workflow, surface, or artifact the issues share — fit the project's existing vocabulary and naming style. " +
+		"Do not invent a synonym for an existing tag, a generic bucket (improvement, backend, ui, performance), or a restatement of issue type; name the specific missing noun. " +
+		"profile is concise plain prose: what the concept is, why it exists, and how it behaves, grounded in the example issues. No headings, no issue IDs."
+}
+
+func buildOpenAIClusterConceptPrompt(issueSummaries []string) string {
+	var builder strings.Builder
+	builder.WriteString("Issues that share an unexplained concept:\n")
+	for index, summary := range issueSummaries {
+		summary = strings.TrimSpace(summary)
+		if summary == "" {
+			continue
+		}
+		fmt.Fprintf(&builder, "Issue %d:\n", index+1)
+		builder.WriteString(summary)
+		builder.WriteString("\n\n")
+	}
+	builder.WriteString("Name and profile the concept these issues share.")
+	return strings.TrimSpace(builder.String())
 }
 
 func buildOpenAIConceptProfilePrompt(tag string, issueSummaries []string) string {

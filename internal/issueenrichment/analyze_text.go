@@ -2,7 +2,10 @@ package enrichment
 
 import (
 	"context"
+	"errors"
 	"fmt"
+	"log/slog"
+	"sort"
 	"strings"
 
 	"sortit/internal/ai"
@@ -33,12 +36,18 @@ func (s *IssueEnricher) analyzeWithCandidateTaxonomy(ctx context.Context, raw st
 		examples = s.exemplars.Select(ctx, s.analyzer, freshEmbeddingVector, candidateTagNames, 3)
 	}
 
+	// The project concept frame and prior decisions both ground tagging in the
+	// project's own knowledge, so they ride the same gate: a memory's own
+	// enrichment runs clean (SkipPriorDecisions) and must not be influenced by
+	// other memories' content — and the frame's concept profiles are exactly that.
 	var priorDecisions []ai.PriorDecision
+	var frame ai.ConceptFrame
 	if includePriorDecisions {
 		priorDecisions = s.relevantPriorDecisions(ctx, freshEmbeddingVector)
+		frame = s.projectConceptFrame(ctx)
 	}
 
-	analyzed, err := s.analyzer.AnalyzeIssueData(ctx, raw, candidates.AITags(), examples, priorDecisions...)
+	analyzed, err := s.analyzer.AnalyzeIssueData(ctx, raw, candidates.AITags(), examples, frame, priorDecisions...)
 	if err != nil {
 		return ai.AnalyzedIssue{}, tags.CandidateTaxonomy{}, err
 	}
@@ -86,6 +95,108 @@ func (s *IssueEnricher) relevantPriorDecisions(ctx context.Context, embedding []
 		})
 	}
 	return decisions
+}
+
+// conceptFrameMaxConcepts caps how many concept digests enter the tagging frame,
+// bounding the stable prompt prefix on projects with a large concept set.
+const conceptFrameMaxConcepts = 25
+
+// conceptProfileMaxChars bounds each concept's profile in the frame so a long
+// concept body doesn't dominate the prompt.
+const conceptProfileMaxChars = 280
+
+// projectConceptFrame assembles the project's identity frame from the memory
+// store the enricher already holds. See ProjectConceptFrame for the assembly
+// rules.
+func (s *IssueEnricher) projectConceptFrame(ctx context.Context) ai.ConceptFrame {
+	return ProjectConceptFrame(ctx, s.memoryStore, s.logger)
+}
+
+// ProjectConceptFrame assembles the project's identity frame for grounding issue
+// tagging: the active overview paragraph plus a digest of the active concepts
+// (the project's own vocabulary), ranked by reinforcement then recency and
+// capped. It reads only the given memory store; without a store, or with neither
+// an overview nor concepts set, it returns an empty frame (a no-op that renders
+// the pre-frame prompt). Store failures are non-fatal. It is exported so the
+// memory synthesizer can prime cluster-concept naming with the same frame the
+// tagger sees.
+func ProjectConceptFrame(ctx context.Context, store issues.MemoryStore, logger *slog.Logger) ai.ConceptFrame {
+	if store == nil {
+		return ai.ConceptFrame{}
+	}
+
+	frame := ai.ConceptFrame{}
+	overview, err := store.GetActiveOverview(ctx)
+	switch {
+	case err == nil:
+		frame.Overview = strings.TrimSpace(overview.Body)
+	case errors.Is(err, issues.ErrMemoryNotFound):
+		// No overview set yet — the concepts alone still ground tagging.
+	default:
+		if logger != nil {
+			logger.WarnContext(ctx, "load project overview for tagging frame failed", "error", err)
+		}
+	}
+
+	concepts, err := store.ListMemories(ctx, issues.MemoryListOptions{
+		Status: domain.MemoryStatusActive,
+		Kind:   domain.MemoryKindConcept,
+	})
+	if err != nil {
+		if logger != nil {
+			logger.WarnContext(ctx, "load project concepts for tagging frame failed", "error", err)
+		}
+		return frame
+	}
+
+	// Most-reinforced concepts lead — they are the nouns the corpus orbits most —
+	// then newest, then subject tag for a stable order. Cap before profiling.
+	sort.SliceStable(concepts, func(i, j int) bool {
+		if concepts[i].ReinforcementCount != concepts[j].ReinforcementCount {
+			return concepts[i].ReinforcementCount > concepts[j].ReinforcementCount
+		}
+		if !concepts[i].CreatedAt.Equal(concepts[j].CreatedAt) {
+			return concepts[i].CreatedAt.After(concepts[j].CreatedAt)
+		}
+		return concepts[i].SubjectTag < concepts[j].SubjectTag
+	})
+	if len(concepts) > conceptFrameMaxConcepts {
+		concepts = concepts[:conceptFrameMaxConcepts]
+	}
+
+	digests := make([]ai.ConceptDigest, 0, len(concepts))
+	for _, concept := range concepts {
+		tag := strings.TrimSpace(concept.SubjectTag)
+		if tag == "" {
+			continue
+		}
+		digests = append(digests, ai.ConceptDigest{
+			SubjectTag: tag,
+			Profile:    truncateProfile(conceptProfileText(concept), conceptProfileMaxChars),
+		})
+	}
+	frame.Concepts = digests
+	return frame
+}
+
+// conceptProfileText is the prose a concept contributes to the frame: its body,
+// falling back to its title when the body is empty.
+func conceptProfileText(memory domain.Memory) string {
+	if body := strings.TrimSpace(memory.Body); body != "" {
+		return body
+	}
+	return strings.TrimSpace(memory.Title)
+}
+
+// truncateProfile trims s to at most maxRunes runes (rune-safe, so multibyte
+// text is never split mid-character), appending an ellipsis when it cuts.
+func truncateProfile(s string, maxRunes int) string {
+	s = strings.TrimSpace(s)
+	runes := []rune(s)
+	if len(runes) <= maxRunes {
+		return s
+	}
+	return strings.TrimSpace(string(runes[:maxRunes])) + "…"
 }
 
 func priorDecisionTitle(memory domain.Memory) string {

@@ -8,7 +8,8 @@ export type MemoryKind =
   | "constraint"
   | "pattern"
   | "reference"
-  | "concept";
+  | "concept"
+  | "overview";
 
 export type MemoryStatus = "active" | "superseded" | "archived";
 export type MemorySource = "manual" | "synthesized";
@@ -116,6 +117,29 @@ export async function fetchConceptForTag(
     if (err instanceof HTTPError && err.status === 404) return null;
     throw err;
   }
+}
+
+// fetchOverview returns the active project overview, or null when none is set.
+// The endpoint answers 200 with an empty memory (not a 404) for the unset case,
+// so the editor can render an empty panel without special-casing an error.
+export async function fetchOverview(
+  signal?: AbortSignal
+): Promise<MemoryRecord | null> {
+  const payload = await getJSON<MemoryRecord>(uiAPIURL("/memories/overview"), {
+    cache: "no-store",
+    signal,
+  });
+  if (!payload || !payload.id) return null;
+  return normalizeMemory(payload);
+}
+
+// saveOverview sets the project overview. It rides the standard create path with
+// kind=overview; the backend supersedes any prior active overview (singleton).
+export async function saveOverview(
+  body: string,
+  title?: string
+): Promise<MemoryRecord> {
+  return createMemory({ body, title, kind: "overview" });
 }
 
 export async function createMemory(input: CreateMemoryInput): Promise<MemoryRecord> {

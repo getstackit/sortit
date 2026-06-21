@@ -38,7 +38,7 @@ type enricherTestTagger struct {
 	capturedTags []ai.Tag
 }
 
-func (t *enricherTestTagger) Score(_ context.Context, _ string, tags []ai.Tag, _ []ai.FewShotExample, _ []ai.PriorDecision) (ai.ScoreResult, error) {
+func (t *enricherTestTagger) Score(_ context.Context, _ string, tags []ai.Tag, _ []ai.FewShotExample, _ []ai.PriorDecision, _ ai.ConceptFrame) (ai.ScoreResult, error) {
 	t.capturedTags = append([]ai.Tag(nil), tags...)
 	return ai.ScoreResult{Tags: []ai.TagScore{{Tag: "database", Relevance: 0.9}}}, nil
 }
@@ -65,7 +65,7 @@ type enricherStaticTagger struct {
 	scores       []ai.TagScore
 }
 
-func (t *enricherStaticTagger) Score(_ context.Context, _ string, tags []ai.Tag, _ []ai.FewShotExample, _ []ai.PriorDecision) (ai.ScoreResult, error) {
+func (t *enricherStaticTagger) Score(_ context.Context, _ string, tags []ai.Tag, _ []ai.FewShotExample, _ []ai.PriorDecision, _ ai.ConceptFrame) (ai.ScoreResult, error) {
 	t.capturedTags = append([]ai.Tag(nil), tags...)
 	return ai.ScoreResult{Tags: append([]ai.TagScore(nil), t.scores...)}, nil
 }

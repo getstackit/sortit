@@ -184,6 +184,75 @@ func TestCreateConceptBindsToSubjectTag(t *testing.T) {
 	}
 }
 
+func TestCreateOverviewSingletonAndSupersede(t *testing.T) {
+	store := issues.NewInMemoryStore(nil)
+	// An enricher is configured but the overview must never be embedded — it is
+	// fetched only via Overview()/GetActiveOverview, never via similarity recall.
+	enricher := &stubEnricher{
+		result: issueenrichment.AnalyzeTextResult{
+			Analyzed:  ai.AnalyzedIssue{Embedding: ai.EmbeddingResult{Vector: []float32{0.1, 0.2, 0.3}}},
+			TagScores: []domain.TagRelevance{{Tag: "search", Relevance: 0.9}},
+		},
+	}
+	svc := NewService(store, enricher, nil)
+	ctx := context.Background()
+
+	// No overview yet.
+	if _, err := svc.Overview(ctx); !errors.Is(err, issues.ErrMemoryNotFound) {
+		t.Fatalf("expected ErrMemoryNotFound before any overview, got %v", err)
+	}
+
+	// An overview needs no subject tag and gets no embedding/anchors.
+	overview, err := svc.CreateMemory(ctx, CreateMemoryInput{
+		Title: "Sortit",
+		Body:  "Sortit is an issue tracker built around a factor model over tag relevance.",
+		Kind:  domain.MemoryKindOverview,
+	})
+	if err != nil {
+		t.Fatalf("create overview: %v", err)
+	}
+	if overview.Kind != domain.MemoryKindOverview {
+		t.Fatalf("expected overview kind, got %s", overview.Kind)
+	}
+	if len(overview.Embedding) != 0 || len(overview.TagScores) != 0 {
+		t.Fatalf("overview must not be enriched, got embedding=%v tagScores=%v", overview.Embedding, overview.TagScores)
+	}
+	if len(overview.AnchorTags) != 0 || overview.SubjectTag != "" {
+		t.Fatalf("overview must carry no anchors or subject tag, got %+v", overview)
+	}
+
+	got, err := svc.Overview(ctx)
+	if err != nil {
+		t.Fatalf("get overview: %v", err)
+	}
+	if got.ID != overview.ID {
+		t.Fatalf("Overview() returned the wrong memory: %+v", got)
+	}
+
+	// A second overview supersedes the first (global singleton).
+	replacement, err := svc.CreateMemory(ctx, CreateMemoryInput{
+		Body: "Sortit, restated.",
+		Kind: domain.MemoryKindOverview,
+	})
+	if err != nil {
+		t.Fatalf("create replacement overview: %v", err)
+	}
+	prior, err := svc.GetMemory(ctx, overview.ID)
+	if err != nil {
+		t.Fatalf("get prior overview: %v", err)
+	}
+	if prior.Status != domain.MemoryStatusSuperseded || prior.SupersededBy != replacement.ID {
+		t.Fatalf("expected prior overview superseded by replacement, got status=%s supersededBy=%q", prior.Status, prior.SupersededBy)
+	}
+	active, err := svc.Overview(ctx)
+	if err != nil {
+		t.Fatalf("get active overview after supersede: %v", err)
+	}
+	if active.ID != replacement.ID {
+		t.Fatalf("expected replacement active, got %+v", active)
+	}
+}
+
 type fakeTagSeeder struct {
 	seeded []issues.Tag
 }

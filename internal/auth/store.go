@@ -26,6 +26,13 @@ func NewStore(db *sql.DB) *Store {
 
 func (s *Store) UpsertOAuthUser(ctx context.Context, oauthUser OAuthUser) (User, error) {
 	now := time.Now().UTC()
+	incoming := profileSnapshot{
+		Login:       strings.TrimSpace(oauthUser.Login),
+		DisplayName: displayName(oauthUser.DisplayName, oauthUser.Login),
+		AvatarURL:   strings.TrimSpace(oauthUser.AvatarURL),
+		Email:       strings.TrimSpace(oauthUser.Email),
+	}
+
 	tx, err := s.db.BeginTx(ctx, nil)
 	if err != nil {
 		return User{}, fmt.Errorf("begin auth upsert tx: %w", err)
@@ -41,18 +48,29 @@ func (s *Store) UpsertOAuthUser(ctx context.Context, oauthUser OAuthUser) (User,
 	).Scan(&userID)
 	switch {
 	case err == nil:
+		// Existing user: write the latest-profile projection and append a
+		// profile-change fact only when the observed profile actually changed,
+		// so routine logins don't churn the projection or the fact log.
+		current, err := loadCurrentProfile(ctx, tx, userID)
+		if err != nil {
+			return User{}, err
+		}
+		if !current.equal(incoming) {
+			if err := s.applyProfileChange(ctx, tx, userID, incoming, now); err != nil {
+				return User{}, err
+			}
+		}
 	case errors.Is(err, sql.ErrNoRows):
 		userID = newID("user")
 		if _, err := tx.ExecContext(
 			ctx,
 			`INSERT INTO users (id, login, display_name, avatar_url, email, created_at_unix_nano, updated_at_unix_nano)
-			 VALUES ($1, $2, $3, $4, $5, $6, $7)`,
+			 VALUES ($1, $2, $3, $4, $5, $6, $6)`,
 			userID,
-			strings.TrimSpace(oauthUser.Login),
-			displayName(oauthUser.DisplayName, oauthUser.Login),
-			strings.TrimSpace(oauthUser.AvatarURL),
-			strings.TrimSpace(oauthUser.Email),
-			now.UnixNano(),
+			incoming.Login,
+			incoming.DisplayName,
+			incoming.AvatarURL,
+			incoming.Email,
 			now.UnixNano(),
 		); err != nil {
 			return User{}, fmt.Errorf("insert user: %w", err)
@@ -69,23 +87,12 @@ func (s *Store) UpsertOAuthUser(ctx context.Context, oauthUser OAuthUser) (User,
 		); err != nil {
 			return User{}, fmt.Errorf("insert auth account: %w", err)
 		}
+		// Seed the initial profile fact (sequence 1) alongside the projection.
+		if err := insertUserProfileFact(ctx, tx, userID, 1, incoming, now, "user_create", userID+":created"); err != nil {
+			return User{}, err
+		}
 	default:
 		return User{}, fmt.Errorf("lookup auth account: %w", err)
-	}
-
-	if _, err := tx.ExecContext(
-		ctx,
-		`UPDATE users
-		 SET login = $1, display_name = $2, avatar_url = $3, email = $4, updated_at_unix_nano = $5
-		 WHERE id = $6`,
-		strings.TrimSpace(oauthUser.Login),
-		displayName(oauthUser.DisplayName, oauthUser.Login),
-		strings.TrimSpace(oauthUser.AvatarURL),
-		strings.TrimSpace(oauthUser.Email),
-		now.UnixNano(),
-		userID,
-	); err != nil {
-		return User{}, fmt.Errorf("update user profile: %w", err)
 	}
 
 	user, err := selectUser(ctx, tx, userID)
@@ -100,32 +107,145 @@ func (s *Store) UpsertOAuthUser(ctx context.Context, oauthUser OAuthUser) (User,
 	return user, nil
 }
 
+// applyProfileChange writes the latest-profile projection and appends a
+// matching append-only profile-change fact in the same transaction.
+func (s *Store) applyProfileChange(
+	ctx context.Context,
+	tx *sql.Tx,
+	userID string,
+	profile profileSnapshot,
+	observedAt time.Time,
+) error {
+	if _, err := tx.ExecContext(
+		ctx,
+		`UPDATE users
+		 SET login = $1, display_name = $2, avatar_url = $3, email = $4, updated_at_unix_nano = $5
+		 WHERE id = $6`,
+		profile.Login,
+		profile.DisplayName,
+		profile.AvatarURL,
+		profile.Email,
+		observedAt.UTC().UnixNano(),
+		userID,
+	); err != nil {
+		return fmt.Errorf("update user profile: %w", err)
+	}
+
+	sequence, err := nextUserProfileFactSequence(ctx, tx, userID)
+	if err != nil {
+		return err
+	}
+	return insertUserProfileFact(
+		ctx,
+		tx,
+		userID,
+		sequence,
+		profile,
+		observedAt,
+		"user_login",
+		fmt.Sprintf("%s:%d", userID, sequence),
+	)
+}
+
 func (s *Store) CreateSession(ctx context.Context, userID string, expiresAt time.Time) (string, error) {
 	rawToken, tokenHash, err := newSecretToken("sortitsession")
 	if err != nil {
 		return "", err
 	}
 
-	if _, err := s.db.ExecContext(
+	sessionID := newID("sess")
+	createdAt := time.Now().UTC()
+
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return "", fmt.Errorf("begin create session tx: %w", err)
+	}
+	defer tx.Rollback() //nolint:errcheck
+
+	// Append-only lifecycle fact: a session is created exactly once (sequence 1).
+	if err := insertSessionFact(ctx, tx, sessionFactRecord{
+		ID:        newID("sessfact"),
+		SessionID: sessionID,
+		UserID:    userID,
+		Sequence:  1,
+		Kind:      sessionFactKindCreated,
+		CreatedAt: createdAt,
+		Source:    "session_create",
+		SourceID:  sessionID + ":created",
+	}); err != nil {
+		return "", err
+	}
+
+	// Active-session projection (hot-path lookup target).
+	if _, err := tx.ExecContext(
 		ctx,
 		`INSERT INTO sessions (id, user_id, token_hash, expires_at_unix_nano, created_at_unix_nano)
 		 VALUES ($1, $2, $3, $4, $5)`,
-		newID("sess"),
+		sessionID,
 		userID,
 		tokenHash,
 		expiresAt.UTC().UnixNano(),
-		time.Now().UTC().UnixNano(),
+		createdAt.UnixNano(),
 	); err != nil {
 		return "", fmt.Errorf("insert session: %w", err)
+	}
+
+	if err := tx.Commit(); err != nil {
+		return "", fmt.Errorf("commit create session tx: %w", err)
 	}
 
 	return rawToken, nil
 }
 
+// DeleteSession invalidates a session on logout. It appends an 'invalidated' fact
+// and removes the projection row in one tx, rather than destroying history. An
+// unknown/already-invalidated token is a no-op (no fact, no error).
 func (s *Store) DeleteSession(ctx context.Context, rawToken string) error {
 	tokenHash := hashToken(rawToken)
-	if _, err := s.db.ExecContext(ctx, `DELETE FROM sessions WHERE token_hash = $1`, tokenHash); err != nil {
+
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return fmt.Errorf("begin delete session tx: %w", err)
+	}
+	defer tx.Rollback() //nolint:errcheck
+
+	var sessionID, userID string
+	err = tx.QueryRowContext(
+		ctx,
+		`SELECT id, user_id FROM sessions WHERE token_hash = $1`,
+		tokenHash,
+	).Scan(&sessionID, &userID)
+	switch {
+	case errors.Is(err, sql.ErrNoRows):
+		return nil
+	case err != nil:
+		return fmt.Errorf("lookup session for invalidation: %w", err)
+	}
+
+	sequence, err := nextSessionFactSequence(ctx, tx, sessionID)
+	if err != nil {
+		return err
+	}
+	if err := insertSessionFact(ctx, tx, sessionFactRecord{
+		ID:        newID("sessfact"),
+		SessionID: sessionID,
+		UserID:    userID,
+		Sequence:  sequence,
+		Kind:      sessionFactKindInvalidated,
+		Reason:    sessionReasonLogout,
+		CreatedAt: time.Now().UTC(),
+		Source:    "session_invalidate",
+		SourceID:  sessionID + ":invalidated",
+	}); err != nil {
+		return err
+	}
+
+	if _, err := tx.ExecContext(ctx, `DELETE FROM sessions WHERE token_hash = $1`, tokenHash); err != nil {
 		return fmt.Errorf("delete session: %w", err)
+	}
+
+	if err := tx.Commit(); err != nil {
+		return fmt.Errorf("commit delete session tx: %w", err)
 	}
 	return nil
 }
@@ -156,7 +276,34 @@ func (s *Store) CreateAPIToken(ctx context.Context, userID, name string) (APITok
 		CreatedAt:   createdAt,
 	}
 
-	if _, err := s.db.ExecContext(
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return APIToken{}, "", fmt.Errorf("begin create api token tx: %w", err)
+	}
+	defer tx.Rollback() //nolint:errcheck
+
+	// Append-only lifecycle fact: a token is created exactly once (sequence 1).
+	if err := insertAPITokenFact(ctx, tx, apiTokenFactRecord{
+		ID:        newID("tokfact"),
+		TokenID:   token.ID,
+		UserID:    userID,
+		Sequence:  1,
+		Kind:      apiTokenFactKindCreated,
+		CreatedBy: userID,
+		CreatedAt: createdAt,
+		Payload: mustAPITokenFactJSON(map[string]any{
+			"name":              name,
+			"tokenPrefix":       token.TokenPrefix,
+			"createdAtUnixNano": createdAt.UnixNano(),
+		}),
+		Source:   "api_token_create",
+		SourceID: token.ID + ":created",
+	}); err != nil {
+		return APIToken{}, "", err
+	}
+
+	// Current-state projection (hot-path lookup target).
+	if _, err := tx.ExecContext(
 		ctx,
 		`INSERT INTO api_tokens (id, user_id, token_hash, token_prefix, name, created_at_unix_nano, revoked_at_unix_nano)
 		 VALUES ($1, $2, $3, $4, $5, $6, 0)`,
@@ -168,6 +315,10 @@ func (s *Store) CreateAPIToken(ctx context.Context, userID, name string) (APITok
 		createdAt.UnixNano(),
 	); err != nil {
 		return APIToken{}, "", fmt.Errorf("insert api token: %w", err)
+	}
+
+	if err := tx.Commit(); err != nil {
+		return APIToken{}, "", fmt.Errorf("commit create api token tx: %w", err)
 	}
 
 	return token, rawToken, nil
@@ -214,13 +365,26 @@ func (s *Store) ListAPITokens(ctx context.Context, userID string) ([]APIToken, e
 }
 
 func (s *Store) RevokeAPIToken(ctx context.Context, userID, tokenID string) error {
-	result, err := s.db.ExecContext(
+	tokenID = strings.TrimSpace(tokenID)
+	revokedAt := time.Now().UTC()
+
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return fmt.Errorf("begin revoke api token tx: %w", err)
+	}
+	defer tx.Rollback() //nolint:errcheck
+
+	// Update the current-state projection first; the WHERE clause enforces
+	// ownership and the not-already-revoked guard. Only append a 'revoked' fact
+	// when a row actually changed, so re-revoking is a no-op rather than a
+	// spurious audit entry.
+	result, err := tx.ExecContext(
 		ctx,
 		`UPDATE api_tokens
 		 SET revoked_at_unix_nano = $1
 		 WHERE id = $2 AND user_id = $3 AND revoked_at_unix_nano = 0`,
-		time.Now().UTC().UnixNano(),
-		strings.TrimSpace(tokenID),
+		revokedAt.UnixNano(),
+		tokenID,
 		userID,
 	)
 	if err != nil {
@@ -233,6 +397,31 @@ func (s *Store) RevokeAPIToken(ctx context.Context, userID, tokenID string) erro
 	}
 	if rowsAffected == 0 {
 		return ErrTokenNotFound
+	}
+
+	sequence, err := nextAPITokenFactSequence(ctx, tx, tokenID)
+	if err != nil {
+		return err
+	}
+	if err := insertAPITokenFact(ctx, tx, apiTokenFactRecord{
+		ID:        newID("tokfact"),
+		TokenID:   tokenID,
+		UserID:    userID,
+		Sequence:  sequence,
+		Kind:      apiTokenFactKindRevoked,
+		CreatedBy: userID,
+		CreatedAt: revokedAt,
+		Payload: mustAPITokenFactJSON(map[string]any{
+			"revokedAtUnixNano": revokedAt.UnixNano(),
+		}),
+		Source:   "api_token_revoke",
+		SourceID: tokenID + ":revoked",
+	}); err != nil {
+		return err
+	}
+
+	if err := tx.Commit(); err != nil {
+		return fmt.Errorf("commit revoke api token tx: %w", err)
 	}
 	return nil
 }

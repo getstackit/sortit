@@ -1,6 +1,9 @@
 package ai
 
-import "context"
+import (
+	"context"
+	"strings"
+)
 
 type Tag struct {
 	Name        string `json:"name"`
@@ -98,8 +101,33 @@ type PriorDecision struct {
 	Tags    []string `json:"tags,omitempty"`
 }
 
+// ConceptDigest is one curated concept condensed for the tagging frame: the
+// subject tag (the project's own noun) and a short profile of what it means.
+type ConceptDigest struct {
+	SubjectTag string `json:"subjectTag"`
+	Profile    string `json:"profile"`
+}
+
+// ConceptFrame is the project's stable identity, surfaced to the tagger as
+// grounding so every issue is tagged within the project's vocabulary rather than
+// from the issue text and its retrieval neighborhood alone. Overview states what
+// the project is; Concepts are its curated core nouns. It is assembled once per
+// enrichment batch from the memory store (the active overview + active concepts)
+// and forms the stable, cacheable prefix of the tagging system prompt.
+type ConceptFrame struct {
+	Overview string          `json:"overview"`
+	Concepts []ConceptDigest `json:"concepts,omitempty"`
+}
+
+// IsEmpty reports whether the frame carries no grounding — a blank overview and
+// no concepts. When empty the tagging prompt renders exactly as before, so a
+// fresh install with neither set is a no-op.
+func (f ConceptFrame) IsEmpty() bool {
+	return strings.TrimSpace(f.Overview) == "" && len(f.Concepts) == 0
+}
+
 type Tagger interface {
-	Score(ctx context.Context, text string, tags []Tag, examples []FewShotExample, priorDecisions []PriorDecision) (ScoreResult, error)
+	Score(ctx context.Context, text string, tags []Tag, examples []FewShotExample, priorDecisions []PriorDecision, frame ConceptFrame) (ScoreResult, error)
 	Provider() string
 	Model() string
 }
@@ -123,4 +151,11 @@ type Canonicalizer interface {
 // sample of issues that reference it.
 type ConceptProfiler interface {
 	GenerateConceptProfile(ctx context.Context, tag string, issueSummaries []string) (string, error)
+	// ProposeConceptFromCluster names and profiles a NEW concept from a cluster of
+	// issues that share an unexplained embedding residual — the residual-mining
+	// counterpart to GenerateConceptProfile, which profiles an *existing* tag. The
+	// frame primes naming with the project's vocabulary so the invented subject tag
+	// fits the project's own naming. It returns the proposed subject tag (a short,
+	// lowercase, reusable noun) and its profile prose.
+	ProposeConceptFromCluster(ctx context.Context, issueSummaries []string, frame ConceptFrame) (name string, profile string, err error)
 }

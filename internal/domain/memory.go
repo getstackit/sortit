@@ -18,6 +18,12 @@ const (
 	// are predicates: a choice, a lesson, a rule), a concept's subject *is* the
 	// tag. It is bound 1:1 to that tag via Memory.SubjectTag.
 	MemoryKindConcept MemoryKind = "concept"
+	// MemoryKindOverview is the project's identity frame: a single paragraph
+	// stating what this project is. It is a global singleton — at most one active
+	// — with no subject tag and no anchors. It grounds issue tagging (the analyzer
+	// reads it to tag every issue within the project's identity) and is fetched
+	// only via MemoryStore.GetActiveOverview, never through similarity recall.
+	MemoryKindOverview MemoryKind = "overview"
 )
 
 // MemoryStatus tracks a memory's lifecycle. Unlike issues, memories are never
@@ -78,7 +84,7 @@ type Memory struct {
 // NormalizeMemoryKind coerces a kind to a known value, defaulting to decision.
 func NormalizeMemoryKind(kind MemoryKind) MemoryKind {
 	switch kind {
-	case MemoryKindDecision, MemoryKindLesson, MemoryKindConstraint, MemoryKindPattern, MemoryKindReference, MemoryKindConcept:
+	case MemoryKindDecision, MemoryKindLesson, MemoryKindConstraint, MemoryKindPattern, MemoryKindReference, MemoryKindConcept, MemoryKindOverview:
 		return kind
 	default:
 		return MemoryKindDecision

@@ -4,6 +4,19 @@ CREATE EXTENSION IF NOT EXISTS "vector" WITH SCHEMA "public";
 CREATE SEQUENCE "public"."dismissed_tag_merges_id_seq";
 CREATE SEQUENCE "public"."tag_merge_history_id_seq";
 
+CREATE TABLE "public"."api_token_facts" (
+    "id" text NOT NULL,
+    "token_id" text NOT NULL,
+    "user_id" text NOT NULL,
+    "sequence" bigint NOT NULL,
+    "kind" text NOT NULL,
+    "created_by" text NOT NULL,
+    "created_at_unix_nano" bigint NOT NULL,
+    "payload_json" jsonb NOT NULL,
+    "source" text NOT NULL,
+    "source_id" text NOT NULL,
+    "inferred" boolean NOT NULL
+);
 CREATE TABLE "public"."api_tokens" (
     "id" text NOT NULL,
     "user_id" text NOT NULL,
@@ -245,6 +258,18 @@ CREATE TABLE "public"."memory_proposals" (
     "updated_at_unix_nano" bigint NOT NULL,
     "subject_tag" text NOT NULL
 );
+CREATE TABLE "public"."session_facts" (
+    "id" text NOT NULL,
+    "session_id" text NOT NULL,
+    "user_id" text NOT NULL,
+    "sequence" bigint NOT NULL,
+    "kind" text NOT NULL,
+    "reason" text NOT NULL,
+    "created_at_unix_nano" bigint NOT NULL,
+    "source" text NOT NULL,
+    "source_id" text NOT NULL,
+    "inferred" boolean NOT NULL
+);
 CREATE TABLE "public"."sessions" (
     "id" text NOT NULL,
     "user_id" text NOT NULL,
@@ -304,6 +329,19 @@ CREATE TABLE "public"."tags" (
     "specificity_computed_at" timestamp with time zone,
     "embedding_vector" vector
 );
+CREATE TABLE "public"."user_profile_facts" (
+    "id" text NOT NULL,
+    "user_id" text NOT NULL,
+    "sequence" bigint NOT NULL,
+    "login" text NOT NULL,
+    "display_name" text NOT NULL,
+    "avatar_url" text NOT NULL,
+    "email" text NOT NULL,
+    "observed_at_unix_nano" bigint NOT NULL,
+    "source" text NOT NULL,
+    "source_id" text NOT NULL,
+    "inferred" boolean NOT NULL
+);
 CREATE TABLE "public"."users" (
     "id" text NOT NULL,
     "login" text NOT NULL,
@@ -317,6 +355,11 @@ CREATE TABLE "public"."users" (
 ALTER SEQUENCE "public"."dismissed_tag_merges_id_seq" OWNED BY "public"."dismissed_tag_merges"."id";
 ALTER SEQUENCE "public"."tag_merge_history_id_seq" OWNED BY "public"."tag_merge_history"."id";
 
+ALTER TABLE ONLY "public"."api_token_facts" ALTER COLUMN "created_by" SET DEFAULT ''::text;
+ALTER TABLE ONLY "public"."api_token_facts" ALTER COLUMN "payload_json" SET DEFAULT '{}'::jsonb;
+ALTER TABLE ONLY "public"."api_token_facts" ALTER COLUMN "source" SET DEFAULT ''::text;
+ALTER TABLE ONLY "public"."api_token_facts" ALTER COLUMN "source_id" SET DEFAULT ''::text;
+ALTER TABLE ONLY "public"."api_token_facts" ALTER COLUMN "inferred" SET DEFAULT false;
 ALTER TABLE ONLY "public"."api_tokens" ALTER COLUMN "revoked_at_unix_nano" SET DEFAULT 0;
 ALTER TABLE ONLY "public"."api_tokens" ALTER COLUMN "name" SET DEFAULT ''::text;
 ALTER TABLE ONLY "public"."api_tokens" ALTER COLUMN "last_used_at_unix_nano" SET DEFAULT 0;
@@ -408,6 +451,10 @@ ALTER TABLE ONLY "public"."memory_proposals" ALTER COLUMN "status" SET DEFAULT '
 ALTER TABLE ONLY "public"."memory_proposals" ALTER COLUMN "rationale" SET DEFAULT ''::text;
 ALTER TABLE ONLY "public"."memory_proposals" ALTER COLUMN "accepted_memory_id" SET DEFAULT ''::text;
 ALTER TABLE ONLY "public"."memory_proposals" ALTER COLUMN "subject_tag" SET DEFAULT ''::text;
+ALTER TABLE ONLY "public"."session_facts" ALTER COLUMN "reason" SET DEFAULT ''::text;
+ALTER TABLE ONLY "public"."session_facts" ALTER COLUMN "source" SET DEFAULT ''::text;
+ALTER TABLE ONLY "public"."session_facts" ALTER COLUMN "source_id" SET DEFAULT ''::text;
+ALTER TABLE ONLY "public"."session_facts" ALTER COLUMN "inferred" SET DEFAULT false;
 ALTER TABLE ONLY "public"."tag_cooccurrence_projections" ALTER COLUMN "revision" SET DEFAULT 0;
 ALTER TABLE ONLY "public"."tag_cooccurrence_projections" ALTER COLUMN "issue_count" SET DEFAULT 0;
 ALTER TABLE ONLY "public"."tag_cooccurrence_projections" ALTER COLUMN "tag_count" SET DEFAULT 0;
@@ -426,7 +473,15 @@ ALTER TABLE ONLY "public"."tag_projections" ALTER COLUMN "status" SET DEFAULT 'a
 ALTER TABLE ONLY "public"."tag_projections" ALTER COLUMN "canonical_name" SET DEFAULT ''::text;
 ALTER TABLE ONLY "public"."tag_projections" ALTER COLUMN "last_event_id" SET DEFAULT ''::text;
 ALTER TABLE ONLY "public"."tag_projections" ALTER COLUMN "event_count" SET DEFAULT 0;
+ALTER TABLE ONLY "public"."user_profile_facts" ALTER COLUMN "login" SET DEFAULT ''::text;
+ALTER TABLE ONLY "public"."user_profile_facts" ALTER COLUMN "display_name" SET DEFAULT ''::text;
+ALTER TABLE ONLY "public"."user_profile_facts" ALTER COLUMN "avatar_url" SET DEFAULT ''::text;
+ALTER TABLE ONLY "public"."user_profile_facts" ALTER COLUMN "email" SET DEFAULT ''::text;
+ALTER TABLE ONLY "public"."user_profile_facts" ALTER COLUMN "source" SET DEFAULT ''::text;
+ALTER TABLE ONLY "public"."user_profile_facts" ALTER COLUMN "source_id" SET DEFAULT ''::text;
+ALTER TABLE ONLY "public"."user_profile_facts" ALTER COLUMN "inferred" SET DEFAULT false;
 
+ALTER TABLE ONLY "public"."api_token_facts" ADD CONSTRAINT "api_token_facts_pkey" PRIMARY KEY (id);
 ALTER TABLE ONLY "public"."api_tokens" ADD CONSTRAINT "api_tokens_pkey" PRIMARY KEY (id);
 ALTER TABLE ONLY "public"."api_tokens" ADD CONSTRAINT "api_tokens_token_hash_key" UNIQUE (token_hash);
 ALTER TABLE ONLY "public"."api_tokens" ADD CONSTRAINT "api_tokens_user_id_fkey" FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE;
@@ -472,6 +527,7 @@ ALTER TABLE ONLY "public"."issues" ADD CONSTRAINT "issues_pkey" PRIMARY KEY (id)
 ALTER TABLE ONLY "public"."map_projections" ADD CONSTRAINT "derived_corpus_projections_pkey" PRIMARY KEY (revision);
 ALTER TABLE ONLY "public"."memories" ADD CONSTRAINT "memories_pkey" PRIMARY KEY (id);
 ALTER TABLE ONLY "public"."memory_proposals" ADD CONSTRAINT "memory_proposals_pkey" PRIMARY KEY (id);
+ALTER TABLE ONLY "public"."session_facts" ADD CONSTRAINT "session_facts_pkey" PRIMARY KEY (id);
 ALTER TABLE ONLY "public"."sessions" ADD CONSTRAINT "sessions_pkey" PRIMARY KEY (id);
 ALTER TABLE ONLY "public"."sessions" ADD CONSTRAINT "sessions_token_hash_key" UNIQUE (token_hash);
 ALTER TABLE ONLY "public"."sessions" ADD CONSTRAINT "sessions_user_id_fkey" FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE;
@@ -480,8 +536,13 @@ ALTER TABLE ONLY "public"."tag_events" ADD CONSTRAINT "tag_events_pkey" PRIMARY 
 ALTER TABLE ONLY "public"."tag_merge_history" ADD CONSTRAINT "tag_merge_history_pkey" PRIMARY KEY (id);
 ALTER TABLE ONLY "public"."tag_projections" ADD CONSTRAINT "tag_projections_pkey" PRIMARY KEY (name);
 ALTER TABLE ONLY "public"."tags" ADD CONSTRAINT "tags_pkey" PRIMARY KEY (name);
+ALTER TABLE ONLY "public"."user_profile_facts" ADD CONSTRAINT "user_profile_facts_pkey" PRIMARY KEY (id);
 ALTER TABLE ONLY "public"."users" ADD CONSTRAINT "users_pkey" PRIMARY KEY (id);
 
+CREATE UNIQUE INDEX api_token_facts_source_idx ON public.api_token_facts USING btree (source, source_id);
+CREATE INDEX api_token_facts_token_created_idx ON public.api_token_facts USING btree (token_id, created_at_unix_nano, sequence, id);
+CREATE UNIQUE INDEX api_token_facts_token_sequence_idx ON public.api_token_facts USING btree (token_id, sequence);
+CREATE INDEX api_token_facts_user_created_idx ON public.api_token_facts USING btree (user_id, created_at_unix_nano, id);
 CREATE INDEX api_tokens_user_id_idx ON public.api_tokens USING btree (user_id);
 CREATE INDEX append_only_parity_runs_domain_created_idx ON public.append_only_parity_runs USING btree (domain, created_at_unix_nano DESC, id DESC);
 CREATE INDEX auth_accounts_user_id_idx ON public.auth_accounts USING btree (user_id);
@@ -516,8 +577,13 @@ CREATE INDEX issues_status_idx ON public.issues USING btree (status);
 CREATE UNIQUE INDEX memories_concept_subject_tag_unique_idx ON public.memories USING btree (subject_tag) WHERE ((kind = 'concept'::text) AND (status = 'active'::text));
 CREATE INDEX memories_created_idx ON public.memories USING btree (created_at_unix_nano DESC, id);
 CREATE INDEX memories_embedding_vector_cosine_hnsw_idx ON public.memories USING hnsw (((embedding_vector)::vector(1536)) vector_cosine_ops) WHERE ((embedding_vector IS NOT NULL) AND (vector_dims(embedding_vector) = 1536));
+CREATE UNIQUE INDEX memories_overview_unique_idx ON public.memories USING btree (kind) WHERE ((kind = 'overview'::text) AND (status = 'active'::text));
 CREATE INDEX memories_status_idx ON public.memories USING btree (status);
 CREATE INDEX memory_proposals_status_created_idx ON public.memory_proposals USING btree (status, created_at_unix_nano DESC, id);
+CREATE INDEX session_facts_session_created_idx ON public.session_facts USING btree (session_id, created_at_unix_nano, sequence, id);
+CREATE UNIQUE INDEX session_facts_session_sequence_idx ON public.session_facts USING btree (session_id, sequence);
+CREATE UNIQUE INDEX session_facts_source_idx ON public.session_facts USING btree (source, source_id);
+CREATE INDEX session_facts_user_created_idx ON public.session_facts USING btree (user_id, created_at_unix_nano, id);
 CREATE INDEX sessions_expires_at_unix_nano_idx ON public.sessions USING btree (expires_at_unix_nano);
 CREATE INDEX sessions_user_id_idx ON public.sessions USING btree (user_id);
 CREATE UNIQUE INDEX tag_events_source_idx ON public.tag_events USING btree (source, source_id);
@@ -529,3 +595,6 @@ CREATE INDEX tag_projections_canonical_name_idx ON public.tag_projections USING 
 CREATE INDEX tag_projections_embedding_vector_cosine_hnsw_idx ON public.tag_projections USING hnsw (((embedding_vector)::vector(1536)) vector_cosine_ops) WHERE ((embedding_vector IS NOT NULL) AND (vector_dims(embedding_vector) = 1536));
 CREATE INDEX tag_projections_status_name_idx ON public.tag_projections USING btree (status, name);
 CREATE INDEX tags_embedding_vector_cosine_hnsw_idx ON public.tags USING hnsw (((embedding_vector)::vector(1536)) vector_cosine_ops) WHERE ((embedding_vector IS NOT NULL) AND (vector_dims(embedding_vector) = 1536));
+CREATE UNIQUE INDEX user_profile_facts_source_idx ON public.user_profile_facts USING btree (source, source_id);
+CREATE INDEX user_profile_facts_user_observed_idx ON public.user_profile_facts USING btree (user_id, observed_at_unix_nano, sequence, id);
+CREATE UNIQUE INDEX user_profile_facts_user_sequence_idx ON public.user_profile_facts USING btree (user_id, sequence);

@@ -108,6 +108,92 @@ func TestInMemoryStoreListMemoriesFilterAndOrder(t *testing.T) {
 	}
 }
 
+func TestInMemoryStoreListMemoriesKindFilter(t *testing.T) {
+	store := NewInMemoryStore(nil)
+	ctx := context.Background()
+
+	seed := []domain.Memory{
+		{ID: "d", Body: "decision", Kind: domain.MemoryKindDecision, Status: domain.MemoryStatusActive},
+		{ID: "c1", Body: "concept 1", Kind: domain.MemoryKindConcept, SubjectTag: "ridge", Status: domain.MemoryStatusActive},
+		{ID: "c2", Body: "concept 2", Kind: domain.MemoryKindConcept, SubjectTag: "hnsw", Status: domain.MemoryStatusActive},
+	}
+	for _, m := range seed {
+		if err := store.UpsertMemory(ctx, m); err != nil {
+			t.Fatalf("seed %s: %v", m.ID, err)
+		}
+	}
+
+	concepts, err := store.ListMemories(ctx, MemoryListOptions{Kind: domain.MemoryKindConcept})
+	if err != nil {
+		t.Fatalf("list concepts: %v", err)
+	}
+	if len(concepts) != 2 {
+		t.Fatalf("expected 2 concepts, got %d", len(concepts))
+	}
+	for _, m := range concepts {
+		if m.Kind != domain.MemoryKindConcept {
+			t.Fatalf("unexpected kind in concept filter: %s", m.Kind)
+		}
+	}
+
+	// Status and kind compose.
+	activeConcepts, err := store.ListMemories(ctx, MemoryListOptions{Status: domain.MemoryStatusActive, Kind: domain.MemoryKindConcept})
+	if err != nil {
+		t.Fatalf("list active concepts: %v", err)
+	}
+	if len(activeConcepts) != 2 {
+		t.Fatalf("expected 2 active concepts, got %d", len(activeConcepts))
+	}
+}
+
+func TestInMemoryStoreOverviewSingleton(t *testing.T) {
+	store := NewInMemoryStore(nil)
+	ctx := context.Background()
+
+	if _, err := store.GetActiveOverview(ctx); !errors.Is(err, ErrMemoryNotFound) {
+		t.Fatalf("expected ErrMemoryNotFound with no overview, got %v", err)
+	}
+
+	first := domain.Memory{
+		ID:     "ov-1",
+		Body:   "Sortit is an issue tracker built around a factor model.",
+		Kind:   domain.MemoryKindOverview,
+		Status: domain.MemoryStatusActive,
+	}
+	if err := store.UpsertMemory(ctx, first); err != nil {
+		t.Fatalf("upsert first overview: %v", err)
+	}
+	got, err := store.GetActiveOverview(ctx)
+	if err != nil {
+		t.Fatalf("get active overview: %v", err)
+	}
+	if got.ID != "ov-1" || got.Kind != domain.MemoryKindOverview {
+		t.Fatalf("unexpected active overview: %+v", got)
+	}
+
+	// At most one active overview: a second active row is rejected.
+	second := domain.Memory{ID: "ov-2", Body: "second", Kind: domain.MemoryKindOverview, Status: domain.MemoryStatusActive}
+	if err := store.UpsertMemory(ctx, second); err == nil {
+		t.Fatal("expected singleton violation for a second active overview")
+	}
+
+	// Superseding the first frees the singleton for the second.
+	first.Status = domain.MemoryStatusSuperseded
+	if err := store.UpsertMemory(ctx, first); err != nil {
+		t.Fatalf("supersede first overview: %v", err)
+	}
+	if err := store.UpsertMemory(ctx, second); err != nil {
+		t.Fatalf("expected freed singleton to accept the second overview: %v", err)
+	}
+	got, err = store.GetActiveOverview(ctx)
+	if err != nil {
+		t.Fatalf("get active overview after supersede: %v", err)
+	}
+	if got.ID != "ov-2" {
+		t.Fatalf("expected the second overview active, got %+v", got)
+	}
+}
+
 func TestInMemoryStoreSearchMemories(t *testing.T) {
 	store := NewInMemoryStore(nil)
 	ctx := context.Background()
