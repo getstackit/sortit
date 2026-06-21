@@ -652,6 +652,9 @@ func NewServer(cfg ServerConfig) *Server {
 		Tags:      catalog,
 		Revisions: revisions,
 	}
+	// Let the enricher measure tag alignment in the same centered space as the
+	// factor model, so anti-aligned generic tags are suppressed during tagging.
+	enricher.UseCentering(centeringCache)
 	ridgeLambdaCache := &ridgelambda.Cache{
 		Store:     store,
 		Tags:      catalog,

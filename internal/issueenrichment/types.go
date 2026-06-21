@@ -1,13 +1,22 @@
 package enrichment
 
 import (
+	"context"
 	"log/slog"
 	"time"
 
 	"sortit/internal/ai"
+	"sortit/internal/issuemath"
 	"sortit/internal/issues"
 	"sortit/internal/tags"
 )
+
+// Centerer supplies the revision-cached corpus means so the verifier can measure
+// tag alignment in the same centered space the factor/ridge model uses.
+// *centering.Cache satisfies it.
+type Centerer interface {
+	Current(ctx context.Context) (issuemath.CorpusMeans, error)
+}
 
 type IssueEnricher struct {
 	analyzer    *ai.Analyzer
@@ -15,6 +24,7 @@ type IssueEnricher struct {
 	logger      *slog.Logger
 	exemplars   *ExemplarPool
 	memoryStore issues.MemoryStore
+	centering   Centerer
 }
 
 type AnalyzeTextOptions struct {
@@ -60,4 +70,11 @@ func (s *IssueEnricher) SetExemplarPool(pool *ExemplarPool) {
 // decisions") to the tagger during enrichment. Pass nil to disable.
 func (s *IssueEnricher) UseMemoryContext(store issues.MemoryStore) {
 	s.memoryStore = store
+}
+
+// UseCentering supplies corpus means so the verifier suppresses tags that are
+// anti-aligned in centered space (where the factor model lives). Without it,
+// alignment is raw — which anisotropy keeps positive, so suppression won't fire.
+func (s *IssueEnricher) UseCentering(centerer Centerer) {
+	s.centering = centerer
 }
