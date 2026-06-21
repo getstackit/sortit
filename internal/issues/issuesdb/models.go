@@ -297,6 +297,19 @@ type Session struct {
 	CreatedAtUnixNano int64
 }
 
+type SessionFact struct {
+	ID                string
+	SessionID         string
+	UserID            string
+	Sequence          int64
+	Kind              string
+	Reason            string
+	CreatedAtUnixNano int64
+	Source            string
+	SourceID          string
+	Inferred          bool
+}
+
 type Tag struct {
 	Name                  string
 	Description           string

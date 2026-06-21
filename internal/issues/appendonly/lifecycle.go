@@ -214,7 +214,7 @@ func (s *LifecycleStore) BackfillBatch(
 
 	result.Complete = remainingCount <= batchSize
 	cursor.LastIssueID = result.LastIssueID
-	phase := "backfilling"
+	phase := phaseBackfilling
 	if result.Complete {
 		phase = phaseCompleted
 	}

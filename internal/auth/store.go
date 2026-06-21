@@ -153,26 +153,99 @@ func (s *Store) CreateSession(ctx context.Context, userID string, expiresAt time
 		return "", err
 	}
 
-	if _, err := s.db.ExecContext(
+	sessionID := newID("sess")
+	createdAt := time.Now().UTC()
+
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return "", fmt.Errorf("begin create session tx: %w", err)
+	}
+	defer tx.Rollback() //nolint:errcheck
+
+	// Append-only lifecycle fact: a session is created exactly once (sequence 1).
+	if err := insertSessionFact(ctx, tx, sessionFactRecord{
+		ID:        newID("sessfact"),
+		SessionID: sessionID,
+		UserID:    userID,
+		Sequence:  1,
+		Kind:      sessionFactKindCreated,
+		CreatedAt: createdAt,
+		Source:    "session_create",
+		SourceID:  sessionID + ":created",
+	}); err != nil {
+		return "", err
+	}
+
+	// Active-session projection (hot-path lookup target).
+	if _, err := tx.ExecContext(
 		ctx,
 		`INSERT INTO sessions (id, user_id, token_hash, expires_at_unix_nano, created_at_unix_nano)
 		 VALUES ($1, $2, $3, $4, $5)`,
-		newID("sess"),
+		sessionID,
 		userID,
 		tokenHash,
 		expiresAt.UTC().UnixNano(),
-		time.Now().UTC().UnixNano(),
+		createdAt.UnixNano(),
 	); err != nil {
 		return "", fmt.Errorf("insert session: %w", err)
+	}
+
+	if err := tx.Commit(); err != nil {
+		return "", fmt.Errorf("commit create session tx: %w", err)
 	}
 
 	return rawToken, nil
 }
 
+// DeleteSession invalidates a session on logout. It appends an 'invalidated' fact
+// and removes the projection row in one tx, rather than destroying history. An
+// unknown/already-invalidated token is a no-op (no fact, no error).
 func (s *Store) DeleteSession(ctx context.Context, rawToken string) error {
 	tokenHash := hashToken(rawToken)
-	if _, err := s.db.ExecContext(ctx, `DELETE FROM sessions WHERE token_hash = $1`, tokenHash); err != nil {
+
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return fmt.Errorf("begin delete session tx: %w", err)
+	}
+	defer tx.Rollback() //nolint:errcheck
+
+	var sessionID, userID string
+	err = tx.QueryRowContext(
+		ctx,
+		`SELECT id, user_id FROM sessions WHERE token_hash = $1`,
+		tokenHash,
+	).Scan(&sessionID, &userID)
+	switch {
+	case errors.Is(err, sql.ErrNoRows):
+		return nil
+	case err != nil:
+		return fmt.Errorf("lookup session for invalidation: %w", err)
+	}
+
+	sequence, err := nextSessionFactSequence(ctx, tx, sessionID)
+	if err != nil {
+		return err
+	}
+	if err := insertSessionFact(ctx, tx, sessionFactRecord{
+		ID:        newID("sessfact"),
+		SessionID: sessionID,
+		UserID:    userID,
+		Sequence:  sequence,
+		Kind:      sessionFactKindInvalidated,
+		Reason:    sessionReasonLogout,
+		CreatedAt: time.Now().UTC(),
+		Source:    "session_invalidate",
+		SourceID:  sessionID + ":invalidated",
+	}); err != nil {
+		return err
+	}
+
+	if _, err := tx.ExecContext(ctx, `DELETE FROM sessions WHERE token_hash = $1`, tokenHash); err != nil {
 		return fmt.Errorf("delete session: %w", err)
+	}
+
+	if err := tx.Commit(); err != nil {
+		return fmt.Errorf("commit delete session tx: %w", err)
 	}
 	return nil
 }

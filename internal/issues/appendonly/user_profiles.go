@@ -152,7 +152,7 @@ func (s *UserProfileStore) BackfillBatch(
 
 	result.Complete = remainingCount <= batchSize
 	cursor.LastUserID = result.LastUserID
-	phase := "backfilling"
+	phase := phaseBackfilling
 	if result.Complete {
 		phase = phaseCompleted
 	}

@@ -171,7 +171,7 @@ func (s *APITokenStore) BackfillBatch(
 
 	result.Complete = remainingCount <= batchSize
 	cursor.LastTokenID = result.LastTokenID
-	phase := "backfilling"
+	phase := phaseBackfilling
 	if result.Complete {
 		phase = phaseCompleted
 	}

@@ -54,6 +54,7 @@ func run(ctx context.Context, args []string) error {
 	tags := appendonly.NewTagStore(store.DB())
 	apiTokens := appendonly.NewAPITokenStore(store.DB())
 	userProfiles := appendonly.NewUserProfileStore(store.DB())
+	sessions := appendonly.NewSessionStore(store.DB())
 
 	switch args[0] {
 	case "status":
@@ -86,6 +87,10 @@ func run(ctx context.Context, args []string) error {
 		return runUserProfileBackfill(ctx, userProfiles, args[1:])
 	case "user-profile-parity":
 		return runUserProfileParity(ctx, framework, userProfiles, args[1:])
+	case "session-backfill":
+		return runSessionBackfill(ctx, sessions, args[1:])
+	case "session-parity":
+		return runSessionParity(ctx, framework, sessions, args[1:])
 	default:
 		return usageError()
 	}
@@ -682,6 +687,84 @@ func runUserProfileParity(
 	})
 }
 
+func runSessionBackfill(
+	ctx context.Context,
+	sessions *appendonly.SessionStore,
+	args []string,
+) error {
+	fs := flag.NewFlagSet("session-backfill", flag.ContinueOnError)
+	fs.SetOutput(os.Stderr)
+
+	var (
+		batchSize  int
+		checkpoint string
+	)
+	fs.IntVar(&batchSize, "batch-size", 100, "Maximum number of sessions to backfill in one batch")
+	fs.StringVar(&checkpoint, "checkpoint", "session-backfill", "Checkpoint name to update")
+	if err := fs.Parse(args); err != nil {
+		return err
+	}
+
+	result, err := sessions.BackfillBatch(ctx, checkpoint, batchSize)
+	if err != nil {
+		return err
+	}
+	return printJSON(result)
+}
+
+func runSessionParity(
+	ctx context.Context,
+	framework *appendonly.FrameworkStore,
+	sessions *appendonly.SessionStore,
+	args []string,
+) error {
+	fs := flag.NewFlagSet("session-parity", flag.ContinueOnError)
+	fs.SetOutput(os.Stderr)
+
+	var (
+		detailLimit int
+		recordID    string
+	)
+	fs.IntVar(&detailLimit, "detail-limit", 20, "Maximum number of mismatches to include in the output")
+	fs.StringVar(&recordID, "record-id", "", "Parity run id (default: generated)")
+	if err := fs.Parse(args); err != nil {
+		return err
+	}
+
+	result, err := sessions.CheckParity(ctx, detailLimit)
+	if err != nil {
+		return err
+	}
+
+	status := statusPass
+	if result.MissingFacts > 0 || result.MismatchedSessions > 0 {
+		status = statusFail
+	}
+	if strings.TrimSpace(recordID) == "" {
+		recordID = "parity-" + randomSuffix()
+	}
+
+	if err := framework.RecordParityRun(ctx, appendonly.ParityRun{
+		ID:          recordID,
+		Domain:      "sessions",
+		Status:      status,
+		DetailsJSON: mustJSON(result),
+		CreatedAt:   time.Now().UTC(),
+	}); err != nil {
+		return err
+	}
+
+	return printJSON(struct {
+		RunID  string                         `json:"runId"`
+		Status string                         `json:"status"`
+		Result appendonly.SessionParityResult `json:"result"`
+	}{
+		RunID:  recordID,
+		Status: status,
+		Result: result,
+	})
+}
+
 func randomSuffix() string {
 	var randomBytes [4]byte
 	if _, err := rand.Read(randomBytes[:]); err != nil {
@@ -692,7 +775,7 @@ func randomSuffix() string {
 
 func usageError() error {
 	return fmt.Errorf(
-		"usage: go run ./cmd/append-only-migration <status|checkpoint|parity|issue-lifecycle-backfill|issue-lifecycle-parity|issue-enrichment-backfill|issue-enrichment-parity|issue-content-backfill|issue-content-parity|tag-backfill|tag-parity|api-token-backfill|api-token-parity|user-profile-backfill|user-profile-parity> [flags]",
+		"usage: go run ./cmd/append-only-migration <status|checkpoint|parity|issue-lifecycle-backfill|issue-lifecycle-parity|issue-enrichment-backfill|issue-enrichment-parity|issue-content-backfill|issue-content-parity|tag-backfill|tag-parity|api-token-backfill|api-token-parity|user-profile-backfill|user-profile-parity|session-backfill|session-parity> [flags]",
 	)
 }
 
