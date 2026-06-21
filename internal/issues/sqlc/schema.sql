@@ -202,8 +202,8 @@ CREATE TABLE "public"."issue_snapshots" (
     "raw" text NOT NULL,
     "tags_json" jsonb NOT NULL,
     "tag_scores_json" jsonb NOT NULL,
-    "embedding_json" jsonb NOT NULL,
-    "created_at_unix_nano" bigint NOT NULL
+    "created_at_unix_nano" bigint NOT NULL,
+    "embedding_vector" vector
 );
 CREATE TABLE "public"."issues" (
     "id" text NOT NULL,
@@ -421,7 +421,6 @@ ALTER TABLE ONLY "public"."issue_operations" ALTER COLUMN "note" SET DEFAULT '':
 ALTER TABLE ONLY "public"."issue_posts" ALTER COLUMN "kind" SET DEFAULT ''::text;
 ALTER TABLE ONLY "public"."issue_snapshots" ALTER COLUMN "tags_json" SET DEFAULT '[]'::jsonb;
 ALTER TABLE ONLY "public"."issue_snapshots" ALTER COLUMN "tag_scores_json" SET DEFAULT '[]'::jsonb;
-ALTER TABLE ONLY "public"."issue_snapshots" ALTER COLUMN "embedding_json" SET DEFAULT '[]'::jsonb;
 ALTER TABLE ONLY "public"."issues" ALTER COLUMN "tags_json" SET DEFAULT '[]'::jsonb;
 ALTER TABLE ONLY "public"."issues" ALTER COLUMN "tag_scores_json" SET DEFAULT '[]'::jsonb;
 ALTER TABLE ONLY "public"."issues" ALTER COLUMN "assigned_to" SET DEFAULT ''::text;

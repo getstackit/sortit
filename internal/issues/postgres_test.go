@@ -235,6 +235,48 @@ func TestPostgresStorePersistsIssueSnapshotsOnEnrichmentUpdate(t *testing.T) {
 	}
 }
 
+func TestPostgresStoreSnapshotEmbeddingVectorRoundTrip(t *testing.T) {
+	store := newPostgresTestStore(t)
+	ctx := context.Background()
+
+	issue := BuildNewIssue(NewIssueID(), CreateInput{Raw: "snapshot embedding round-trip", CreatedBy: "Casey"})
+	if err := store.SaveIssue(ctx, issue); err != nil {
+		t.Fatalf("save issue: %v", err)
+	}
+
+	// seq1 carries an embedding (with a negative component); seq2 has none. Both must
+	// round-trip through the pgvector column — an absent embedding stores NULL and
+	// reads back as an empty slice, not a decode error.
+	raw1, seq1 := "with embedding", 1
+	if err := store.UpdateIssueFields(ctx, issue.ID, IssueFieldUpdate{
+		Raw: &raw1, Embedding: []float64{0.25, -0.5, 0.75}, EnrichmentTargetSequence: &seq1,
+	}); err != nil {
+		t.Fatalf("update seq1: %v", err)
+	}
+	raw2, seq2 := "without embedding", 2
+	if err := store.UpdateIssueFields(ctx, issue.ID, IssueFieldUpdate{
+		Raw: &raw2, EnrichmentTargetSequence: &seq2,
+	}); err != nil {
+		t.Fatalf("update seq2: %v", err)
+	}
+
+	snapshots, err := store.ListIssueSnapshots(ctx, issue.ID)
+	if err != nil {
+		t.Fatalf("list snapshots: %v", err)
+	}
+	if len(snapshots) != 2 {
+		t.Fatalf("expected 2 snapshots, got %d", len(snapshots))
+	}
+	want := []float64{0.25, -0.5, 0.75}
+	got := snapshots[0].Embedding
+	if len(got) != len(want) || got[0] != want[0] || got[1] != want[1] || got[2] != want[2] {
+		t.Fatalf("embedding did not round-trip through pgvector: got %#v want %#v", got, want)
+	}
+	if len(snapshots[1].Embedding) != 0 {
+		t.Fatalf("expected absent embedding to read back empty, got %#v", snapshots[1].Embedding)
+	}
+}
+
 func TestPostgresStoreCloseAndReopenIssue(t *testing.T) {
 	store := newPostgresTestStore(t)
 

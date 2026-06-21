@@ -34,23 +34,23 @@ func saveIssueSnapshot(ctx context.Context, db issuesdb.DBTX, snapshot IssueSnap
 	if err != nil {
 		return fmt.Errorf("marshal snapshot tag scores: %w", err)
 	}
-	embeddingJSON, err := marshalJSONB(snapshot.Embedding, []float64{})
+	embeddingVector, err := formatVectorLiteral(snapshot.Embedding)
 	if err != nil {
-		return fmt.Errorf("marshal snapshot embedding: %w", err)
+		return fmt.Errorf("format snapshot embedding: %w", err)
 	}
 
 	if _, err := db.ExecContext(
 		ctx,
 		`INSERT INTO issue_snapshots (
-		    issue_id, sequence, raw, tags_json, tag_scores_json, embedding_json, created_at_unix_nano
-		) VALUES ($1, $2, $3, $4, $5, $6, $7)
+		    issue_id, sequence, raw, tags_json, tag_scores_json, embedding_vector, created_at_unix_nano
+		) VALUES ($1, $2, $3, $4, $5, $6::vector, $7)
 		ON CONFLICT (issue_id, sequence) DO NOTHING`,
 		strings.TrimSpace(snapshot.IssueID),
 		snapshot.Sequence,
 		strings.TrimSpace(snapshot.Raw),
 		tagsJSON,
 		tagScoresJSON,
-		embeddingJSON,
+		embeddingVector,
 		snapshot.CreatedAt.UTC().UnixNano(),
 	); err != nil {
 		return fmt.Errorf("save issue snapshot %q/%d: %w", snapshot.IssueID, snapshot.Sequence, err)
@@ -61,7 +61,8 @@ func saveIssueSnapshot(ctx context.Context, db issuesdb.DBTX, snapshot IssueSnap
 func listIssueSnapshots(ctx context.Context, db issuesdb.DBTX, issueID string) ([]IssueSnapshot, error) {
 	rows, err := db.QueryContext(
 		ctx,
-		`SELECT issue_id, sequence, raw, tags_json, tag_scores_json, embedding_json, created_at_unix_nano
+		`SELECT issue_id, sequence, raw, tags_json, tag_scores_json,
+		        COALESCE(embedding_vector::text, ''), created_at_unix_nano
 		 FROM issue_snapshots
 		 WHERE issue_id = $1
 		 ORDER BY sequence ASC`,
@@ -78,7 +79,7 @@ func listIssueSnapshots(ctx context.Context, db issuesdb.DBTX, issueID string) (
 			snapshot      IssueSnapshot
 			tagsJSON      []byte
 			tagScoresJSON []byte
-			embeddingJSON []byte
+			embeddingText string
 			createdAtNano int64
 		)
 		if err := rows.Scan(
@@ -87,7 +88,7 @@ func listIssueSnapshots(ctx context.Context, db issuesdb.DBTX, issueID string) (
 			&snapshot.Raw,
 			&tagsJSON,
 			&tagScoresJSON,
-			&embeddingJSON,
+			&embeddingText,
 			&createdAtNano,
 		); err != nil {
 			return nil, fmt.Errorf("scan issue snapshot: %w", err)
@@ -100,7 +101,7 @@ func listIssueSnapshots(ctx context.Context, db issuesdb.DBTX, issueID string) (
 		if err != nil {
 			return nil, fmt.Errorf("decode snapshot tag scores: %w", err)
 		}
-		embedding, err := unmarshalJSONB[[]float64](embeddingJSON)
+		embedding, err := parseEmbeddingText(embeddingText)
 		if err != nil {
 			return nil, fmt.Errorf("decode snapshot embedding: %w", err)
 		}
