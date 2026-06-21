@@ -13,6 +13,8 @@ import (
 	"strings"
 	"time"
 
+	"golang.org/x/sync/errgroup"
+
 	"sortit/internal/domain"
 	issueenrichment "sortit/internal/issueenrichment"
 	"sortit/internal/issues"
@@ -411,10 +413,17 @@ func (s *Service) tagSpecificities(ctx context.Context) map[string]float64 {
 	return out
 }
 
+// conceptProfileConcurrency bounds the parallel concept-body LLM calls during
+// synthesis. The calls are independent, so a batch of concept drafts would
+// otherwise serialize into a request timeout; this keeps them parallel while
+// staying within model rate limits.
+const conceptProfileConcurrency = 6
+
 // fillConceptBodies replaces each concept draft's placeholder body with an
 // LLM-generated profile built from the tag and a sample of the issues that
 // reference it. No-op without a profiler; a per-draft failure keeps the
-// placeholder so synthesis never fails on generation.
+// placeholder so synthesis never fails on generation. The per-draft generations
+// are independent, so they run with bounded concurrency.
 func (s *Service) fillConceptBodies(ctx context.Context, drafts []domain.MemoryProposal, corpus []issues.Issue) {
 	if s.profiler == nil {
 		return
@@ -423,33 +432,43 @@ func (s *Service) fillConceptBodies(ctx context.Context, drafts []domain.MemoryP
 	for _, issue := range corpus {
 		byID[issue.ID] = issue
 	}
+	// Each goroutine writes a distinct drafts[i].Body and only reads the
+	// read-only byID map, so no synchronization beyond the worker bound is
+	// needed. Failures are best-effort (placeholder kept), so they never abort
+	// the group.
+	g, ctx := errgroup.WithContext(ctx)
+	g.SetLimit(conceptProfileConcurrency)
 	for i := range drafts {
 		if drafts[i].Kind != domain.MemoryKindConcept {
 			continue
 		}
-		summaries := make([]string, 0, len(drafts[i].SourceIssueIDs))
-		for _, id := range drafts[i].SourceIssueIDs {
-			issue, ok := byID[id]
-			if !ok {
-				continue
+		g.Go(func() error {
+			summaries := make([]string, 0, len(drafts[i].SourceIssueIDs))
+			for _, id := range drafts[i].SourceIssueIDs {
+				issue, ok := byID[id]
+				if !ok {
+					continue
+				}
+				if raw := strings.TrimSpace(issue.Raw); raw != "" {
+					summaries = append(summaries, raw)
+				}
+				if len(summaries) >= maxSourceIssuesPerProposal {
+					break
+				}
 			}
-			if raw := strings.TrimSpace(issue.Raw); raw != "" {
-				summaries = append(summaries, raw)
+			body, err := s.profiler.GenerateConceptProfile(ctx, drafts[i].SubjectTag, summaries)
+			if err != nil {
+				s.logger.WarnContext(ctx, "concept profile generation failed; keeping placeholder",
+					"subject_tag", drafts[i].SubjectTag, "error", err)
+				return nil
 			}
-			if len(summaries) >= maxSourceIssuesPerProposal {
-				break
+			if body = strings.TrimSpace(body); body != "" {
+				drafts[i].Body = body
 			}
-		}
-		body, err := s.profiler.GenerateConceptProfile(ctx, drafts[i].SubjectTag, summaries)
-		if err != nil {
-			s.logger.WarnContext(ctx, "concept profile generation failed; keeping placeholder",
-				"subject_tag", drafts[i].SubjectTag, "error", err)
-			continue
-		}
-		if body = strings.TrimSpace(body); body != "" {
-			drafts[i].Body = body
-		}
+			return nil
+		})
 	}
+	_ = g.Wait()
 }
 
 // ListProposals returns synthesis proposals, optionally filtered by status.
