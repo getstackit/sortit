@@ -60,6 +60,14 @@ type TagCatalogReader interface {
 	ListTags(ctx context.Context) ([]issues.Tag, error)
 }
 
+// ConceptTagSeeder ensures a concept's subject tag exists as a first-class
+// catalog tag, so authoring concepts grows the project's tagging vocabulary —
+// the curated nouns then enter the enrichment candidate set. *tags.CatalogService
+// satisfies it (EnsureStoredTags embeds and persists). Optional.
+type ConceptTagSeeder interface {
+	EnsureStoredTags(ctx context.Context, tags []issues.Tag) error
+}
+
 // Service is the application layer for memories.
 type Service struct {
 	store      issues.MemoryStore
@@ -69,6 +77,7 @@ type Service struct {
 	corpus     CorpusReader
 	profiler   ConceptProfiler
 	tagCatalog TagCatalogReader
+	tagSeeder  ConceptTagSeeder
 }
 
 // NewService constructs a memory service. enricher may be nil (memories are
@@ -100,6 +109,13 @@ func (s *Service) UseConceptProfiler(profiler ConceptProfiler) {
 // gates on frequency only.
 func (s *Service) UseTagCatalog(reader TagCatalogReader) {
 	s.tagCatalog = reader
+}
+
+// UseConceptTagSeeder makes authoring a concept register its subject tag in the
+// catalog, growing the tagging vocabulary. Optional: without it, concepts are
+// created but their subject tags are not seeded into the catalog.
+func (s *Service) UseConceptTagSeeder(seeder ConceptTagSeeder) {
+	s.tagSeeder = seeder
 }
 
 // CreateMemoryInput describes a new memory.
@@ -179,7 +195,37 @@ func (s *Service) CreateMemory(ctx context.Context, input CreateMemoryInput) (do
 		"scored_tags", len(memory.TagScores),
 		"has_embedding", len(memory.Embedding) > 0,
 	)
+	s.seedConceptTag(ctx, memory)
 	return memory, nil
+}
+
+// conceptTagDescriptionMaxChars bounds how much of a concept body seeds the
+// catalog tag description (which is embedded for retrieval).
+const conceptTagDescriptionMaxChars = 280
+
+// seedConceptTag registers a concept's subject tag in the catalog so the curated
+// noun becomes part of the tagging vocabulary — and thus an enrichment candidate
+// that future issues can be tagged with. Best-effort: a failure is logged, never
+// fatal to memory creation.
+func (s *Service) seedConceptTag(ctx context.Context, memory domain.Memory) {
+	if s.tagSeeder == nil || memory.Kind != domain.MemoryKindConcept || memory.SubjectTag == "" {
+		return
+	}
+	description := strings.TrimSpace(memory.Title)
+	if body := strings.TrimSpace(memory.Body); body != "" {
+		summary := truncate(body, conceptTagDescriptionMaxChars)
+		if description == "" {
+			description = summary
+		} else {
+			description += ". " + summary
+		}
+	}
+	if err := s.tagSeeder.EnsureStoredTags(ctx, []issues.Tag{{Name: memory.SubjectTag, Description: description}}); err != nil {
+		s.logger.WarnContext(ctx, "failed to seed concept subject tag into catalog",
+			"subject_tag", memory.SubjectTag, "error", err)
+		return
+	}
+	s.logger.InfoContext(ctx, "seeded concept subject tag into catalog", "subject_tag", memory.SubjectTag)
 }
 
 // supersedePriorConcept retires the active concept (if any) already bound to the

@@ -184,6 +184,50 @@ func TestCreateConceptBindsToSubjectTag(t *testing.T) {
 	}
 }
 
+type fakeTagSeeder struct {
+	seeded []issues.Tag
+}
+
+func (f *fakeTagSeeder) EnsureStoredTags(_ context.Context, tags []issues.Tag) error {
+	f.seeded = append(f.seeded, tags...)
+	return nil
+}
+
+func TestCreateConceptSeedsSubjectTag(t *testing.T) {
+	store := issues.NewInMemoryStore(nil)
+	svc := NewService(store, nil, nil)
+	seeder := &fakeTagSeeder{}
+	svc.UseConceptTagSeeder(seeder)
+	ctx := context.Background()
+
+	// A concept seeds its subject tag into the catalog.
+	if _, err := svc.CreateMemory(ctx, CreateMemoryInput{
+		Title:      "Ridge regression",
+		Body:       "Our ranking uses diagonal-penalty ridge regression.",
+		Kind:       domain.MemoryKindConcept,
+		SubjectTag: "ridge-regression",
+	}); err != nil {
+		t.Fatalf("create concept: %v", err)
+	}
+	if len(seeder.seeded) != 1 || seeder.seeded[0].Name != "ridge-regression" {
+		t.Fatalf("expected the subject tag seeded, got %+v", seeder.seeded)
+	}
+	if seeder.seeded[0].Description == "" {
+		t.Fatal("expected a description so the seeded tag embeds meaningfully")
+	}
+
+	// A non-concept memory seeds nothing.
+	if _, err := svc.CreateMemory(ctx, CreateMemoryInput{
+		Body: "a plain decision",
+		Kind: domain.MemoryKindDecision,
+	}); err != nil {
+		t.Fatalf("create decision: %v", err)
+	}
+	if len(seeder.seeded) != 1 {
+		t.Fatalf("expected no new seed for a non-concept, got %+v", seeder.seeded)
+	}
+}
+
 func TestReinforceConceptsForTags(t *testing.T) {
 	store := issues.NewInMemoryStore(nil)
 	svc := NewService(store, nil, nil)
