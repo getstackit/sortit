@@ -21,6 +21,20 @@ type ApiToken struct {
 	LastUsedAtUnixNano int64
 }
 
+type ApiTokenFact struct {
+	ID                string
+	TokenID           string
+	UserID            string
+	Sequence          int64
+	Kind              string
+	CreatedBy         string
+	CreatedAtUnixNano int64
+	PayloadJson       json.RawMessage
+	Source            string
+	SourceID          string
+	Inferred          bool
+}
+
 type AppendOnlyMigrationCheckpoint struct {
 	Name              string
 	Phase             string

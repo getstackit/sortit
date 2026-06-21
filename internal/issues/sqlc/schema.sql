@@ -4,6 +4,19 @@ CREATE EXTENSION IF NOT EXISTS "vector" WITH SCHEMA "public";
 CREATE SEQUENCE "public"."dismissed_tag_merges_id_seq";
 CREATE SEQUENCE "public"."tag_merge_history_id_seq";
 
+CREATE TABLE "public"."api_token_facts" (
+    "id" text NOT NULL,
+    "token_id" text NOT NULL,
+    "user_id" text NOT NULL,
+    "sequence" bigint NOT NULL,
+    "kind" text NOT NULL,
+    "created_by" text NOT NULL,
+    "created_at_unix_nano" bigint NOT NULL,
+    "payload_json" jsonb NOT NULL,
+    "source" text NOT NULL,
+    "source_id" text NOT NULL,
+    "inferred" boolean NOT NULL
+);
 CREATE TABLE "public"."api_tokens" (
     "id" text NOT NULL,
     "user_id" text NOT NULL,
@@ -317,6 +330,11 @@ CREATE TABLE "public"."users" (
 ALTER SEQUENCE "public"."dismissed_tag_merges_id_seq" OWNED BY "public"."dismissed_tag_merges"."id";
 ALTER SEQUENCE "public"."tag_merge_history_id_seq" OWNED BY "public"."tag_merge_history"."id";
 
+ALTER TABLE ONLY "public"."api_token_facts" ALTER COLUMN "created_by" SET DEFAULT ''::text;
+ALTER TABLE ONLY "public"."api_token_facts" ALTER COLUMN "payload_json" SET DEFAULT '{}'::jsonb;
+ALTER TABLE ONLY "public"."api_token_facts" ALTER COLUMN "source" SET DEFAULT ''::text;
+ALTER TABLE ONLY "public"."api_token_facts" ALTER COLUMN "source_id" SET DEFAULT ''::text;
+ALTER TABLE ONLY "public"."api_token_facts" ALTER COLUMN "inferred" SET DEFAULT false;
 ALTER TABLE ONLY "public"."api_tokens" ALTER COLUMN "revoked_at_unix_nano" SET DEFAULT 0;
 ALTER TABLE ONLY "public"."api_tokens" ALTER COLUMN "name" SET DEFAULT ''::text;
 ALTER TABLE ONLY "public"."api_tokens" ALTER COLUMN "last_used_at_unix_nano" SET DEFAULT 0;
@@ -427,6 +445,7 @@ ALTER TABLE ONLY "public"."tag_projections" ALTER COLUMN "canonical_name" SET DE
 ALTER TABLE ONLY "public"."tag_projections" ALTER COLUMN "last_event_id" SET DEFAULT ''::text;
 ALTER TABLE ONLY "public"."tag_projections" ALTER COLUMN "event_count" SET DEFAULT 0;
 
+ALTER TABLE ONLY "public"."api_token_facts" ADD CONSTRAINT "api_token_facts_pkey" PRIMARY KEY (id);
 ALTER TABLE ONLY "public"."api_tokens" ADD CONSTRAINT "api_tokens_pkey" PRIMARY KEY (id);
 ALTER TABLE ONLY "public"."api_tokens" ADD CONSTRAINT "api_tokens_token_hash_key" UNIQUE (token_hash);
 ALTER TABLE ONLY "public"."api_tokens" ADD CONSTRAINT "api_tokens_user_id_fkey" FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE;
@@ -482,6 +501,10 @@ ALTER TABLE ONLY "public"."tag_projections" ADD CONSTRAINT "tag_projections_pkey
 ALTER TABLE ONLY "public"."tags" ADD CONSTRAINT "tags_pkey" PRIMARY KEY (name);
 ALTER TABLE ONLY "public"."users" ADD CONSTRAINT "users_pkey" PRIMARY KEY (id);
 
+CREATE UNIQUE INDEX api_token_facts_source_idx ON public.api_token_facts USING btree (source, source_id);
+CREATE INDEX api_token_facts_token_created_idx ON public.api_token_facts USING btree (token_id, created_at_unix_nano, sequence, id);
+CREATE UNIQUE INDEX api_token_facts_token_sequence_idx ON public.api_token_facts USING btree (token_id, sequence);
+CREATE INDEX api_token_facts_user_created_idx ON public.api_token_facts USING btree (user_id, created_at_unix_nano, id);
 CREATE INDEX api_tokens_user_id_idx ON public.api_tokens USING btree (user_id);
 CREATE INDEX append_only_parity_runs_domain_created_idx ON public.append_only_parity_runs USING btree (domain, created_at_unix_nano DESC, id DESC);
 CREATE INDEX auth_accounts_user_id_idx ON public.auth_accounts USING btree (user_id);

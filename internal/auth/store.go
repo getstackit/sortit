@@ -156,7 +156,34 @@ func (s *Store) CreateAPIToken(ctx context.Context, userID, name string) (APITok
 		CreatedAt:   createdAt,
 	}
 
-	if _, err := s.db.ExecContext(
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return APIToken{}, "", fmt.Errorf("begin create api token tx: %w", err)
+	}
+	defer tx.Rollback() //nolint:errcheck
+
+	// Append-only lifecycle fact: a token is created exactly once (sequence 1).
+	if err := insertAPITokenFact(ctx, tx, apiTokenFactRecord{
+		ID:        newID("tokfact"),
+		TokenID:   token.ID,
+		UserID:    userID,
+		Sequence:  1,
+		Kind:      apiTokenFactKindCreated,
+		CreatedBy: userID,
+		CreatedAt: createdAt,
+		Payload: mustAPITokenFactJSON(map[string]any{
+			"name":              name,
+			"tokenPrefix":       token.TokenPrefix,
+			"createdAtUnixNano": createdAt.UnixNano(),
+		}),
+		Source:   "api_token_create",
+		SourceID: token.ID + ":created",
+	}); err != nil {
+		return APIToken{}, "", err
+	}
+
+	// Current-state projection (hot-path lookup target).
+	if _, err := tx.ExecContext(
 		ctx,
 		`INSERT INTO api_tokens (id, user_id, token_hash, token_prefix, name, created_at_unix_nano, revoked_at_unix_nano)
 		 VALUES ($1, $2, $3, $4, $5, $6, 0)`,
@@ -168,6 +195,10 @@ func (s *Store) CreateAPIToken(ctx context.Context, userID, name string) (APITok
 		createdAt.UnixNano(),
 	); err != nil {
 		return APIToken{}, "", fmt.Errorf("insert api token: %w", err)
+	}
+
+	if err := tx.Commit(); err != nil {
+		return APIToken{}, "", fmt.Errorf("commit create api token tx: %w", err)
 	}
 
 	return token, rawToken, nil
@@ -214,13 +245,26 @@ func (s *Store) ListAPITokens(ctx context.Context, userID string) ([]APIToken, e
 }
 
 func (s *Store) RevokeAPIToken(ctx context.Context, userID, tokenID string) error {
-	result, err := s.db.ExecContext(
+	tokenID = strings.TrimSpace(tokenID)
+	revokedAt := time.Now().UTC()
+
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return fmt.Errorf("begin revoke api token tx: %w", err)
+	}
+	defer tx.Rollback() //nolint:errcheck
+
+	// Update the current-state projection first; the WHERE clause enforces
+	// ownership and the not-already-revoked guard. Only append a 'revoked' fact
+	// when a row actually changed, so re-revoking is a no-op rather than a
+	// spurious audit entry.
+	result, err := tx.ExecContext(
 		ctx,
 		`UPDATE api_tokens
 		 SET revoked_at_unix_nano = $1
 		 WHERE id = $2 AND user_id = $3 AND revoked_at_unix_nano = 0`,
-		time.Now().UTC().UnixNano(),
-		strings.TrimSpace(tokenID),
+		revokedAt.UnixNano(),
+		tokenID,
 		userID,
 	)
 	if err != nil {
@@ -233,6 +277,31 @@ func (s *Store) RevokeAPIToken(ctx context.Context, userID, tokenID string) erro
 	}
 	if rowsAffected == 0 {
 		return ErrTokenNotFound
+	}
+
+	sequence, err := nextAPITokenFactSequence(ctx, tx, tokenID)
+	if err != nil {
+		return err
+	}
+	if err := insertAPITokenFact(ctx, tx, apiTokenFactRecord{
+		ID:        newID("tokfact"),
+		TokenID:   tokenID,
+		UserID:    userID,
+		Sequence:  sequence,
+		Kind:      apiTokenFactKindRevoked,
+		CreatedBy: userID,
+		CreatedAt: revokedAt,
+		Payload: mustAPITokenFactJSON(map[string]any{
+			"revokedAtUnixNano": revokedAt.UnixNano(),
+		}),
+		Source:   "api_token_revoke",
+		SourceID: tokenID + ":revoked",
+	}); err != nil {
+		return err
+	}
+
+	if err := tx.Commit(); err != nil {
+		return fmt.Errorf("commit revoke api token tx: %w", err)
 	}
 	return nil
 }
