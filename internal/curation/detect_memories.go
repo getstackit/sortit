@@ -18,17 +18,25 @@ type MemoryReader interface {
 	ListMemories(ctx context.Context, opts issues.MemoryListOptions) ([]domain.Memory, error)
 }
 
+// ReinforcementSource supplies the slim issue projection quiet-memory detection
+// needs: each embedded issue with its most-recent activity time. The production
+// store and the in-memory store both implement ListReinforcementCandidates, so
+// detection never pulls the full issue hydration just to read embeddings.
+type ReinforcementSource interface {
+	ListReinforcementCandidates(ctx context.Context) ([]issues.EmbeddingActivity, error)
+}
+
 // MemoryDetector surfaces memory-side curation candidates: quiet memories worth
 // archiving and redundant memories worth superseding. Like the issue detectors,
 // it only reads and computes — it never mutates or proposes.
 type MemoryDetector struct {
-	issues   issues.Reader
+	issues   ReinforcementSource
 	memories MemoryReader
 	logger   *slog.Logger
 }
 
 // NewMemoryDetector constructs a memory candidate detector.
-func NewMemoryDetector(issueReader issues.Reader, memories MemoryReader, logger *slog.Logger) *MemoryDetector {
+func NewMemoryDetector(issueReader ReinforcementSource, memories MemoryReader, logger *slog.Logger) *MemoryDetector {
 	if logger == nil {
 		logger = slog.Default()
 	}
@@ -149,22 +157,18 @@ func (d *MemoryDetector) DetectQuietMemories(ctx context.Context, params QuietPa
 }
 
 func (d *MemoryDetector) reinforcementCandidates(ctx context.Context) ([]memoryanalytics.ReinforcementCandidate, error) {
-	all, err := d.issues.List(ctx)
+	rows, err := d.issues.ListReinforcementCandidates(ctx)
 	if err != nil {
 		return nil, err
 	}
-	candidates := make([]memoryanalytics.ReinforcementCandidate, 0, len(all))
-	for _, issue := range all {
-		if len(issue.Embedding) == 0 {
+	candidates := make([]memoryanalytics.ReinforcementCandidate, 0, len(rows))
+	for _, row := range rows {
+		if len(row.Embedding) == 0 {
 			continue
 		}
-		at := issue.CreatedAt
-		if issue.ClosedAt != nil && issue.ClosedAt.After(at) {
-			at = *issue.ClosedAt
-		}
 		candidates = append(candidates, memoryanalytics.ReinforcementCandidate{
-			Embedding:  issue.Embedding,
-			ActivityAt: at,
+			Embedding:  row.Embedding,
+			ActivityAt: row.ActivityAt,
 		})
 	}
 	return candidates, nil
