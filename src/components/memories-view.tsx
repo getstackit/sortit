@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { Sparkles, Check, X, BookMarked } from "lucide-react";
 import { MemoryCard } from "@/components/memory-card";
+import { ProjectOverviewPanel } from "@/components/project-overview-panel";
 import { TagBadge } from "@/components/tag-badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -15,14 +16,19 @@ import type {
   MemoryRecord,
 } from "@/lib/memories";
 
+// Overview is intentionally absent: it is the project's identity singleton, edited
+// through the dedicated panel at the top — not created via the generic picker or
+// shown as a card in the grid.
 const KINDS: MemoryKind[] = ["decision", "lesson", "constraint", "pattern", "reference", "concept"];
 
 export type MemoriesViewProps = {
   memories: MemoryRecord[];
   proposals: MemoryProposalRecord[];
+  overview: MemoryRecord | null;
   loading?: boolean;
   synthesizing?: boolean;
   onCreate: (input: CreateMemoryInput) => Promise<void> | void;
+  onSaveOverview: (body: string) => Promise<void> | void;
   onSynthesize: () => Promise<void> | void;
   onAccept: (id: string) => Promise<void> | void;
   onReject: (id: string) => Promise<void> | void;
@@ -31,9 +37,11 @@ export type MemoriesViewProps = {
 export function MemoriesView({
   memories,
   proposals,
+  overview,
   loading,
   synthesizing,
   onCreate,
+  onSaveOverview,
   onSynthesize,
   onAccept,
   onReject,
@@ -51,8 +59,10 @@ export function MemoriesView({
   const conceptMissingSubject = kind === "concept" && !subjectTag.trim();
   const canSubmit = !!body.trim() && !submitting && !conceptMissingSubject;
 
+  // The overview lives in its own panel, so keep it out of the memories grid.
+  const gridMemories = memories.filter((m) => m.kind !== "overview");
   const visibleMemories =
-    kindFilter === "all" ? memories : memories.filter((m) => m.kind === kindFilter);
+    kindFilter === "all" ? gridMemories : gridMemories.filter((m) => m.kind === kindFilter);
 
   async function submit() {
     if (!canSubmit) return;
@@ -79,6 +89,9 @@ export function MemoriesView({
 
   return (
     <div className="mx-auto flex w-full max-w-5xl flex-col gap-6 p-4 sm:p-6">
+      {/* Project overview — the identity singleton, edited in place */}
+      <ProjectOverviewPanel overview={overview} onSave={onSaveOverview} />
+
       {/* Composer */}
       <section className="rounded-2xl border border-border/70 bg-card p-4">
         <div className="mb-3 flex items-center gap-2">
@@ -243,7 +256,7 @@ export function MemoriesView({
         </div>
         {loading ? (
           <p className="text-xs text-muted-foreground">Loading…</p>
-        ) : memories.length === 0 ? (
+        ) : gridMemories.length === 0 ? (
           <p className="rounded-2xl border border-dashed border-border/70 px-4 py-10 text-center text-sm text-muted-foreground">
             No memories yet. Create one above, or synthesize from the corpus.
           </p>
