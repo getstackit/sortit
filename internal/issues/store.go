@@ -286,6 +286,16 @@ type CompareIssue struct {
 	Embedding []float64
 }
 
+// EmbeddingActivity is a minimal issue projection used to score how strongly
+// recent corpus activity reinforces a memory: the issue's embedding and its most
+// recent activity time (creation, or closure when later). It deliberately skips
+// the full List hydration (enrichment states, discussion, deep clone) that
+// reinforcement scoring never reads.
+type EmbeddingActivity struct {
+	Embedding  []float64
+	ActivityAt time.Time
+}
+
 type IssueEnrichmentJob struct {
 	IssueID        string
 	TargetSequence int
@@ -316,6 +326,15 @@ type IssueActivity struct {
 // issue ID; callers should treat a missing key as "no activity".
 type IssueActivityReader interface {
 	LoadIssueActivity(context.Context, []string) (map[string]IssueActivity, error)
+}
+
+// ReinforcementCandidateReader is the optional slim-projection capability behind
+// memory reinforcement scoring: every embedded issue with its most-recent
+// activity time, without the full List hydration. PostgresStore and
+// InMemoryStore implement it; ObservedStore probes for it and falls back to List
+// when a base lacks it.
+type ReinforcementCandidateReader interface {
+	ListReinforcementCandidates(context.Context) ([]EmbeddingActivity, error)
 }
 
 type IssueDetailStore interface {
@@ -491,6 +510,36 @@ func (s *InMemoryStore) List(_ context.Context) ([]Issue, error) {
 		items[i].Discussion = nil
 	}
 	return items, nil
+}
+
+// ListReinforcementCandidates returns the slim embedding + activity-time
+// projection for every embedded issue, mirroring the derivation the full List
+// path would feed reinforcement scoring.
+func (s *InMemoryStore) ListReinforcementCandidates(_ context.Context) ([]EmbeddingActivity, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	out := make([]EmbeddingActivity, 0, len(s.issues))
+	for _, issue := range s.issues {
+		if len(issue.Embedding) == 0 {
+			continue
+		}
+		out = append(out, EmbeddingActivity{
+			Embedding:  append([]float64(nil), issue.Embedding...),
+			ActivityAt: issueActivityAt(issue),
+		})
+	}
+	return out, nil
+}
+
+// issueActivityAt is an issue's most-recent activity time: its creation, or its
+// closure when that is later.
+func issueActivityAt(issue Issue) time.Time {
+	at := issue.CreatedAt
+	if issue.ClosedAt != nil && issue.ClosedAt.After(at) {
+		at = *issue.ClosedAt
+	}
+	return at
 }
 
 func (s *InMemoryStore) Get(_ context.Context, id string) (Issue, error) {
