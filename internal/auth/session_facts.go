@@ -13,6 +13,9 @@ const (
 	sessionFactKindCreated     = "created"
 	sessionFactKindInvalidated = "invalidated"
 	sessionReasonLogout        = "logout"
+	// sessionReasonExpired marks an 'invalidated' fact produced by the expiry
+	// reaper (TTL elapsed) rather than by an explicit logout.
+	sessionReasonExpired = "expired"
 )
 
 type sessionFactRecord struct {
