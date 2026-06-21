@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"log/slog"
 	"sort"
 	"strings"
 
@@ -104,38 +105,46 @@ const conceptFrameMaxConcepts = 25
 // concept body doesn't dominate the prompt.
 const conceptProfileMaxChars = 280
 
-// projectConceptFrame assembles the project's identity frame for grounding issue
+// projectConceptFrame assembles the project's identity frame from the memory
+// store the enricher already holds. See ProjectConceptFrame for the assembly
+// rules.
+func (s *IssueEnricher) projectConceptFrame(ctx context.Context) ai.ConceptFrame {
+	return ProjectConceptFrame(ctx, s.memoryStore, s.logger)
+}
+
+// ProjectConceptFrame assembles the project's identity frame for grounding issue
 // tagging: the active overview paragraph plus a digest of the active concepts
 // (the project's own vocabulary), ranked by reinforcement then recency and
-// capped. It reads only the memory store the enricher already holds; without a
-// store, or with neither an overview nor concepts set, it returns an empty frame
-// (a no-op that renders the pre-frame prompt). Store failures are non-fatal —
-// tagging proceeds without the frame.
-func (s *IssueEnricher) projectConceptFrame(ctx context.Context) ai.ConceptFrame {
-	if s.memoryStore == nil {
+// capped. It reads only the given memory store; without a store, or with neither
+// an overview nor concepts set, it returns an empty frame (a no-op that renders
+// the pre-frame prompt). Store failures are non-fatal. It is exported so the
+// memory synthesizer can prime cluster-concept naming with the same frame the
+// tagger sees.
+func ProjectConceptFrame(ctx context.Context, store issues.MemoryStore, logger *slog.Logger) ai.ConceptFrame {
+	if store == nil {
 		return ai.ConceptFrame{}
 	}
 
 	frame := ai.ConceptFrame{}
-	overview, err := s.memoryStore.GetActiveOverview(ctx)
+	overview, err := store.GetActiveOverview(ctx)
 	switch {
 	case err == nil:
 		frame.Overview = strings.TrimSpace(overview.Body)
 	case errors.Is(err, issues.ErrMemoryNotFound):
 		// No overview set yet — the concepts alone still ground tagging.
 	default:
-		if s.logger != nil {
-			s.logger.WarnContext(ctx, "load project overview for tagging frame failed", "error", err)
+		if logger != nil {
+			logger.WarnContext(ctx, "load project overview for tagging frame failed", "error", err)
 		}
 	}
 
-	concepts, err := s.memoryStore.ListMemories(ctx, issues.MemoryListOptions{
+	concepts, err := store.ListMemories(ctx, issues.MemoryListOptions{
 		Status: domain.MemoryStatusActive,
 		Kind:   domain.MemoryKindConcept,
 	})
 	if err != nil {
-		if s.logger != nil {
-			s.logger.WarnContext(ctx, "load project concepts for tagging frame failed", "error", err)
+		if logger != nil {
+			logger.WarnContext(ctx, "load project concepts for tagging frame failed", "error", err)
 		}
 		return frame
 	}

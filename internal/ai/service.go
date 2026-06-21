@@ -119,6 +119,13 @@ func (a *Analyzer) GenerateConceptProfile(ctx context.Context, tag string, issue
 	return a.profiler.GenerateConceptProfile(ctx, tag, issueSummaries)
 }
 
+func (a *Analyzer) ProposeConceptFromCluster(ctx context.Context, issueSummaries []string, frame ConceptFrame) (string, string, error) {
+	if a == nil || a.profiler == nil {
+		return "", "", ErrNotConfigured
+	}
+	return a.profiler.ProposeConceptFromCluster(ctx, issueSummaries, frame)
+}
+
 func normalizeScores(scores []TagScore, taxonomy []Tag) []TagScore {
 	taxonomyNames := make(map[string]string, len(taxonomy))
 	for _, tag := range taxonomy {

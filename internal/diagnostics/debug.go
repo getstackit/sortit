@@ -244,7 +244,7 @@ func (h DebugFactorWeightsHandler) Handle(ctx context.Context) (DebugFactorWeigh
 		}
 	}
 
-	tagNames, tagEmbeddings := tagDataFromIssues(storeIssues, storeTags)
+	tagNames, tagEmbeddings := issuemath.TagDataFromIssues(storeIssues, storeTags)
 	issueEmbeddings := make(map[string][]float64, len(storeIssues))
 	for _, issue := range storeIssues {
 		if len(issue.Embedding) > 0 {
@@ -399,7 +399,7 @@ func (h DebugIssueR2Handler) Handle(ctx context.Context, issueID string) (DebugI
 		storeTags, _ = h.Catalog.StoredTags(ctx)
 	}
 
-	tagNames, tagEmbeddings := tagDataFromIssues(allIssues, storeTags)
+	tagNames, tagEmbeddings := issuemath.TagDataFromIssues(allIssues, storeTags)
 	issueEmbeddings := make(map[string][]float64, len(allIssues))
 	for _, issue := range allIssues {
 		if len(issue.Embedding) > 0 {
@@ -520,41 +520,21 @@ func (h DebugIssueR2Handler) Handle(ctx context.Context, issueID string) (DebugI
 			issueByID[issue.ID] = issue
 		}
 
-		// Find other issues whose residuals point in a similar direction.
-		// These share whatever concept the tags are missing.
-		type neighborSim struct {
-			id  string
-			sim float64
-		}
-		var neighbors []neighborSim
-		for _, issue := range allIssues {
-			if issue.ID == target.ID {
-				continue
-			}
-			otherResidual := decomp.ResidualEmbedding(issue.ID)
-			if len(otherResidual) == 0 {
-				continue
-			}
-			sim := vectors.CosineSimilarity(residualEmb, otherResidual)
-			if sim > 0.3 {
-				neighbors = append(neighbors, neighborSim{id: issue.ID, sim: sim})
-			}
-		}
-		slices.SortFunc(neighbors, func(a, b neighborSim) int {
-			return cmp.Compare(b.sim, a.sim)
-		})
+		// Find other issues whose residuals point in a similar direction —
+		// they share whatever concept the tags are missing.
+		neighbors := decomp.ResidualNeighbors(target.ID, issuemath.ResidualNeighborSimThreshold)
 		neighborLimit := min(8, len(neighbors))
 		for _, n := range neighbors[:neighborLimit] {
-			issue := issueByID[n.id]
+			issue := issueByID[n.ID]
 			tags := make([]string, 0, len(issue.TagScores))
 			for _, ts := range issue.TagScores {
 				tags = append(tags, ts.Tag)
 			}
-			neighborR2, _ := decomp.IssueR2(n.id)
+			neighborR2, _ := decomp.IssueR2(n.ID)
 			result.ResidualNeighbors = append(result.ResidualNeighbors, DebugResidualNeighbor{
-				ID:         n.id,
+				ID:         n.ID,
 				Raw:        truncateRaw(issue.Raw),
-				Similarity: math.Round(n.sim*1000) / 1000,
+				Similarity: math.Round(n.Similarity*1000) / 1000,
 				R2:         math.Round(neighborR2*1000) / 1000,
 				Tags:       tags,
 			})
@@ -684,7 +664,6 @@ func buildDebugReviewQueue(
 		issueTags, nearestResidualTags, residualNeighbors := buildDebugIssueSignals(
 			issue,
 			targetEmb,
-			allIssues,
 			issueByID,
 			tagNames,
 			tagEmbeddings,
@@ -799,7 +778,6 @@ func buildDebugReviewQueue(
 func buildDebugIssueSignals(
 	issue issues.Issue,
 	targetEmb []float64,
-	allIssues []issues.Issue,
 	issueByID map[string]issues.Issue,
 	tagNames []string,
 	tagEmbeddings map[string][]float64,
@@ -856,39 +834,19 @@ func buildDebugIssueSignals(
 		})
 	}
 
-	type neighborSim struct {
-		id  string
-		sim float64
-	}
-	neighbors := make([]neighborSim, 0)
-	for _, other := range allIssues {
-		if other.ID == issue.ID {
-			continue
-		}
-		otherResidual := decomp.ResidualEmbedding(other.ID)
-		if len(otherResidual) == 0 {
-			continue
-		}
-		sim := vectors.CosineSimilarity(residualEmb, otherResidual)
-		if sim > 0.3 {
-			neighbors = append(neighbors, neighborSim{id: other.ID, sim: sim})
-		}
-	}
-	slices.SortFunc(neighbors, func(a, b neighborSim) int {
-		return cmp.Compare(b.sim, a.sim)
-	})
+	neighbors := decomp.ResidualNeighbors(issue.ID, issuemath.ResidualNeighborSimThreshold)
 	neighborLimit := min(8, len(neighbors))
 	for _, n := range neighbors[:neighborLimit] {
-		other := issueByID[n.id]
+		other := issueByID[n.ID]
 		tags := make([]string, 0, len(other.TagScores))
 		for _, ts := range other.TagScores {
 			tags = append(tags, ts.Tag)
 		}
-		neighborR2, _ := decomp.IssueR2(n.id)
+		neighborR2, _ := decomp.IssueR2(n.ID)
 		residualNeighbors = append(residualNeighbors, DebugResidualNeighbor{
-			ID:         n.id,
+			ID:         n.ID,
 			Raw:        truncateRaw(other.Raw),
-			Similarity: math.Round(n.sim*1000) / 1000,
+			Similarity: math.Round(n.Similarity*1000) / 1000,
 			R2:         math.Round(neighborR2*1000) / 1000,
 			Tags:       tags,
 		})
@@ -904,45 +862,4 @@ func copyDebugTagScores(scores []issues.TagRelevance) []issues.TagRelevance {
 	out := make([]issues.TagRelevance, len(scores))
 	copy(out, scores)
 	return out
-}
-
-func tagDataFromIssues(items []issues.Issue, storeTags []issues.Tag) ([]string, map[string][]float64) {
-	seen := make(map[string]struct{})
-	tagNames := make([]string, 0, len(storeTags))
-
-	for _, tag := range storeTags {
-		name := strings.TrimSpace(tag.Name)
-		if name == "" {
-			continue
-		}
-		if _, ok := seen[name]; ok {
-			continue
-		}
-		seen[name] = struct{}{}
-		tagNames = append(tagNames, name)
-	}
-	for _, issue := range items {
-		for _, ts := range issue.TagScores {
-			name := strings.TrimSpace(ts.Tag)
-			if name == "" {
-				continue
-			}
-			if _, ok := seen[name]; ok {
-				continue
-			}
-			seen[name] = struct{}{}
-			tagNames = append(tagNames, name)
-		}
-	}
-	slices.Sort(tagNames)
-
-	tagEmbeddings := make(map[string][]float64, len(storeTags))
-	for _, tag := range storeTags {
-		name := strings.TrimSpace(tag.Name)
-		if name != "" && len(tag.Embedding) > 0 {
-			tagEmbeddings[name] = tag.Embedding
-		}
-	}
-
-	return tagNames, tagEmbeddings
 }

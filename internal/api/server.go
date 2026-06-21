@@ -611,6 +611,7 @@ func NewServer(cfg ServerConfig) *Server {
 	memoryService := memories.NewService(store, enricher, logger)
 	memoryService.UseSynthesis(store, store)
 	memoryService.UseConceptProfiler(commandAnalyzer)
+	memoryService.UseConceptProposer(commandAnalyzer)
 	memoryService.UseConceptTagSeeder(catalog)
 	if tagStore != nil {
 		memoryService.UseTagCatalog(tagStore)

@@ -151,4 +151,11 @@ type Canonicalizer interface {
 // sample of issues that reference it.
 type ConceptProfiler interface {
 	GenerateConceptProfile(ctx context.Context, tag string, issueSummaries []string) (string, error)
+	// ProposeConceptFromCluster names and profiles a NEW concept from a cluster of
+	// issues that share an unexplained embedding residual — the residual-mining
+	// counterpart to GenerateConceptProfile, which profiles an *existing* tag. The
+	// frame primes naming with the project's vocabulary so the invented subject tag
+	// fits the project's own naming. It returns the proposed subject tag (a short,
+	// lowercase, reusable noun) and its profile prose.
+	ProposeConceptFromCluster(ctx context.Context, issueSummaries []string, frame ConceptFrame) (name string, profile string, err error)
 }

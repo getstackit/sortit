@@ -15,8 +15,10 @@ import (
 
 	"golang.org/x/sync/errgroup"
 
+	"sortit/internal/ai"
 	"sortit/internal/domain"
 	issueenrichment "sortit/internal/issueenrichment"
+	"sortit/internal/issuemath"
 	"sortit/internal/issues"
 	"sortit/internal/tags"
 )
@@ -55,6 +57,14 @@ type ConceptProfiler interface {
 	GenerateConceptProfile(ctx context.Context, tag string, issueSummaries []string) (string, error)
 }
 
+// ConceptProposer names and profiles a NEW concept from a cluster of issues that
+// share an unexplained embedding residual — the engine behind residual-cluster
+// concept mining. *ai.Analyzer satisfies it. Optional: without one (and a tag
+// catalog for embeddings), residual mining is skipped entirely.
+type ConceptProposer interface {
+	ProposeConceptFromCluster(ctx context.Context, issueSummaries []string, frame ai.ConceptFrame) (name string, profile string, err error)
+}
+
 // TagCatalogReader exposes tag specificity so concept synthesis can skip generic
 // bucket tags. The issue store satisfies it. Optional: without it, concept
 // synthesis falls back to frequency only.
@@ -78,6 +88,7 @@ type Service struct {
 	proposals  issues.MemoryProposalStore
 	corpus     CorpusReader
 	profiler   ConceptProfiler
+	proposer   ConceptProposer
 	tagCatalog TagCatalogReader
 	tagSeeder  ConceptTagSeeder
 }
@@ -104,6 +115,14 @@ func (s *Service) UseSynthesis(proposals issues.MemoryProposalStore, corpus Corp
 // placeholder body the pure synthesizer drafts.
 func (s *Service) UseConceptProfiler(profiler ConceptProfiler) {
 	s.profiler = profiler
+}
+
+// UseConceptProposer enables residual-cluster concept mining: synthesis clusters
+// poorly-explained issues by their shared embedding residual and proposes a new,
+// project-consistent concept per cluster. Optional; also requires a tag catalog
+// (UseTagCatalog) for the tag embeddings the decomposition needs.
+func (s *Service) UseConceptProposer(proposer ConceptProposer) {
+	s.proposer = proposer
 }
 
 // UseTagCatalog enables the specificity gate for concept synthesis, so generic
@@ -420,11 +439,18 @@ func (s *Service) SynthesizeProposals(ctx context.Context) ([]domain.MemoryPropo
 	// choices. They draft independently and dedup on different keys (subject_tag
 	// vs anchor tags), so a tag can earn both. Concept synthesis is also gated by
 	// tag specificity so generic bucket tags don't become concepts.
-	drafts = append(drafts, SynthesizeConceptProposals(corpusIssues, pending, active, s.tagSpecificities(ctx))...)
+	conceptDrafts := SynthesizeConceptProposals(corpusIssues, pending, active, s.tagSpecificities(ctx))
 	// Replace each concept draft's deterministic placeholder body with an
 	// LLM-generated profile, when a profiler is configured. Best-effort: a
-	// generation failure leaves the placeholder in place.
-	s.fillConceptBodies(ctx, drafts, corpusIssues)
+	// generation failure leaves the placeholder in place. Runs before residual
+	// concepts are appended, so it never re-generates their cluster-mined bodies.
+	s.fillConceptBodies(ctx, conceptDrafts, corpusIssues)
+	drafts = append(drafts, conceptDrafts...)
+	// Residual-cluster concept mining: cluster poorly-explained issues by their
+	// shared embedding residual and propose a NEW, project-consistent concept per
+	// cluster. Off unless a proposer + tag catalog are configured. Deduped against
+	// the tag-based concept drafts above and existing concepts.
+	drafts = append(drafts, s.synthesizeResidualConcepts(ctx, corpusIssues, pending, active, drafts)...)
 	created := make([]domain.MemoryProposal, 0, len(drafts))
 	now := time.Now().UTC()
 	for _, draft := range drafts {
@@ -517,6 +543,104 @@ func (s *Service) fillConceptBodies(ctx context.Context, drafts []domain.MemoryP
 		})
 	}
 	_ = g.Wait()
+}
+
+// synthesizeResidualConcepts mines clusters of poorly-explained issues that
+// share an embedding residual and names a project-consistent concept per cluster
+// via the proposer. The pure clustering lives in SynthesizeResidualConceptProposals;
+// this method supplies the centered embeddings, names + profiles each cluster
+// (primed with the same project frame the tagger sees), and dedups the invented
+// subject tags against existing concepts and the concept drafts already produced
+// this run (priorDrafts). Returns named, deduped concept proposals; a per-cluster
+// naming failure skips that cluster, never the whole run. No-op unless both a
+// proposer and a tag catalog (for tag embeddings) are configured.
+func (s *Service) synthesizeResidualConcepts(
+	ctx context.Context,
+	corpusIssues []issues.Issue,
+	pending []domain.MemoryProposal,
+	active []domain.Memory,
+	priorDrafts []domain.MemoryProposal,
+) []domain.MemoryProposal {
+	if s.proposer == nil || s.tagCatalog == nil {
+		return nil
+	}
+	storeTags, err := s.tagCatalog.ListTags(ctx)
+	if err != nil {
+		s.logger.WarnContext(ctx, "load tags for residual concept mining failed; skipping", "error", err)
+		return nil
+	}
+
+	tagNames, tagEmbeddings := issuemath.TagDataFromIssues(corpusIssues, storeTags)
+	issueEmbeddings := make(map[string][]float64, len(corpusIssues))
+	for _, issue := range corpusIssues {
+		if len(issue.Embedding) > 0 {
+			issueEmbeddings[issue.ID] = issue.Embedding
+		}
+	}
+	// Center in the same space the factor model lives in, mirroring the debug R²
+	// path so mining and diagnostics agree on residuals.
+	issueEmbeddings, tagEmbeddings, _ = issuemath.CenterEmbeddings(issueEmbeddings, tagEmbeddings)
+
+	clusters := SynthesizeResidualConceptProposals(corpusIssues, tagNames, issueEmbeddings, tagEmbeddings, pending, active)
+	if len(clusters) == 0 {
+		return nil
+	}
+
+	frame := issueenrichment.ProjectConceptFrame(ctx, s.store, s.logger)
+	issueByID := make(map[string]issues.Issue, len(corpusIssues))
+	for _, issue := range corpusIssues {
+		issueByID[issue.ID] = issue
+	}
+
+	// Seed the dedup set with subject tags already taken by an existing concept or
+	// pending concept proposal, plus the tag-based concept drafts produced earlier
+	// this run, so no two proposals claim the same subject tag.
+	covered := coveredConceptTags(pending, active)
+	for _, draft := range priorDrafts {
+		if draft.Kind != domain.MemoryKindConcept {
+			continue
+		}
+		if tag := domain.NormalizeTagName(draft.SubjectTag); tag != "" {
+			covered[tag] = true
+		}
+	}
+
+	named := make([]domain.MemoryProposal, 0, len(clusters))
+	for i := range clusters {
+		summaries := make([]string, 0, len(clusters[i].SourceIssueIDs))
+		for _, id := range clusters[i].SourceIssueIDs {
+			if issue, ok := issueByID[id]; ok {
+				if raw := strings.TrimSpace(issue.Raw); raw != "" {
+					summaries = append(summaries, raw)
+				}
+			}
+			if len(summaries) >= maxSourceIssuesPerProposal {
+				break
+			}
+		}
+
+		name, profile, err := s.proposer.ProposeConceptFromCluster(ctx, summaries, frame)
+		if err != nil {
+			s.logger.WarnContext(ctx, "cluster concept naming failed; skipping cluster", "error", err)
+			continue
+		}
+		subjectTag := domain.NormalizeTagName(name)
+		if subjectTag == "" || covered[subjectTag] {
+			continue // unnamed, or a concept already owns this subject tag
+		}
+		covered[subjectTag] = true
+
+		clusters[i].SubjectTag = subjectTag
+		clusters[i].Title = subjectTag
+		clusters[i].AnchorTags = []string{subjectTag}
+		if profile = strings.TrimSpace(profile); profile != "" {
+			clusters[i].Body = profile
+		} else {
+			clusters[i].Body = fmt.Sprintf("Concept profile for %q (mined from a residual cluster).", subjectTag)
+		}
+		named = append(named, clusters[i])
+	}
+	return named
 }
 
 // ListProposals returns synthesis proposals, optionally filtered by status.
