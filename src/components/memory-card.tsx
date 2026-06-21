@@ -5,7 +5,7 @@ import { TagBadge } from "@/components/tag-badge";
 import { cn } from "@/lib/utils";
 import type { MemoryKind, MemoryRecord, MemoryStatus } from "@/lib/memories";
 
-const KIND_STYLES: Record<MemoryKind, string> = {
+export const KIND_STYLES: Record<MemoryKind, string> = {
   decision: "border-violet-500/40 bg-violet-500/10 text-violet-600 dark:text-violet-300",
   lesson: "border-amber-500/40 bg-amber-500/10 text-amber-600 dark:text-amber-300",
   constraint: "border-rose-500/40 bg-rose-500/10 text-rose-600 dark:text-rose-300",
