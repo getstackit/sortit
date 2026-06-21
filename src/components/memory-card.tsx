@@ -5,12 +5,15 @@ import { TagBadge } from "@/components/tag-badge";
 import { cn } from "@/lib/utils";
 import type { MemoryKind, MemoryRecord, MemoryStatus } from "@/lib/memories";
 
-const KIND_STYLES: Record<MemoryKind, string> = {
+export const KIND_STYLES: Record<MemoryKind, string> = {
   decision: "border-violet-500/40 bg-violet-500/10 text-violet-600 dark:text-violet-300",
   lesson: "border-amber-500/40 bg-amber-500/10 text-amber-600 dark:text-amber-300",
   constraint: "border-rose-500/40 bg-rose-500/10 text-rose-600 dark:text-rose-300",
   pattern: "border-emerald-500/40 bg-emerald-500/10 text-emerald-600 dark:text-emerald-300",
   reference: "border-sky-500/40 bg-sky-500/10 text-sky-600 dark:text-sky-300",
+  // A concept is the canonical profile of a noun — the node the rest of the
+  // corpus orbits — so it gets a stronger, distinct indigo fill.
+  concept: "border-indigo-500/60 bg-indigo-500/20 text-indigo-700 dark:text-indigo-200",
 };
 
 const STATUS_STYLES: Record<MemoryStatus, string> = {
@@ -41,6 +44,11 @@ export function MemoryCard({ memory }: { memory: MemoryRecord }) {
         >
           {memory.kind}
         </span>
+        {memory.kind === "concept" && memory.subjectTag && (
+          <span className="min-w-0 truncate rounded-full border border-indigo-500/40 px-2 py-0.5 text-[10px] font-medium text-indigo-600 dark:text-indigo-300">
+            #{memory.subjectTag}
+          </span>
+        )}
         {memory.source === "synthesized" && (
           <span className="rounded-full border border-border/70 px-2 py-0.5 text-[10px] font-medium text-muted-foreground">
             synthesized

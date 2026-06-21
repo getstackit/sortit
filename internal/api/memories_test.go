@@ -64,6 +64,56 @@ func TestMemorySearchEndpointRecallsMemories(t *testing.T) {
 	}
 }
 
+func TestMemoryConceptEndpoint(t *testing.T) {
+	store := newPostgresIssueStore(t, nil)
+	if err := store.UpsertMemory(context.Background(), domain.Memory{
+		ID:         "mem-concept-ridge",
+		Title:      "Ridge regression",
+		Body:       "Our search ranking uses diagonal-penalty ridge regression.",
+		Kind:       domain.MemoryKindConcept,
+		SubjectTag: "ridge regression",
+		Status:     domain.MemoryStatusActive,
+	}); err != nil {
+		t.Fatalf("seed concept: %v", err)
+	}
+
+	server := NewServer(ServerConfig{
+		APIPrefixes: []string{"/api"},
+		IssueStore:  store,
+	})
+
+	// Found: returns the concept bound to the subject tag.
+	req := httptest.NewRequest(http.MethodGet, "/api/ui/memories/concept?subjectTag=ridge%20regression", nil)
+	rec := httptest.NewRecorder()
+	server.Handler().ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("expected 200, got %d (%s)", rec.Code, rec.Body.String())
+	}
+	var memory domain.Memory
+	if err := json.NewDecoder(rec.Body).Decode(&memory); err != nil {
+		t.Fatalf("decode concept: %v", err)
+	}
+	if memory.ID != "mem-concept-ridge" || memory.SubjectTag != "ridge regression" {
+		t.Fatalf("unexpected concept: %#v", memory)
+	}
+
+	// Missing param: 400.
+	req = httptest.NewRequest(http.MethodGet, "/api/ui/memories/concept", nil)
+	rec = httptest.NewRecorder()
+	server.Handler().ServeHTTP(rec, req)
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("expected 400 for missing subjectTag, got %d (%s)", rec.Code, rec.Body.String())
+	}
+
+	// No concept for the tag: 404.
+	req = httptest.NewRequest(http.MethodGet, "/api/ui/memories/concept?subjectTag=nonexistent", nil)
+	rec = httptest.NewRecorder()
+	server.Handler().ServeHTTP(rec, req)
+	if rec.Code != http.StatusNotFound {
+		t.Fatalf("expected 404 for unknown tag, got %d (%s)", rec.Code, rec.Body.String())
+	}
+}
+
 func TestMemorySearchEndpointRequiresQuery(t *testing.T) {
 	store := newPostgresIssueStore(t, nil)
 	server := NewServer(ServerConfig{

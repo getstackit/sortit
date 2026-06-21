@@ -44,7 +44,13 @@ func NewAnalyzerFromEnv() (*Analyzer, error) {
 		if err != nil {
 			return nil, err
 		}
-		return NewAnalyzerWithCanonicalizer(tagger, embedder, canonicalizer), nil
+		profiler, err := NewOpenAIConceptProfiler(cfg)
+		if err != nil {
+			return nil, err
+		}
+		analyzer := NewAnalyzerWithCanonicalizer(tagger, embedder, canonicalizer)
+		analyzer.SetConceptProfiler(profiler)
+		return analyzer, nil
 	default:
 		return nil, fmt.Errorf("unsupported AI_PROVIDER %q", provider)
 	}

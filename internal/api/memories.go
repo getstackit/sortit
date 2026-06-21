@@ -45,7 +45,7 @@ func (s *Server) handleMemorySearch(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	opts := memories.RecallOptions{}
+	opts := memories.RecallOptions{IncludeSubjectConcepts: true}
 	if limit != nil {
 		opts.Limit = *limit
 	}
@@ -71,6 +71,7 @@ type createMemoryRequest struct {
 	Title          string   `json:"title,omitempty"`
 	Body           string   `json:"body"`
 	Kind           string   `json:"kind,omitempty"`
+	SubjectTag     string   `json:"subjectTag,omitempty"`
 	AnchorTags     []string `json:"anchorTags,omitempty"`
 	AnchorRegion   string   `json:"anchorRegion,omitempty"`
 	CreatedBy      string   `json:"createdBy,omitempty"`
@@ -98,6 +99,7 @@ func (s *Server) handleMemoryCreate(w http.ResponseWriter, r *http.Request) {
 		Title:          request.Title,
 		Body:           request.Body,
 		Kind:           domain.MemoryKind(strings.TrimSpace(request.Kind)),
+		SubjectTag:     strings.TrimSpace(request.SubjectTag),
 		AnchorTags:     request.AnchorTags,
 		AnchorRegion:   request.AnchorRegion,
 		CreatedBy:      actorForRequest(r, request.CreatedBy),
@@ -164,6 +166,32 @@ func (s *Server) handleGetMemory(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		writeInternalError(w, r, "failed to load memory", err)
+		return
+	}
+
+	writeJSON(w, http.StatusOK, memory)
+}
+
+// handleMemoryConcept returns the active concept memory bound to a subject tag,
+// powering the tag↔concept cross-link on tag detail pages.
+func (s *Server) handleMemoryConcept(w http.ResponseWriter, r *http.Request) {
+	if s.memories == nil {
+		writeError(w, http.StatusServiceUnavailable, "memories are not available")
+		return
+	}
+	subjectTag := strings.TrimSpace(r.URL.Query().Get("subjectTag"))
+	if subjectTag == "" {
+		writeError(w, http.StatusBadRequest, "subjectTag is required")
+		return
+	}
+
+	memory, err := s.memories.ConceptForTag(r.Context(), subjectTag)
+	if err != nil {
+		if errors.Is(err, issues.ErrMemoryNotFound) {
+			writeError(w, http.StatusNotFound, "no concept for tag")
+			return
+		}
+		writeInternalError(w, r, "failed to load concept", err)
 		return
 	}
 

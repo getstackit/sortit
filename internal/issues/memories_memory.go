@@ -2,6 +2,7 @@ package issues
 
 import (
 	"context"
+	"fmt"
 	"slices"
 	"sort"
 	"strings"
@@ -70,8 +71,35 @@ func (s *InMemoryStore) UpsertMemory(_ context.Context, memory domain.Memory) er
 	memory.Kind = domain.NormalizeMemoryKind(memory.Kind)
 	memory.Status = domain.NormalizeMemoryStatus(memory.Status)
 	memory.Source = domain.NormalizeMemorySource(memory.Source)
+	memory.SubjectTag = domain.NormalizeSubjectTag(memory.Kind, memory.SubjectTag)
+	// Mirror memories_concept_subject_tag_unique_idx: at most one active concept
+	// per subject tag.
+	if memory.Kind == domain.MemoryKindConcept && memory.Status == domain.MemoryStatusActive {
+		for id, other := range s.memories {
+			if id != memory.ID && other.Kind == domain.MemoryKindConcept &&
+				other.Status == domain.MemoryStatusActive && other.SubjectTag == memory.SubjectTag {
+				return fmt.Errorf("active concept already exists for subject tag %q", memory.SubjectTag)
+			}
+		}
+	}
 	s.memories[memory.ID] = domain.CloneMemory(memory)
 	return nil
+}
+
+func (s *InMemoryStore) GetActiveConceptBySubjectTag(_ context.Context, subjectTag string) (domain.Memory, error) {
+	subjectTag = domain.NormalizeTagName(subjectTag)
+	if subjectTag == "" {
+		return domain.Memory{}, ErrMemoryNotFound
+	}
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	for _, memory := range s.memories {
+		if memory.Kind == domain.MemoryKindConcept &&
+			memory.Status == domain.MemoryStatusActive && memory.SubjectTag == subjectTag {
+			return domain.CloneMemory(memory), nil
+		}
+	}
+	return domain.Memory{}, ErrMemoryNotFound
 }
 
 func (s *InMemoryStore) DeleteMemory(_ context.Context, id string) error {

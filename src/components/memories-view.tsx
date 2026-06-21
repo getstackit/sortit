@@ -15,7 +15,7 @@ import type {
   MemoryRecord,
 } from "@/lib/memories";
 
-const KINDS: MemoryKind[] = ["decision", "lesson", "constraint", "pattern", "reference"];
+const KINDS: MemoryKind[] = ["decision", "lesson", "constraint", "pattern", "reference", "concept"];
 
 export type MemoriesViewProps = {
   memories: MemoryRecord[];
@@ -41,17 +41,28 @@ export function MemoriesView({
   const [title, setTitle] = useState("");
   const [body, setBody] = useState("");
   const [kind, setKind] = useState<MemoryKind>("decision");
+  const [subjectTag, setSubjectTag] = useState("");
   const [anchorTags, setAnchorTags] = useState("");
   const [submitting, setSubmitting] = useState(false);
+  const [kindFilter, setKindFilter] = useState<MemoryKind | "all">("all");
+
+  // A concept is bound 1:1 to a tag, so it needs a subject tag before it can be
+  // created.
+  const conceptMissingSubject = kind === "concept" && !subjectTag.trim();
+  const canSubmit = !!body.trim() && !submitting && !conceptMissingSubject;
+
+  const visibleMemories =
+    kindFilter === "all" ? memories : memories.filter((m) => m.kind === kindFilter);
 
   async function submit() {
-    if (!body.trim() || submitting) return;
+    if (!canSubmit) return;
     setSubmitting(true);
     try {
       await onCreate({
         title: title.trim() || undefined,
         body: body.trim(),
         kind,
+        subjectTag: kind === "concept" ? subjectTag.trim() : undefined,
         anchorTags: anchorTags
           .split(",")
           .map((t) => t.trim())
@@ -59,6 +70,7 @@ export function MemoriesView({
       });
       setTitle("");
       setBody("");
+      setSubjectTag("");
       setAnchorTags("");
     } finally {
       setSubmitting(false);
@@ -106,16 +118,25 @@ export function MemoriesView({
                 </button>
               ))}
             </div>
-            <Input
-              placeholder="anchor tags (comma separated)"
-              value={anchorTags}
-              onChange={(e) => setAnchorTags(e.target.value)}
-              className="h-8 max-w-xs flex-1 text-xs"
-            />
+            {kind === "concept" ? (
+              <Input
+                placeholder="subject tag — the noun this concept profiles (required)"
+                value={subjectTag}
+                onChange={(e) => setSubjectTag(e.target.value)}
+                className="h-8 max-w-xs flex-1 text-xs"
+              />
+            ) : (
+              <Input
+                placeholder="anchor tags (comma separated)"
+                value={anchorTags}
+                onChange={(e) => setAnchorTags(e.target.value)}
+                className="h-8 max-w-xs flex-1 text-xs"
+              />
+            )}
             <Button
               size="sm"
               className="ml-auto"
-              disabled={!body.trim() || submitting}
+              disabled={!canSubmit}
               onClick={() => void submit()}
             >
               {submitting ? "Saving…" : "Create memory"}
@@ -195,19 +216,44 @@ export function MemoriesView({
 
       {/* Memories grid */}
       <section className="flex flex-col gap-3">
-        <h2 className="text-sm font-semibold">
-          Memories
-          <span className="ml-2 text-xs font-normal text-muted-foreground">{memories.length}</span>
-        </h2>
+        <div className="flex flex-wrap items-center gap-2">
+          <h2 className="text-sm font-semibold">
+            Memories
+            <span className="ml-2 text-xs font-normal text-muted-foreground">
+              {visibleMemories.length}
+            </span>
+          </h2>
+          <div className="ml-auto flex flex-wrap gap-1">
+            {(["all", ...KINDS] as const).map((k) => (
+              <button
+                key={k}
+                type="button"
+                onClick={() => setKindFilter(k)}
+                className={cn(
+                  "rounded-full border px-2.5 py-1 text-[11px] font-medium capitalize transition-colors",
+                  kindFilter === k
+                    ? "border-violet-500/50 bg-violet-500/10 text-violet-600 dark:text-violet-300"
+                    : "border-border/70 text-muted-foreground hover:bg-accent"
+                )}
+              >
+                {k}
+              </button>
+            ))}
+          </div>
+        </div>
         {loading ? (
           <p className="text-xs text-muted-foreground">Loading…</p>
         ) : memories.length === 0 ? (
           <p className="rounded-2xl border border-dashed border-border/70 px-4 py-10 text-center text-sm text-muted-foreground">
             No memories yet. Create one above, or synthesize from the corpus.
           </p>
+        ) : visibleMemories.length === 0 ? (
+          <p className="rounded-2xl border border-dashed border-border/70 px-4 py-10 text-center text-sm text-muted-foreground">
+            No {kindFilter} memories yet.
+          </p>
         ) : (
           <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
-            {memories.map((memory) => (
+            {visibleMemories.map((memory) => (
               <MemoryCard key={memory.id} memory={memory} />
             ))}
           </div>

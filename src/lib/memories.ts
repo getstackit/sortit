@@ -1,5 +1,5 @@
 import { uiAPIURL } from "@/lib/api";
-import { getJSON, postJSON } from "@/lib/http";
+import { getJSON, postJSON, HTTPError } from "@/lib/http";
 import type { IssueTagScore } from "@/lib/issues";
 
 export type MemoryKind =
@@ -7,7 +7,8 @@ export type MemoryKind =
   | "lesson"
   | "constraint"
   | "pattern"
-  | "reference";
+  | "reference"
+  | "concept";
 
 export type MemoryStatus = "active" | "superseded" | "archived";
 export type MemorySource = "manual" | "synthesized";
@@ -18,6 +19,7 @@ export type MemoryRecord = {
   title: string;
   body: string;
   kind: MemoryKind;
+  subjectTag?: string;
   anchorTags?: string[];
   anchorRegion?: string;
   tagScores?: IssueTagScore[];
@@ -40,6 +42,7 @@ export type MemoryProposalRecord = {
   title: string;
   body: string;
   kind: MemoryKind;
+  subjectTag?: string;
   anchorTags?: string[];
   anchorRegion?: string;
   sourceIssueIds?: string[];
@@ -55,6 +58,7 @@ export type CreateMemoryInput = {
   title?: string;
   body: string;
   kind?: MemoryKind;
+  subjectTag?: string;
   anchorTags?: string[];
   anchorRegion?: string;
 };
@@ -93,6 +97,25 @@ export async function fetchMemory(
     { cache: "no-store", signal }
   );
   return normalizeMemory(payload);
+}
+
+export async function fetchConceptForTag(
+  subjectTag: string,
+  signal?: AbortSignal
+): Promise<MemoryRecord | null> {
+  const params = new URLSearchParams();
+  params.set("subjectTag", subjectTag);
+  try {
+    const payload = await getJSON<MemoryRecord>(
+      uiAPIURL(`/memories/concept?${params.toString()}`),
+      { cache: "no-store", signal }
+    );
+    return normalizeMemory(payload);
+  } catch (err) {
+    // No concept bound to this tag yet — a 404 is the expected "empty" case.
+    if (err instanceof HTTPError && err.status === 404) return null;
+    throw err;
+  }
 }
 
 export async function createMemory(input: CreateMemoryInput): Promise<MemoryRecord> {

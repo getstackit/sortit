@@ -117,6 +117,12 @@ func (d *MemoryDetector) DetectQuietMemories(ctx context.Context, params QuietPa
 		if len(mem.Embedding) == 0 {
 			continue
 		}
+		if mem.Kind == domain.MemoryKindConcept {
+			// Concepts are durable nodes — the canonical profile of a noun — and
+			// stay valuable even when the corpus isn't actively churning around
+			// them. Don't propose archiving a concept for being quiet.
+			continue
+		}
 		ageDays := now.Sub(mem.CreatedAt).Hours() / 24
 		if ageDays < params.MinAgeDays {
 			continue
@@ -185,6 +191,13 @@ func (d *MemoryDetector) DetectRedundantMemories(ctx context.Context, params Red
 		if len(mem.Embedding) == 0 {
 			continue
 		}
+		if mem.Kind == domain.MemoryKindConcept {
+			// A concept profiles a distinct noun; the 1:1 subject-tag index already
+			// prevents same-tag concept duplicates. It shares a topic with decisions
+			// or lessons about the same area but plays an orthogonal role, so it is
+			// never a redundant-supersede candidate.
+			continue
+		}
 		neighbors, err := d.memories.SearchMemories(ctx, mem.Embedding, 6)
 		if err != nil {
 			return nil, err
@@ -193,6 +206,9 @@ func (d *MemoryDetector) DetectRedundantMemories(ctx context.Context, params Red
 			other := neighbor.Memory
 			if other.ID == mem.ID {
 				continue
+			}
+			if other.Kind == domain.MemoryKindConcept {
+				continue // concepts are not dedup targets (see above)
 			}
 			if _, ok := byID[other.ID]; !ok {
 				continue // not active
