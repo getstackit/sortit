@@ -51,6 +51,62 @@ func TestDetectQuietMemoriesSparesYoungMemories(t *testing.T) {
 	}
 }
 
+func TestDetectQuietMemoriesExemptsConcepts(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	now := time.Now().UTC()
+	old := now.AddDate(0, 0, -60)
+
+	// An old concept with an embedding nothing in the corpus is near — it would be
+	// flagged quiet if it weren't a concept.
+	store := issues.NewInMemoryStore([]issues.Issue{
+		{ID: "i1", Raw: "active area", Status: issues.StatusOpen, CreatedAt: now, Embedding: []float64{1, 0, 0}},
+	})
+	mustUpsertMemory(t, store, domain.Memory{
+		ID: "concept", Title: "ridge regression", Kind: domain.MemoryKindConcept,
+		SubjectTag: "ridge", Status: domain.MemoryStatusActive, CreatedAt: old,
+		Embedding: []float64{0, 0, 1}, Confidence: 1,
+	})
+
+	det := NewMemoryDetector(store, store, nil)
+	quiet, err := det.DetectQuietMemories(ctx, QuietParams{})
+	if err != nil {
+		t.Fatalf("detect: %v", err)
+	}
+	if len(quiet) != 0 {
+		t.Fatalf("expected the concept exempt from quiet-archival, got %+v", quiet)
+	}
+}
+
+func TestDetectRedundantMemoriesExemptsConcepts(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	base := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
+
+	// A concept and a near-duplicate decision about the same subject. They are
+	// orthogonal roles, so no redundant pair should be surfaced.
+	store := issues.NewInMemoryStore(nil)
+	mustUpsertMemory(t, store, domain.Memory{
+		ID: "concept-ridge", Title: "ridge regression", Kind: domain.MemoryKindConcept,
+		SubjectTag: "ridge", Status: domain.MemoryStatusActive, CreatedAt: base,
+		Embedding: []float64{1, 0, 0}, Confidence: 0.6,
+	})
+	mustUpsertMemory(t, store, domain.Memory{
+		ID: "decision-ridge", Title: "use ridge as default", Kind: domain.MemoryKindDecision,
+		Status: domain.MemoryStatusActive, CreatedAt: base.AddDate(0, 0, 1),
+		Embedding: []float64{0.99, 0.01, 0}, Confidence: 1,
+	})
+
+	det := NewMemoryDetector(store, store, nil)
+	pairs, err := det.DetectRedundantMemories(ctx, RedundantParams{MinSimilarity: 0.9})
+	if err != nil {
+		t.Fatalf("detect: %v", err)
+	}
+	if len(pairs) != 0 {
+		t.Fatalf("expected no redundant pair involving a concept, got %+v", pairs)
+	}
+}
+
 func TestDetectRedundantMemoriesPairsAndPicksKeeper(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()

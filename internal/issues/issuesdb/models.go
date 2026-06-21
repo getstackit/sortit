@@ -255,6 +255,7 @@ type Memory struct {
 	UpdatedAtUnixNano        int64
 	LastReinforcedAtUnixNano int64
 	ReinforcementCount       int64
+	SubjectTag               string
 }
 
 type MemoryProposal struct {
@@ -271,6 +272,7 @@ type MemoryProposal struct {
 	AcceptedMemoryID   string
 	CreatedAtUnixNano  int64
 	UpdatedAtUnixNano  int64
+	SubjectTag         string
 }
 
 type Session struct {

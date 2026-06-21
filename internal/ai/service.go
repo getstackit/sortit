@@ -18,6 +18,7 @@ type Analyzer struct {
 	tagger        Tagger
 	embedder      Embedder
 	canonicalizer Canonicalizer
+	profiler      ConceptProfiler
 }
 
 func NewAnalyzer(tagger Tagger, embedder Embedder) *Analyzer {
@@ -29,6 +30,15 @@ func NewAnalyzerWithCanonicalizer(tagger Tagger, embedder Embedder, canonicalize
 		tagger:        tagger,
 		embedder:      embedder,
 		canonicalizer: canonicalizer,
+		profiler:      NewStubConceptProfiler(),
+	}
+}
+
+// SetConceptProfiler swaps in a concept profiler (e.g. the OpenAI-backed one).
+// Defaults to a deterministic stub, so callers that don't set it still work.
+func (a *Analyzer) SetConceptProfiler(profiler ConceptProfiler) {
+	if a != nil && profiler != nil {
+		a.profiler = profiler
 	}
 }
 
@@ -100,6 +110,13 @@ func (a *Analyzer) CanonicalizeDiscussion(ctx context.Context, posts []string) (
 		return "", ErrNotConfigured
 	}
 	return a.canonicalizer.CanonicalizeDiscussion(ctx, posts)
+}
+
+func (a *Analyzer) GenerateConceptProfile(ctx context.Context, tag string, issueSummaries []string) (string, error) {
+	if a == nil || a.profiler == nil {
+		return "", ErrNotConfigured
+	}
+	return a.profiler.GenerateConceptProfile(ctx, tag, issueSummaries)
 }
 
 func normalizeScores(scores []TagScore, taxonomy []Tag) []TagScore {

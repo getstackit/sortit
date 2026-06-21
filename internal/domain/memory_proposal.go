@@ -16,11 +16,14 @@ const (
 // becoming a permanent Memory. The hybrid creation model keeps quality high:
 // the system proposes, a human confirms.
 type MemoryProposal struct {
-	ID             string               `json:"id"`
-	Title          string               `json:"title"`
-	Body           string               `json:"body"`
-	Kind           MemoryKind           `json:"kind"`
-	AnchorTags     []string             `json:"anchorTags,omitempty"`
+	ID         string     `json:"id"`
+	Title      string     `json:"title"`
+	Body       string     `json:"body"`
+	Kind       MemoryKind `json:"kind"`
+	AnchorTags []string   `json:"anchorTags,omitempty"`
+	// SubjectTag mirrors Memory.SubjectTag: the single tag a concept proposal
+	// will profile once accepted. Empty for every other kind.
+	SubjectTag     string               `json:"subjectTag,omitempty"`
 	AnchorRegion   string               `json:"anchorRegion,omitempty"`
 	SourceIssueIDs []string             `json:"sourceIssueIds,omitempty"`
 	Confidence     float64              `json:"confidence"`

@@ -5,7 +5,9 @@ import (
 	"errors"
 	"testing"
 
+	"sortit/internal/ai"
 	"sortit/internal/domain"
+	issueenrichment "sortit/internal/issueenrichment"
 	"sortit/internal/issues"
 )
 
@@ -46,6 +48,80 @@ func TestRecallMemoriesRanksBySimilarity(t *testing.T) {
 	// The query text is what gets embedded.
 	if enricher.gotEmbed != "how does search rank?" {
 		t.Fatalf("expected query embedded, got %q", enricher.gotEmbed)
+	}
+}
+
+func TestRecallSurfacesSubjectConcepts(t *testing.T) {
+	store := issues.NewInMemoryStore(nil)
+	ctx := context.Background()
+
+	// A high-cosine non-concept and a concept whose embedding is orthogonal to the
+	// query (so cosine alone would never surface it).
+	seedMemory(t, store, "mem-aligned", "aligned decision", []float64{1, 0})
+	if err := store.UpsertMemory(ctx, domain.Memory{
+		ID:         "mem-concept-ridge",
+		Title:      "Ridge regression",
+		Body:       "Our ranking uses diagonal-penalty ridge regression.",
+		Kind:       domain.MemoryKindConcept,
+		SubjectTag: "ridge",
+		Status:     domain.MemoryStatusActive,
+		Embedding:  []float64{0, 1},
+	}); err != nil {
+		t.Fatalf("seed concept: %v", err)
+	}
+
+	// The query analyzes to a dominant "ridge" tag and embeds parallel to the
+	// aligned memory.
+	enricher := &stubEnricher{
+		embed: []float64{1, 0},
+		result: issueenrichment.AnalyzeTextResult{
+			Analyzed:  ai.AnalyzedIssue{Embedding: ai.EmbeddingResult{Vector: []float32{1, 0}}},
+			TagScores: []issues.TagRelevance{{Tag: "ridge", Relevance: 0.9}},
+		},
+	}
+	svc := NewService(store, enricher, nil)
+
+	// Without the option, the orthogonal concept is not surfaced.
+	plain, err := svc.RecallMemories(ctx, "how does ranking work?", RecallOptions{Limit: 1})
+	if err != nil {
+		t.Fatalf("plain recall: %v", err)
+	}
+	if len(plain) != 1 || plain[0].ID != "mem-aligned" {
+		t.Fatalf("expected only the aligned memory, got %+v", plain)
+	}
+
+	// With the option, the dominant-tag concept leads even though its cosine is low.
+	withConcepts, err := svc.RecallMemories(ctx, "how does ranking work?", RecallOptions{
+		Limit:                  2,
+		IncludeSubjectConcepts: true,
+	})
+	if err != nil {
+		t.Fatalf("concept recall: %v", err)
+	}
+	if len(withConcepts) != 2 {
+		t.Fatalf("expected 2 results, got %+v", withConcepts)
+	}
+	if withConcepts[0].ID != "mem-concept-ridge" {
+		t.Fatalf("expected the ridge concept to lead, got %s", withConcepts[0].ID)
+	}
+
+	// The concept is force-surfaced past MinSimilarity (tag match justifies it).
+	floored, err := svc.RecallMemories(ctx, "how does ranking work?", RecallOptions{
+		Limit:                  5,
+		MinSimilarity:          0.5,
+		IncludeSubjectConcepts: true,
+	})
+	if err != nil {
+		t.Fatalf("floored recall: %v", err)
+	}
+	foundConcept := false
+	for _, r := range floored {
+		if r.ID == "mem-concept-ridge" {
+			foundConcept = true
+		}
+	}
+	if !foundConcept {
+		t.Fatalf("expected the ridge concept surfaced despite MinSimilarity, got %+v", floored)
 	}
 }
 

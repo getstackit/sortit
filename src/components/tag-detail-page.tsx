@@ -2,11 +2,12 @@
 
 import Link from "next/link";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
-import { useCallback, useEffect, useMemo } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import {
   AlertTriangleIcon,
   ArrowDownIcon,
   ArrowUpIcon,
+  BookMarkedIcon,
   GitMergeIcon,
   HashIcon,
   Link2Icon,
@@ -26,6 +27,7 @@ import { useTags } from "@/hooks/use-tags";
 import { rememberRecentTag } from "@/hooks/use-recent-history";
 
 import type { IssueRecord } from "@/lib/issues";
+import { fetchConceptForTag, type MemoryRecord } from "@/lib/memories";
 import { DEFAULT_REGION_WINDOW, type RegionWindow } from "@/lib/regions";
 import { Badge } from "@/components/ui/badge";
 import { tagHref } from "@/lib/tags";
@@ -208,6 +210,34 @@ export function TagDetailPage({ tagName }: { tagName: string }) {
 
     rememberRecentTag(tag);
   }, [tag]);
+
+  // The concept memory bound 1:1 to this tag (the tag's rich, recallable
+  // profile), if one exists. Keyed by tag so a stale result from a previous tag
+  // never renders while a new one loads.
+  const [conceptState, setConceptState] = useState<{
+    tag: string;
+    memory: MemoryRecord | null;
+  } | null>(null);
+  useEffect(() => {
+    if (!normalizedTag) {
+      return;
+    }
+    const controller = new AbortController();
+    let active = true;
+    fetchConceptForTag(normalizedTag, controller.signal)
+      .then((found) => {
+        if (active) setConceptState({ tag: normalizedTag, memory: found });
+      })
+      .catch(() => {
+        // Ignore transient failures; the section just stays in its empty state.
+      });
+    return () => {
+      active = false;
+      controller.abort();
+    };
+  }, [normalizedTag]);
+  const concept =
+    conceptState?.tag === normalizedTag ? conceptState.memory : null;
 
   return (
     <AppShell sidebar={<AppSidebar showThingsSection={false} />}>
@@ -564,6 +594,44 @@ export function TagDetailPage({ tagName }: { tagName: string }) {
                   </div>
                 </div>
               </div>
+            </section>
+
+            <section id="concept" className="app-surface rounded-[1.75rem] p-6">
+              <div className="flex items-center gap-2">
+                <BookMarkedIcon className="size-4 text-indigo-500" />
+                <h3 className="text-sm font-semibold">Concept</h3>
+                <p className="text-xs text-muted-foreground">
+                  The canonical, recallable profile of this tag.
+                </p>
+              </div>
+
+              {concept ? (
+                <Link
+                  href={`/memories/${encodeURIComponent(concept.id)}`}
+                  className="mt-4 block rounded-[1.25rem] border border-indigo-500/40 bg-indigo-500/[0.06] px-4 py-3 transition-colors hover:bg-indigo-500/10"
+                >
+                  <p className="text-sm font-semibold text-foreground">
+                    {concept.title || tag.name}
+                  </p>
+                  <p className="mt-1 line-clamp-3 text-sm leading-relaxed text-muted-foreground">
+                    {concept.body}
+                  </p>
+                </Link>
+              ) : (
+                <div className="mt-4 rounded-[1.25rem] border border-dashed border-border/70 px-4 py-3">
+                  <p className="text-sm text-muted-foreground">
+                    No concept profiles{" "}
+                    <span className="font-medium text-foreground">{tag.name}</span> yet.
+                  </p>
+                  <Link
+                    href="/memories"
+                    className="mt-2 inline-flex items-center gap-1.5 text-xs font-medium text-indigo-600 hover:underline dark:text-indigo-300"
+                  >
+                    <BookMarkedIcon className="size-3.5" />
+                    Write a concept for this tag
+                  </Link>
+                </div>
+              )}
             </section>
 
             <section id="issues" className="app-surface rounded-[1.75rem] p-6">

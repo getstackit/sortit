@@ -69,7 +69,27 @@ The verifier is deterministic and runs after AI tag scoring. It uses:
 - grounded source-text evidence returned by the analyzer
 - nearby unassigned candidate tags that better explain the issue
 
-The verifier can keep a tag, down-rank it, or flag it for debug/review metadata. Grounded evidence can rescue a tag with weak embedding alignment.
+The verifier can keep a tag, down-rank it, or flag it for debug/review metadata. Grounded evidence can rescue a tag with weak embedding alignment — but **not** a tag that is anti-aligned in centered space, which is suppressed regardless (see [Tag Taxonomy Health](#tag-taxonomy-health)).
+
+## Tag Taxonomy Health
+
+A tag taxonomy that skews generic is the single biggest threat to scoring quality. Left to bootstrap on its own, issue tagging drifts toward broad, cross-project tags (`backend`, `improvement`, `ui`) and away from the project-specific nouns that actually distinguish one issue from another. The symptom is a low **aggregate R²** (`sortit debug factor-weights`) — the fraction of corpus embedding variance the tag structure explains. An R² near 0.04 means the tags carry almost no signal, and the factor model responds by putting nearly all of its weight on the raw-text residual.
+
+### Why generic tags win by default
+
+Candidate selection (above) is retrieval-first: it scores the issue against tags already in the catalog plus a generic anchor set. A project-specific tag can only become a candidate once it already exists with an embedding — so new specific tags never bootstrap, the analyzer expresses every issue with the generic tags it can see, and the equilibrium locks in. See [onboarding.md](./onboarding.md) for the cold-start version of this problem and how to break it.
+
+### Three levers that fix it
+
+1. **Seed the vocabulary with concepts.** A [concept memory](./data-model.md#memory-and-curation-state) is the canonical profile of a noun, bound 1:1 to a tag. Authoring a concept registers its subject tag in the catalog (embedded from the concept body), so the curated noun becomes a retrieval candidate. Concepts are how a project teaches Sortit its own language.
+
+2. **Gate concept synthesis by specificity.** Synthesized concept proposals are only drafted for tags above a specificity floor, so generic bucket tags — frequent but not meaningful nouns — never become concepts.
+
+3. **Suppress anti-aligned tags, in centered space.** The verifier negates a tag whose embedding points *away* from the issue. The crucial subtlety: this is measured in the **centered** embedding space (the corpus-mean centering transform; see [whitepaper.md](./whitepaper.md)), not raw cosine. Raw embeddings are anisotropic — every tag-issue cosine is positive — so a raw-space check never fires. Only after subtracting the corpus mean does the drag appear as a negative cosine (e.g. `backend` at −0.10 on a ridge-regression issue). Anti-alignment overrides grounded evidence, because the generic-mention case (the word appears but the meaning points elsewhere) is exactly the target: in practice ~100% of generic-tag assignments carry lexical evidence.
+
+### Measuring
+
+`sortit debug factor-weights` gives the aggregate picture; `sortit debug issue-r2 <id>` shows a single issue's residual and the catalog tags nearest to it — the nouns it is about but isn't tagged with. Tagging quality (do issues get the right specific tags?) is the leading indicator and responds immediately to seeding; aggregate R² is the lagging, breadth-bound indicator that climbs as coverage and cleanliness improve. A sparse tag set has a real ceiling on how much of a high-dimensional text embedding it can reconstruct, so R² is best read as a relative health signal, not an absolute target.
 
 ## Search Ranking
 

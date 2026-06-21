@@ -199,7 +199,7 @@ func sortitInstructionBlock(format agentSkillFormat, version string) string {
 		"- Recall relevant memories before deciding — prior decisions, constraints, and patterns should guide the work, not be rediscovered or contradicted.\n" +
 		"- Record progress on the relevant issue when meaningful work is done.\n" +
 		"- Create or refine follow-on issues instead of leaving deferred work only in chat.\n" +
-		"- Create a memory for durable decisions, lessons, constraints, patterns, or references.\n" +
+		"- Create a memory for durable decisions, lessons, constraints, patterns, references, or concepts (the canonical profile of a noun).\n" +
 		"- Use the Sortit wrap-up checklist before final responses for non-trivial work.\n" +
 		"- Leave uncertain corpus-wide cleanup as proposals for human review.\n\n" +
 		"Installed by `sortit agent install --instructions` (" + version + ").\n" +

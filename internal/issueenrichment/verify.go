@@ -12,6 +12,7 @@ import (
 
 	"sortit/internal/ai"
 	"sortit/internal/domain"
+	"sortit/internal/issuemath"
 	"sortit/internal/issues"
 	"sortit/internal/tags"
 	"sortit/internal/vectors"
@@ -33,6 +34,14 @@ const (
 	// negation keeps the effective render-time score (Relevance - Negation)
 	// equivalent while preserving the positive AI signal.
 	verifierDominanceNegation = 0.25
+	// verifierAntiAlignment is the centered cosine below which an assigned tag's
+	// embedding points away from the issue — a near-certain misclassification (the
+	// generic-tag drag that flattens R²). A tag below this is suppressed even with
+	// lexical evidence, since the generic-mention case is exactly the target.
+	verifierAntiAlignment = -0.05
+	// verifierAntiAlignmentNegation strongly suppresses an anti-aligned tag. Kept
+	// below negationConfidenceCap so it is emitted as-is.
+	verifierAntiAlignmentNegation = 0.5
 	// analyzerNegationMinConfidence is the floor below which an analyzer-emitted
 	// negation is discarded even if it has resolvable evidence. Negative signal
 	// requires both textual grounding and meaningful confidence.
@@ -66,6 +75,19 @@ func attenuateGenericScores(scores []issues.TagRelevance, tagSpecificity map[str
 		}
 	}
 	return out
+}
+
+// centeredAlignment returns the cosine between the issue and tag embeddings in
+// the centered space the factor/ridge model uses — where anti-aligned (negative)
+// tags actually appear. With empty means it falls back to raw cosine (unit-
+// normalized), which anisotropy keeps positive, so suppression won't fire.
+func centeredAlignment(issueEmbedding, tagEmbedding []float64, means issuemath.CorpusMeans) (float64, bool) {
+	if len(issueEmbedding) == 0 || len(tagEmbedding) == 0 {
+		return 0, false
+	}
+	centeredIssue := issuemath.CenterVector(issueEmbedding, means.Issue)
+	centeredTag := issuemath.CenterVector(tagEmbedding, means.Tag)
+	return vectors.CosineSimilarity(centeredIssue, centeredTag), true
 }
 
 func tagSpecificityValue(name string, specificity map[string]*float64) float64 {
@@ -116,6 +138,18 @@ func (s *IssueEnricher) decorateAndVerifyTagScores(
 			continue
 		}
 		candidateByName[name] = candidate
+	}
+
+	// Corpus means let the verifier measure alignment in the centered space the
+	// factor model uses, where anti-aligned (negative) tags actually appear. Raw
+	// alignment stays positive under anisotropy, so suppression needs centering.
+	var corpusMeans issuemath.CorpusMeans
+	if s.centering != nil {
+		if means, err := s.centering.Current(ctx); err == nil {
+			corpusMeans = means
+		} else {
+			s.logger.WarnContext(ctx, "centering unavailable for alignment suppression; tag drag won't be caught", "error", err)
+		}
 	}
 
 	storedTags, err := s.catalog.StoredTags(ctx)
@@ -199,8 +233,24 @@ func (s *IssueEnricher) decorateAndVerifyTagScores(
 			out[i].DominatedBy = dominating.Name
 			out[i].DominanceGap = cloneMetricPointer(gap)
 		}
+		centeredAlign, hasCenteredAlign := centeredAlignment(issueEmbedding, tagEmbeddingByName[name], corpusMeans)
 
 		switch {
+		case hasCenteredAlign && centeredAlign < verifierAntiAlignment:
+			// In the centered space the factor model uses, this tag's embedding
+			// points away from the issue (negative cosine): the tag is mentioned
+			// but the issue is not distinctively about it — the generic-tag drag
+			// that flattens R² (e.g. "backend" on a ridge-regression issue).
+			// Crucially this overrides grounded evidence: a generic word appears
+			// in the text (so it has evidence) yet the meaning points elsewhere,
+			// which is precisely the case to suppress. Suppress via a strong
+			// negation (render-time score is Relevance - Negation), mirroring the
+			// dominance pass, rather than zeroing Relevance so the AI signal is kept.
+			out[i].VerificationVerdict = domain.TagVerificationVerdictDownRank
+			out[i].VerificationReason = fmt.Sprintf("tag embedding is anti-aligned (%.3f, centered) with the issue", centeredAlign)
+			out[i].Negation = cloneMetricPointer(verifierAntiAlignmentNegation)
+			out[i].NegationProvenance = domain.NegationProvenanceVerifier
+			out[i].NegationReason = out[i].VerificationReason
 		case hasGroundedEvidence && out[i].Alignment != nil && *out[i].Alignment < verifierFlaggedAlignment && out[i].Relevance >= 0.4:
 			out[i].VerificationVerdict = domain.TagVerificationVerdictKeep
 			out[i].VerificationReason = "weak alignment rescued by grounded source-text evidence"

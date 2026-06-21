@@ -142,7 +142,7 @@ For agents, `next` is the bridge between the corpus and the current work loop. I
 
 ### 6. Remember what should outlive the issue
 
-Issues track work. **Memories** track durable knowledge: decisions, lessons, constraints, patterns, and references that should remain useful after the issue closes. Memories live in the same tag and embedding space as issues, show up as map landmarks, and are retrieved during enrichment as prior-decision context.
+Issues track work. **Memories** track durable knowledge: decisions, lessons, constraints, patterns, references, and concepts that should remain useful after the issue closes. The first five are statements; a **concept** is different — it is the canonical profile of a single noun (a subsystem, component, or domain concept), bound 1:1 to the tag it profiles, so the rest of the corpus has a stable node to orbit. Memories live in the same tag and embedding space as issues, show up as map landmarks, and are retrieved during enrichment as prior-decision context.
 
 This retrieval is where memory compounds hardest: a decision recorded once is pulled back in as context on *every* future related issue — one deposit, many payouts. The more faithfully you anchor it (`--source-issue` for provenance, `--anchor-tag` for placement), the more often and more precisely it pays out.
 
@@ -193,7 +193,7 @@ Beyond the single-issue loop, Sortit treats your issues as a body of knowledge:
   sortit tags list
   ```
 
-- **Tag quality / diagnosis** — because tags drive search, the map, and people profiles, the taxonomy is worth maintaining. Diagnose surfaces where the factor model is weak (low R²) and which issues need re-enrichment; tags can also be **merged** (collapse synonyms) or **dismissed** (suppress noise). Healthy tags make every other surface sharper.
+- **Tag quality / diagnosis** — because tags drive search, the map, and people profiles, the taxonomy is worth maintaining. Diagnose surfaces where the factor model is weak (low R²) and which issues need re-enrichment; tags can also be **merged** (collapse synonyms) or **dismissed** (suppress noise). The deepest lever is seeding project-specific **concepts**, which grow the tagging vocabulary so issues stop falling back to generic tags — see [Tag Taxonomy Health](./scoring-search-map.md#tag-taxonomy-health) and [onboarding.md](./onboarding.md). Healthy tags make every other surface sharper.
 
 - **Memories** — permanent knowledge artifacts share the same retrieval space as issues. Use memory detail pages, memory lists, and map landmarks to inspect decisions, constraints, patterns, references, and lessons that should influence future work.
 

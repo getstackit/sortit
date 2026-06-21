@@ -3,6 +3,7 @@ package memories
 import (
 	"context"
 	"errors"
+	"strings"
 	"testing"
 
 	"sortit/internal/ai"
@@ -133,6 +134,147 @@ func TestCreateMemoryNilEnricher(t *testing.T) {
 	}
 }
 
+func TestCreateConceptBindsToSubjectTag(t *testing.T) {
+	store := issues.NewInMemoryStore(nil)
+	svc := NewService(store, nil, nil)
+	ctx := context.Background()
+
+	// A concept requires a subject tag.
+	if _, err := svc.CreateMemory(ctx, CreateMemoryInput{
+		Body: "a concept without a subject",
+		Kind: domain.MemoryKindConcept,
+	}); err == nil {
+		t.Fatal("expected error creating a concept without a subject tag")
+	}
+
+	concept, err := svc.CreateMemory(ctx, CreateMemoryInput{
+		Title:      "Ridge regression",
+		Body:       "Our search ranking uses diagonal-penalty ridge regression.",
+		Kind:       domain.MemoryKindConcept,
+		SubjectTag: "Ridge Regression",
+	})
+	if err != nil {
+		t.Fatalf("create concept: %v", err)
+	}
+	if concept.SubjectTag != "ridge regression" {
+		t.Fatalf("expected normalized subject tag, got %q", concept.SubjectTag)
+	}
+	if len(concept.AnchorTags) == 0 || concept.AnchorTags[0] != "ridge regression" {
+		t.Fatalf("expected the subject tag to lead the anchor set, got %v", concept.AnchorTags)
+	}
+
+	// A second concept for the same tag supersedes the first (1:1 binding).
+	replacement, err := svc.CreateMemory(ctx, CreateMemoryInput{
+		Body:       "Updated ridge definition.",
+		Kind:       domain.MemoryKindConcept,
+		SubjectTag: "ridge regression",
+	})
+	if err != nil {
+		t.Fatalf("create replacement concept: %v", err)
+	}
+	prior, err := svc.GetMemory(ctx, concept.ID)
+	if err != nil {
+		t.Fatalf("get prior concept: %v", err)
+	}
+	if prior.Status != domain.MemoryStatusSuperseded || prior.SupersededBy != replacement.ID {
+		t.Fatalf("expected prior concept superseded by replacement, got status=%s supersededBy=%q", prior.Status, prior.SupersededBy)
+	}
+	if replacement.Status != domain.MemoryStatusActive {
+		t.Fatalf("expected replacement active, got %s", replacement.Status)
+	}
+}
+
+type fakeTagSeeder struct {
+	seeded []issues.Tag
+}
+
+func (f *fakeTagSeeder) EnsureStoredTags(_ context.Context, tags []issues.Tag) error {
+	f.seeded = append(f.seeded, tags...)
+	return nil
+}
+
+func TestCreateConceptSeedsSubjectTag(t *testing.T) {
+	store := issues.NewInMemoryStore(nil)
+	svc := NewService(store, nil, nil)
+	seeder := &fakeTagSeeder{}
+	svc.UseConceptTagSeeder(seeder)
+	ctx := context.Background()
+
+	// A concept seeds its subject tag into the catalog.
+	if _, err := svc.CreateMemory(ctx, CreateMemoryInput{
+		Title:      "Ridge regression",
+		Body:       "Our ranking uses diagonal-penalty ridge regression.",
+		Kind:       domain.MemoryKindConcept,
+		SubjectTag: "ridge-regression",
+	}); err != nil {
+		t.Fatalf("create concept: %v", err)
+	}
+	if len(seeder.seeded) != 1 || seeder.seeded[0].Name != "ridge-regression" {
+		t.Fatalf("expected the subject tag seeded, got %+v", seeder.seeded)
+	}
+	if seeder.seeded[0].Description == "" {
+		t.Fatal("expected a description so the seeded tag embeds meaningfully")
+	}
+
+	// A non-concept memory seeds nothing.
+	if _, err := svc.CreateMemory(ctx, CreateMemoryInput{
+		Body: "a plain decision",
+		Kind: domain.MemoryKindDecision,
+	}); err != nil {
+		t.Fatalf("create decision: %v", err)
+	}
+	if len(seeder.seeded) != 1 {
+		t.Fatalf("expected no new seed for a non-concept, got %+v", seeder.seeded)
+	}
+}
+
+func TestReinforceConceptsForTags(t *testing.T) {
+	store := issues.NewInMemoryStore(nil)
+	svc := NewService(store, nil, nil)
+	ctx := context.Background()
+
+	concept, err := svc.CreateMemory(ctx, CreateMemoryInput{
+		Body:       "Ridge profile.",
+		Kind:       domain.MemoryKindConcept,
+		SubjectTag: "ridge",
+	})
+	if err != nil {
+		t.Fatalf("create concept: %v", err)
+	}
+
+	// Dedupes "ridge" and skips the tag with no concept → exactly one reinforced.
+	n, err := svc.ReinforceConceptsForTags(ctx, []string{"ridge", "Ridge", "no-concept-tag"})
+	if err != nil {
+		t.Fatalf("reinforce: %v", err)
+	}
+	if n != 1 {
+		t.Fatalf("expected 1 concept reinforced, got %d", n)
+	}
+	got, err := svc.GetMemory(ctx, concept.ID)
+	if err != nil {
+		t.Fatalf("get concept: %v", err)
+	}
+	if got.ReinforcementCount != 1 || got.LastReinforcedAt == nil {
+		t.Fatalf("expected reinforcement count 1 with timestamp, got count=%d lastReinforced=%v", got.ReinforcementCount, got.LastReinforcedAt)
+	}
+
+	// Reinforcement accumulates across enrichments.
+	if _, err := svc.ReinforceConceptsForTags(ctx, []string{"ridge"}); err != nil {
+		t.Fatalf("reinforce again: %v", err)
+	}
+	got, err = svc.GetMemory(ctx, concept.ID)
+	if err != nil {
+		t.Fatalf("get concept after second reinforce: %v", err)
+	}
+	if got.ReinforcementCount != 2 {
+		t.Fatalf("expected reinforcement count 2, got %d", got.ReinforcementCount)
+	}
+	// The concept stays active and singular for its tag (unique-index invariant holds).
+	if got.Status != domain.MemoryStatusActive {
+		t.Fatalf("expected concept to remain active, got %s", got.Status)
+	}
+}
+
 func TestSupersedeMemory(t *testing.T) {
 	store := issues.NewInMemoryStore(nil)
 	svc := NewService(store, nil, nil)
@@ -165,6 +307,72 @@ func TestSupersedeMemory(t *testing.T) {
 	if _, err := svc.SupersedeMemory(ctx, "missing", ""); !errors.Is(err, issues.ErrMemoryNotFound) {
 		t.Fatalf("expected ErrMemoryNotFound, got %v", err)
 	}
+}
+
+type fakeConceptProfiler struct {
+	gotTag       string
+	gotSummaries []string
+}
+
+func (f *fakeConceptProfiler) GenerateConceptProfile(_ context.Context, tag string, summaries []string) (string, error) {
+	f.gotTag = tag
+	f.gotSummaries = summaries
+	return "GENERATED PROFILE for " + tag, nil
+}
+
+func TestSynthesizeConceptProposalUsesProfiler(t *testing.T) {
+	corpus := make([]issues.Issue, 0, 6)
+	for i := range 6 {
+		corpus = append(corpus, taggedIssue("ridge"+string(rune('0'+i)), "ridge"))
+	}
+	ctx := context.Background()
+
+	// Without a profiler, the concept proposal keeps the deterministic placeholder.
+	plainStore := issues.NewInMemoryStore(corpus)
+	plain := NewService(plainStore, nil, nil)
+	plain.UseSynthesis(plainStore, plainStore)
+	plainCreated, err := plain.SynthesizeProposals(ctx)
+	if err != nil {
+		t.Fatalf("synthesize (no profiler): %v", err)
+	}
+	plainConcept := findConceptProposal(t, plainCreated)
+	if !strings.HasPrefix(plainConcept.Body, "Concept profile for") {
+		t.Fatalf("expected deterministic placeholder body, got %q", plainConcept.Body)
+	}
+
+	// With a profiler, the concept proposal body is LLM-generated from the tag and
+	// its issue summaries.
+	store := issues.NewInMemoryStore(corpus)
+	svc := NewService(store, nil, nil)
+	svc.UseSynthesis(store, store)
+	profiler := &fakeConceptProfiler{}
+	svc.UseConceptProfiler(profiler)
+
+	created, err := svc.SynthesizeProposals(ctx)
+	if err != nil {
+		t.Fatalf("synthesize (with profiler): %v", err)
+	}
+	concept := findConceptProposal(t, created)
+	if concept.Body != "GENERATED PROFILE for ridge" {
+		t.Fatalf("expected generated body, got %q", concept.Body)
+	}
+	if profiler.gotTag != "ridge" {
+		t.Fatalf("expected profiler called with subject tag, got %q", profiler.gotTag)
+	}
+	if len(profiler.gotSummaries) == 0 {
+		t.Fatal("expected issue summaries passed to the profiler")
+	}
+}
+
+func findConceptProposal(t *testing.T, proposals []domain.MemoryProposal) domain.MemoryProposal {
+	t.Helper()
+	for _, p := range proposals {
+		if p.Kind == domain.MemoryKindConcept {
+			return p
+		}
+	}
+	t.Fatalf("expected a concept proposal in %+v", proposals)
+	return domain.MemoryProposal{}
 }
 
 func TestSynthesizeAcceptAndRejectProposals(t *testing.T) {

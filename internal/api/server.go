@@ -370,6 +370,7 @@ func (s *Server) registerIssueRoutes(r chi.Router) {
 func (s *Server) registerMemoryRoutes(r chi.Router) {
 	r.Get("/memories", s.handleMemoryList)
 	r.Get("/memories/search", s.handleMemorySearch)
+	r.Get("/memories/concept", s.handleMemoryConcept)
 	r.Post("/memories", s.handleMemoryCreate)
 	r.Get("/memories/proposals", s.handleMemoryProposalList)
 	r.Post("/memories/proposals/synthesize", s.handleMemoryProposalSynthesize)
@@ -608,17 +609,23 @@ func NewServer(cfg ServerConfig) *Server {
 	enricher.UseMemoryContext(store)
 	memoryService := memories.NewService(store, enricher, logger)
 	memoryService.UseSynthesis(store, store)
+	memoryService.UseConceptProfiler(commandAnalyzer)
+	memoryService.UseConceptTagSeeder(catalog)
+	if tagStore != nil {
+		memoryService.UseTagCatalog(tagStore)
+	}
 	var enrichmentWorker *issueenrichment.IssueEnrichmentWorker
 	workerLogger := logger.With("component", "enrichment_worker")
 	if claimer := enrichmentJobClaimerFromStore(baseStore); claimer != nil && uowBeginner != nil {
 		invalidator := mapProjectionInvalidatorFromIssueStore(baseStore)
 		enrichmentWorker = &issueenrichment.IssueEnrichmentWorker{
-			Logger:   workerLogger,
-			Store:    baseStore,
-			DB:       uowBeginner,
-			Jobs:     claimer,
-			Enricher: enricher,
-			Catalog:  catalog,
+			Logger:     workerLogger,
+			Store:      baseStore,
+			DB:         uowBeginner,
+			Jobs:       claimer,
+			Enricher:   enricher,
+			Catalog:    catalog,
+			Reinforcer: memoryService,
 			OnStateChange: func(ctx context.Context, applied bool) {
 				revisions.Bump()
 				if applied && invalidator != nil {
@@ -645,6 +652,9 @@ func NewServer(cfg ServerConfig) *Server {
 		Tags:      catalog,
 		Revisions: revisions,
 	}
+	// Let the enricher measure tag alignment in the same centered space as the
+	// factor model, so anti-aligned generic tags are suppressed during tagging.
+	enricher.UseCentering(centeringCache)
 	ridgeLambdaCache := &ridgelambda.Cache{
 		Store:     store,
 		Tags:      catalog,

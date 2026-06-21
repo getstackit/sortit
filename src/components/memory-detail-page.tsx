@@ -6,10 +6,12 @@ import { Archive, ArrowLeft, History } from "lucide-react";
 import { AppShell } from "@/components/app-shell";
 import { AppSidebar } from "@/components/app-sidebar";
 import { SiteHeader } from "@/components/site-header";
+import { KIND_STYLES } from "@/components/memory-card";
 import { TagBadge } from "@/components/tag-badge";
 import { Button } from "@/components/ui/button";
 import { useMemory } from "@/hooks/use-memories";
 import { archiveMemory, supersedeMemory } from "@/lib/memories";
+import { tagHref } from "@/lib/tags";
 import { cn } from "@/lib/utils";
 
 function errorMessage(error: unknown, fallback: string) {
@@ -74,7 +76,12 @@ export function MemoryDetailPage({ memoryID }: { memoryID: string }) {
           {memory && (
             <>
               <div className="flex flex-wrap items-center gap-2">
-                <span className="rounded-full border border-violet-500/40 bg-violet-500/10 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-violet-600 dark:text-violet-300">
+                <span
+                  className={cn(
+                    "rounded-full border px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide",
+                    KIND_STYLES[memory.kind] ?? KIND_STYLES.decision
+                  )}
+                >
                   {memory.kind}
                 </span>
                 <span className="rounded-full border border-border/70 px-2 py-0.5 text-[10px] font-medium text-muted-foreground">
@@ -88,6 +95,18 @@ export function MemoryDetailPage({ memoryID }: { memoryID: string }) {
               </div>
 
               <h1 className="text-xl font-semibold">{memory.title || "Untitled memory"}</h1>
+
+              {memory.kind === "concept" && memory.subjectTag && (
+                <p className="text-sm text-muted-foreground">
+                  Profiles tag{" "}
+                  <Link
+                    href={tagHref(memory.subjectTag)}
+                    className="font-medium text-indigo-600 hover:underline dark:text-indigo-300"
+                  >
+                    #{memory.subjectTag}
+                  </Link>
+                </p>
+              )}
 
               <div className="whitespace-pre-wrap rounded-2xl border border-border/70 bg-card p-4 text-sm leading-relaxed">
                 {memory.body}

@@ -8,9 +8,16 @@ import (
 
 	"sortit/internal/ai"
 	"sortit/internal/domain"
+	"sortit/internal/issuemath"
 	"sortit/internal/issues"
 	"sortit/internal/tags"
 )
+
+type fixedCenterer struct{ means issuemath.CorpusMeans }
+
+func (c fixedCenterer) Current(_ context.Context) (issuemath.CorpusMeans, error) {
+	return c.means, nil
+}
 
 func TestNormalizeWithOffsetsCollapsesWhitespaceAndCase(t *testing.T) {
 	nm := normalizeWithOffsets("  Foo\tBAR\n  baz  ")
@@ -364,6 +371,107 @@ func TestVerifierDownRankEmitsNegationInsteadOfMutatingRelevance(t *testing.T) {
 	}
 	if cleanup.NegationReason == "" {
 		t.Fatalf("expected NegationReason to be set")
+	}
+}
+
+func TestVerifierSuppressesAntiAlignedTag(t *testing.T) {
+	// backend is assigned by the AI with no grounded evidence, but its embedding
+	// {-1,0} points opposite the issue embedding {1,0} (cosine -1). It is the
+	// generic-tag drag: suppressed via a strong negation, Relevance preserved.
+	tagger := &evidenceTagger{
+		scores: []ai.TagScore{{Tag: "backend", Relevance: 0.5}},
+	}
+	enricher := newEvidenceEnricher(t, tagger, []issues.Tag{
+		{Name: "backend", Embedding: []float64{-1, 0}},
+	})
+
+	result, err := enricher.AnalyzeText(context.Background(), "raw text with search box clears", AnalyzeTextOptions{
+		CandidateMode: tags.CandidateModeRetrievalShortlist,
+		Verify:        true,
+	})
+	if err != nil {
+		t.Fatalf("AnalyzeText: %v", err)
+	}
+
+	backend := findScore(t, result.TagScores, "backend")
+	if backend.VerificationVerdict != domain.TagVerificationVerdictDownRank {
+		t.Fatalf("expected DownRank for anti-aligned tag, got %q", backend.VerificationVerdict)
+	}
+	if backend.Relevance != 0.5 {
+		t.Fatalf("expected Relevance preserved at 0.5, got %v", backend.Relevance)
+	}
+	if backend.Negation == nil || *backend.Negation != verifierAntiAlignmentNegation {
+		t.Fatalf("expected anti-alignment negation %v, got %#v", verifierAntiAlignmentNegation, backend.Negation)
+	}
+	if backend.NegationProvenance != domain.NegationProvenanceVerifier {
+		t.Fatalf("expected verifier provenance, got %q", backend.NegationProvenance)
+	}
+}
+
+func TestVerifierSuppressesAntiAlignedTagEvenWithEvidence(t *testing.T) {
+	// Same anti-aligned embedding, but now the analyzer attaches source-text
+	// evidence. This is the generic-mention case ("backend" appears in the text but
+	// the issue points elsewhere): anti-alignment must override evidence and still
+	// suppress, since 100% of generic-tag assignments carry lexical evidence.
+	tagger := &evidenceTagger{
+		scores: []ai.TagScore{{Tag: "backend", Relevance: 0.5, Evidence: []string{"raw text"}}},
+	}
+	enricher := newEvidenceEnricher(t, tagger, []issues.Tag{
+		{Name: "backend", Embedding: []float64{-1, 0}},
+	})
+
+	result, err := enricher.AnalyzeText(context.Background(), "raw text with search box clears", AnalyzeTextOptions{
+		CandidateMode: tags.CandidateModeRetrievalShortlist,
+		Verify:        true,
+	})
+	if err != nil {
+		t.Fatalf("AnalyzeText: %v", err)
+	}
+
+	backend := findScore(t, result.TagScores, "backend")
+	if backend.VerificationVerdict != domain.TagVerificationVerdictDownRank {
+		t.Fatalf("expected anti-alignment to override evidence (DownRank), got %q", backend.VerificationVerdict)
+	}
+	if backend.Negation == nil || *backend.Negation != verifierAntiAlignmentNegation {
+		t.Fatalf("expected anti-alignment negation, got %#v", backend.Negation)
+	}
+}
+
+func TestVerifierSuppressesCenteredAntiAlignedTag(t *testing.T) {
+	// backend's RAW cosine with the issue is positive (~0.89), so raw-space checks
+	// keep it — this is the anisotropy that makes raw suppression a no-op. After
+	// centering it points opposite the issue (the real R² drag), so the centered
+	// suppression fires.
+	tagger := &evidenceTagger{scores: []ai.TagScore{{Tag: "backend", Relevance: 0.5}}}
+	makeEnricher := func() *IssueEnricher {
+		return newEvidenceEnricher(t, tagger, []issues.Tag{{Name: "backend", Embedding: []float64{2, 1}}})
+	}
+	opts := AnalyzeTextOptions{CandidateMode: tags.CandidateModeRetrievalShortlist, Verify: true}
+
+	// With centering, the tag is suppressed.
+	centered := makeEnricher()
+	centered.UseCentering(fixedCenterer{means: issuemath.CorpusMeans{Issue: []float64{1.5, 0.5}, Tag: []float64{1.5, 0.5}}})
+	result, err := centered.AnalyzeText(context.Background(), "raw text with search box clears", opts)
+	if err != nil {
+		t.Fatalf("AnalyzeText: %v", err)
+	}
+	backend := findScore(t, result.TagScores, "backend")
+	if backend.VerificationVerdict != domain.TagVerificationVerdictDownRank {
+		t.Fatalf("expected centered suppression (DownRank), got %q", backend.VerificationVerdict)
+	}
+	if backend.Negation == nil || *backend.Negation != verifierAntiAlignmentNegation {
+		t.Fatalf("expected anti-alignment negation, got %#v", backend.Negation)
+	}
+
+	// Without centering, raw cosine stays positive → not suppressed.
+	raw := makeEnricher()
+	result2, err := raw.AnalyzeText(context.Background(), "raw text with search box clears", opts)
+	if err != nil {
+		t.Fatalf("AnalyzeText control: %v", err)
+	}
+	backend2 := findScore(t, result2.TagScores, "backend")
+	if backend2.Negation != nil {
+		t.Fatalf("expected no suppression without centering, got negation %v", *backend2.Negation)
 	}
 }
 

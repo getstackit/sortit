@@ -12,6 +12,7 @@ type createMemoryRequest struct {
 	Title          string   `json:"title,omitempty"`
 	Body           string   `json:"body"`
 	Kind           string   `json:"kind,omitempty"`
+	SubjectTag     string   `json:"subjectTag,omitempty"`
 	AnchorTags     []string `json:"anchorTags,omitempty"`
 	AnchorRegion   string   `json:"anchorRegion,omitempty"`
 	CreatedBy      string   `json:"createdBy,omitempty"`
@@ -138,6 +139,7 @@ func newMemoryCreateCmd(opts *rootOptions) *cobra.Command {
 	var (
 		title          string
 		kind           string
+		subjectTag     string
 		anchorTags     []string
 		anchorRegion   string
 		createdBy      string
@@ -155,6 +157,7 @@ func newMemoryCreateCmd(opts *rootOptions) *cobra.Command {
 				Title:          strings.TrimSpace(title),
 				Body:           strings.TrimSpace(args[0]),
 				Kind:           strings.TrimSpace(kind),
+				SubjectTag:     strings.TrimSpace(subjectTag),
 				AnchorTags:     normalizeCSV(anchorTags),
 				AnchorRegion:   strings.TrimSpace(anchorRegion),
 				CreatedBy:      strings.TrimSpace(createdBy),
@@ -167,7 +170,8 @@ func newMemoryCreateCmd(opts *rootOptions) *cobra.Command {
 	}
 
 	cmd.Flags().StringVar(&title, "title", "", "Short title shown as the memory's landmark label")
-	cmd.Flags().StringVar(&kind, "kind", "", "Memory kind: decision, lesson, constraint, pattern, reference")
+	cmd.Flags().StringVar(&kind, "kind", "", "Memory kind: decision, lesson, constraint, pattern, reference, concept")
+	cmd.Flags().StringVar(&subjectTag, "subject-tag", "", "For --kind concept: the single tag this concept profiles (required for concepts)")
 	cmd.Flags().StringSliceVar(&anchorTags, "anchor-tag", nil, "High-value tags this memory centers on")
 	cmd.Flags().StringVar(&anchorRegion, "anchor-region", "", "Region/cluster id this memory anchors to")
 	cmd.Flags().StringVar(&createdBy, "created-by", "", "Override actor name when no authenticated principal is present")

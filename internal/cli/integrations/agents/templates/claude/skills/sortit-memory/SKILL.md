@@ -72,12 +72,17 @@ command sortit memory proposals list
 - `constraint` - a rule, invariant, limitation, or compatibility requirement.
 - `pattern` - a reusable implementation or workflow pattern.
 - `reference` - stable context worth retrieving later.
+- `concept` - the canonical profile of a single noun (a subsystem, component, or
+  domain concept). Unlike the other kinds (which are statements), a concept's
+  subject *is* a tag: pass `--kind concept --subject-tag <tag>`. It is bound 1:1
+  to that tag and supersedes any prior concept for the same tag.
 
 ## Rules
 
 1. Prefer a short, specific title that can work as a map landmark.
 2. Include `--source-issue` when a memory came from issue work.
 3. Use `--anchor-tag` for high-value tags that locate the memory.
-4. Create direct memories only for clear, durable knowledge.
+4. For a `concept`, `--subject-tag` is required — it is the noun the concept defines.
+5. Create direct memories only for clear, durable knowledge.
 5. When the knowledge is inferred from a cluster or confidence is low, synthesize
    or list proposals and leave human review to decide.

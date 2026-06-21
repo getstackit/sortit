@@ -117,3 +117,10 @@ type SpecificityScorer interface {
 type Canonicalizer interface {
 	CanonicalizeDiscussion(ctx context.Context, posts []string) (string, error)
 }
+
+// ConceptProfiler generates the canonical prose profile of a single concept (a
+// subsystem, component, or domain concept) from the tag it is named for and a
+// sample of issues that reference it.
+type ConceptProfiler interface {
+	GenerateConceptProfile(ctx context.Context, tag string, issueSummaries []string) (string, error)
+}
