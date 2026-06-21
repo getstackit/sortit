@@ -117,6 +117,39 @@ func TestPostgresStoreMemoryCRUDAndSearch(t *testing.T) {
 	}
 }
 
+func TestPostgresStoreListMemoriesKindFilter(t *testing.T) {
+	store := newPostgresTestStore(t)
+	ctx := context.Background()
+
+	seed := []domain.Memory{
+		{ID: "kf-decision", Body: "decision", Kind: domain.MemoryKindDecision, Status: domain.MemoryStatusActive},
+		{ID: "kf-concept", Body: "concept", Kind: domain.MemoryKindConcept, SubjectTag: "ridge", Status: domain.MemoryStatusActive},
+		{ID: "kf-overview", Body: "overview", Kind: domain.MemoryKindOverview, Status: domain.MemoryStatusActive},
+	}
+	for _, m := range seed {
+		if err := store.UpsertMemory(ctx, m); err != nil {
+			t.Fatalf("seed %s: %v", m.ID, err)
+		}
+	}
+
+	concepts, err := store.ListMemories(ctx, MemoryListOptions{Kind: domain.MemoryKindConcept})
+	if err != nil {
+		t.Fatalf("list concepts: %v", err)
+	}
+	if len(concepts) != 1 || concepts[0].ID != "kf-concept" {
+		t.Fatalf("expected only the concept, got %+v", concepts)
+	}
+
+	// Status and kind compose in the WHERE clause.
+	activeConcepts, err := store.ListMemories(ctx, MemoryListOptions{Status: domain.MemoryStatusActive, Kind: domain.MemoryKindConcept})
+	if err != nil {
+		t.Fatalf("list active concepts: %v", err)
+	}
+	if len(activeConcepts) != 1 || activeConcepts[0].ID != "kf-concept" {
+		t.Fatalf("expected only the active concept, got %+v", activeConcepts)
+	}
+}
+
 func TestPostgresStoreOverviewSingleton(t *testing.T) {
 	store := newPostgresTestStore(t)
 	ctx := context.Background()

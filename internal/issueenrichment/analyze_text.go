@@ -38,7 +38,7 @@ func (s *IssueEnricher) analyzeWithCandidateTaxonomy(ctx context.Context, raw st
 		priorDecisions = s.relevantPriorDecisions(ctx, freshEmbeddingVector)
 	}
 
-	analyzed, err := s.analyzer.AnalyzeIssueData(ctx, raw, candidates.AITags(), examples, priorDecisions...)
+	analyzed, err := s.analyzer.AnalyzeIssueData(ctx, raw, candidates.AITags(), examples, ai.ConceptFrame{}, priorDecisions...)
 	if err != nil {
 		return ai.AnalyzedIssue{}, tags.CandidateTaxonomy{}, err
 	}

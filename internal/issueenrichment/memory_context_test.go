@@ -15,7 +15,7 @@ type capturingTagger struct {
 	capturedPrior []ai.PriorDecision
 }
 
-func (t *capturingTagger) Score(_ context.Context, _ string, _ []ai.Tag, _ []ai.FewShotExample, prior []ai.PriorDecision) (ai.ScoreResult, error) {
+func (t *capturingTagger) Score(_ context.Context, _ string, _ []ai.Tag, _ []ai.FewShotExample, prior []ai.PriorDecision, _ ai.ConceptFrame) (ai.ScoreResult, error) {
 	t.capturedPrior = append([]ai.PriorDecision(nil), prior...)
 	return ai.ScoreResult{Tags: []ai.TagScore{{Tag: "search", Relevance: 0.9}}}, nil
 }

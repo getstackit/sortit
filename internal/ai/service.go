@@ -42,12 +42,12 @@ func (a *Analyzer) SetConceptProfiler(profiler ConceptProfiler) {
 	}
 }
 
-func (a *Analyzer) AnalyzeIssueData(ctx context.Context, text string, tags []Tag, examples []FewShotExample, priorDecisions ...PriorDecision) (AnalyzedIssue, error) {
+func (a *Analyzer) AnalyzeIssueData(ctx context.Context, text string, tags []Tag, examples []FewShotExample, frame ConceptFrame, priorDecisions ...PriorDecision) (AnalyzedIssue, error) {
 	if a == nil || a.tagger == nil || a.embedder == nil {
 		return AnalyzedIssue{}, ErrNotConfigured
 	}
 
-	result, err := a.tagger.Score(ctx, text, tags, examples, priorDecisions)
+	result, err := a.tagger.Score(ctx, text, tags, examples, priorDecisions, frame)
 	if err != nil {
 		return AnalyzedIssue{}, fmt.Errorf("score tags: %w", err)
 	}
@@ -73,7 +73,7 @@ func (a *Analyzer) AnalyzeIssueData(ctx context.Context, text string, tags []Tag
 }
 
 func (a *Analyzer) AnalyzeIssue(ctx context.Context, text string, tags []Tag, examples []FewShotExample) (IssueAnalysis, error) {
-	analyzed, err := a.AnalyzeIssueData(ctx, text, tags, examples)
+	analyzed, err := a.AnalyzeIssueData(ctx, text, tags, examples, ConceptFrame{})
 	if err != nil {
 		return IssueAnalysis{}, err
 	}

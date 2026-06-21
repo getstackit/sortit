@@ -155,7 +155,7 @@ func NewOpenAIEmbedder(cfg OpenAIConfig) (*OpenAIEmbedder, error) {
 	}, nil
 }
 
-func (t *OpenAITagger) Score(ctx context.Context, text string, tags []Tag, examples []FewShotExample, priorDecisions []PriorDecision) (ScoreResult, error) {
+func (t *OpenAITagger) Score(ctx context.Context, text string, tags []Tag, examples []FewShotExample, priorDecisions []PriorDecision, _ ConceptFrame) (ScoreResult, error) {
 	request := openAIChatCompletionRequest{
 		Model:       t.model,
 		Temperature: 0,

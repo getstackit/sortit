@@ -17,9 +17,13 @@ func (s *InMemoryStore) ListMemories(_ context.Context, opts MemoryListOptions) 
 	defer s.mu.RUnlock()
 
 	status := strings.TrimSpace(string(opts.Status))
+	kind := strings.TrimSpace(string(opts.Kind))
 	out := make([]domain.Memory, 0, len(s.memories))
 	for _, memory := range s.memories {
 		if status != "" && string(memory.Status) != status {
+			continue
+		}
+		if kind != "" && string(memory.Kind) != kind {
 			continue
 		}
 		out = append(out, domain.CloneMemory(memory))

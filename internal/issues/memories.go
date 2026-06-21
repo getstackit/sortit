@@ -22,6 +22,9 @@ var ErrMemoryNotFound = errors.New("memory not found")
 type MemoryListOptions struct {
 	// Status, when non-empty, restricts results to memories in that state.
 	Status domain.MemoryStatus
+	// Kind, when non-empty, restricts results to memories of that kind — e.g. the
+	// concept-digest listing the tagging frame is assembled from.
+	Kind   domain.MemoryKind
 	Limit  int
 	Offset int
 }
@@ -63,6 +66,7 @@ const memorySelectColumns = `id, title, body, kind, subject_tag, anchor_tags_jso
 // ListMemories returns memories in the database, most-recent first.
 func (s *PostgresStore) ListMemories(ctx context.Context, opts MemoryListOptions) ([]domain.Memory, error) {
 	status := strings.TrimSpace(string(opts.Status))
+	kind := strings.TrimSpace(string(opts.Kind))
 	limit := opts.Limit
 	if limit <= 0 {
 		limit = 2147483647
@@ -76,9 +80,10 @@ func (s *PostgresStore) ListMemories(ctx context.Context, opts MemoryListOptions
 		`SELECT `+memorySelectColumns+`
 		 FROM memories
 		 WHERE ($1 = '' OR status = $1)
+		   AND ($2 = '' OR kind = $2)
 		 ORDER BY created_at_unix_nano DESC, id
-		 LIMIT $2 OFFSET $3`,
-		status, limit, offset,
+		 LIMIT $3 OFFSET $4`,
+		status, kind, limit, offset,
 	)
 	if err != nil {
 		return nil, fmt.Errorf("list memories: %w", err)
