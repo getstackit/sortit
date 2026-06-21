@@ -12,8 +12,11 @@ Sortit current without turning the user's chat into the only record.
 
 ## Checklist
 
-1. Existing issue worked on?
-   - Add progress with `command sortit issues progress <id> --raw "<what changed / verified / deferred>"`.
+1. Issue(s) worked on this turn? For each one, don't stop at a progress log — drive it to its right next state:
+   - **Progress** — record what changed, was verified, or was deferred: `command sortit issues progress <id> --raw "..."`.
+   - **Refine** — if the work changed *what the issue is* (scope, root cause, understanding), update the canonical description via the **sortit-refine** skill (Skill tool, or `/sortit-refine <id>`).
+   - **Close** — if the work resolved or obsoleted it, close it via the **sortit-close** skill (Skill tool, or `/sortit-close <id>`). Don't leave finished work open.
+   - **Iterate** — if distinct work remains, split it out or file follow-ons (step 2) and link them back.
 
 2. Follow-on work discovered?
    - Search first: `command sortit issues search "<follow-on work>" --status all`.
@@ -37,7 +40,7 @@ Sortit current without turning the user's chat into the only record.
 
 1. Do not create noise. If nothing durable changed, say nothing about Sortit.
 2. Search before creating follow-on issues.
-3. Use progress for work done; use refine for changes to what the issue is.
+3. Match the action to the change: progress for work done, refine for changes to what the issue is, close for work that's finished or obsolete.
 4. Create memories only when future humans or agents should retrieve the fact.
 5. Recall before you decide. If this turn made a decision without recalling
    related memories, recall now — and surface any prior decision it contradicts.

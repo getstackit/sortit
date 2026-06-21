@@ -197,7 +197,7 @@ func sortitInstructionBlock(format agentSkillFormat, version string) string {
 		"- " + agentNote + "\n" +
 		"- Search Sortit before creating follow-on work.\n" +
 		"- Recall relevant memories before deciding — prior decisions, constraints, and patterns should guide the work, not be rediscovered or contradicted.\n" +
-		"- Record progress on the relevant issue when meaningful work is done.\n" +
+		"- Drive the issues you worked on to their right state — record progress, refine when understanding changed, close when finished, iterate when work remains.\n" +
 		"- Create or refine follow-on issues instead of leaving deferred work only in chat.\n" +
 		"- Create a memory for durable decisions, lessons, constraints, patterns, references, or concepts (the canonical profile of a noun).\n" +
 		"- Use the Sortit wrap-up checklist before final responses for non-trivial work.\n" +
