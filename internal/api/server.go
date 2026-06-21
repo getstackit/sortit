@@ -56,6 +56,9 @@ type Server struct {
 	enrichmentWorker       *issueenrichment.IssueEnrichmentWorker
 	enrichmentCancel       context.CancelFunc
 	enrichmentDone         chan struct{}
+	sessionReaper          *auth.SessionReaper
+	sessionReaperCancel    context.CancelFunc
+	sessionReaperDone      chan struct{}
 	createIssue            issuecmd.CreateIssueHandler
 	refineIssue            issuecmd.RefineIssueHandler
 	progressIssue          issuecmd.ProgressIssueHandler
@@ -426,6 +429,17 @@ func (s *Server) Start() error {
 			}
 		}()
 	}
+	if s.sessionReaper != nil && s.sessionReaperCancel == nil {
+		runCtx, cancel := context.WithCancel(context.Background())
+		s.sessionReaperCancel = cancel
+		s.sessionReaperDone = make(chan struct{})
+		go func() {
+			defer close(s.sessionReaperDone)
+			if err := s.sessionReaper.Run(runCtx); err != nil && runCtx.Err() == nil {
+				s.logger.Error("session reaper stopped", "error", err)
+			}
+		}()
+	}
 
 	s.httpServer = &http.Server{
 		Addr:              fmt.Sprintf(":%d", s.config.Port),
@@ -449,6 +463,18 @@ func (s *Server) Shutdown(ctx context.Context) error {
 		}
 		s.enrichmentCancel = nil
 		s.enrichmentDone = nil
+	}
+	if s.sessionReaperCancel != nil {
+		s.sessionReaperCancel()
+		if s.sessionReaperDone != nil {
+			select {
+			case <-s.sessionReaperDone:
+			case <-ctx.Done():
+				return ctx.Err()
+			}
+		}
+		s.sessionReaperCancel = nil
+		s.sessionReaperDone = nil
 	}
 	if s.httpServer != nil {
 		return s.httpServer.Shutdown(ctx)
@@ -703,6 +729,11 @@ func NewServer(cfg ServerConfig) *Server {
 		diagnostics.DebugTagHealthHandler{Store: store, Catalog: catalog, Centering: centeringCache}, logger)
 	curationMemoryDetector := curation.NewMemoryDetector(store, store, logger)
 
+	var sessionReaper *auth.SessionReaper
+	if cfg.Auth != nil {
+		sessionReaper = cfg.Auth.NewSessionReaper(logger.With("component", "session_reaper"))
+	}
+
 	return &Server{
 		config:              cfg,
 		logger:              logger,
@@ -710,6 +741,7 @@ func NewServer(cfg ServerConfig) *Server {
 		revisions:           revisions,
 		mapProjectionLoader: mapProjectionLoader,
 		enrichmentWorker:    enrichmentWorker,
+		sessionReaper:       sessionReaper,
 		createIssue: issuecmd.CreateIssueHandler{
 			Logger:   logger.With("command", "create_issue"),
 			Runner:   runner,
