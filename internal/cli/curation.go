@@ -99,7 +99,7 @@ func newCurationCandidatesDuplicatesCmd(opts *rootOptions) *cobra.Command {
 		},
 	}
 	cmd.Flags().Float64Var(&minSimilarity, "min-similarity", 0, "Minimum combined similarity to link two issues (default 0.85)")
-	cmd.Flags().IntVar(&maxSeeds, "max-seeds", 0, "Cap seed issues explored (0 = all open issues)")
+	cmd.Flags().IntVar(&maxSeeds, "max-seeds", 0, "Cap seed issues explored (default 25; pass a large value to scan all)")
 	cmd.Flags().IntVar(&exploreLimit, "explore-limit", 0, "Per-seed related-issue limit (default 10)")
 	cmd.Flags().IntVar(&limit, "limit", 0, "Maximum clusters returned")
 	return cmd
