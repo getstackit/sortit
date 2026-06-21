@@ -117,6 +117,88 @@ func TestPostgresStoreMemoryCRUDAndSearch(t *testing.T) {
 	}
 }
 
+func TestPostgresStoreListMemoriesKindFilter(t *testing.T) {
+	store := newPostgresTestStore(t)
+	ctx := context.Background()
+
+	seed := []domain.Memory{
+		{ID: "kf-decision", Body: "decision", Kind: domain.MemoryKindDecision, Status: domain.MemoryStatusActive},
+		{ID: "kf-concept", Body: "concept", Kind: domain.MemoryKindConcept, SubjectTag: "ridge", Status: domain.MemoryStatusActive},
+		{ID: "kf-overview", Body: "overview", Kind: domain.MemoryKindOverview, Status: domain.MemoryStatusActive},
+	}
+	for _, m := range seed {
+		if err := store.UpsertMemory(ctx, m); err != nil {
+			t.Fatalf("seed %s: %v", m.ID, err)
+		}
+	}
+
+	concepts, err := store.ListMemories(ctx, MemoryListOptions{Kind: domain.MemoryKindConcept})
+	if err != nil {
+		t.Fatalf("list concepts: %v", err)
+	}
+	if len(concepts) != 1 || concepts[0].ID != "kf-concept" {
+		t.Fatalf("expected only the concept, got %+v", concepts)
+	}
+
+	// Status and kind compose in the WHERE clause.
+	activeConcepts, err := store.ListMemories(ctx, MemoryListOptions{Status: domain.MemoryStatusActive, Kind: domain.MemoryKindConcept})
+	if err != nil {
+		t.Fatalf("list active concepts: %v", err)
+	}
+	if len(activeConcepts) != 1 || activeConcepts[0].ID != "kf-concept" {
+		t.Fatalf("expected only the active concept, got %+v", activeConcepts)
+	}
+}
+
+func TestPostgresStoreOverviewSingleton(t *testing.T) {
+	store := newPostgresTestStore(t)
+	ctx := context.Background()
+
+	if _, err := store.GetActiveOverview(ctx); !errors.Is(err, ErrMemoryNotFound) {
+		t.Fatalf("expected ErrMemoryNotFound with no overview, got %v", err)
+	}
+
+	first := domain.Memory{
+		ID:     "ov-pg-1",
+		Title:  "Sortit",
+		Body:   "Sortit is an issue tracker built around a factor model over tag relevance.",
+		Kind:   domain.MemoryKindOverview,
+		Status: domain.MemoryStatusActive,
+	}
+	if err := store.UpsertMemory(ctx, first); err != nil {
+		t.Fatalf("upsert first overview: %v", err)
+	}
+	got, err := store.GetActiveOverview(ctx)
+	if err != nil {
+		t.Fatalf("get active overview: %v", err)
+	}
+	if got.ID != "ov-pg-1" || got.Kind != domain.MemoryKindOverview {
+		t.Fatalf("unexpected active overview: %+v", got)
+	}
+
+	// The partial unique index allows at most one active overview.
+	second := domain.Memory{ID: "ov-pg-2", Body: "second", Kind: domain.MemoryKindOverview, Status: domain.MemoryStatusActive}
+	if err := store.UpsertMemory(ctx, second); err == nil {
+		t.Fatal("expected unique-index violation for a second active overview")
+	}
+
+	// Superseding the first frees the singleton for a new active overview.
+	first.Status = domain.MemoryStatusSuperseded
+	if err := store.UpsertMemory(ctx, first); err != nil {
+		t.Fatalf("supersede first overview: %v", err)
+	}
+	if err := store.UpsertMemory(ctx, second); err != nil {
+		t.Fatalf("expected the freed singleton to accept a new active overview: %v", err)
+	}
+	got, err = store.GetActiveOverview(ctx)
+	if err != nil {
+		t.Fatalf("get active overview after supersede: %v", err)
+	}
+	if got.ID != "ov-pg-2" {
+		t.Fatalf("expected the second overview active, got %+v", got)
+	}
+}
+
 func TestPostgresStoreConceptSubjectTag(t *testing.T) {
 	store := newPostgresTestStore(t)
 	ctx := context.Background()

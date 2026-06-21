@@ -133,7 +133,7 @@ func (h SearchIssuesHandler) Handle(ctx context.Context, input SearchIssues) (is
 		return issuemap.SearchResponse{}, err
 	}
 
-	analyzed, err := h.Analyzer.AnalyzeIssueData(ctx, query, taxonomy, nil)
+	analyzed, err := h.Analyzer.AnalyzeIssueData(ctx, query, taxonomy, nil, ai.ConceptFrame{})
 	if err != nil {
 		return issuemap.SearchResponse{}, err
 	}

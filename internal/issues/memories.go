@@ -22,6 +22,9 @@ var ErrMemoryNotFound = errors.New("memory not found")
 type MemoryListOptions struct {
 	// Status, when non-empty, restricts results to memories in that state.
 	Status domain.MemoryStatus
+	// Kind, when non-empty, restricts results to memories of that kind — e.g. the
+	// concept-digest listing the tagging frame is assembled from.
+	Kind   domain.MemoryKind
 	Limit  int
 	Offset int
 }
@@ -48,6 +51,10 @@ type MemoryStore interface {
 	// to the given subject tag, or ErrMemoryNotFound. The partial unique index
 	// guarantees at most one row.
 	GetActiveConceptBySubjectTag(ctx context.Context, subjectTag string) (domain.Memory, error)
+	// GetActiveOverview returns the single active overview memory — the project's
+	// identity frame — or ErrMemoryNotFound. The partial unique index guarantees
+	// at most one row.
+	GetActiveOverview(ctx context.Context) (domain.Memory, error)
 }
 
 const memorySelectColumns = `id, title, body, kind, subject_tag, anchor_tags_json, anchor_region,
@@ -59,6 +66,7 @@ const memorySelectColumns = `id, title, body, kind, subject_tag, anchor_tags_jso
 // ListMemories returns memories in the database, most-recent first.
 func (s *PostgresStore) ListMemories(ctx context.Context, opts MemoryListOptions) ([]domain.Memory, error) {
 	status := strings.TrimSpace(string(opts.Status))
+	kind := strings.TrimSpace(string(opts.Kind))
 	limit := opts.Limit
 	if limit <= 0 {
 		limit = 2147483647
@@ -72,9 +80,10 @@ func (s *PostgresStore) ListMemories(ctx context.Context, opts MemoryListOptions
 		`SELECT `+memorySelectColumns+`
 		 FROM memories
 		 WHERE ($1 = '' OR status = $1)
+		   AND ($2 = '' OR kind = $2)
 		 ORDER BY created_at_unix_nano DESC, id
-		 LIMIT $2 OFFSET $3`,
-		status, limit, offset,
+		 LIMIT $3 OFFSET $4`,
+		status, kind, limit, offset,
 	)
 	if err != nil {
 		return nil, fmt.Errorf("list memories: %w", err)
@@ -126,6 +135,25 @@ func (s *PostgresStore) GetActiveConceptBySubjectTag(ctx context.Context, subjec
 		 FROM memories
 		 WHERE kind = 'concept' AND status = 'active' AND subject_tag = $1
 		 LIMIT 1`, subjectTag,
+	)
+	memory, err := scanMemory(row)
+	if errors.Is(err, sql.ErrNoRows) {
+		return domain.Memory{}, ErrMemoryNotFound
+	}
+	if err != nil {
+		return domain.Memory{}, err
+	}
+	return memory, nil
+}
+
+// GetActiveOverview returns the active overview memory — the project's identity
+// frame — or ErrMemoryNotFound. Index-backed by memories_overview_unique_idx.
+func (s *PostgresStore) GetActiveOverview(ctx context.Context) (domain.Memory, error) {
+	row := s.db.QueryRowContext(ctx,
+		`SELECT `+memorySelectColumns+`
+		 FROM memories
+		 WHERE kind = 'overview' AND status = 'active'
+		 LIMIT 1`,
 	)
 	memory, err := scanMemory(row)
 	if errors.Is(err, sql.ErrNoRows) {

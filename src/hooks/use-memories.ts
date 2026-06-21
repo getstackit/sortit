@@ -4,6 +4,7 @@ import {
   fetchMemories,
   fetchMemory,
   fetchMemoryProposals,
+  fetchOverview,
   type MemoryListStatus,
   type MemoryProposalStatus,
 } from "@/lib/memories";
@@ -26,6 +27,11 @@ export function useMemory(id?: string | null) {
       : null,
     ([, memoryID]: [string, string, number]) => fetchMemory(memoryID)
   );
+}
+
+export function useOverview() {
+  const { data: revision = 0 } = useBackendRevision();
+  return useSWR(["memory-overview", revision], () => fetchOverview());
 }
 
 export function useMemoryProposals(

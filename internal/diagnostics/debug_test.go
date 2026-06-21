@@ -315,7 +315,7 @@ type debugEvalTagger struct {
 	scoresByText map[string][]ai.TagScore
 }
 
-func (t *debugEvalTagger) Score(_ context.Context, text string, _ []ai.Tag, _ []ai.FewShotExample, _ []ai.PriorDecision) (ai.ScoreResult, error) {
+func (t *debugEvalTagger) Score(_ context.Context, text string, _ []ai.Tag, _ []ai.FewShotExample, _ []ai.PriorDecision, _ ai.ConceptFrame) (ai.ScoreResult, error) {
 	return ai.ScoreResult{Tags: append([]ai.TagScore(nil), t.scoresByText[text]...)}, nil
 }
 
@@ -332,7 +332,7 @@ type debugEvalSequenceTagger struct {
 	calls     map[string]int
 }
 
-func (t *debugEvalSequenceTagger) Score(_ context.Context, text string, _ []ai.Tag, _ []ai.FewShotExample, _ []ai.PriorDecision) (ai.ScoreResult, error) {
+func (t *debugEvalSequenceTagger) Score(_ context.Context, text string, _ []ai.Tag, _ []ai.FewShotExample, _ []ai.PriorDecision, _ ai.ConceptFrame) (ai.ScoreResult, error) {
 	if t.calls == nil {
 		t.calls = make(map[string]int)
 	}

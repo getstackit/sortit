@@ -14,6 +14,9 @@ export const KIND_STYLES: Record<MemoryKind, string> = {
   // A concept is the canonical profile of a noun — the node the rest of the
   // corpus orbits — so it gets a stronger, distinct indigo fill.
   concept: "border-indigo-500/60 bg-indigo-500/20 text-indigo-700 dark:text-indigo-200",
+  // The overview is the project's identity singleton — a distinct teal so it
+  // reads as the frame the rest of the corpus sits inside.
+  overview: "border-teal-500/60 bg-teal-500/20 text-teal-700 dark:text-teal-200",
 };
 
 const STATUS_STYLES: Record<MemoryStatus, string> = {

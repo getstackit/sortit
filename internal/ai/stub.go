@@ -35,7 +35,7 @@ func NewStubTagger() *StubTagger {
 	return &StubTagger{}
 }
 
-func (t *StubTagger) Score(_ context.Context, text string, tags []Tag, _ []FewShotExample, _ []PriorDecision) (ScoreResult, error) {
+func (t *StubTagger) Score(_ context.Context, text string, tags []Tag, _ []FewShotExample, _ []PriorDecision, _ ConceptFrame) (ScoreResult, error) {
 	lower := strings.ToLower(text)
 	scores := make([]TagScore, 0, len(tags))
 	for _, tag := range tags {
@@ -216,6 +216,39 @@ func (p *StubConceptProfiler) GenerateConceptProfile(_ context.Context, tag stri
 		builder.WriteString(summary)
 	}
 	return builder.String(), nil
+}
+
+// ProposeConceptFromCluster derives a deterministic name from the first issue
+// summary (first few words, lowercased) and a placeholder profile listing the
+// cluster, so tests and the no-AI path stay deterministic. Returns an empty name
+// when the cluster has no usable text, signaling the caller to skip it.
+func (p *StubConceptProfiler) ProposeConceptFromCluster(_ context.Context, issueSummaries []string, _ ConceptFrame) (string, string, error) {
+	name := ""
+	for _, summary := range issueSummaries {
+		fields := strings.Fields(strings.ToLower(strings.TrimSpace(summary)))
+		if len(fields) == 0 {
+			continue
+		}
+		if len(fields) > 3 {
+			fields = fields[:3]
+		}
+		name = strings.Join(fields, " ")
+		break
+	}
+	if name == "" {
+		return "", "", nil
+	}
+	var builder strings.Builder
+	fmt.Fprintf(&builder, "Proposed concept %q from a residual cluster.", name)
+	for _, summary := range issueSummaries {
+		summary = strings.TrimSpace(summary)
+		if summary == "" {
+			continue
+		}
+		builder.WriteString("\n- ")
+		builder.WriteString(summary)
+	}
+	return name, builder.String(), nil
 }
 
 func matchWeight(text string, signal string, weight float64) float64 {

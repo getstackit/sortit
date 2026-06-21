@@ -371,6 +371,7 @@ func (s *Server) registerMemoryRoutes(r chi.Router) {
 	r.Get("/memories", s.handleMemoryList)
 	r.Get("/memories/search", s.handleMemorySearch)
 	r.Get("/memories/concept", s.handleMemoryConcept)
+	r.Get("/memories/overview", s.handleMemoryOverview)
 	r.Post("/memories", s.handleMemoryCreate)
 	r.Get("/memories/proposals", s.handleMemoryProposalList)
 	r.Post("/memories/proposals/synthesize", s.handleMemoryProposalSynthesize)
@@ -610,6 +611,7 @@ func NewServer(cfg ServerConfig) *Server {
 	memoryService := memories.NewService(store, enricher, logger)
 	memoryService.UseSynthesis(store, store)
 	memoryService.UseConceptProfiler(commandAnalyzer)
+	memoryService.UseConceptProposer(commandAnalyzer)
 	memoryService.UseConceptTagSeeder(catalog)
 	if tagStore != nil {
 		memoryService.UseTagCatalog(tagStore)

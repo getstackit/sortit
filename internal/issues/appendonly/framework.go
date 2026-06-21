@@ -18,8 +18,12 @@ type Checkpoint struct {
 }
 
 // phaseCompleted is the terminal Checkpoint.Phase value written once a
-// backfill/migration framework run finishes.
-const phaseCompleted = "completed"
+// backfill/migration framework run finishes. phaseBackfilling is the in-flight
+// value written while a batched backfill still has remaining work.
+const (
+	phaseCompleted   = "completed"
+	phaseBackfilling = "backfilling"
+)
 
 type ParityRun struct {
 	ID          string          `json:"id"`

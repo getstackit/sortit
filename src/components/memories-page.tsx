@@ -6,11 +6,12 @@ import { AppShell } from "@/components/app-shell";
 import { AppSidebar } from "@/components/app-sidebar";
 import { MemoriesView } from "@/components/memories-view";
 import { SiteHeader } from "@/components/site-header";
-import { useMemories, useMemoryProposals } from "@/hooks/use-memories";
+import { useMemories, useMemoryProposals, useOverview } from "@/hooks/use-memories";
 import {
   acceptMemoryProposal,
   createMemory,
   rejectMemoryProposal,
+  saveOverview,
   synthesizeMemoryProposals,
   type CreateMemoryInput,
 } from "@/lib/memories";
@@ -22,6 +23,7 @@ function errorMessage(error: unknown, fallback: string) {
 export function MemoriesPage() {
   const { data: memories = [], isLoading } = useMemories("active");
   const { data: proposals = [] } = useMemoryProposals("pending");
+  const { data: overview = null } = useOverview();
   const [synthesizing, setSynthesizing] = useState(false);
 
   async function handleCreate(input: CreateMemoryInput) {
@@ -30,6 +32,15 @@ export function MemoriesPage() {
       toast.success("Memory created");
     } catch (error) {
       toast.error(errorMessage(error, "Failed to create memory"));
+    }
+  }
+
+  async function handleSaveOverview(body: string) {
+    try {
+      await saveOverview(body);
+      toast.success("Project overview saved");
+    } catch (error) {
+      toast.error(errorMessage(error, "Failed to save overview"));
     }
   }
 
@@ -83,9 +94,11 @@ export function MemoriesPage() {
         <MemoriesView
           memories={memories}
           proposals={proposals}
+          overview={overview}
           loading={isLoading}
           synthesizing={synthesizing}
           onCreate={handleCreate}
+          onSaveOverview={handleSaveOverview}
           onSynthesize={handleSynthesize}
           onAccept={handleAccept}
           onReject={handleReject}

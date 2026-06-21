@@ -98,7 +98,7 @@ func (h DebugTagHealthHandler) Handle(ctx context.Context) (DebugTagHealthResult
 		}
 	}
 
-	tagNames, tagEmbeddings := tagDataFromIssues(storeIssues, storeTags)
+	tagNames, tagEmbeddings := issuemath.TagDataFromIssues(storeIssues, storeTags)
 	issueEmbeddings := make(map[string][]float64, len(storeIssues))
 	for _, issue := range storeIssues {
 		if len(issue.Embedding) > 0 {

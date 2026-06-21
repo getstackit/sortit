@@ -21,6 +21,20 @@ type ApiToken struct {
 	LastUsedAtUnixNano int64
 }
 
+type ApiTokenFact struct {
+	ID                string
+	TokenID           string
+	UserID            string
+	Sequence          int64
+	Kind              string
+	CreatedBy         string
+	CreatedAtUnixNano int64
+	PayloadJson       json.RawMessage
+	Source            string
+	SourceID          string
+	Inferred          bool
+}
+
 type AppendOnlyMigrationCheckpoint struct {
 	Name              string
 	Phase             string
@@ -283,6 +297,19 @@ type Session struct {
 	CreatedAtUnixNano int64
 }
 
+type SessionFact struct {
+	ID                string
+	SessionID         string
+	UserID            string
+	Sequence          int64
+	Kind              string
+	Reason            string
+	CreatedAtUnixNano int64
+	Source            string
+	SourceID          string
+	Inferred          bool
+}
+
 type Tag struct {
 	Name                  string
 	Description           string
@@ -348,4 +375,18 @@ type User struct {
 	Email             string
 	CreatedAtUnixNano int64
 	UpdatedAtUnixNano int64
+}
+
+type UserProfileFact struct {
+	ID                 string
+	UserID             string
+	Sequence           int64
+	Login              string
+	DisplayName        string
+	AvatarUrl          string
+	Email              string
+	ObservedAtUnixNano int64
+	Source             string
+	SourceID           string
+	Inferred           bool
 }

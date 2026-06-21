@@ -192,6 +192,13 @@ func (s *ObservedStore) GetActiveConceptBySubjectTag(ctx context.Context, subjec
 	return domain.Memory{}, ErrMemoryNotFound
 }
 
+func (s *ObservedStore) GetActiveOverview(ctx context.Context) (domain.Memory, error) {
+	if ms, ok := s.base.(MemoryStore); ok {
+		return ms.GetActiveOverview(ctx)
+	}
+	return domain.Memory{}, ErrMemoryNotFound
+}
+
 func (s *ObservedStore) UpsertMemory(ctx context.Context, memory domain.Memory) error {
 	if ms, ok := s.base.(MemoryStore); ok {
 		if err := ms.UpsertMemory(ctx, memory); err != nil {
