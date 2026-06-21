@@ -45,7 +45,11 @@ evidence:
 - **Memories** — for redundant pairs, read both bodies: do they encode the *same*
   decision? For quiet memories, is the knowledge still true and worth keeping
   despite low corpus activity? Permanence is the default — only propose archival
-  when the memory is genuinely obsolete.
+  when the memory is genuinely obsolete. **`concept` memories are exempt from both
+  detectors** — a concept is the durable, canonical profile of a noun (bound 1:1
+  to a tag), so it is never surfaced as quiet-to-archive or redundant-to-supersede.
+  Don't hand-propose archiving/superseding a concept unless its subject genuinely
+  no longer exists.
 
 When unsure, **don't propose**. A noisy queue erodes trust faster than a missed
 duplicate.
