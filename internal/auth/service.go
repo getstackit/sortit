@@ -3,6 +3,7 @@ package auth
 import (
 	"context"
 	"fmt"
+	"log/slog"
 	"net/http"
 	"strings"
 	"time"
@@ -47,6 +48,13 @@ func NewService(cfg ServiceConfig) (*Service, error) {
 		sessionTTL: sessionTTL,
 		cliLogins:  newCLILoginManager(),
 	}, nil
+}
+
+// NewSessionReaper builds an expired-session reaper bound to this service's store.
+// The caller owns its lifecycle — run Run under a cancelable context and stop it on
+// shutdown (see the apps/server wiring).
+func (s *Service) NewSessionReaper(logger *slog.Logger) *SessionReaper {
+	return &SessionReaper{Store: s.store, Logger: logger}
 }
 
 func (s *Service) BeginGitHubLogin(w http.ResponseWriter, r *http.Request, callbackPath string) error {
