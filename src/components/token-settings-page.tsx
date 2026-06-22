@@ -13,6 +13,7 @@ import { SiteHeader } from "@/components/site-header";
 import { useAuth } from "@/components/auth-provider";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { formatDateTime } from "@/lib/format";
 import {
   Dialog,
   DialogContent,
@@ -261,12 +262,12 @@ export function TokenSettingsPage() {
                         </p>
                         <p className="mt-1 text-xs text-muted-foreground">
                           Created{" "}
-                          {new Date(token.createdAt).toLocaleString()}
+                          {formatDateTime(token.createdAt)}
                           {token.lastUsedAt
-                            ? ` · Last used ${new Date(token.lastUsedAt).toLocaleString()}`
+                            ? ` · Last used ${formatDateTime(token.lastUsedAt)}`
                             : " · Never used"}
                           {revoked && token.revokedAt
-                            ? ` · Revoked ${new Date(token.revokedAt).toLocaleString()}`
+                            ? ` · Revoked ${formatDateTime(token.revokedAt)}`
                             : ""}
                         </p>
                       </div>

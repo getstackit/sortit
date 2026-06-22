@@ -13,11 +13,11 @@ package centering
 
 import (
 	"context"
-	"math"
 	"sync"
 
 	"sortit/internal/issuemath"
 	"sortit/internal/issues"
+	"sortit/internal/vectors"
 )
 
 // IssueLister is the minimal read interface the cache needs to recompute the
@@ -116,7 +116,7 @@ func computeMeans(items []issues.Issue, storeTags []issues.Tag) issuemath.Corpus
 		if len(item.Embedding) == 0 {
 			continue
 		}
-		issueEmbeddings[item.ID] = normalizedCopy(item.Embedding)
+		issueEmbeddings[item.ID] = vectors.NormalizedCopy(item.Embedding)
 	}
 
 	tagEmbeddings := make(map[string][]float64, len(storeTags))
@@ -128,20 +128,4 @@ func computeMeans(items []issues.Issue, storeTags []issues.Tag) issuemath.Corpus
 	}
 
 	return issuemath.ComputeCorpusMeans(issueEmbeddings, tagEmbeddings)
-}
-
-func normalizedCopy(vector []float64) []float64 {
-	out := append([]float64(nil), vector...)
-	var magnitude float64
-	for _, value := range out {
-		magnitude += value * value
-	}
-	if magnitude == 0 {
-		return out
-	}
-	scale := math.Sqrt(magnitude)
-	for i := range out {
-		out[i] /= scale
-	}
-	return out
 }

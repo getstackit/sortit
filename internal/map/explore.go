@@ -247,9 +247,9 @@ func exploreIssueSummary(item issues.Issue) ExploreIssue {
 }
 
 func runtimeFactorVectors(items []issues.Issue, tags []string, tagEmbeddings map[string][]float64) map[string][]float64 {
-	vectors := make(map[string][]float64, len(items))
+	vecs := make(map[string][]float64, len(items))
 	if len(items) == 0 || len(tags) == 0 {
-		return vectors
+		return vecs
 	}
 
 	tagIndex := make(map[string]int, len(tags))
@@ -274,13 +274,13 @@ func runtimeFactorVectors(items []issues.Issue, tags []string, tagEmbeddings map
 		for i := range vector {
 			vector[i] = w.AtVec(i)
 		}
-		if !isZeroVector(vector) {
-			normalizeVector(vector)
+		if !vectors.IsZero(vector) {
+			vectors.NormalizeUnit(vector)
 		}
-		vectors[item.ID] = vector
+		vecs[item.ID] = vector
 	}
 
-	return vectors
+	return vecs
 }
 
 func sharedRelevantTags(a, b []TagRelevance, limit int) []string {

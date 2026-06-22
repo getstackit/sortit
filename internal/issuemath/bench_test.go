@@ -7,6 +7,7 @@ import (
 
 	"sortit/internal/issues"
 	"sortit/internal/scoring"
+	"sortit/internal/vectors"
 )
 
 // benchCorpus builds a deterministic synthetic corpus sized to exercise the
@@ -24,7 +25,7 @@ func benchCorpus(n, k, d int) (items []issues.Issue, tagNames []string, issueEmb
 			x = math.Mod(x*1.31+float64(j)*0.0009, 2)
 			v[j] = x - 1
 		}
-		normalizeVector(v)
+		vectors.NormalizeUnit(v)
 		tagEmb[name] = v
 	}
 
@@ -38,7 +39,7 @@ func benchCorpus(n, k, d int) (items []issues.Issue, tagNames []string, issueEmb
 			x = math.Mod(x*1.27+float64(j)*0.0011, 2)
 			v[j] = x - 1
 		}
-		normalizeVector(v)
+		vectors.NormalizeUnit(v)
 		issueEmb[id] = v
 
 		// Score 3 tags per issue, spread across the catalog.

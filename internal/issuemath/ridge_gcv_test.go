@@ -5,6 +5,7 @@ import (
 
 	"sortit/internal/issues"
 	"sortit/internal/scoring"
+	"sortit/internal/vectors"
 )
 
 // orthogonalAxis returns a unit vector along axis k in dim-dimensional space.
@@ -58,7 +59,7 @@ func TestSelectRidgeLambdaGCV_AdaptsToConditioning(t *testing.T) {
 				vec[d] = base[d]
 			}
 			vec[(i+1)%dim] += 0.3 // off-tag spread → residual to fit
-			normalizeVector(vec)
+			vectors.NormalizeUnit(vec)
 			issueEmb[id] = vec
 			items = append(items, issues.Issue{
 				ID:        id,

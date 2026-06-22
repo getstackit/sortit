@@ -54,7 +54,7 @@ import {
 } from "@/lib/issues";
 import { rememberRecentIssue } from "@/hooks/use-recent-history";
 import { cn } from "@/lib/utils";
-import { formatRelativeTime } from "@/lib/format";
+import { formatDateTime, formatRelativeTime } from "@/lib/format";
 import { tagHref } from "@/lib/tags";
 import { Badge } from "@/components/ui/badge";
 import { CloseIssueModal } from "@/components/close-issue-modal";
@@ -82,10 +82,6 @@ const MINI_MAP_VIEWBOX_HEIGHT = 360;
 const MINI_MAP_CENTER_X = MINI_MAP_VIEWBOX_WIDTH / 2;
 const MINI_MAP_CENTER_Y = MINI_MAP_VIEWBOX_HEIGHT / 2;
 const MINI_MAP_INNER_RADIUS = Math.min(MINI_MAP_VIEWBOX_WIDTH, MINI_MAP_VIEWBOX_HEIGHT) / 2 - 44;
-
-function formatDateTime(value: string) {
-  return new Date(value).toLocaleString();
-}
 
 function formatIssueTitle(raw: string, maxLength = 84) {
   const normalized = raw.replace(/\s+/g, " ").trim();
