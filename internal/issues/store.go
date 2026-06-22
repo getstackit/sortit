@@ -753,8 +753,8 @@ func displayTagsWithSpecificity(explicitTags []string, scores []TagRelevance, ta
 
 	normalized := copyTagScores(scores)
 	slices.SortStableFunc(normalized, func(a, b TagRelevance) int {
-		aScore := displayScore(a.Relevance, tagSpecificity, a.Tag)
-		bScore := displayScore(b.Relevance, tagSpecificity, b.Tag)
+		aScore := displayScore(a.EffectiveRelevance(), tagSpecificity, a.Tag)
+		bScore := displayScore(b.EffectiveRelevance(), tagSpecificity, b.Tag)
 		if aScore > bScore {
 			return -1
 		}
@@ -775,7 +775,11 @@ func displayTagsWithSpecificity(explicitTags []string, scores []TagRelevance, ta
 		if score.Tag == "" {
 			continue
 		}
-		if len(out) > 0 && score.Relevance < 0.2 {
+		effective := score.EffectiveRelevance()
+		if effective < 0.2 {
+			if len(out) == 0 {
+				continue
+			}
 			break
 		}
 		out = append(out, score.Tag)
@@ -783,7 +787,7 @@ func displayTagsWithSpecificity(explicitTags []string, scores []TagRelevance, ta
 			break
 		}
 	}
-	if len(out) == 0 && normalized[0].Tag != "" {
+	if len(out) == 0 && normalized[0].Tag != "" && normalized[0].EffectiveRelevance() > 0 {
 		return []string{normalized[0].Tag}
 	}
 	return out

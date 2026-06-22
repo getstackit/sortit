@@ -350,7 +350,7 @@ func predictedEvalTags(scores []ai.TagScore) []string {
 func predictedEvalTagRelevance(scores []issues.TagRelevance) []string {
 	names := make([]string, 0, len(scores))
 	for _, score := range scores {
-		names = appendNormalizedEvalTag(names, score.Tag, score.Relevance)
+		names = appendNormalizedEvalTag(names, score.Tag, score.EffectiveRelevance())
 	}
 	return names
 }

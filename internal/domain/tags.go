@@ -51,6 +51,17 @@ type TagRelevance struct {
 	NegationReason     string             `json:"negationReason,omitempty"`
 }
 
+// EffectiveRelevance returns the signed relevance consumed by downstream
+// surfaces that need to decide whether a tag applies: positive relevance minus
+// any explicit negation signal.
+func (t TagRelevance) EffectiveRelevance() float64 {
+	negation := 0.0
+	if t.Negation != nil {
+		negation = *t.Negation
+	}
+	return t.Relevance - negation
+}
+
 // EvidenceRange is a half-open byte-offset range [Start, End) in the source
 // text that the tagger cited to justify a tag assignment. Ranges are resolved
 // from verbatim LLM-returned quotes via case- and whitespace-insensitive
