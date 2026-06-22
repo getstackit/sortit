@@ -29,6 +29,26 @@ mise run check
 stackit submit
 ```
 
+## Link each PR to its Sortit issue
+
+When a branch implements a Sortit issue, carry the issue ID into the commit so a
+merged PR can be reconciled back to its issue. Add a `Closes:` trailer to the stackit
+commit message:
+
+```bash
+stackit create -m "feat(x): short description
+
+Closes: 01KKTA1E6KB97DA39V606AT1JA"
+```
+
+stackit propagates the commit body into the PR description, so the ID rides along to
+GitHub. **Without this link, a merged PR cannot be mapped back to its issue, so the
+issue silently stays `open` after the work ships** — the exact failure mode that
+motivated this rule (issues implemented and merged but never closed). The trailer is
+the durable breadcrumb that makes a post-merge close possible across the submit→merge
+boundary; the close itself is driven by the wrap-up checklist (`/sortit-wrap-up`) and,
+once built, an automated close-on-merge reconciliation sweep.
+
 ## Pre-Submit Gate (do not skip)
 
 **`mise run check` must pass before every `stackit submit`.** CI runs golangci-lint,
