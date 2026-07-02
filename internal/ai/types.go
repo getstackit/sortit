@@ -159,3 +159,23 @@ type ConceptProfiler interface {
 	// lowercase, reusable noun) and its profile prose.
 	ProposeConceptFromCluster(ctx context.Context, issueSummaries []string, frame ConceptFrame) (name string, profile string, err error)
 }
+
+// ThemeLabelTag is one tag loading passed to the theme labeler: a tag name and
+// its H-row loading within the theme, ordered heaviest-first by the caller.
+type ThemeLabelTag struct {
+	Tag     string  `json:"tag"`
+	Loading float64 `json:"loading"`
+}
+
+// ThemeLabeler names and describes a corpus theme — a cluster of tags with
+// loadings surfaced by NMF over the corpus ridge loadings (internal/issuethemes).
+// It mirrors ConceptProfiler.ProposeConceptFromCluster: the same OpenAI + Stub
+// provider pattern, primed with the project concept frame so a theme's name fits
+// the project's own vocabulary. Input is the theme's top tags with loadings plus a
+// handful of centroid-nearest issue titles; output is a short display name
+// (≤ ~4 words) and a one-sentence description. Labeling never blocks theme
+// computation — the themes service attaches a deterministic top-tag fallback
+// immediately and swaps in this label asynchronously when it returns.
+type ThemeLabeler interface {
+	ProposeThemeLabel(ctx context.Context, topTags []ThemeLabelTag, issueTitles []string, frame ConceptFrame) (name string, description string, err error)
+}

@@ -251,6 +251,42 @@ func (p *StubConceptProfiler) ProposeConceptFromCluster(_ context.Context, issue
 	return name, builder.String(), nil
 }
 
+// stubThemeLabelTags caps how many top tags the deterministic fallback joins
+// into a theme name, keeping it to the "≤ ~4 words" the labeler contract asks
+// for.
+const stubThemeLabelTags = 3
+
+type StubThemeLabeler struct{}
+
+func NewStubThemeLabeler() *StubThemeLabeler {
+	return &StubThemeLabeler{}
+}
+
+// ProposeThemeLabel derives a deterministic label by joining the theme's top
+// tag names with " / " (e.g. "mobile / ui") and a one-line description listing
+// them, so the no-AI path and tests stay deterministic. Returns an empty name
+// when the theme has no usable tags, signaling the caller to keep its own
+// fallback.
+func (l *StubThemeLabeler) ProposeThemeLabel(_ context.Context, topTags []ThemeLabelTag, _ []string, _ ConceptFrame) (string, string, error) {
+	names := make([]string, 0, stubThemeLabelTags)
+	for _, tag := range topTags {
+		name := strings.TrimSpace(tag.Tag)
+		if name == "" {
+			continue
+		}
+		names = append(names, name)
+		if len(names) >= stubThemeLabelTags {
+			break
+		}
+	}
+	if len(names) == 0 {
+		return "", "", nil
+	}
+	label := strings.Join(names, " / ")
+	description := fmt.Sprintf("Theme covering %s.", strings.Join(names, ", "))
+	return label, description, nil
+}
+
 func matchWeight(text string, signal string, weight float64) float64 {
 	if signal == "" {
 		return 0

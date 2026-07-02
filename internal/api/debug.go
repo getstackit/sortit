@@ -237,6 +237,56 @@ func (s *Server) handleDebugRidgeScore(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, result)
 }
 
+func (s *Server) handleDebugThemesList(w http.ResponseWriter, r *http.Request) {
+	result, err := s.debugThemesList.Handle(r.Context())
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+
+	writeJSON(w, http.StatusOK, result)
+}
+
+func (s *Server) handleDebugThemeDetail(w http.ResponseWriter, r *http.Request) {
+	id := strings.TrimSpace(chi.URLParam(r, "id"))
+	if id == "" {
+		writeError(w, http.StatusBadRequest, "missing theme id")
+		return
+	}
+
+	result, err := s.debugThemeDetail.Handle(r.Context(), id)
+	if err != nil {
+		if errors.Is(err, diagnostics.ErrThemeNotFound) {
+			writeError(w, http.StatusNotFound, "theme not found")
+			return
+		}
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+
+	writeJSON(w, http.StatusOK, result)
+}
+
+func (s *Server) handleDebugIssueThemes(w http.ResponseWriter, r *http.Request) {
+	id := strings.TrimSpace(chi.URLParam(r, "id"))
+	if id == "" {
+		writeError(w, http.StatusBadRequest, "missing issue id")
+		return
+	}
+
+	result, err := s.debugIssueThemes.Handle(r.Context(), id)
+	if err != nil {
+		if errors.Is(err, issues.ErrNotFound) {
+			writeError(w, http.StatusNotFound, "issue not found")
+			return
+		}
+		writeError(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+
+	writeJSON(w, http.StatusOK, result)
+}
+
 func decodeDebugIssueAnalyzeRequest(r *http.Request) (debugIssueAnalyzeRequest, error) {
 	request, err := decodeJSON[debugIssueAnalyzeRequest](r)
 	if err != nil {

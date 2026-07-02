@@ -11,8 +11,20 @@ import (
 
 const (
 	defaultThemeCount = 8
-	defaultIterations = 50
-	epsilon           = 1e-12
+	// defaultIterations is the multiplicative-update cap. With early stop
+	// (convergenceEpsilon) in place it is a backstop, not the terminator: a
+	// well-conditioned corpus converges and stops well before it, and only a
+	// pathological, slow-converging factorization runs the whole budget.
+	defaultIterations = 200
+	// convergenceEpsilon is the relative-improvement floor for the Frobenius
+	// objective ‖V−WH‖_F: once one full MU iteration (H then W) improves the
+	// objective by less than this fraction of the previous objective, the loop
+	// stops. MU decreases the objective monotonically, so the check is a
+	// one-sided "we've stopped making progress" test. It is deterministic — the
+	// same input reaches the same stopping iteration — so bit-for-bit
+	// reproducibility is preserved.
+	convergenceEpsilon = 1e-4
+	epsilon            = 1e-12
 )
 
 // Options controls theme extraction.
@@ -32,6 +44,17 @@ type IssueLoading struct {
 type Result struct {
 	IssueThemes []IssueThemes
 	Themes      []Theme
+	// Iterations is the number of multiplicative-update iterations actually run
+	// before the objective converged (relative improvement < convergenceEpsilon)
+	// or the cap was hit. Zero for a degenerate/empty input that never entered
+	// the MU loop. Surfaced as convergence telemetry (WP-206).
+	Iterations int
+	// ReconstructionError is the final relative Frobenius reconstruction error
+	// ‖V−WH‖_F / ‖V‖_F over the positive-part input matrix V — a normalized,
+	// K-comparable measure of how much of the corpus the factorization explains
+	// (0 = perfect, 1 = no better than the zero matrix). Zero for a degenerate
+	// input with no positive mass.
+	ReconstructionError float64
 }
 
 // IssueThemes is one issue's row of W: its theme membership weights.
@@ -79,14 +102,78 @@ func Build(loadings []IssueLoading, tagNames []string, tagEmbeddings map[string]
 	}
 
 	w, h := initializeNNDSVD(rows, k)
-	for range iterations {
-		updateH(rows, w, h)
-		updateW(rows, w, h)
-	}
+	used := runMultiplicativeUpdates(rows, w, h, iterations)
 	normalizeComponents(w, h)
 
 	order := themeOrder(w, h, tagNames)
-	return buildResult(loadings, tagNames, tagEmbeddings, w, h, order, topTags)
+	result := buildResult(loadings, tagNames, tagEmbeddings, w, h, order, topTags)
+	result.Iterations = used
+	// Normalization pushes mass between W and H but leaves the product W·H (and
+	// therefore the residual) exactly invariant, so this measures the same
+	// factorization the MU loop converged to.
+	result.ReconstructionError = reconstructionError(rows, w, h)
+	return result
+}
+
+// runMultiplicativeUpdates runs Lee–Seung MU (H then W) up to cap iterations,
+// stopping early once the relative improvement in the Frobenius objective
+// ‖V−WH‖_F drops below convergenceEpsilon. It returns the number of iterations
+// actually run. Deterministic: the same V/W/H reach the same stopping point.
+func runMultiplicativeUpdates(v, w, h [][]float64, cap int) int {
+	prev := math.Inf(1)
+	used := 0
+	for range cap {
+		updateH(v, w, h)
+		updateW(v, w, h)
+		used++
+		obj := frobeniusResidual(v, w, h)
+		if !math.IsInf(prev, 1) {
+			// MU is monotone non-increasing, so obj <= prev; a zero previous
+			// objective is already a perfect fit and further steps cannot help.
+			if prev <= 0 || (prev-obj)/prev < convergenceEpsilon {
+				break
+			}
+		}
+		prev = obj
+	}
+	return used
+}
+
+// frobeniusResidual returns ‖V−WH‖_F, the unnormalized reconstruction error the
+// MU loop drives toward zero.
+func frobeniusResidual(v, w, h [][]float64) float64 {
+	if len(v) == 0 || len(w) == 0 || len(h) == 0 {
+		return 0
+	}
+	n, m, k := len(v), len(v[0]), len(w[0])
+	sum := 0.0
+	for i := range n {
+		for j := range m {
+			approx := 0.0
+			for c := range k {
+				approx += w[i][c] * h[c][j]
+			}
+			d := v[i][j] - approx
+			sum += d * d
+		}
+	}
+	return math.Sqrt(sum)
+}
+
+// reconstructionError returns the relative Frobenius error ‖V−WH‖_F / ‖V‖_F,
+// or 0 when V has no mass.
+func reconstructionError(v, w, h [][]float64) float64 {
+	vNorm := 0.0
+	for _, row := range v {
+		for _, x := range row {
+			vNorm += x * x
+		}
+	}
+	vNorm = math.Sqrt(vNorm)
+	if vNorm <= 0 {
+		return 0
+	}
+	return frobeniusResidual(v, w, h) / vNorm
 }
 
 func positiveMatrix(loadings []IssueLoading, width int) [][]float64 {
