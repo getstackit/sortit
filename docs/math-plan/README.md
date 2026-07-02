@@ -77,7 +77,7 @@ debug tier and gates WP-501.
 | WP-301 | Real-embedding fixture | M | — | shipped (in stack) |
 | WP-302 | Explore and person-recommendation eval coverage | M | — | shipped (in stack) |
 | WP-303 | Map-projection quality metric | M | — | todo |
-| WP-304 | Ridge default re-examination on real geometry | M | WP-301 | todo — **elevated** |
+| WP-304 | Ridge default re-examination on real geometry | M | WP-301 | shipped (in stack) — verdict: ranking default switched to **uncentered** tag-space ridge |
 
 Stage 3 can interleave with Stage 2 — it shares no code with it. WP-303 gates
 Stage 5; WP-301 gates believing any new fixture-derived number.

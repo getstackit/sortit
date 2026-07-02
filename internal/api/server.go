@@ -694,6 +694,9 @@ func NewServer(cfg ServerConfig) *Server {
 	// Let the enricher measure tag alignment in the same centered space as the
 	// factor model, so anti-aligned generic tags are suppressed during tagging.
 	enricher.UseCentering(centeringCache)
+	// Centered ridge pair: the structure regime. Themes (and the theme debug
+	// endpoints) consume f_i from the corpus-mean-centered solve; they keep this
+	// pair when the ranking regime moved to uncentered inputs (WP-304).
 	ridgeLambdaCache := &ridgelambda.Cache{
 		Store:     store,
 		Tags:      catalog,
@@ -706,6 +709,25 @@ func NewServer(cfg ServerConfig) *Server {
 		Revisions: revisions,
 		Centering: centeringCache,
 		Lambda:    ridgeLambdaCache,
+	}
+	// Uncentered ridge pair: the ranking regime (WP-304). On real embedding
+	// geometry the centered tag-space ridge loses to the rank-1 fallback while
+	// the uncentered one beats it, so search, unified search, explore, and
+	// person recommendations rank from this pair; λ is GCV-selected on the same
+	// uncentered inputs. The centered ranking config stays reachable by wiring
+	// the centered pair instead.
+	ridgeLambdaRanking := &ridgelambda.Cache{
+		Store:      store,
+		Tags:       catalog,
+		Revisions:  revisions,
+		Uncentered: true,
+	}
+	ridgeDecompRanking := &ridgedecomp.Cache{
+		Store:      store,
+		Tags:       catalog,
+		Revisions:  revisions,
+		Uncentered: true,
+		Lambda:     ridgeLambdaRanking,
 	}
 	themesCache := &themes.Cache{
 		Decomp:    ridgeDecompCache,
@@ -741,13 +763,16 @@ func NewServer(cfg ServerConfig) *Server {
 		ReenrichHandler: reEnrichIssueHandler,
 		Memories:        memoryService,
 	}, logger)
+	// Ranking surfaces rank from the uncentered ridge pair (WP-304). The
+	// in-place λ fallback is deliberately not wired: it would solve a centered
+	// corpus, and its availability conditions coincide with the decomposition
+	// cache's — the graceful chain is uncentered bundle → rank-1.
 	exploreHandler := mapview.ExploreIssueHandler{
 		Reader:       store,
 		DetailReader: store,
 		SearchStore:  semanticSearchStoreFromStore(baseStore),
 		Catalog:      catalog,
-		RidgeDecomp:  ridgeDecompCache,
-		RidgeLambda:  ridgeLambdaCache,
+		RidgeDecomp:  ridgeDecompRanking,
 	}
 	curationDetector := curation.NewDetector(store, store, exploreHandler,
 		diagnostics.DebugFactorWeightsHandler{Store: store, Catalog: catalog},
@@ -810,16 +835,14 @@ func NewServer(cfg ServerConfig) *Server {
 			Store:        baseStore,
 			Cooccurrence: cooccurrenceCache,
 			Centering:    centeringCache,
-			RidgeDecomp:  ridgeDecompCache,
-			RidgeLambda:  ridgeLambdaCache,
+			RidgeDecomp:  ridgeDecompRanking,
 		},
 		searchUnified: search.SearchUnifiedHandler{
 			Analyzer:    commandAnalyzer,
 			Catalog:     catalog,
 			Store:       baseStore,
 			Centering:   centeringCache,
-			RidgeDecomp: ridgeDecompCache,
-			RidgeLambda: ridgeLambdaCache,
+			RidgeDecomp: ridgeDecompRanking,
 		},
 		exploreIssue:         exploreHandler,
 		listTags:             issueviews.ListTagsHandler{Catalog: catalog},
@@ -837,7 +860,7 @@ func NewServer(cfg ServerConfig) *Server {
 		debugThemeDetail:     diagnostics.DebugThemeDetailHandler{Cache: themesCache, Store: store},
 		debugIssueThemes:     diagnostics.DebugIssueThemesHandler{Store: store, Cache: themesCache, RidgeDecomp: ridgeDecompCache},
 		getPersonProfile:     people.GetPersonProfileHandler{Store: store, Catalog: catalog},
-		getPersonDetail:      people.GetPersonDetailHandler{Store: store, Catalog: catalog, RidgeDecomp: ridgeDecompCache, RidgeLambda: ridgeLambdaCache},
+		getPersonDetail:      people.GetPersonDetailHandler{Store: store, Catalog: catalog, RidgeDecomp: ridgeDecompRanking},
 		workCorrelations:     people.WorkCorrelationsHandler{Store: store, Catalog: catalog},
 		regions:              regionsHandler,
 		customRegions:        customRegionHandler,

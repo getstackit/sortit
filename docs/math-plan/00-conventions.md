@@ -54,10 +54,13 @@ queue.
   its deltas are floor arguments, never cite one without this caveat. The
   **real** fixture (WP-301, shipped) re-embeds the same texts with production
   `text-embedding-3-small`; cite it for any claim about real geometry. Its
-  headline result: the ridge tag-space ranking win *inverts* on real embeddings
-  (rank-1 0.905 vs ridge 0.754 NDCG@8, GCV λ falls to the 0.01 grid floor, tag
-  R² collapses to ~0.16) — see math-evolution §4 caveat 3. A fixture number
-  without its fixture name (`synthetic`/`real`) is meaningless.
+  headline result: the *centered* ridge tag-space ranking win inverted on real
+  embeddings (rank-1 0.905 vs centered ridge 0.754 NDCG@8, GCV λ at the 0.01
+  grid floor, tag R² ~0.16) — which is why WP-304 re-decided the default: the
+  shipped ranking config is now the **uncentered** tag-space ridge (real
+  0.9399, synthetic 0.9366 — beats rank-1 on both) — see math-evolution §4
+  caveats 3 and 5. A fixture number without its fixture name
+  (`synthetic`/`real`) is meaningless.
 
 ## 4. Determinism is a feature
 

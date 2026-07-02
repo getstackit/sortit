@@ -20,28 +20,36 @@ go test ./internal/matheval -update
 
 # Hyperparameter sweep reports (log-only, opt-in)
 go test ./internal/matheval -run TestSweepFactorWeight -sweep -v
+
+# WP-304 ridge config matrix: 6 similarity configs × 2 fixtures (log-only, opt-in)
+go test ./internal/matheval -run TestRidgeConfigMatrix -configmatrix -v
+
+# Centered-regime shadow comparison + λ sweeps (log-only, opt-in)
+go test ./internal/matheval -run TestRidgeShadowComparison -ridge -v
 ```
 
-A run evaluates **two ranking profiles** and produces output like:
+A run evaluates **two ranking profiles** (per fixture) and produces output like:
 
 ```
-[rank1] search: queries=32 NDCG@8=0.8658 Recall@8=0.9117
-[rank1] factor model: factorWeight=0.6230 aggregateR2=0.6230
-[rank1] per-issue R²: n=48 mean=0.6230 median=0.6487 p10=0.4175 p90=0.8553
-[ridge] search: queries=32 NDCG@8=0.9309 Recall@8=0.9586
-[ridge] factor model: factorWeight=0.7964 aggregateR2=0.7964
-[ridge] per-issue R²: n=48 mean=0.7964 median=0.8438 p10=0.6511 p90=0.9202
-ridge GCV λ_unscored = 3.0000
+[synthetic/rank1] search: queries=32 NDCG@8=0.8658 Recall@8=0.9117
+[synthetic/rank1] factor model: factorWeight=0.6230 aggregateR2=0.6230
+[synthetic/rank1] per-issue R²: n=48 mean=0.6230 median=0.6487 p10=0.4175 p90=0.8553
+[synthetic/ridge] search: queries=32 NDCG@8=0.9366 Recall@8=0.9560
+[synthetic/ridge] factor model: factorWeight=0.9005 aggregateR2=0.9005
+[synthetic/ridge] per-issue R²: n=48 mean=0.9005 median=0.9272 p10=0.8572 p90=0.9523
+[synthetic] ridge GCV λ_unscored = 1.0000
 ```
 
 and compares both against the keyed baseline in
 `internal/matheval/testdata/baseline.json`:
 
 - **`rank1`** — search with no options: the fallback path production takes
-  when the λ cache yields nothing (small/degenerate corpora).
-- **`ridge`** — the shipped default: the harness injects
-  `WithRidgeSimilarity` at the GCV-selected λ, mirroring how the API layer
-  injects `ridgelambda.Cache`. The GCV λ is re-derived on every run and
+  when the ridge decomposition cache yields nothing (small/degenerate
+  corpora).
+- **`ridge`** — the shipped default (WP-304): the harness injects the
+  **uncentered** full-corpus bundle via `WithRidgeDecomposition` at the GCV λ
+  selected on the same uncentered inputs, mirroring how the API layer injects
+  the uncentered `ridgedecomp.Cache`. The GCV λ is re-derived on every run and
   recorded in the baseline (`gcvLambdaUnscored`) for observability only —
   it is never asserted, so a grid or GCV change surfaces as a metric delta
   rather than silent drift.
@@ -76,8 +84,8 @@ changing anything that can push relevant issues out of the window entirely.
 ### Factor model: per-issue R² distribution
 
 The harness runs each profile's decomposition over the corpus —
-`issuemath.ComputeFactorDecomposition` (rank-1) for the `rank1` profile,
-`issuemath.ComputeRidgeDecomposition` at the GCV-selected λ for `ridge` — and
+`issuemath.ComputeFactorDecomposition` on centered inputs for the `rank1`
+profile, the uncentered full-corpus ridge bundle at its GCV λ for `ridge` — and
 summarizes the per-issue R² (the share of each embedding's variance explained
 by its tag loadings) as mean / median / p10 / p90, plus the resulting
 data-driven `factorWeight` and `aggregateR2`. These are *descriptive*
@@ -160,9 +168,12 @@ not gates — they never fail on metric values.
 
 ## What this harness does not cover
 
-- Real embedding geometry: fixtures are synthetic hash vectors, so absolute
-  metric values are not comparable to production quality. Only *relative*
-  movement under a math change is meaningful.
+- A real *corpus*: the `real` fixture (WP-301) covers real embedding geometry
+  — the same texts re-embedded with production `text-embedding-3-small`,
+  committed so CI needs no network — but the texts themselves were generated
+  from the tag structure (layer 1). Absolute metric values are still not
+  comparable to production quality; cite the `real` rows for geometry claims
+  (conventions §3) and treat synthetic deltas as floor arguments.
 - The AI analyzer (tag assignment quality) and the enrichment verifier.
 - Region-aware re-ranking options (`WithRegionTarget`, `WithAntiCorrelators`)
   — a natural next extension of the same corpus.

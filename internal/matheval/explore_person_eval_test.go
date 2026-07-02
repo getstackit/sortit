@@ -6,9 +6,11 @@ import (
 	"testing"
 	"time"
 
+	"sortit/internal/issuemath"
 	"sortit/internal/issues"
 	issuemap "sortit/internal/map"
 	"sortit/internal/people"
+	"sortit/internal/ridgedecomp"
 	"sortit/internal/ridgelambda"
 	"sortit/internal/tags"
 )
@@ -27,15 +29,16 @@ type SurfaceBaseline struct {
 
 // exploreSurfaceMetrics runs the explore eval over one fixture on both models.
 // It drives ExploreFromIssuesWithTags through the production option-injection
-// shape: rank-1 uses no options; ridge injects WithExploreRidgeSimilarity at the
-// GCV penalty, exactly as the explore handler does with ridgelambda.Cache. Every
-// fixture issue is open, so each seed sees the other 47 as candidates.
+// shape: rank-1 uses no options; ridge injects the uncentered full-corpus
+// bundle via WithExploreRidgeDecomposition, exactly as the explore handler does
+// with the uncentered ridgedecomp cache (WP-304). Every fixture issue is open,
+// so each seed sees the other 47 as candidates.
 func exploreSurfaceMetrics(
 	t *testing.T,
 	corpus Corpus,
 	storeIssues []issues.Issue,
 	storeTags []issues.Tag,
-	gcvLambda float64,
+	bundle issuemath.CorpusRidgeDecomposition,
 ) SurfaceBaseline {
 	t.Helper()
 	file, err := loadExploreJudgments(corpus)
@@ -63,7 +66,7 @@ func exploreSurfaceMetrics(
 
 	return SurfaceBaseline{
 		Rank1: run(),
-		Ridge: run(issuemap.WithExploreRidgeSimilarity(gcvLambda)),
+		Ridge: run(issuemap.WithExploreRidgeDecomposition(bundle)),
 	}
 }
 
@@ -73,14 +76,14 @@ func exploreSurfaceMetrics(
 // person's history is marked closed + assigned to them, every other issue stays
 // open and unassigned as the candidate pool. Handle builds the profile from the
 // history, then recommends open issues through the same blend + modifier chain
-// production runs. The rank-1 model leaves RidgeLambda nil; the ridge model wires
-// a real ridgelambda.Cache over the full corpus, which re-derives the same GCV
-// penalty the search eval uses.
+// production runs. The rank-1 model leaves the ridge caches nil; the ridge model
+// wires the uncentered ridgedecomp/ridgelambda cache pair over the full corpus
+// (WP-304), exactly as the API layer wires the person handler.
 //
 // Handle is the lowest seam that exercises the model choice honestly:
-// recommendOpenIssues is unexported and pulls its tag catalog + λ cache from the
-// handler, so calling it in isolation would either skip the model selection or
-// re-implement the handler's wiring.
+// recommendOpenIssues is unexported and pulls its tag catalog + decomposition
+// cache from the handler, so calling it in isolation would either skip the
+// model selection or re-implement the handler's wiring.
 func personSurfaceMetrics(
 	t *testing.T,
 	corpus Corpus,
@@ -100,7 +103,8 @@ func personSurfaceMetrics(
 			catalog := tags.NewCatalogService(personEvalTagStore{tags: storeTags}, nil, nil)
 			handler := people.GetPersonDetailHandler{Store: store, Catalog: catalog}
 			if ridge {
-				handler.RidgeLambda = &ridgelambda.Cache{Store: store, Tags: catalog}
+				handler.RidgeDecomp = &ridgedecomp.Cache{Store: store, Tags: catalog, Uncentered: true,
+					Lambda: &ridgelambda.Cache{Store: store, Tags: catalog, Uncentered: true}}
 			}
 
 			detail, err := handler.Handle(context.Background(), person.Person)

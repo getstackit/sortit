@@ -100,8 +100,8 @@ vs centered 0.7910). Layer 1 discriminated sharply, so layer 2 is not forced
 
 ## WP-304 — Ridge default re-examination on real geometry (NEW, from WP-301)
 
-**Size:** M · **Depends on:** WP-301 · **Priority: elevated — the shipped
-ranking default is in question.**
+**Size:** M · **Depends on:** WP-301 · **Status: shipped — see Outcome; the
+ranking default is now the uncentered tag-space ridge.**
 
 ### The situation
 
@@ -129,13 +129,99 @@ real board (0.9514), and recon-space nearly matches rank-1.
    flip discipline (fallback retained either way). A revert is cheap by
    construction: the rank-1 path never left.
 
-### Interim note
+### Interim note (resolved by the Outcome below)
 
-Until WP-304 lands, treat production ridge ranking as *unproven on real
-geometry* — do not cite the synthetic +0.065 as a production claim. The
-Stage-4/5 program is unaffected (themes/drift consume `f_i` structure, not
-ranking wins), but WP-501's projection input decision should wait for
-WP-304's read on centering.
+Until WP-304 landed, production ridge ranking was to be treated as *unproven
+on real geometry*. That interim state is over: the default was re-decided on
+the matrix below. WP-501's read on centering: the ranking regime is now
+uncentered, but themes (Stage 4/5's `f_i` source) deliberately stay on the
+centered solve — WP-501 should weigh both, not assume the ranking verdict
+transfers to projection input.
+
+### Outcome (shipped 2026-07-02) — default switched to UNCENTERED tag-space ridge
+
+**Verdict: switch the ranking default to ridge tag-space UNCENTERED at the
+GCV λ selected on uncentered inputs.** Under the pre-committed rule — a config
+qualifies iff (a) it does not lose to rank-1 on the real fixture beyond ±0.01
+NDCG@8 and (b) it does not lose > 0.02 NDCG@8 on synthetic vs the best there —
+exactly one config qualified, so the "exactly one → switch" branch applied.
+Layer-2 evidence was not needed: the matrix was not ambiguous.
+
+**Search config matrix** (NDCG@8 / Recall@8; full ranking path through
+`SearchFromQueryWithTags` with all modifiers where a production seam exists,
+similarity-only otherwise; reproduce with
+`go test ./internal/matheval -run TestRidgeConfigMatrix -configmatrix -v`):
+
+| Config | Path | synthetic | real | Qualifies? |
+|---|---|---|---|---|
+| 1 rank-1 centered (fallback) | full | 0.8658 / 0.9117 | 0.9050 / 0.8688 | (reference; fails (b): −0.065 syn vs best) |
+| 2 ridge tag-space centered, GCV λ=3.0/0.01 (old default) | full | 0.9309 / 0.9586 | 0.7536 / 0.5929 | **No** — fails (a): −0.1514 real |
+| 3 ridge tag-space **uncentered**, GCV λ=1.0/0.3 | full | **0.9366 / 0.9560** | **0.9399 / 0.9195** | **YES** — beats rank-1 real +0.0349 AND beats old best syn +0.0057 |
+| 4 ridge recon-space centered, GCV λ | sim-only¹ | 0.8935 / 0.9247 | 0.8744 / 0.8294 | No — fails (a): −0.0123 vs sim-only rank-1 (0.8867) real |
+| 5 ridge recon-space uncentered, GCV λ | sim-only¹ | 0.9070 / 0.9214 | 0.9394 / 0.9112 | No — fails (b): −0.0345 syn vs sim-only best (0.9415) |
+| 6 pure semantic cosine (null model) | full² | 0.8585 / 0.8924 | 0.8560 / 0.7997 | No — fails (a): −0.0490 real. The null model does NOT win on real. |
+
+¹ Recon-space has no full-path seam — search/explore/person hardcode
+`RidgeTagSpace` in the blend — so configs 4/5 are compared against
+similarity-only rank-1 (syn 0.8739, real 0.8867). Config 4 already fails there;
+config 5 also loses the simplicity preference to config 3 regardless.
+² Full-path via a ridge bundle over ID-renamed ghost clones, which routes every
+candidate through production's documented missing-candidate rule
+(`blended = semanticSim`) with all modifiers live.
+
+**Finalist runs (config 3), explore + person, full production seams:**
+
+| Surface | Model | synthetic | real |
+|---|---|---|---|
+| explore | rank-1 | 0.9275 / 0.8681 | 0.8057 / 0.7228 |
+| explore | ridge centered (old default) | 0.9260 / 0.8738 | 0.5784 / 0.5426 |
+| explore | **ridge uncentered (shipped)** | 0.9011 / 0.8438 | **0.8877 / 0.8146** |
+| person | rank-1 | 0.5367 / 0.4381 | 0.5594 / 0.4726 |
+| person | ridge centered (old default, decomp-cache seam) | 0.6293 / 0.4488 | 0.5224 / 0.4798 |
+| person | **ridge uncentered (shipped)** | 0.5516 / 0.4113 | **0.5763 / 0.4280** |
+
+On the load-bearing real fixture the shipped config beats rank-1 on all three
+surfaces (search +0.0349, explore +0.0820, person +0.0169 NDCG@8). Recorded
+costs: synthetic explore NDCG −0.0264 vs rank-1 and synthetic person −0.0777
+vs the old centered ridge — both on the fixture whose explore/person judgments
+are circular (derived from the same tag structure the synthetic embeddings are
+built from; WP-302's risk note pre-committed to treating the real rows as the
+calibration), plus real person Recall@8 −0.0446 while NDCG rises, on a
+6-person surface where a one-issue swing is ~0.03–0.08. Against the
+revert-to-rank-1 alternative, config 3 wins 5 of 6 surface×fixture NDCG cells
+— there was a near-dominator, so the ambiguity escape hatch did not apply.
+
+**What shipped (flip discipline: config-shaped, previous behavior reachable):**
+
+- `internal/ridgelambda/cache.go` + `internal/ridgedecomp/cache.go`: additive
+  `Uncentered bool` — λ selection and the corpus solve run on unit-normalized,
+  uncentered inputs; the bundle carries zero `Means` so queries/profiles stay
+  in the same space. Both regimes unit-tested.
+- `internal/map/search.go`: the bundle path now decomposes the RAW query
+  centered with the *bundle's* means (mirroring the person handler) instead of
+  the corpus-centered query — required for any bundle whose space differs from
+  the ranker's centering, a latent mismatch even before this WP.
+- `internal/api/server.go`: an uncentered ranking pair is wired into search,
+  unified search, explore, and person detail. **Themes and the theme debug
+  endpoints keep the centered pair** (separate cache instances) — the
+  structure regime was not re-litigated by this ranking decision. The
+  handlers' in-place λ fallback is no longer wired (a centered in-place solve
+  at an uncentered λ would be incoherent; its availability conditions coincide
+  with the bundle cache's), so the graceful chain is uncentered bundle →
+  rank-1; the in-place options remain in code as the explicit centered path.
+- `internal/matheval`: golden ridge/explore/person baselines re-measured on
+  the shipped config (search syn 0.9309→0.9366, real 0.7536→0.9399; explore
+  syn 0.9260→0.9011, real 0.5784→0.8877; person syn 0.6279→0.5516, real
+  0.4984→0.5763); rank-1 entries byte-identical; the config matrix committed
+  as the opt-in evidence harness (`config_matrix_test.go`).
+- Docs: math-evolution §3.1/§3.4/§3.5/§4 (caveat 5)/§5 ledger/§6 board;
+  whitepaper §2 status header + §10.3.
+
+**Standing guidance:** cite the real-fixture rows for any ranking claim; the
+synthetic explore/person dips ride the circular fixture and are the accepted
+cost of the switch. If production telemetry ever disagrees with the real
+fixture, layer-2 evidence (a judged real-corpus fixture, scope item 2) is the
+sharpening step — it was not needed for this verdict.
 
 ---
 

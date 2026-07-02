@@ -21,21 +21,21 @@
     "ridge": {
       "search": {
         "queries": 32,
-        "ndcg@8": 0.9309,
-        "recall@8": 0.9586
+        "ndcg@8": 0.9366,
+        "recall@8": 0.956
       },
       "factorModel": {
-        "factorWeight": 0.7964,
-        "aggregateR2": 0.7964,
+        "factorWeight": 0.9005,
+        "aggregateR2": 0.9005,
         "r2": {
           "count": 48,
-          "mean": 0.7964,
-          "median": 0.8438,
-          "p10": 0.6511,
-          "p90": 0.9202
+          "mean": 0.9005,
+          "median": 0.9272,
+          "p10": 0.8572,
+          "p90": 0.9523
         }
       },
-      "gcvLambdaUnscored": 3
+      "gcvLambdaUnscored": 1
     },
     "explore": {
       "rank1": {
@@ -45,8 +45,8 @@
       },
       "ridge": {
         "queries": 12,
-        "ndcg@8": 0.926,
-        "recall@8": 0.8738
+        "ndcg@8": 0.9011,
+        "recall@8": 0.8438
       }
     },
     "person": {
@@ -57,8 +57,8 @@
       },
       "ridge": {
         "queries": 6,
-        "ndcg@8": 0.6279,
-        "recall@8": 0.4488
+        "ndcg@8": 0.5516,
+        "recall@8": 0.4113
       }
     }
   },
@@ -84,21 +84,21 @@
     "ridge": {
       "search": {
         "queries": 32,
-        "ndcg@8": 0.7536,
-        "recall@8": 0.5929
+        "ndcg@8": 0.9399,
+        "recall@8": 0.9195
       },
       "factorModel": {
-        "factorWeight": 0.1616,
-        "aggregateR2": 0.1616,
+        "factorWeight": 0.1729,
+        "aggregateR2": 0.1729,
         "r2": {
           "count": 48,
-          "mean": 0.1616,
-          "median": 0.1362,
-          "p10": 0.0652,
-          "p90": 0.2707
+          "mean": 0.1729,
+          "median": 0.1721,
+          "p10": 0.0497,
+          "p90": 0.2686
         }
       },
-      "gcvLambdaUnscored": 0.01
+      "gcvLambdaUnscored": 0.3
     },
     "explore": {
       "rank1": {
@@ -108,8 +108,8 @@
       },
       "ridge": {
         "queries": 12,
-        "ndcg@8": 0.5784,
-        "recall@8": 0.5426
+        "ndcg@8": 0.8877,
+        "recall@8": 0.8146
       }
     },
     "person": {
@@ -120,8 +120,8 @@
       },
       "ridge": {
         "queries": 6,
-        "ndcg@8": 0.4984,
-        "recall@8": 0.4589
+        "ndcg@8": 0.5763,
+        "recall@8": 0.428
       }
     }
   }

@@ -5,7 +5,10 @@ import (
 	"math"
 	"testing"
 
+	"sortit/internal/centering"
+	"sortit/internal/issuemath"
 	"sortit/internal/issues"
+	"sortit/internal/scoring"
 )
 
 type stubStore struct {
@@ -143,4 +146,54 @@ func TestStrideSampleIsDeterministicAndBounded(t *testing.T) {
 	if n := len(strideSample(items[:5], 10)); n != 5 {
 		t.Fatalf("expected all 5 issues when under cap, got %d", n)
 	}
+}
+
+// TestCacheUncenteredSelection asserts the uncentered regime (WP-304): λ is
+// selected on unit-normalized, uncentered inputs — exactly what
+// SelectRidgeLambdaGCV returns for CenterEmbeddingsWith(zero means) — and a
+// wired centering cache is ignored.
+func TestCacheUncenteredSelection(t *testing.T) {
+	items, tags := twoClusterCorpus()
+	store := &stubStore{items: items}
+	c := &Cache{
+		Store:      store,
+		Tags:       &stubTags{tags: tags},
+		Uncentered: true,
+		// A wired centering cache must be ignored in the uncentered regime.
+		Centering: &centering.Cache{Store: &centeringStubStore{items: items}},
+	}
+
+	lambda, ok, err := c.Current(context.Background())
+	if err != nil {
+		t.Fatalf("Current: %v", err)
+	}
+	if !ok || lambda <= 0 {
+		t.Fatalf("expected a positive uncentered penalty, got (%v, %v)", lambda, ok)
+	}
+
+	// Reference: the same selection on explicitly uncentered inputs.
+	tagNames := []string{"alpha", "beta"}
+	rawIssues := make(map[string][]float64, len(items))
+	for _, item := range items {
+		rawIssues[item.ID] = item.Embedding
+	}
+	rawTags := map[string][]float64{"alpha": tags[0].Embedding, "beta": tags[1].Embedding}
+	issueEmb, tagEmb := issuemath.CenterEmbeddingsWith(issuemath.CorpusMeans{}, rawIssues, rawTags)
+	want, wantOK := issuemath.SelectRidgeLambdaGCV(items, tagNames, issueEmb, tagEmb,
+		scoring.RidgeAnchorLambdaScored, nil)
+	if !wantOK {
+		t.Fatal("reference GCV selection fell back")
+	}
+	if lambda != want {
+		t.Fatalf("uncentered cache selected λ=%v, reference uncentered selection is %v", lambda, want)
+	}
+}
+
+// centeringStubStore adapts the test corpus to the centering cache's lister.
+type centeringStubStore struct {
+	items []issues.Issue
+}
+
+func (s *centeringStubStore) List(context.Context) ([]issues.Issue, error) {
+	return s.items, nil
 }
