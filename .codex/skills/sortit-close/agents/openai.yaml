@@ -1,0 +1,4 @@
+interface:
+  display_name: "Sortit Close"
+  short_description: "Close one or more issues"
+  default_prompt: "Use $sortit-close to close one or more issues."

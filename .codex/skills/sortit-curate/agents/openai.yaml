@@ -1,0 +1,4 @@
+interface:
+  display_name: "Sortit Curate"
+  short_description: "Run a propose-only curation sweep"
+  default_prompt: "Use $sortit-curate to run a propose-only curation sweep."

@@ -1,0 +1,4 @@
+interface:
+  display_name: "Sortit Refine"
+  short_description: "Append refinement context to issues"
+  default_prompt: "Use $sortit-refine to append refinement context to issues."

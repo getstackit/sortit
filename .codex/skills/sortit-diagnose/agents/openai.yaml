@@ -1,0 +1,4 @@
+interface:
+  display_name: "Sortit Diagnose"
+  short_description: "Diagnose factor-model and tag quality"
+  default_prompt: "Use $sortit-diagnose to diagnose factor-model and tag quality."

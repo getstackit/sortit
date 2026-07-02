@@ -1,6 +1,9 @@
 package issuemath
 
-import "sortit/internal/issues"
+import (
+	"sortit/internal/issues"
+	"sortit/internal/vectors"
+)
 
 // IssueDrift holds one issue's AI/embedding drift: the global DriftCosine
 // between the embedding-derived ridge loading f and the analyzer's signed
@@ -63,7 +66,7 @@ func ComputeCorpusDrift(
 	lambdas := make([]float64, numTags)
 	for _, item := range items {
 		e := issueEmbeddings[item.ID]
-		if len(e) != embDim || isZeroVector(e) {
+		if len(e) != embDim || vectors.IsZero(e) {
 			continue
 		}
 
@@ -84,7 +87,7 @@ func ComputeCorpusDrift(
 		// f is solver-owned scratch, valid only until the next solve; it is
 		// fully consumed below before the loop iterates.
 		f := solver.solve(e, anchor, lambdas)
-		if f == nil || isZeroVector(f) {
+		if f == nil || vectors.IsZero(f) {
 			continue
 		}
 

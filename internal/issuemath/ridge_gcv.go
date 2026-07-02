@@ -8,6 +8,7 @@ import (
 
 	"sortit/internal/issues"
 	"sortit/internal/scoring"
+	"sortit/internal/vectors"
 )
 
 // DefaultRidgeLambdaGrid is the geometric search grid for GCV selection of
@@ -73,7 +74,7 @@ func SelectRidgeLambdaGCV(
 	samples := make([]ridgeGCVSample, 0, len(items))
 	for _, item := range items {
 		e := issueEmbeddings[item.ID]
-		if len(e) != embDim || isZeroVector(e) {
+		if len(e) != embDim || vectors.IsZero(e) {
 			continue
 		}
 		anchor, scored := signedAnchor(item.TagScores, tagIndex, numTags)

@@ -194,7 +194,7 @@ func SearchFromQueryWithTags(
 	}
 
 	queryVector := append([]float64(nil), queryEmbedding...)
-	if isZeroVector(queryVector) {
+	if vectors.IsZero(queryVector) {
 		queryVector = runtimeIssueEmbedding(issues.Issue{
 			ID:        "query",
 			Raw:       queryRaw,

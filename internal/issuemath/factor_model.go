@@ -212,8 +212,8 @@ func ComputeFactorDecomposition(
 	putResidualOnly := func(id string, issueEmb []float64, totalVar float64) {
 		residual := append([]float64(nil), issueEmb...)
 		residualNorm := math.Sqrt(totalVar)
-		if !isZeroVector(residual) {
-			normalizeVector(residual)
+		if !vectors.IsZero(residual) {
+			vectors.NormalizeUnit(residual)
 		}
 		decomp.put(id, make([]float64, embDim), residual, 0, residualNorm, 0)
 		varResidual += totalVar
@@ -230,12 +230,12 @@ func ComputeFactorDecomposition(
 		totalVar := dotProduct(issueEmb, issueEmb)
 
 		factorEmb := synthesizeFactorEmbedding(item.TagScores, tagIndex, tagCov, tagEmbeddings, tagNames, len(tagNames), embDim)
-		if isZeroVector(factorEmb) {
+		if vectors.IsZero(factorEmb) {
 			// No tags — full weight to residual for this issue.
 			putResidualOnly(item.ID, issueEmb, totalVar)
 			continue
 		}
-		normalizeVector(factorEmb)
+		vectors.NormalizeUnit(factorEmb)
 
 		// Project issue embedding onto factor-predicted direction.
 		projScalar := dotProduct(issueEmb, factorEmb)
@@ -268,11 +268,11 @@ func ComputeFactorDecomposition(
 		}
 
 		// Normalize for similarity computation.
-		if !isZeroVector(proj) {
-			normalizeVector(proj)
+		if !vectors.IsZero(proj) {
+			vectors.NormalizeUnit(proj)
 		}
-		if !isZeroVector(residual) {
-			normalizeVector(residual)
+		if !vectors.IsZero(residual) {
+			vectors.NormalizeUnit(residual)
 		}
 
 		decomp.put(item.ID, proj, residual, projNorm, residualNorm, r2)
@@ -313,8 +313,8 @@ func DecomposeEmbedding(
 	residualOnly := func() DecomposedEmbedding {
 		residual := append([]float64(nil), embedding...)
 		residualNorm := math.Sqrt(dotProduct(residual, residual))
-		if !isZeroVector(residual) {
-			normalizeVector(residual)
+		if !vectors.IsZero(residual) {
+			vectors.NormalizeUnit(residual)
 		}
 		return DecomposedEmbedding{
 			Factor:       make([]float64, embDim),
@@ -333,10 +333,10 @@ func DecomposeEmbedding(
 	}
 
 	factorEmb := synthesizeFactorEmbedding(tagScores, tagIndex, tagCov, tagEmbeddings, tagNames, len(tagNames), embDim)
-	if isZeroVector(factorEmb) {
+	if vectors.IsZero(factorEmb) {
 		return residualOnly()
 	}
-	normalizeVector(factorEmb)
+	vectors.NormalizeUnit(factorEmb)
 
 	projScalar := dotProduct(embedding, factorEmb)
 	if projScalar <= 0 {
@@ -352,11 +352,11 @@ func DecomposeEmbedding(
 	floats.Sub(residual, factor)
 	residualNorm := math.Sqrt(dotProduct(residual, residual))
 
-	if !isZeroVector(factor) {
-		normalizeVector(factor)
+	if !vectors.IsZero(factor) {
+		vectors.NormalizeUnit(factor)
 	}
-	if !isZeroVector(residual) {
-		normalizeVector(residual)
+	if !vectors.IsZero(residual) {
+		vectors.NormalizeUnit(residual)
 	}
 
 	return DecomposedEmbedding{
@@ -392,8 +392,8 @@ func BlendFromDecomposition(decomp FactorDecomposition, a, b DecomposedEmbedding
 	residualSim = vectors.UnitCosineSimilarity(a.Residual, b.Residual)
 
 	wF, wR := decomp.FactorWeight, decomp.ResidualWeight
-	noFactor := isZeroVector(a.Factor) || isZeroVector(b.Factor)
-	noResidual := isZeroVector(a.Residual) || isZeroVector(b.Residual)
+	noFactor := vectors.IsZero(a.Factor) || vectors.IsZero(b.Factor)
+	noResidual := vectors.IsZero(a.Residual) || vectors.IsZero(b.Residual)
 	switch {
 	case noFactor && !noResidual:
 		wF, wR = 0, 1

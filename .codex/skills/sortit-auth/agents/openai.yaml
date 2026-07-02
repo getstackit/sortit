@@ -1,0 +1,4 @@
+interface:
+  display_name: "Sortit Auth"
+  short_description: "Authenticate the Sortit CLI"
+  default_prompt: "Use $sortit-auth to authenticate the Sortit CLI."

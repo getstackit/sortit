@@ -1,0 +1,4 @@
+interface:
+  display_name: "Sortit Get"
+  short_description: "Fetch a Sortit issue by ID"
+  default_prompt: "Use $sortit-get to fetch a Sortit issue by ID."

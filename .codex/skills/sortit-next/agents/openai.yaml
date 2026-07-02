@@ -1,0 +1,4 @@
+interface:
+  display_name: "Sortit Next"
+  short_description: "Find the user's next issue to work on"
+  default_prompt: "Use $sortit-next to find the user's next issue to work on."

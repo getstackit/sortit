@@ -14,7 +14,7 @@ func TestInstallSkillTargets(t *testing.T) {
 	baseDir := t.TempDir()
 	var out bytes.Buffer
 
-	targets := targetsForFormats([]agentSkillFormat{agentSkillFormatClaude, agentSkillFormatCodex})
+	targets := targetsForFormats([]agentSkillFormat{agentSkillFormatClaude, agentSkillFormatCodex}, installScope{name: "global", global: true})
 	if err := installSkillTargets(baseDir, targets, "1.2.3", &out); err != nil {
 		t.Fatalf("installSkillTargets() error = %v", err)
 	}
@@ -94,7 +94,7 @@ func TestInstallSkillTargetsWithInstructions(t *testing.T) {
 	}
 
 	var out bytes.Buffer
-	targets := targetsForFormats([]agentSkillFormat{agentSkillFormatClaude, agentSkillFormatCodex})
+	targets := targetsForFormats([]agentSkillFormat{agentSkillFormatClaude, agentSkillFormatCodex}, installScope{name: "global", global: true})
 	if err := installSkillTargetsWithOptions(baseDir, targets, false, "1.2.3", true, &out); err != nil {
 		t.Fatalf("installSkillTargetsWithOptions() error = %v", err)
 	}
@@ -143,7 +143,7 @@ func TestInstallSkillTargetsRequiresForceForDifferentVersion(t *testing.T) {
 
 	baseDir := t.TempDir()
 	var out bytes.Buffer
-	targets := targetsForFormats([]agentSkillFormat{agentSkillFormatCodex})
+	targets := targetsForFormats([]agentSkillFormat{agentSkillFormatCodex}, installScope{name: "global", global: true})
 
 	if err := installSkillTargets(baseDir, targets, "1.0.0", &out); err != nil {
 		t.Fatalf("initial installSkillTargets() error = %v", err)
@@ -164,7 +164,7 @@ func TestInstallSkillTargetsClearsManagedSkillDirectories(t *testing.T) {
 
 	baseDir := t.TempDir()
 	var out bytes.Buffer
-	targets := targetsForFormats([]agentSkillFormat{agentSkillFormatCodex})
+	targets := targetsForFormats([]agentSkillFormat{agentSkillFormatCodex}, installScope{name: "global", global: true})
 
 	staleDir := filepath.Join(baseDir, codexSkillsDir, "sortit-search", "stale")
 	if err := os.MkdirAll(staleDir, 0o755); err != nil {
@@ -213,22 +213,23 @@ description: "Search issues"
 	}
 }
 
-func TestSelectInstallTargetsWithFormats(t *testing.T) {
+func TestSelectInstallFormatsWithFormats(t *testing.T) {
 	t.Parallel()
 
-	targets, err := selectInstallTargets(t.TempDir(), []string{"claude,codex"}, strings.NewReader(""), &bytes.Buffer{})
+	scopes := []installScope{{name: "global", baseDir: t.TempDir(), global: true}}
+	formats, err := selectInstallFormats(scopes, []string{"claude,codex"}, strings.NewReader(""), &bytes.Buffer{})
 	if err != nil {
-		t.Fatalf("selectInstallTargets() error = %v", err)
+		t.Fatalf("selectInstallFormats() error = %v", err)
 	}
-	if len(targets) != 2 {
-		t.Fatalf("expected 2 targets, got %d", len(targets))
+	if len(formats) != 2 {
+		t.Fatalf("expected 2 formats, got %d", len(formats))
 	}
-	if targets[0].format != agentSkillFormatClaude || targets[1].format != agentSkillFormatCodex {
-		t.Fatalf("unexpected targets: %+v", targets)
+	if formats[0] != agentSkillFormatClaude || formats[1] != agentSkillFormatCodex {
+		t.Fatalf("unexpected formats: %+v", formats)
 	}
 }
 
-func TestSelectInstallTargetsFallsBackToExistingDirsWhenNonInteractive(t *testing.T) {
+func TestSelectInstallFormatsFallsBackToExistingDirsWhenNonInteractive(t *testing.T) {
 	t.Parallel()
 
 	baseDir := t.TempDir()
@@ -236,23 +237,149 @@ func TestSelectInstallTargetsFallsBackToExistingDirsWhenNonInteractive(t *testin
 		t.Fatalf("mkdir .codex: %v", err)
 	}
 
-	targets, err := selectInstallTargets(baseDir, nil, strings.NewReader(""), &bytes.Buffer{})
+	scopes := []installScope{{name: "local", baseDir: baseDir}}
+	formats, err := selectInstallFormats(scopes, nil, strings.NewReader(""), &bytes.Buffer{})
 	if err != nil {
-		t.Fatalf("selectInstallTargets() error = %v", err)
+		t.Fatalf("selectInstallFormats() error = %v", err)
 	}
-	if len(targets) != 1 || targets[0].format != agentSkillFormatCodex {
-		t.Fatalf("unexpected targets: %+v", targets)
+	if len(formats) != 1 || formats[0] != agentSkillFormatCodex {
+		t.Fatalf("unexpected formats: %+v", formats)
 	}
 }
 
-func TestSelectInstallTargetsErrorsWithoutTTYOrExistingDirs(t *testing.T) {
+func TestSelectInstallFormatsDetectsDirsAcrossScopes(t *testing.T) {
 	t.Parallel()
 
-	_, err := selectInstallTargets(t.TempDir(), nil, strings.NewReader(""), &bytes.Buffer{})
+	localDir := t.TempDir()
+	if err := os.Mkdir(filepath.Join(localDir, ".claude"), 0o755); err != nil {
+		t.Fatalf("mkdir .claude: %v", err)
+	}
+	globalDir := t.TempDir()
+	if err := os.Mkdir(filepath.Join(globalDir, ".codex"), 0o755); err != nil {
+		t.Fatalf("mkdir .codex: %v", err)
+	}
+
+	// A .claude in the local scope and a .codex in the global scope should both
+	// be detected so the non-interactive fallback installs both formats.
+	scopes := []installScope{
+		{name: "global", baseDir: globalDir, global: true},
+		{name: "local", baseDir: localDir},
+	}
+	formats, err := selectInstallFormats(scopes, nil, strings.NewReader(""), &bytes.Buffer{})
+	if err != nil {
+		t.Fatalf("selectInstallFormats() error = %v", err)
+	}
+	if len(formats) != 2 {
+		t.Fatalf("expected 2 formats from cross-scope detection, got %+v", formats)
+	}
+}
+
+func TestSelectInstallFormatsErrorsWithoutTTYOrExistingDirs(t *testing.T) {
+	t.Parallel()
+
+	scopes := []installScope{{name: "global", baseDir: t.TempDir(), global: true}}
+	_, err := selectInstallFormats(scopes, nil, strings.NewReader(""), &bytes.Buffer{})
 	if err == nil {
 		t.Fatal("expected selection error")
 	}
 	if !strings.Contains(err.Error(), "use --format=claude or --format=codex") {
 		t.Fatalf("unexpected error: %v", err)
+	}
+}
+
+func TestResolveInstallScopes(t *testing.T) {
+	t.Parallel()
+
+	home, err := os.UserHomeDir()
+	if err != nil {
+		t.Fatalf("UserHomeDir: %v", err)
+	}
+	cwd, err := os.Getwd()
+	if err != nil {
+		t.Fatalf("Getwd: %v", err)
+	}
+
+	tests := []struct {
+		name        string
+		local       bool
+		global      bool
+		wantNames   []string
+		wantBaseDir map[string]string
+	}{
+		{
+			name:        "default is global",
+			wantNames:   []string{"global"},
+			wantBaseDir: map[string]string{"global": home},
+		},
+		{
+			name:        "global only",
+			global:      true,
+			wantNames:   []string{"global"},
+			wantBaseDir: map[string]string{"global": home},
+		},
+		{
+			name:        "local only",
+			local:       true,
+			wantNames:   []string{"local"},
+			wantBaseDir: map[string]string{"local": cwd},
+		},
+		{
+			name:        "both, global first",
+			local:       true,
+			global:      true,
+			wantNames:   []string{"global", "local"},
+			wantBaseDir: map[string]string{"global": home, "local": cwd},
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+
+			scopes, err := resolveInstallScopes(tc.local, tc.global)
+			if err != nil {
+				t.Fatalf("resolveInstallScopes() error = %v", err)
+			}
+			if len(scopes) != len(tc.wantNames) {
+				t.Fatalf("expected %d scopes, got %+v", len(tc.wantNames), scopes)
+			}
+			for i, want := range tc.wantNames {
+				if scopes[i].name != want {
+					t.Fatalf("scope[%d].name = %q, want %q", i, scopes[i].name, want)
+				}
+				if scopes[i].baseDir != tc.wantBaseDir[want] {
+					t.Fatalf("scope %q baseDir = %q, want %q", want, scopes[i].baseDir, tc.wantBaseDir[want])
+				}
+			}
+			// global scope drives the ~/ display prefix; local does not.
+			for _, s := range scopes {
+				if s.name == "global" && !s.global {
+					t.Fatalf("global scope should set global=true")
+				}
+				if s.name == "local" && s.global {
+					t.Fatalf("local scope should set global=false")
+				}
+			}
+		})
+	}
+}
+
+func TestTargetsForFormatsScopeLabels(t *testing.T) {
+	t.Parallel()
+
+	formats := []agentSkillFormat{agentSkillFormatClaude, agentSkillFormatCodex}
+
+	global := targetsForFormats(formats, installScope{name: "global", baseDir: "/home/x", global: true})
+	if global[0].displayPath != "~/.claude/skills" || global[1].displayPath != "~/.codex/skills" {
+		t.Fatalf("unexpected global labels: %q, %q", global[0].displayPath, global[1].displayPath)
+	}
+
+	local := targetsForFormats(formats, installScope{name: "local", baseDir: "/repo"})
+	if local[0].displayPath != ".claude/skills" || local[1].displayPath != ".codex/skills" {
+		t.Fatalf("unexpected local labels: %q, %q", local[0].displayPath, local[1].displayPath)
+	}
+	// skillsDir is scope-independent (joined onto baseDir at install time).
+	if local[0].skillsDir != claudeSkillsDir || local[1].skillsDir != codexSkillsDir {
+		t.Fatalf("unexpected skillsDir: %q, %q", local[0].skillsDir, local[1].skillsDir)
 	}
 }

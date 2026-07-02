@@ -1,0 +1,4 @@
+interface:
+  display_name: "Sortit Memory"
+  short_description: "Create or review durable Sortit memories"
+  default_prompt: "Use $sortit-memory to create or review durable Sortit memories."

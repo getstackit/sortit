@@ -43,24 +43,26 @@ func CenterUnit(v, mean []float64) []float64 {
 	}
 
 	out := append([]float64(nil), v...)
-	if isZero(out) {
+	if IsZero(out) {
 		return out
 	}
 
 	if len(mean) != len(out) {
-		normalizeUnit(out)
+		NormalizeUnit(out)
 		return out
 	}
 
 	floats.Sub(out, mean)
-	if isZero(out) {
+	if IsZero(out) {
 		copy(out, v)
 	}
-	normalizeUnit(out)
+	NormalizeUnit(out)
 	return out
 }
 
-func isZero(values []float64) bool {
+// IsZero reports whether every component of values is exactly zero (an empty
+// vector counts as zero).
+func IsZero(values []float64) bool {
 	for _, value := range values {
 		if value != 0 {
 			return false
@@ -69,7 +71,9 @@ func isZero(values []float64) bool {
 	return true
 }
 
-func normalizeUnit(vector []float64) {
+// NormalizeUnit scales vector in place to unit length. A zero vector is left
+// unchanged.
+func NormalizeUnit(vector []float64) {
 	// floats.Dot(v, v) gives the sum of squares through the fast unrolled
 	// kernel; floats.Norm would be overflow-safe but slower, and unit-length
 	// embeddings never approach the overflow regime it guards against.
@@ -78,4 +82,12 @@ func normalizeUnit(vector []float64) {
 		return
 	}
 	floats.Scale(1/math.Sqrt(sumSq), vector)
+}
+
+// NormalizedCopy returns a unit-length copy of vector, leaving the input
+// untouched. A zero or empty vector is returned as an unmodified copy.
+func NormalizedCopy(vector []float64) []float64 {
+	out := append([]float64(nil), vector...)
+	NormalizeUnit(out)
+	return out
 }

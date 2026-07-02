@@ -1,0 +1,4 @@
+interface:
+  display_name: "Sortit Explore"
+  short_description: "Explore issues related to a known issue"
+  default_prompt: "Use $sortit-explore to explore issues related to a known issue."

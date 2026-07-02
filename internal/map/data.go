@@ -3,8 +3,6 @@ package issuemap
 import (
 	"math"
 
-	"gonum.org/v1/gonum/floats"
-
 	"sortit/internal/issues"
 )
 
@@ -31,13 +29,4 @@ func defaultTagCatalog() []tagSpec {
 
 func round(value float64) float64 {
 	return math.Round(value*100) / 100
-}
-
-func normalizeVector(vector []float64) {
-	// floats.Dot(v, v) is the sum of squares through the unrolled kernel.
-	magnitude := floats.Dot(vector, vector)
-	if magnitude == 0 {
-		return
-	}
-	floats.Scale(1/math.Sqrt(magnitude), vector)
 }
