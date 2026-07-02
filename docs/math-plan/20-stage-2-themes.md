@@ -216,6 +216,42 @@ Three endpoints, tested, documented in the API docs alongside the other debug
 endpoints; a recorded qualitative read of dev-corpus themes in the PR
 description.
 
+### Outcome (shipped)
+
+Shipped as designed with two scope adjustments, both because there was no
+live seeded dev server available in this environment (debug tier, no state
+mutation permitted):
+
+- **Qualitative read done on the matheval fixture corpus, not a seeded dev
+  corpus.** `internal/themes/qualitative_test.go` runs the real themes cache
+  over `matheval.GenerateCorpus()` (48 issues, 16 tags in 8 correlated
+  domain pairs) and logs the theme list. Result: 8/8 themes cleanly recovered
+  a real domain group (money, identity, documents, mobile, data+performance,
+  discovery, and communications split cleanly into notifications/email) —
+  not garbage, so no WP-206 stop-and-report was triggered. The dev-corpus
+  manual pass from the Validation section above is still open and belongs to
+  whoever seeds a long-lived dev server.
+- **Centroid-nearest issues moved from the list endpoint to the detail
+  endpoint only.** `GET /debug/themes` returns stable ID, weight share, top
+  tags, and match diagnostics; `GET /debug/themes/{id}` adds centroid-top
+  issues and top issues by W weight. Every issue's centroid similarity
+  against every theme is O(themes × issues) — cheap enough per-theme on
+  request, wasteful to compute for every theme on every list call. The full H
+  row was not exposed either (`GET /debug/themes/{id}` surfaces the same
+  top-5 tags as the list, with the limitation documented in the response's
+  `tagsNote` field) — issuethemes does not export more than top-5, and this
+  WP does not touch issuethemes (that's the WP-206 remediation path WP-203
+  already flagged).
+
+Plan correction: `internal/themes.Result` gained a `Means` field
+(`issuemath.CorpusMeans`, additive) so the detail endpoint can center a raw
+issue embedding into the same space as a theme's centroid — the decomposition
+cache already computes these means, this just carries the value through
+rather than re-deriving them. `internal/themes` also gained an exported
+`ClassifyParticipation` (loadings.go) so `/debug/issues/{id}/themes` can
+classify one issue's participation status without re-running the whole-corpus
+adapter or duplicating the participation rule.
+
 ---
 
 ## WP-205 — Theme labeling

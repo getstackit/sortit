@@ -21,6 +21,7 @@ import (
 	"context"
 	"sync"
 
+	"sortit/internal/issuemath"
 	"sortit/internal/issues"
 	"sortit/internal/issuethemes"
 	"sortit/internal/ridgedecomp"
@@ -69,6 +70,16 @@ type Result struct {
 	ExcludedNoEmbedding int
 	// ExcludedNoAnchor counts issues with a usable embedding but no anchored tag.
 	ExcludedNoAnchor int
+	// Means are the corpus-mean centering vectors the decomposition (and this
+	// factorization's TagEmbeddings/Centroid space) were computed in. WP-204's
+	// centroid-nearest-issue lookup needs to center a raw issue embedding into
+	// the same space as a theme's Centroid; the decomposition cache already
+	// computes these means (internal/ridgedecomp reads them from
+	// internal/centering), so this field just carries the value through rather
+	// than re-deriving it. Zero when the decomposition centered against
+	// nothing (e.g. no centering cache wired) — issuemath.CenterVector
+	// degrades to unit-normalization in that case.
+	Means issuemath.CorpusMeans
 
 	// Identities carries the stable theme identity metadata, index-aligned with
 	// the embedded Result.Themes: Identities[i] is the stable ID and match score
@@ -191,6 +202,7 @@ func (c *Cache) compute(ctx context.Context, rev uint64) (Result, bool, error) {
 		Participating:       counts.participating,
 		ExcludedNoEmbedding: counts.noEmbedding,
 		ExcludedNoAnchor:    counts.noAnchor,
+		Means:               decomp.Means,
 	}
 	c.identify(&result)
 	return result, true, nil
