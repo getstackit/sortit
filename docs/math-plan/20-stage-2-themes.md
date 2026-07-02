@@ -94,6 +94,19 @@ concurrent `Current` calls compute once (`-race`).
 `themesCache.Current(ctx)` returns revision-fresh themes; no caller computes
 NMF directly; degradation shape matches the other caches.
 
+### Outcome (WP-201+202 shipped together)
+
+`internal/themes` service package (loadings adapter + cache); pure
+`issuethemes` untouched. Plan corrections discovered: (a) raw `f` magnitudes
+were NOT recoverable from the cached unit loadings — `RidgeVectors` gained a
+`LoadingNorm` field (additive; ranking, equivalence, and baselines untouched)
+so `raw f = Loading·LoadingNorm`; (b) the decomposition bundle carries
+`TagNames`/`TagEmbeddings` (centered — the right space for WP-204 centroid
+lookups), making `TagDataFromIssues` unnecessary, but lacks per-issue anchors,
+so the cache takes a Store dep to read `TagScores` for the participation rule.
+Floor: `minThemeParticipants = 16` (2·K). Determinism, single-flight, and
+participation-rule tests all green under `-race`.
+
 ---
 
 ## WP-203 — Theme identity stability across refreshes

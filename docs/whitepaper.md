@@ -668,12 +668,17 @@ and are part of the current system:
   result persists as `Negation` / `NegationProvenance` /
   `NegationEvidence` on `TagRelevance`. Verifier dominance also emits a
   negation instead of only multiplying relevance down.
-- **Anchored ridge regression exists in shadow mode.** The
+- **Anchored ridge regression is the default similarity model.** The
   `f = (TTᵀ + Λ)⁻¹(Te + Λr)` solve with per-tag anchors
-  (`internal/issuemath/ridgescore.go`) is computed on demand behind
-  `GET /api/v1/debug/issues/{id}/ridge`, anchored on signed `r⁺ − r⁻`,
-  along with a drift cosine between anchor and refined scores. It is not
-  persisted and not consumed by ranking.
+  (`internal/issuemath/ridgescore.go`) now backs search, explore, and
+  person recommendations at the GCV-selected unscored-tag penalty
+  (`internal/ridgelambda`, memoized by corpus revision), consistent with
+  the §2 status header and §10.2 item 1. Each surface computes the
+  decomposition fresh per request — it is not persisted anywhere. The
+  debug endpoint, `GET /api/v1/debug/issues/{id}/ridge`, remains and still
+  anchors on signed `r⁺ − r⁻` alongside a drift cosine between anchor and
+  refined scores; it now doubles as a way to inspect the same decomposition
+  ranking uses, rather than a preview of an unshipped path.
 
 See math-evolution.md §10.1 for the full phase-by-phase status.
 

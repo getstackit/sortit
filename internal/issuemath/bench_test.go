@@ -78,3 +78,30 @@ func BenchmarkSelectRidgeLambdaGCV(b *testing.B) {
 			scoring.RidgeAnchorLambdaScored, nil)
 	}
 }
+
+// gcvShapes are the realistic GCV λ-recompute shapes for WP-105. Samples are
+// held at ~200 (enough to extrapolate linearly to the 2000-issue GCV bound;
+// the per-sample work is identical, so full-recompute ≈ ns/op × (2000/200)).
+var gcvShapes = []struct {
+	name          string
+	samples, k, d int
+}{
+	{"production_K200_D1536_S200", 200, 200, 1536},
+	{"small_K64_D256_S200", 200, 64, 256},
+}
+
+// BenchmarkSelectRidgeLambdaGCVShapes measures a full λ-grid recompute (all 7
+// grid points) at production and small shapes. Divide ns/op by 7 for one grid
+// point; multiply by 10 (2000/200) to extrapolate to the GCV sample bound.
+func BenchmarkSelectRidgeLambdaGCVShapes(b *testing.B) {
+	for _, sh := range gcvShapes {
+		items, tagNames, issueEmb, tagEmb := benchCorpus(sh.samples, sh.k, sh.d)
+		b.Run(sh.name, func(b *testing.B) {
+			b.ReportAllocs()
+			for b.Loop() {
+				SelectRidgeLambdaGCV(items, tagNames, issueEmb, tagEmb,
+					scoring.RidgeAnchorLambdaScored, nil)
+			}
+		})
+	}
+}

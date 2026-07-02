@@ -214,8 +214,11 @@ what makes "missing tag" detection possible (§3.6).
   — the O(K²·D) cost. (Rows of `T` are tag embeddings, so the K×K Gram is
   `TTᵀ`.)
 - Per issue: copy the Gram, add `Λ_i` to the diagonal, form
-  `rhs = T e_i + Λ_i r_i`, one LU solve. O(K²) per issue; microseconds at
-  K ≈ 200.
+  `rhs = T e_i + Λ_i r_i`, one Cholesky solve (`A = TTᵀ + Λ_i` is SPD). O(K²)
+  per issue; microseconds at K ≈ 200. This is the **same factorization GCV λ
+  selection uses**, so ranking and λ selection share one numerical path (Track
+  D5); a defensive LU fallback with a process counter
+  (`RidgeCholeskyFallbackCount`) covers the never-observed non-SPD case.
 - The solver reuses scratch buffers and is therefore **not concurrency-safe**
   — currently fine (single-threaded per request), flagged in Track D.
 - Per-issue outputs (`RidgeVectors`): unit loading `f`, unit reconstruction
@@ -243,9 +246,13 @@ df_i(λ)     = tr( (TTᵀ + Λ_i)⁻¹ TTᵀ )        (effective degrees of free
 grid        = {0.01, 0.03, 0.1, 0.3, 1.0, 3.0, 10.0}
 ```
 
-Per grid point, each sampled issue costs a Cholesky factorization plus a
-trace computed by materializing `A⁻¹·Gram` — the compute hot spot (Track D).
-A grid point where `D − df ≤ 0` for any sample is rejected outright: GCV is
+Per grid point, each sampled issue costs a Cholesky factorization plus a trace
+`df = tr(A⁻¹ TTᵀ)`. Rather than materialize the K×K product `A⁻¹·Gram`, this is
+computed via the identity `df = K − Σ_k λ_k (A⁻¹)_kk` (since `TTᵀ = A − Λ` and
+`Λ` is diagonal), reading only the diagonal of `A⁻¹` from the existing
+factorization — ~2× cheaper than the old materialized solve at K≈200/D=1536 and
+allocation-free per sample (Track D5). A grid point where `D − df ≤ 0` for any
+sample is rejected outright: GCV is
 unusable when effective df reaches the embedding dimension, i.e. the K ≥ D
 regime silently falls back to rank-1.
 
@@ -384,23 +391,30 @@ dim 24, NDCG@8 / Recall@8.
 | Measurement | NDCG@8 | Recall@8 | Where |
 |---|---|---|---|
 | Pre-centering baseline | 0.823 | 0.855 | whitepaper §2.0 |
-| Rank-1, centered (committed golden baseline) | 0.8645 | 0.9117 | `matheval/testdata/baseline.json` |
-| Rank-1, similarity-only (shadow harness) | 0.874 | 0.928 | `ridge_shadow_test.go` |
-| Ridge, fixed λ_unscored = 0.05 (overfit, R² ~0.90) | 0.867 | — | shadow harness — *regression* |
-| Ridge, GCV λ_unscored ≈ 3.0 (R² ~0.80), tag-space | **0.933** | **0.964** | shadow harness |
-| Full-path A/B (ridge vs rank-1 through the whole pipeline) | +0.065 | +0.047 | one logged shadow run — recorded nowhere in code |
+| Rank-1, centered (committed golden baseline) | 0.8658 | 0.9117 | `matheval/testdata/baseline.json` → `rank1` |
+| Ridge, GCV λ_unscored = 3.0, tag-space (committed golden baseline) | **0.9309** | **0.9586** | `matheval/testdata/baseline.json` → `ridge` |
+| Full-path A/B (ridge vs rank-1 through the whole pipeline) | +0.0651 | +0.0469 | both baseline rows above, asserted every run |
+| Rank-1, similarity-only (historical shadow run) | 0.874 | 0.928 | `ridge_shadow_test.go` |
+| Ridge, fixed λ_unscored = 0.05 (overfit, R² ~0.90) (historical shadow run) | 0.867 | — | shadow harness — *regression* |
+| Ridge, GCV λ_unscored ≈ 3.0 (R² ~0.80), tag-space (historical shadow run) | 0.933 | 0.964 | shadow harness |
 
 Honest caveats, all of which are Track D work:
 
-1. **The committed golden baseline still guards the rank-1 path.** The default
-   flip lives in the API layer (the handler injects `WithRidgeSimilarity` from
-   the λ cache); the matheval golden run calls `SearchFromQueryWithTags` with
-   no options — so the numbers that gate regressions are rank-1 numbers, and
-   **the shipped production default has no regression guard.**
-2. **The shadow numbers are documentation, not assertions.** The ridge shadow
-   comparison is opt-in (`-ridge` flag) and log-only, and the full-path A/B
-   deltas are not written down anywhere in the harness — they survive only as
-   a run log cited in this document. WP-101 re-runs and pins them.
+1. **Both similarity paths are now under the golden baseline.** WP-101 grew
+   `matheval/testdata/baseline.json` from one entry to two — `rank1` (search
+   with no options, the fallback path) and `ridge` (the shipped default: the
+   eval injects `WithRidgeSimilarity` at the GCV-selected λ, mirroring the API
+   layer's `ridgelambda.Cache` injection). Both are asserted on every ordinary
+   `go test` run with no opt-in flag, so a change that regresses the production
+   ridge blend fails CI. The GCV λ is re-derived each run and recorded for
+   observability only (`ridge.gcvLambdaUnscored`); it is never hardcoded in the
+   assertions, so a grid or GCV change surfaces as a metric delta, not silent
+   drift.
+2. **The full-path A/B deltas are now pinned, not a run log.** The ridge shadow
+   comparison (`ridge_shadow_test.go`, opt-in `-ridge`) survives for its
+   similarity-shape and fixed-λ overfit sweeps, but the numbers that gate
+   regressions are the two committed baseline rows above, not its log output —
+   both derive λ through the same `ridgeGCVFixture` helper.
 3. **The fixture corpus structurally favors the tag story.** Its embeddings are
    generated as relevance-weighted tag sums plus anisotropy plus noise — so the
    ridge win over rank-1 on fixtures is a floor argument, not proof on real
@@ -424,11 +438,9 @@ design, and why. These are decisions, not drift — the as-built column wins.
 | Dismiss provenance sourced from `/tags/dismiss` | **Unwired** | That endpoint dismisses tag-merge suggestions, not per-issue relevance. A real dismiss affordance is future work (Track D). |
 | NMF "~50 iterations to convergence" | Fixed 50 iterations, no convergence check | Simplification; acceptable at current scale, revisit with telemetry (§12). |
 
-Documentation debt created by the flip (tracked in Track D): the comment header
-over the ridge constants (`internal/scoring/constants.go`) still says
-"debug/shadow only — not wired into ranking"; whitepaper §10.3 still describes
-anchored ridge as shadow-mode while §2's status header correctly says it is the
-default. Both are stale text, not stale code.
+Documentation debt created by the flip — **resolved by WP-102**: the ridge
+constants header now teaches the two-λ regime, whitepaper §10.3 describes the
+shipped default, and the rank-1 aggregate comment says pooled, not mean.
 
 ## 6. Status board
 
@@ -590,12 +602,17 @@ Make the solver concurrency story explicit at the same time (per-goroutine
 solver or pooled scratch) — the shared-scratch solver is a latent race if
 anything ever parallelizes.
 
-**D5. GCV cost and consistency.** Two smaller solver items: (a) the trace
-`tr(A⁻¹·Gram)` materializes a full K×K product per sample per grid point —
-compute it via Cholesky column solves accumulating only the diagonal, or accept
-it with a comment (fine at K ≈ 200, not at K ≈ 1000); (b) GCV selects λ on a
-Cholesky path while the ranker solves via LU — numerically close but not
-identical; unify on one factorization when touching either.
+**D5. GCV cost and consistency. (Done, WP-105.)** Two smaller solver items,
+both landed: (a) the trace `tr(A⁻¹·Gram)` no longer materializes the full K×K
+product — it uses `df = K − Σ_k λ_k (A⁻¹)_kk`, reading only `diag(A⁻¹)` from the
+factorization (~2× faster; a full λ-recompute at the K=200/D=1536/2000-sample
+bound drops from ≈70s to ≈46s extrapolated, with the trace step itself 3.5ms→1.8ms
+per sample). Note: the spec's suggested `‖L⁻¹T‖²_F` form is *slower* here because
+D≫K makes it O(K²D); the diagonal identity was the right choice. (b) the ranker
+now solves via Cholesky, the same factorization GCV uses, so λ is selected on the
+path that ranks — with a defensive LU fallback (`RidgeCholeskyFallbackCount`,
+never fires while Λ ≥ 0.05 keeps A SPD). matheval baselines unmoved (rank1
+0.8658/0.9117, ridge 0.9309/0.9586).
 
 **D6. Negation completion or cleanup.** Decide the two dead provenances:
 build a real per-issue tag-dismiss affordance emitting `dismiss` negations
@@ -606,9 +623,9 @@ copy paths were audited for negation-field loss and are correct — whole-struct
 assignment carries the value-type provenance fields; only the pointer/slice
 fields need the explicit re-copies they already have.)
 
-**D7. Stale-text sweep.** `internal/scoring/constants.go` ridge header
-("debug/shadow only"); whitepaper §10.3 shadow-mode paragraph; any remaining
-`‖f − r‖` drift references. One small PR.
+**D7. Stale-text sweep.** Done (WP-102): constants header, whitepaper §10.3,
+the "mean R²" comment, and two further stale ridge-mode comments found by
+sweep (`RidgeSimilarityMode` docs, shadow-test header).
 
 **D8. Standardize `TagDrift.Delta`.** Raw per-tag deltas are not comparable
 across tags (Λ varies per tag). Standardize against each tag's corpus delta

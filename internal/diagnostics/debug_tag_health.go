@@ -24,7 +24,19 @@ const (
 	DefaultDriftCosineThreshold = 0.5
 	// DefaultDriftTagDeltaFloor is the minimum |f_k − r_k| for a tag to surface
 	// as a spurious or missing candidate, so benign uniform shrinkage does not.
+	// Retained as a secondary guard even when a z-score is available: a tag with
+	// near-zero corpus variance could otherwise turn a tiny absolute delta into a
+	// huge z-score, so a candidate must clear this raw floor regardless.
 	DefaultDriftTagDeltaFloor = 0.3
+	// DefaultDriftZDeltaThreshold is the minimum |zDelta| for a tag with a valid
+	// z-score to surface as a candidate. Raw per-tag deltas are not comparable
+	// across tags because the ridge penalty differs per tag (scored 0.5 vs
+	// unscored 0.05 in the drift regime), so a loosely-penalized unscored tag
+	// swings wider than an anchored one by construction; the z-score standardizes
+	// that away. 2.0 (≈ two standard deviations) is a conventional "clearly
+	// outside the normal spread" cut. Tags without a valid z-score fall back to
+	// the raw DefaultDriftTagDeltaFloor rule alone.
+	DefaultDriftZDeltaThreshold = 2.0
 
 	maxDriftIssues = 20
 	maxDriftTags   = 5
@@ -62,6 +74,11 @@ type DebugDriftTag struct {
 	Anchor float64 `json:"anchor"` // r_k
 	Ridge  float64 `json:"ridge"`  // f_k
 	Delta  float64 `json:"delta"`  // f_k − r_k
+	// ZDelta is Delta standardized within the tag's corpus distribution — the
+	// cross-tag-comparable ranking signal. Omitted (nil) when the tag has too
+	// small a sample or too little corpus variance to standardize; the candidate
+	// then ranks on Delta alone.
+	ZDelta *float64 `json:"zDelta,omitempty"`
 }
 
 // DebugTagHealthHandler runs the corpus drift sweep and surfaces the issues
@@ -180,10 +197,21 @@ func (h DebugTagHealthHandler) Handle(ctx context.Context) (DebugTagHealthResult
 
 // splitDriftTags partitions a drift breakdown into over-claimed (spurious,
 // anchored with Δ < 0) and under-claimed (missing, unanchored with Δ > 0)
-// candidates, each filtered by the delta floor, ranked by |Δ|, and capped.
+// candidates, filtered by the combined rule, ranked by |zDelta| where available,
+// and capped.
+//
+// A candidate must always clear the raw delta floor. When a tag carries a valid
+// z-score (large enough sample, non-degenerate corpus variance) it must
+// additionally clear the z-threshold — the z-score is the cross-tag-comparable
+// signal, so it gates and ranks. Tags without a valid z-score fall back to the
+// raw-delta rule alone: they still surface if past the floor, but rank below any
+// z-scored candidate.
 func splitDriftTags(rows []issuemath.TagDrift) (spurious, missing []DebugDriftTag) {
 	for _, row := range rows {
 		if absFloat(row.Delta) < DefaultDriftTagDeltaFloor {
+			continue
+		}
+		if row.ZDelta != nil && absFloat(*row.ZDelta) < DefaultDriftZDeltaThreshold {
 			continue
 		}
 		tag := DebugDriftTag{
@@ -191,6 +219,7 @@ func splitDriftTags(rows []issuemath.TagDrift) (spurious, missing []DebugDriftTa
 			Anchor: round3(row.Anchor),
 			Ridge:  round3(row.Ridge),
 			Delta:  round3(row.Delta),
+			ZDelta: round3Ptr(row.ZDelta),
 		}
 		switch {
 		case row.Anchored && row.Delta < 0:
@@ -199,19 +228,10 @@ func splitDriftTags(rows []issuemath.TagDrift) (spurious, missing []DebugDriftTa
 			missing = append(missing, tag)
 		}
 	}
-	// Spurious: most negative Δ first. Missing: most positive Δ first.
-	slices.SortStableFunc(spurious, func(a, b DebugDriftTag) int {
-		if c := cmp.Compare(a.Delta, b.Delta); c != 0 {
-			return c
-		}
-		return cmp.Compare(a.Tag, b.Tag)
-	})
-	slices.SortStableFunc(missing, func(a, b DebugDriftTag) int {
-		if c := cmp.Compare(b.Delta, a.Delta); c != 0 {
-			return c
-		}
-		return cmp.Compare(a.Tag, b.Tag)
-	})
+	// Rank z-scored candidates ahead of raw-only ones, each by descending
+	// magnitude (|zDelta| then |Δ|), tie-broken by tag name for determinism.
+	slices.SortStableFunc(spurious, driftTagRank)
+	slices.SortStableFunc(missing, driftTagRank)
 	if len(spurious) > maxDriftTags {
 		spurious = spurious[:maxDriftTags]
 	}
@@ -219,4 +239,38 @@ func splitDriftTags(rows []issuemath.TagDrift) (spurious, missing []DebugDriftTa
 		missing = missing[:maxDriftTags]
 	}
 	return spurious, missing
+}
+
+// driftTagRank orders drift-tag candidates: those with a comparable z-score
+// first (ranked by |zDelta| descending), raw-only candidates after (ranked by
+// |Δ| descending), tag name as a deterministic tiebreak. Because spurious tags
+// are all Δ < 0 and missing tags all Δ > 0, |Δ| recovers the old "most negative"
+// / "most positive" ordering within the raw-only tail.
+func driftTagRank(a, b DebugDriftTag) int {
+	az, bz := a.ZDelta != nil, b.ZDelta != nil
+	if az != bz {
+		if az {
+			return -1
+		}
+		return 1
+	}
+	if az {
+		if c := cmp.Compare(absFloat(*b.ZDelta), absFloat(*a.ZDelta)); c != 0 {
+			return c
+		}
+		return cmp.Compare(a.Tag, b.Tag)
+	}
+	if c := cmp.Compare(absFloat(b.Delta), absFloat(a.Delta)); c != 0 {
+		return c
+	}
+	return cmp.Compare(a.Tag, b.Tag)
+}
+
+// round3Ptr rounds an optional z-score for the payload, preserving nil.
+func round3Ptr(v *float64) *float64 {
+	if v == nil {
+		return nil
+	}
+	r := round3(*v)
+	return &r
 }

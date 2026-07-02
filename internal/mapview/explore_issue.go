@@ -9,6 +9,7 @@ import (
 	"sortit/internal/issues"
 	issueviews "sortit/internal/issues/views"
 	issuemap "sortit/internal/map"
+	"sortit/internal/ridgedecomp"
 	"sortit/internal/ridgelambda"
 	"sortit/internal/tags"
 )
@@ -23,15 +24,29 @@ type ExploreIssueHandler struct {
 	DetailReader issues.IssueDetailReader
 	SearchStore  issues.SemanticSearchStore
 	Catalog      *tags.CatalogService
+	// RidgeDecomp provides the revision-cached full-corpus ridge decomposition,
+	// preferred over RidgeLambda: explore scores the target and candidates from
+	// the cached per-issue vectors instead of re-solving over the neighborhood.
+	RidgeDecomp *ridgedecomp.Cache
 	// RidgeLambda selects the anchored-ridge similarity model for explore
 	// when wired and the corpus is large enough; otherwise explore uses the
 	// rank-1 factor model. Mirrors the search path.
 	RidgeLambda *ridgelambda.Cache
 }
 
-// exploreOpts returns the ridge-similarity option carrying the
-// revision-cached GCV penalty, or nil when ridge is unavailable.
+// exploreOpts returns the anchored-ridge explore option, or nil when ridge is
+// unavailable. It prefers the cached full-corpus decomposition and falls back
+// to the GCV-penalty in-place solve — the chain decomp-cache → λ-only → rank-1.
 func (h ExploreIssueHandler) exploreOpts(ctx context.Context) ([]issuemap.ExploreOption, error) {
+	if h.RidgeDecomp != nil {
+		decomp, ok, err := h.RidgeDecomp.Current(ctx)
+		if err != nil {
+			return nil, err
+		}
+		if ok {
+			return []issuemap.ExploreOption{issuemap.WithExploreRidgeDecomposition(*decomp)}, nil
+		}
+	}
 	if h.RidgeLambda == nil {
 		return nil, nil
 	}

@@ -13,6 +13,7 @@ import (
 	"sortit/internal/issues"
 	issueviews "sortit/internal/issues/views"
 	issuemap "sortit/internal/map"
+	"sortit/internal/ridgedecomp"
 	"sortit/internal/ridgelambda"
 	"sortit/internal/tagcooccurrence"
 	"sortit/internal/tags"
@@ -43,17 +44,32 @@ type SearchIssuesHandler struct {
 	// subset, and centering them with their own mean would subtract the
 	// query signal itself.
 	Centering *centering.Cache
+	// RidgeDecomp provides the revision-cached full-corpus ridge decomposition.
+	// Preferred when wired: search scores from the cached per-issue vectors
+	// instead of re-solving over the candidate set.
+	RidgeDecomp *ridgedecomp.Cache
 	// RidgeLambda provides the revision-cached GCV penalty that selects the
-	// anchored-ridge similarity model. When wired and the corpus is large
-	// enough, ridge is the default ranker; otherwise search falls back to
-	// the rank-1 factor model.
+	// anchored-ridge similarity model. Used when RidgeDecomp is unavailable, so
+	// the ranker still solves in-place; otherwise search falls back to the
+	// rank-1 factor model.
 	RidgeLambda *ridgelambda.Cache
 }
 
-// ridgeOption returns the WithRidgeSimilarity option carrying the
-// revision-cached GCV penalty, or an empty slice when ridge is unavailable
-// (cache not wired, or corpus too small) so search uses the rank-1 model.
+// ridgeOption returns the anchored-ridge search option, or an empty slice when
+// ridge is unavailable so search uses the rank-1 model. It prefers the cached
+// full-corpus decomposition (WithRidgeDecomposition) and falls back to the
+// GCV-penalty in-place solve (WithRidgeSimilarity) — the graceful chain
+// decomp-cache → λ-only → rank-1.
 func (h SearchIssuesHandler) ridgeOption(ctx context.Context) ([]issuemap.SearchOption, error) {
+	if h.RidgeDecomp != nil {
+		decomp, ok, err := h.RidgeDecomp.Current(ctx)
+		if err != nil {
+			return nil, err
+		}
+		if ok {
+			return []issuemap.SearchOption{issuemap.WithRidgeDecomposition(*decomp)}, nil
+		}
+	}
 	if h.RidgeLambda == nil {
 		return nil, nil
 	}
