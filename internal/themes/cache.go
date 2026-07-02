@@ -69,9 +69,36 @@ type Result struct {
 	ExcludedNoEmbedding int
 	// ExcludedNoAnchor counts issues with a usable embedding but no anchored tag.
 	ExcludedNoAnchor int
+
+	// Identities carries the stable theme identity metadata, index-aligned with
+	// the embedded Result.Themes: Identities[i] is the stable ID and match score
+	// for Themes[i]. Populated by WP-203 identity matching against the previous
+	// revision's themes retained in the cache.
+	Identities []ThemeIdentity
+	// MintedIDs are the stable IDs first assigned this revision — themes with no
+	// qualifying predecessor (a fresh theme, a split-off, or a match that fell
+	// below themeMatchThreshold). WP-206 aggregates these as churn telemetry.
+	MintedIDs []string
+	// RetiredIDs are previous-revision stable IDs that no new theme inherited —
+	// a theme that disappeared or merged into another. Consumers decide whether
+	// to keep showing a retired theme; the cache stops tracking it. WP-206
+	// telemetry input.
+	RetiredIDs []string
 }
 
-// Cache memoizes the corpus theme factorization by revision.
+// Cache memoizes the corpus theme factorization by revision and carries theme
+// identity across those revisions.
+//
+// Identity (WP-203): the cache retains the previous revision's themes (H rows by
+// stable ID) so a recompute can match new themes to old ones and keep stable IDs
+// steady through small corpus mutations — NMF alone guarantees only that the
+// SAME input is reproducible, not that SIMILAR inputs stay aligned. This identity
+// state is in-memory, so constructing a new Cache (a process restart) resets it:
+// the first compute after restart mints fresh IDs for every theme. That is
+// acceptable at the debug tier (WP-204); persisting the tiny identity state is
+// the second trigger for theme persistence (after WP-405's drift snapshots) and
+// is deferred to Stage 4, when user-visible profiles make a restart-time ID
+// change a visible regression.
 type Cache struct {
 	// Decomp is the revision-keyed full-corpus ridge decomposition this cache
 	// consumes. Required: without a usable decomposition there are no loadings
@@ -89,6 +116,12 @@ type Cache struct {
 	ok           bool
 	computed     bool
 	computeCount int // number of actual computes; asserted by the concurrency test
+
+	// identity is the cross-revision theme identity memory (previous H rows by
+	// stable ID + the mint counter). Retained across recomputes so stable IDs
+	// survive small corpus mutations; reset only by constructing a new Cache
+	// (process restart). Mutated only inside compute, under mu.
+	identity identityState
 }
 
 // Current returns the theme factorization at the current revision, recomputing
@@ -152,13 +185,44 @@ func (c *Cache) compute(ctx context.Context, rev uint64) (Result, bool, error) {
 	// land in the same centered space as issue embeddings — the space WP-204's
 	// centroid-nearest lookup compares against.
 	factorization := issuethemes.Build(loadings, decomp.TagNames, decomp.TagEmbeddings, issuethemes.Options{})
-	return Result{
+	result := Result{
 		Result:              factorization,
 		Revision:            rev,
 		Participating:       counts.participating,
 		ExcludedNoEmbedding: counts.noEmbedding,
 		ExcludedNoAnchor:    counts.noAnchor,
-	}, true, nil
+	}
+	c.identify(&result)
+	return result, true, nil
+}
+
+// identify attaches stable theme IDs and mint/retire diagnostics to a freshly
+// factorized result by matching its themes against the previous revision's, then
+// advances the cross-revision identity state to this revision. It runs only on a
+// successful (ok) compute — a degenerate revision that returns (zero, false)
+// leaves the identity state untouched, so identity resumes (rather than churns)
+// if the corpus recovers above the participation floor. Called only from
+// compute, under c.mu.
+func (c *Cache) identify(result *Result) {
+	newRows := make([]themeRow, len(result.Themes))
+	for i, theme := range result.Themes {
+		newRows[i] = themeRowFrom(theme)
+	}
+
+	match := matchThemes(c.identity.prev, newRows, c.identity.counter)
+
+	identities := make([]ThemeIdentity, len(newRows))
+	next := make([]identifiedTheme, len(newRows))
+	for i := range newRows {
+		identities[i] = ThemeIdentity{StableID: match.ids[i], MatchScore: match.scores[i]}
+		next[i] = identifiedTheme{id: match.ids[i], row: newRows[i]}
+	}
+	result.Identities = identities
+	result.MintedIDs = match.minted
+	result.RetiredIDs = match.retired
+
+	c.identity.prev = next
+	c.identity.counter = match.counter
 }
 
 func (c *Cache) currentRevision() uint64 {

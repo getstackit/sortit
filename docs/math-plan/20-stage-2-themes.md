@@ -165,6 +165,17 @@ Theme IDs survive small corpus mutations; permutation alone can never change
 an ID; mint/retire events are observable in the result; thresholds are named
 constants with rationale comments.
 
+### Outcome (shipped)
+
+Potentials-based O(n³) Hungarian in-package; rows keyed by tag NAME over the
+union (catalog changes align correctly); threshold 0.6 inclusive, boundary
+asserted. Soak: 6 themes × 12 mutation refreshes → zero churn; deleting a
+theme's tag+issues retires exactly that ID. Two behaviors beyond the spec,
+both documented in code: matching operates on the top-5 tags exposed by
+`issuethemes.Theme.Tags` (full H not exported; WP-206 remediation path noted),
+and identity state survives degenerate `(zero,false)` revisions so a
+temporarily-shrunk corpus resumes rather than churns.
+
 ---
 
 ## WP-204 — Themes debug API
