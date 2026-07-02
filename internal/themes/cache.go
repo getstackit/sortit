@@ -96,6 +96,14 @@ type Result struct {
 	// telemetry input.
 	RetiredIDs []string
 
+	// Telemetry is the per-refresh quality/convergence summary (WP-206),
+	// aggregating the pure factorization's convergence signal (reconstruction
+	// error, iterations used) with WP-203 identity churn (mint/retire counts and
+	// the mean predecessor match score). It is logged on every recompute and
+	// surfaced on the debug themes list so "is K=8 right, does 50-iteration MU
+	// converge" is answerable from telemetry rather than a code read.
+	Telemetry Telemetry
+
 	// Labels carries the WP-205 human name/description for each theme,
 	// index-aligned with Themes (Labels[i] labels Themes[i]) like Identities.
 	// A newly minted or relabeled theme carries the deterministic top-tag
@@ -134,6 +142,12 @@ type Cache struct {
 	// is spawned. When set, minted/relabeled themes are labeled asynchronously so
 	// labeling never blocks or delays Current (see labeling.go).
 	Labeler Labeler
+
+	// ThemeCount overrides the factorization's K when positive; zero keeps
+	// issuethemes' default (8). Exists for the WP-206 K-sweep experiment and any
+	// future data-driven K choice — note the participation floor stays tied to
+	// the default K, so a sweep at higher K on a small corpus still computes.
+	ThemeCount int
 
 	mu           sync.Mutex
 	revision     uint64
@@ -223,7 +237,7 @@ func (c *Cache) compute(ctx context.Context, rev uint64) (Result, bool, error) {
 	// TagEmbeddings from the bundle are corpus-mean centered, so theme centroids
 	// land in the same centered space as issue embeddings — the space WP-204's
 	// centroid-nearest lookup compares against.
-	factorization := issuethemes.Build(loadings, decomp.TagNames, decomp.TagEmbeddings, issuethemes.Options{})
+	factorization := issuethemes.Build(loadings, decomp.TagNames, decomp.TagEmbeddings, issuethemes.Options{ThemeCount: c.ThemeCount})
 	result := Result{
 		Result:              factorization,
 		Revision:            rev,
@@ -233,6 +247,8 @@ func (c *Cache) compute(ctx context.Context, rev uint64) (Result, bool, error) {
 		Means:               decomp.Means,
 	}
 	c.identify(&result)
+	result.Telemetry = buildTelemetry(&result)
+	logTelemetry(rev, len(result.Themes), result.Telemetry)
 	c.label(&result, items)
 	return result, true, nil
 }

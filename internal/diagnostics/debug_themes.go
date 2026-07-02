@@ -74,6 +74,10 @@ type DebugThemesListResult struct {
 	ExcludedNoAnchor    int      `json:"excludedNoAnchor"`
 	MintedIDs           []string `json:"mintedIds,omitempty"`
 	RetiredIDs          []string `json:"retiredIds,omitempty"`
+	// Telemetry is the refresh's convergence/identity-churn summary (WP-206):
+	// reconstruction error, MU iterations used, mint/retire counts, and the
+	// mean predecessor match score over inherited themes.
+	Telemetry themes.Telemetry `json:"telemetry"`
 	// Themes is sorted by Weight descending, StableID tiebreak.
 	Themes []DebugThemeSummary `json:"themes"`
 }
@@ -181,6 +185,7 @@ func (h DebugThemesListHandler) Handle(ctx context.Context) (DebugThemesListResu
 
 	return DebugThemesListResult{
 		Computed:            true,
+		Telemetry:           res.Telemetry,
 		Revision:            res.Revision,
 		Participating:       res.Participating,
 		ExcludedNoEmbedding: res.ExcludedNoEmbedding,

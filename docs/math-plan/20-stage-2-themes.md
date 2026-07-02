@@ -348,6 +348,55 @@ Early stop shipped with a determinism test; telemetry visible in the debug
 API; the K table exists in this document with a dated decision; HALS trigger
 documented.
 
+### Outcome (shipped; K decision dated 2026-07-02)
+
+Early stop: relative Frobenius improvement < 1e-4 terminates the MU loop, cap
+raised to 200 as a backstop; `issuethemes.Result` carries `Iterations` and
+`ReconstructionError`; determinism and monotone-objective tests included.
+Notable: the old fixed-50 count was *under-converged* — the fixtures converge
+at 58 (matheval, K=8) and 114 (soak) iterations, so early-stop+200 improved
+factorization quality, not just cost. `themes.Result.Telemetry` (recon error,
+iterations, mint/retire counts, mean inherited match score) is logged per
+refresh and surfaced on `/debug/themes`. The cache gained an optional
+`ThemeCount` override for experiments.
+
+K sweep (opt-in `go test ./internal/themes/ -run ThemeCountSweep -themesweep -v`),
+churn = mints+retires across 12 small deterministic mutations:
+
+matheval fixture corpus (48 issues, 16 tags, true structure ≈ 8 groups):
+
+| K | reconErr | iterations | churn/12 |
+|---|----------|------------|----------|
+| 4 | 0.7086 | 15 | 4 |
+| 5 | 0.6452 | 15 | 0 |
+| 6 | 0.5957 | 15 | 4 |
+| 7 | 0.5452 | 19 | 0 |
+| 8 | 0.4829 | 58 | 0 |
+| 9 | 0.4254 | 102 | 12 |
+| 10 | 0.3843 | 103 | 12 |
+| 11 | 0.3427 | 107 | 8 |
+| 12 | 0.3187 | 81 | 26 |
+
+soak corpus (6 orthogonal groups × 8 issues, 6 tags; K clamps at 6):
+
+| K | reconErr | iterations | churn/12 |
+|---|----------|------------|----------|
+| 4 | 0.5733 | 10 | 2 |
+| 5 | 0.4060 | 20 | 4 |
+| 6 | 0.0015 | 114 | 0 |
+| 7 | 0.0015 | 114 | 0 |
+| 8 | 0.0015 | 114 | 0 |
+
+**Decision: keep K = 8.** Reconstruction error falls monotonically with K (it
+must), so the elbow alone is a weak criterion; identity stability is the
+discriminating signal, and it cliffs immediately past the corpus's true
+structure count — K=9..12 churn 8–26 events per 12 refreshes vs zero at
+K=7–8. Adaptive K remains unauthorized: the sweep directly demonstrates the
+failure mode (K above structure ⇒ ghost themes that reshuffle every refresh).
+Revisit only with real-corpus telemetry showing recon error stuck high AND
+zero churn at K=8. **HALS trigger: not near firing** — max observed 114
+iterations vs the 200 cap, no cap hits, refresh cost is milliseconds.
+
 ---
 
 ## Stage-2 exit checklist
