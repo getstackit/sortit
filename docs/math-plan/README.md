@@ -58,10 +58,17 @@ work top-to-bottom unless a WP's dependency note says otherwise.
 |---|---|---|---|---|
 | WP-201 | Corpus loadings source for themes | S | WP-103 | merged (PR #206) |
 | WP-202 | Revision-keyed theme cache | S | WP-201 | merged (PR #206) |
-| WP-203 | Theme identity stability across refreshes | M | WP-202 | shipped (in stack) |
-| WP-204 | Themes debug API | S | WP-203 | shipped (in stack) |
-| WP-205 | Theme labeling | S–M | WP-204 | shipped (in stack) |
-| WP-206 | NMF convergence, K, and quality telemetry | S–M | WP-202 | shipped (in stack) |
+| WP-203 | Theme identity stability across refreshes | M | WP-202 | merged (PR #212) |
+| WP-204 | Themes debug API | S | WP-203 | merged (PR #212) |
+| WP-205 | Theme labeling | S–M | WP-204 | merged (PR #212) |
+| WP-206 | NMF convergence, K, and quality telemetry | S–M | WP-202 | merged (PR #212) |
+| WP-207 | Export full H rows from issuethemes | S | — | todo |
+| WP-208 | Dev-corpus soak and qualitative read | S + calendar time | WP-204, seeded dev server | todo |
+
+WP-207/208 are follow-ons discovered while shipping Stage 2 (flagged in the
+WP-203/204 outcomes). WP-207 should land before WP-402/403 build on top-5-tag
+approximations of H; WP-208 gates promotion of any Stage 4 surface out of
+debug tier and gates WP-501.
 
 ### Stage 3 — Evaluation expansion ([30-stage-3-eval.md](./30-stage-3-eval.md))
 
@@ -83,12 +90,17 @@ Stage 5; WP-301 gates believing any new fixture-derived number.
 | WP-403 | Gap analysis | S | WP-402 | todo |
 | WP-404 | Person-to-theme fit | S | WP-401, WP-402 | todo |
 | WP-405 | Theme drift over time + snapshot decision | M–L | WP-402 | todo |
+| WP-406 | Theme identity + label persistence | S–M | WP-204 | todo |
+
+Stage 4 WPs run at debug tier on Stage 2's fixture-soak evidence alone;
+**promoting any surface out of debug tier requires WP-406 (identities and
+labels must survive restarts) and WP-208 (dev-corpus soak held)**.
 
 ### Stage 5 — Map projection on themes ([50-stage-5-map.md](./50-stage-5-map.md))
 
 | WP | Title | Size | Depends on | Status |
 |---|---|---|---|---|
-| WP-501 | PCA-on-W projection, dark, behind debug flag | M | WP-203 soak, WP-303 | todo |
+| WP-501 | PCA-on-W projection, dark, behind debug flag | M | WP-208, WP-303 | todo |
 | WP-502 | Map flip: soak, compare, switch default | S | WP-501 | todo |
 
 ### Stage 6 — Long horizon ([60-stage-6-long-horizon.md](./60-stage-6-long-horizon.md))
@@ -116,20 +128,29 @@ WP-104 (drift deltas) ── standalone, anytime
 WP-101 (ridge baseline) ──► WP-103 (decomp cache) ──► WP-201 ─► WP-202 ─► WP-203 ─► WP-204 ─► WP-205
                        └──► WP-105 (GCV cost)                      └────────► WP-206      │
                                                                                           ▼
-WP-301 (real fixture) ── parallel ─────────────────────────────►  Stage 4: WP-401..WP-405
-WP-302 (explore/person eval) ── parallel                                       │
-WP-303 (map metric) ───────────────────────────► WP-501 ─► WP-502  ◄── WP-203 soak
+WP-301 (real fixture) ─► WP-302 (explore/person eval) ─► Stage 4: WP-401..WP-405 (debug tier)
+WP-207 (full H export) ──────────────────────────────────┘  (land before WP-402/403)
+WP-406 (identity+label persistence) ─┬─► promotion of any Stage 4 surface out of debug
+WP-208 (dev-corpus soak) ────────────┴─► WP-501 ─► WP-502  ◄── WP-303 (map metric)
 ```
+
+**Current position (2026-07-02):** all of Stages 1–2 (WP-101..WP-206) merged
+(PRs #201–#207, #212). Recommended path: WP-301
+next (every ridge number is still a floor argument on tag-constructed
+embeddings), then WP-302 (its person fixture is the substrate for WP-401's
+flip decision), then Stage 4 debug-tier work with WP-207 landing before
+WP-402/403. WP-208 needs a seeded long-lived dev server — start it as soon as
+one exists, since it accrues calendar time.
 
 ## Why this order (one paragraph per stage)
 
-**Stage 1** retires the risk we are already carrying: the production ranker
-(ridge) has no regression guard — the committed golden baseline exercises the
-rank-1 path only. Nothing else in this program is safe to build until the
-thing it builds on is guarded. The decomposition cache (WP-103) is both a perf
-fix and the load-bearing dependency for themes.
+**Stage 1** (done) retired the risk we were carrying: the production ranker
+(ridge) had no regression guard — the committed golden baseline exercised the
+rank-1 path only. Nothing else in this program was safe to build until the
+thing it builds on was guarded. The decomposition cache (WP-103) is both a
+perf fix and the load-bearing dependency for themes.
 
-**Stage 2** turns the built-but-unwired `internal/issuethemes` factorizer into
+**Stage 2** (done) turned the built-but-unwired `internal/issuethemes` factorizer into
 a consumable corpus artifact. Theme *identity stability* (WP-203) is the
 critical item — without it every overlay in Stage 4 is built on themes that
 silently reshuffle between refreshes.

@@ -399,11 +399,90 @@ iterations vs the 200 cap, no cap hits, refresh cost is milliseconds.
 
 ---
 
+## WP-207 — Export full H rows from issuethemes
+
+**Size:** S · **Depends on:** nothing (post-merge follow-on). Land before
+WP-402/403 build on top-5 approximations.
+
+### Context
+
+Flagged twice during Stage 2 and deferred both times to "the WP-206
+remediation path" — which WP-206 then shipped without: identity matching
+(WP-203) operates on the top-5 tags exposed by `issuethemes.Theme.Tags`
+because the library does not export full H rows, and the debug detail
+endpoint (WP-204) documents the same limitation in its `tagsNote` field.
+This WP is that remediation, given its own queue slot so it stops being a
+parenthetical.
+
+### Design
+
+- `issuethemes.Theme` exposes the full L1-normalized H row (tag name →
+  loading over the nonzero support, or a dense vector plus the tag index).
+- Identity matching (`internal/themes/identity.go`) cosines over full rows
+  instead of top-5. **The thresholds must be re-checked, not assumed:** the
+  identity threshold 0.6 and relabel threshold 0.5 were calibrated on top-5
+  cosines, and full-row cosines run systematically lower (mass in the tail
+  differs more than mass in the head). Re-derive against the WP-203 soak
+  fixture and the WP-205 relabel fixture; record any constant change and its
+  rationale here.
+- `GET /debug/themes/{id}` returns the full row; `tagsNote` is removed.
+
+### Acceptance criteria
+
+Full H visible in the detail endpoint; identity matching uses full rows; soak
+(zero churn over 12 mutations) and relabel tests green with re-derived
+thresholds if needed, rationale recorded here.
+
+---
+
+## WP-208 — Dev-corpus soak and qualitative read
+
+**Size:** S plus calendar time · **Depends on:** WP-204 and a seeded,
+long-lived dev server. **Gates:** promotion of any Stage 4 surface out of
+debug tier; WP-501.
+
+### Context
+
+Two Stage-2 obligations were left explicitly unowned: the WP-204 qualitative
+read ran on the matheval fixture corpus because no live dev server was
+available, and the WP-203 soak criteria were exercised only by fixture
+mutation tests. Stage 4's entry criteria and WP-501's dependency both cited
+"soak criteria held on the dev corpus" — a gate nobody owned and nothing
+could satisfy. This WP is the owner.
+
+### Design
+
+Seed the dev server, let routine usage accumulate, and record two things:
+
+1. **Qualitative read** — do the `/debug/themes` top tags and labels cohere
+   as real areas of the project's work? (The read WP-204 specified but could
+   only run on fixtures.)
+2. **Identity soak** — mint/retire churn per refresh from the WP-206
+   telemetry over at least two weeks of routine corpus mutations, with every
+   churn event explained (real corpus change vs. instability).
+
+### Gate amendment (authoritative statement)
+
+Stage 4 debug-tier WPs may start on Stage 2's fixture-soak evidence alone.
+Promotion of any Stage 4 surface out of debug tier, and WP-501, require this
+WP's dev-corpus evidence. The Stage 4 and Stage 5 docs reference this rule.
+
+### Acceptance criteria
+
+A dated soak report (qualitative read + churn table) recorded in this
+document; the Stage-4 promotion gate and WP-501 dependency resolved to it.
+
+---
+
 ## Stage-2 exit checklist
 
-- [ ] Themes reachable at `/debug/themes` with stable IDs and human names.
-- [ ] Soak: no unexplained identity churn on the dev corpus across routine
-      mutations (WP-203 criteria held during WP-204/205 development).
-- [ ] Telemetry answering "is K=8 right, does 50-iteration MU converge".
-- [ ] math-evolution.md Part I §3.8 rewritten from "built, unwired" to the
+- [x] Themes reachable at `/debug/themes` with stable IDs and human names.
+- [x] Soak: held at fixture tier (WP-203 soak test, zero churn over 12
+      mutation refreshes; WP-206 sweep confirms stability cliff sits above
+      K=8). Dev-corpus soak split out to WP-208, which gates Stage 4
+      promotion and WP-501.
+- [x] Telemetry answering "is K=8 right, does 50-iteration MU converge"
+      (WP-206: K=8 decision dated 2026-07-02; fixed-50 was under-converged,
+      early stop + cap 200 shipped).
+- [x] math-evolution.md Part I §3.8 rewritten from "built, unwired" to the
       as-built service description; Part II Track A marked delivered.

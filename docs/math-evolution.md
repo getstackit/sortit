@@ -98,10 +98,10 @@ One diagram, matching what runs in production today:
                                                        │
                        ┌───────────────────────────────┼──────────────────────────────┐
                        ▼                               ▼                              ▼
-                  Similarity                     Themes (built,               Diagnostics
-                  wF·cos(f_A,f_B)                unwired): NMF on             R² = 1−‖e−Tᵀf‖²/‖e‖²
-                + wR·cos(res_A,res_B)            F⁺ = max(0, f)               DriftCosine(f, r)
-                  default in search /            → W, H, centroids           → tag-health sweep
+                  Similarity                     Themes (debug tier):         Diagnostics
+                  wF·cos(f_A,f_B)                NMF on F⁺ = max(0, f)        R² = 1−‖e−Tᵀf‖²/‖e‖²
+                + wR·cos(res_A,res_B)            → W, H, stable IDs,          DriftCosine(f, r)
+                  default in search /            labels, /debug/themes        → tag-health sweep
                   explore / people                                            → curation detector
 ```
 
@@ -220,7 +220,9 @@ what makes "missing tag" detection possible (§3.6).
   D5); a defensive LU fallback with a process counter
   (`RidgeCholeskyFallbackCount`) covers the never-observed non-SPD case.
 - The solver reuses scratch buffers and is therefore **not concurrency-safe**
-  — currently fine (single-threaded per request), flagged in Track D.
+  in itself; since WP-103 the corpus decomposition is computed once per
+  revision behind a single-flight cache (`internal/ridgedecomp`), so the
+  solver no longer runs per request and never runs concurrently.
 - Per-issue outputs (`RidgeVectors`): unit loading `f`, unit reconstruction
   `Tᵀf`, unit residual `e − Tᵀf`, their pre-normalization norms, and an honest
   per-issue `R² = 1 − ‖e − Tᵀf‖²/‖e‖²` (allowed to go negative).
@@ -361,11 +363,13 @@ Note the rank-1 anchor is **positive-only** — `synthesizeFactorEmbedding` read
 `Relevance` and ignores `Negation`. The fallback model does not see signed
 relevance. Acceptable for a fallback; recorded here so nobody is surprised.
 
-### 3.8 The themes factorizer (built, unwired)
+### 3.8 Themes: the corpus factorization service (shipped, debug tier)
 
-`internal/issuethemes` is a complete, deterministic NMF library with **zero
-production callers** — the backend math slice of Phase 4, awaiting integration
-(Track A):
+Track A / plan Stage 2, delivered end-to-end (PRs #206, #207, #212). Two
+layers: `internal/issuethemes` stays a pure, deterministic NMF library;
+`internal/themes` is the service that makes it a corpus artifact.
+
+**The factorizer** (`internal/issuethemes/themes.go`):
 
 - Input `V = F⁺`: per-issue ridge loadings rectified to `max(0, f_i)`; rows
   with no positive mass dropped.
@@ -373,14 +377,51 @@ production callers** — the backend math slice of Phase 4, awaiting integration
   from `|u₀|√σ₀`, later components from the dominant sign-split of each
   singular vector pair; a deterministic mean-based seed fills degenerate
   components. No randomness anywhere; determinism is tested bit-for-bit.
-- **Updates:** Lee–Seung multiplicative updates (Frobenius objective), a fixed
-  50 iterations, **no convergence criterion** — a known simplification
-  (§12).
+- **Updates:** Lee–Seung multiplicative updates (Frobenius objective) with an
+  early stop — relative Frobenius improvement < 1e-4, iteration cap 200 as a
+  backstop. The original fixed-50 loop was *under-converged* (fixtures
+  converge at 58–114 iterations), so the early stop improved factorization
+  quality, not just cost. `Result` carries `Iterations` and
+  `ReconstructionError`.
 - **Post-processing:** each theme's tag distribution `H_k` is L1-normalized
   (mass pushed into `W`), themes ordered by total `W` mass, top-5 tags per
-  theme, and a unit-normalized centroid `v_k = unit(Σ_t H_kt · tag_embedding_t)`
-  for labeling and search anchoring.
-- **K:** default 8, clamped to `min(K, N, T)`. No data-driven selection yet.
+  theme, and a unit-normalized centroid `v_k = unit(Σ_t H_kt · tag_embedding_t)`.
+- **K = 8** (clamped to `min(K, N, T)`), kept by a dated sweep decision
+  (2026-07-02, plan WP-206): reconstruction error falls monotonically with K,
+  so the elbow is a weak criterion — identity *stability* is the
+  discriminating signal, and it cliffs immediately above the corpus's true
+  structure count (churn 8–26 events/12 refreshes at K=9–12 vs zero at
+  K=7–8). Adaptive K remains unauthorized.
+
+**The service** (`internal/themes`):
+
+- **Loadings + participation:** raw `f` recovered from the decomposition
+  cache (`Loading · LoadingNorm`); an issue participates when it has a usable
+  embedding AND at least one anchored tag; floor
+  `minThemeParticipants = 16` (2·K), below which the cache degrades to
+  `(zero, false)` like every other math cache.
+- **Revision-keyed cache** mirroring `ridgelambda`: single-flight
+  read-through compute per corpus revision.
+- **Identity stability:** Hungarian matching of new-vs-previous theme tag
+  rows by cosine (threshold 0.6, keyed by tag name over the union so catalog
+  changes align); matched themes inherit stable string IDs, unmatched mint
+  monotonically, retired IDs are reported. Identity state survives degenerate
+  revisions. Soak-tested: zero churn across 12 mutation refreshes. Caveat:
+  matching runs on the top-5 tags the library exports, not full `H` rows —
+  remediation is plan WP-207.
+- **Labeling:** `ThemeLabeler` in `internal/ai` — a deterministic top-tag
+  fallback label attaches synchronously on mint; the LLM name arrives via a
+  background job (generation-stale writebacks discarded). Relabel only when
+  the matched row drifts below top-tag cosine 0.5 (< the 0.6 identity
+  threshold), keeping `previousLabel`. Labels and identity are in-memory:
+  restarts relabel — persistence is plan WP-406 and gates any promotion out
+  of debug tier.
+- **Debug API:** `GET /debug/themes` (stable IDs, weight shares, top tags,
+  match diagnostics, refresh telemetry), `GET /debug/themes/{id}`
+  (centroid-nearest and top-W issues), `GET /debug/issues/{id}/themes`
+  (per-issue W row). Qualitative read on the matheval fixture corpus: 8/8
+  themes recovered a real domain group. The dev-corpus read and soak are plan
+  WP-208.
 
 ## 4. Evidence: what the numbers say (and don't)
 
@@ -436,7 +477,7 @@ design, and why. These are decisions, not drift — the as-built column wins.
 | "Drop `factor_model.go`" | Retained | Fallback for small/degenerate corpora, debug R² endpoints, and residual-cluster concept mining. |
 | `DownRank` multiplies relevance ×0.75 | Emits `r⁻ = 0.25` | Same effective shrink, but the negative evidence is explicit, signed, provenance-tracked, and visible to the ridge anchor. |
 | Dismiss provenance sourced from `/tags/dismiss` | **Unwired** | That endpoint dismisses tag-merge suggestions, not per-issue relevance. A real dismiss affordance is future work (Track D). |
-| NMF "~50 iterations to convergence" | Fixed 50 iterations, no convergence check | Simplification; acceptable at current scale, revisit with telemetry (§12). |
+| NMF "~50 iterations to convergence" | Early stop: relative Frobenius improvement < 1e-4, cap 200 (WP-206) | The fixed-50 loop shipped first was under-converged (fixtures converge at 58–114 iterations); the early stop restored the design intent and improved quality. |
 
 Documentation debt created by the flip — **resolved by WP-102**: the ridge
 constants header now teaches the two-λ regime, whitepaper §10.3 describes the
@@ -449,9 +490,9 @@ shipped default, and the rank-1 aggregate comment says pooled, not mean.
 | **Phase 0** — foundations | **Done (reshaped).** Σ tightening dropped in favor of corpus-mean centering; drift shipped as `DriftCosine`. | `internal/issuemath/centering.go`, `ridgescore.go` |
 | **Phase 1** — signed relevance | **Shipped end-to-end.** Analyzer negation with evidence gate, verifier negations (anti-alignment 0.5 / dominance 0.25), 0.7 cap honored on every path, JSONB persistence. Emitting: `analyzer-negation`, `verifier-dominance`. Dead constants: `dismiss`, `cooccurrence`. | `internal/ai/*`, `internal/issueenrichment/verify.go`, `internal/domain/tags.go` |
 | **Phase 2** — ridge shadow | **Shipped.** Per-request anchored ridge behind `GET /debug/issues/{id}/ridge`, signed anchor, diagonal penalties. | `internal/issuemath/ridgescore.go`, `internal/diagnostics/debug_ridge_score.go` |
-| **Phase 3** — default flip | **Shipped.** GCV λ revision-cached (`internal/ridgelambda`, stride-sampled ≤2000, centered with corpus means); search, explore, and person recommendations default to ridge tag-space blend with rank-1 fallback; downstream modifiers untouched. Caveats: only search is harness-validated; golden baseline still guards rank-1 (§4). | `internal/issuemath/ridge_decomposition.go`, `ridge_gcv.go`, `internal/ridgelambda/`, `internal/map/search.go`, `explore.go`, `internal/people/person_detail.go` |
+| **Phase 3** — default flip | **Shipped.** GCV λ revision-cached (`internal/ridgelambda`, stride-sampled ≤2000, centered with corpus means); search, explore, and person recommendations default to ridge tag-space blend with rank-1 fallback; downstream modifiers untouched. Both paths under the golden baseline since WP-101; remaining caveat: only search is harness-validated (WP-302). | `internal/issuemath/ridge_decomposition.go`, `ridge_gcv.go`, `internal/ridgelambda/`, `internal/map/search.go`, `explore.go`, `internal/people/person_detail.go` |
 | **Phase 3.5** — drift consumers | **Shipped (beyond original plan).** Tag-health sweep at fixed loose λ; curation detector uses drift as primary mis-tagging signal; rank-1 residual clusters demoted to uncovered-concept mining (propose-only). | `internal/diagnostics/debug_tag_health.go`, `internal/curation/detect.go`, `internal/issuemath/residual_clusters.go`, `internal/memories/synthesizer.go` |
-| **Phase 4** — themes | **Backend math built, fully unwired.** Deterministic NNDSVD + Lee–Seung NMF over `F⁺` with tests. No persistence, no refresh, no API, no UI, no caller. | `internal/issuethemes/` |
+| **Phase 4** — themes | **Shipped to debug tier (plan Stage 2, PRs #206/#207/#212).** Revision-keyed theme cache over corpus ridge loadings; stable identities (Hungarian match, threshold 0.6); LLM labels with deterministic fallback; NMF early-stop + per-refresh telemetry; K=8 kept by a dated sweep decision; three `/debug/themes` endpoints. Open follow-ons: full-H export (WP-207), dev-corpus soak (WP-208), identity/label persistence (WP-406). | `internal/issuethemes/`, `internal/themes/`, `internal/diagnostics/debug_themes.go` |
 | **Phase 5** — planning overlays | Not started. Person profiles still aggregate raw `r_i` (specificity-weighted). | — |
 | **Phase 6** — map on themes | Not started. Map remains PCA on `X·Σ` with sign convention + Procrustes alignment (whitepaper §3.3). | `internal/issuemath/projection.go` |
 
@@ -471,6 +512,15 @@ two places — gates A. Estimates assume the established pattern-reuse (the
 revision-cache shape already exists twice).
 
 ## 7. Track A — Themes to production (finish Phase 4)
+
+> **Delivered (2026-07-02).** All six items shipped and merged as plan Stage 2
+> (WP-201–206; PRs #206, #207, #212); the as-built description now lives in
+> §3.8 and the per-WP outcomes in
+> [math-plan/20-stage-2-themes.md](./math-plan/20-stage-2-themes.md).
+> Follow-ons discovered while shipping: full-H export (WP-207), dev-corpus
+> soak with an owner (WP-208), identity/label persistence gating Stage-4
+> promotion (WP-406). The list below is retained as the original scope
+> record.
 
 The factorizer exists; what's missing is everything around it. In dependency
 order:
@@ -571,18 +621,21 @@ carried over from the current projection, all non-negotiable:
   has zero map coverage, so today we could not even measure the regression this
   might cause.
 
-Estimate: 1–2 days of math, but gated on A3 soak time and the matheval map
-metric. Do not schedule it earlier than that.
+Estimate: 1–2 days of math, but gated on the dev-corpus identity soak
+(plan WP-208) and the matheval map metric (WP-303). Do not schedule it
+earlier than that.
 
 ## 10. Track D — Hardening and honesty
 
 The audit-driven track. Ordered by how much risk each item retires.
 
-**D1. Put the production default under the golden baseline.** The matheval
-golden run must exercise the ridge path (inject the GCV λ the way the API layer
-does) and commit new baseline numbers; keep a second rank-1 baseline entry to
-guard the fallback. Until this lands, the shipped ranker has no regression
-guard — this is the single most important item in Part II.
+**D1. Put the production default under the golden baseline. (Done, WP-101.)**
+Both paths guarded on every test run: `baseline.json` carries keyed `rank1`
+and `ridge` entries (ridge injected at the GCV-selected λ exactly as the API
+layer does; the λ recorded for observability, never asserted). Measured: rank1
+0.8658/0.9117, ridge 0.9309/0.9586 — the full-path delta (+0.0651/+0.0469)
+is now pinned in CI. A tamper test proved the guard bites (λ_scored=3.0 fails
+ridge, leaves rank1 green).
 
 **D2. A real-embedding fixture.** The synthetic corpus generates embeddings as
 tag sums, structurally favoring ridge. Capture a small anonymized real corpus
@@ -593,14 +646,16 @@ treat every fixture delta as a floor argument, not a measurement.
 ridge blend with zero harness coverage. Explore needs a seeded-neighbor
 judgment set; person-fit needs a small assignment-history fixture.
 
-**D4. Revision-keyed decomposition cache** (gates A1). Cache
-`ComputeRidgeDecomposition` output per corpus revision so search, explore,
-people, tag-health, and themes stop re-solving per request. Prior perf work
-already amortized the Gram; the per-request N-solve loop is the remaining
-recompute. Invalidation is the same revision counter every other cache uses.
-Make the solver concurrency story explicit at the same time (per-goroutine
-solver or pooled scratch) — the shared-scratch solver is a latent race if
-anything ever parallelizes.
+**D4. Revision-keyed decomposition cache. (Done, WP-103, PR #204.)**
+`internal/ridgedecomp.Cache` (ridgelambda shape, single-flight, full corpus;
+~135 MiB/revision at the 10k×K200×D1536 bound after dropping the
+reconstruction vectors). All four API surfaces resolve ridge as: decomposition
+cache → λ-only in-place → rank-1. The cached bundle carries the tag space
+(`DecomposeQuery`) so queries, targets, and person centroids decompose into
+the cached basis. Equivalence to the per-request path proven to 1e-9;
+8-goroutine race test asserts one compute per revision. Deferred from this
+item: the covariance double-build (lives in the rank-1 path, needs a
+signature change there).
 
 **D5. GCV cost and consistency. (Done, WP-105.)** Two smaller solver items,
 both landed: (a) the trace `tr(A⁻¹·Gram)` no longer materializes the full K×K
@@ -627,10 +682,12 @@ fields need the explicit re-copies they already have.)
 the "mean R²" comment, and two further stale ridge-mode comments found by
 sweep (`RidgeSimilarityMode` docs, shadow-test header).
 
-**D8. Standardize `TagDrift.Delta`.** Raw per-tag deltas are not comparable
-across tags (Λ varies per tag). Standardize against each tag's corpus delta
-distribution before ranking spurious/missing candidates — improves tag-health
-precision cheaply.
+**D8. Standardize `TagDrift.Delta`. (Done, WP-104, PR #203.)**
+`TagDrift.ZDelta` (nil under guards: < 20 observations or std < 1e-6),
+standardized in a second pass over the corpus sweep. Tag-health gates on the
+raw floor AND |z| ≥ 2.0 when a z exists; z-scored candidates rank ahead of
+raw-only ones. The curation detector consumed the new ordering with zero code
+change.
 
 **D9. Inherited open weak spots** (whitepaper §10.2, still open, unowned by
 any phase): Ledoit–Wolf (or explicitly-documented heuristic) covariance
@@ -640,11 +697,13 @@ shrinkage; the asymmetric authority/hubness slopes (0.25 vs 0.15); adaptive
 ## 11. Sequencing
 
 ```
-D1 (baseline guards ridge)  ──────────────►  ship first, standalone
-D4 (decomposition cache) ──► A1..A4 themes ──► A5..A6 ──► B1..B5 overlays
-                                   │                          │
-                                   └── A3 soak + map metric ──┴──► C (map on W)
-D2, D3, D5–D9: parallel, opportunistic; D2 before believing any new fixture delta.
+D1, D4, D5, D7, D8, A1..A6: shipped and merged (Stages 1–2 of the plan).
+
+D2 (real fixture) ─► D3 (explore/person eval) ─► B1..B5 overlays (debug tier)
+WP-207 (full H export) ──────────────────────────┘  (before B2/B4 build on top-5 H)
+WP-406 (identity+label persistence) ─┬─► promotion of any overlay out of debug
+WP-208 (dev-corpus soak) ────────────┴─► C (map on W)  ◄── D3's map metric (WP-303)
+D6, D9: parallel, opportunistic; D2 before believing any new fixture delta.
 ```
 
 Rules of the road, unchanged: every item is a small stacked PR; math changes
@@ -657,11 +716,19 @@ safe, and it is the template.
 Genuinely unresolved, kept visible so they get decided by evidence rather than
 by default:
 
-1. **Theme count K.** Fixed at 8. Candidates once A6 telemetry exists:
-   reconstruction-error elbow, H-row stability across revisions, or both.
-2. **NMF convergence.** Fixed 50 MU iterations, no objective tracking. Add the
-   early-stop in A6; the open question is whether MU is even the right
-   algorithm at larger N (HALS converges faster) — irrelevant at current scale.
+1. **Theme count K. (Decided 2026-07-02, WP-206 — keep K = 8.)** The sweep
+   answered the question: reconstruction error falls monotonically with K, so
+   the elbow alone is a weak criterion; identity stability is the
+   discriminating signal, and it cliffs immediately above the corpus's true
+   structure count. Adaptive K stays unauthorized (K above structure ⇒ ghost
+   themes reshuffling every refresh). Reopen only if real-corpus telemetry
+   shows reconstruction error stuck high AND zero churn at K=8.
+2. **NMF convergence. (Resolved in the small, open in the large.)** Early
+   stop shipped (WP-206): relative Frobenius improvement < 1e-4, cap 200 as
+   backstop — the old fixed-50 was under-converged. Still open: whether MU is
+   the right algorithm at larger N (HALS converges faster). Trigger recorded
+   in the plan: iteration-cap hits or refresh latency that matters; max
+   observed is 114 iterations, nowhere near firing.
 3. **Rectification loss.** Themes see only `F⁺ = max(0, f)`. Negative loadings
    (refutations, anti-correlations) are invisible to theme structure. Probably
    correct — themes answer "what is this about" — but worth revisiting if
