@@ -22,16 +22,33 @@ go test ./internal/matheval -update
 go test ./internal/matheval -run TestSweepFactorWeight -sweep -v
 ```
 
-A run produces output like:
+A run evaluates **two ranking profiles** and produces output like:
 
 ```
-search: queries=32 NDCG@8=0.8645 Recall@8=0.9117
-factor model: factorWeight=0.6230 aggregateR2=0.6230
-per-issue R²: n=48 mean=0.6230 median=0.6487 p10=0.4175 p90=0.8553
+[rank1] search: queries=32 NDCG@8=0.8658 Recall@8=0.9117
+[rank1] factor model: factorWeight=0.6230 aggregateR2=0.6230
+[rank1] per-issue R²: n=48 mean=0.6230 median=0.6487 p10=0.4175 p90=0.8553
+[ridge] search: queries=32 NDCG@8=0.9309 Recall@8=0.9586
+[ridge] factor model: factorWeight=0.7964 aggregateR2=0.7964
+[ridge] per-issue R²: n=48 mean=0.7964 median=0.8438 p10=0.6511 p90=0.9202
+ridge GCV λ_unscored = 3.0000
 ```
 
-and compares it against the recorded baseline in
-`internal/matheval/testdata/baseline.json`.
+and compares both against the keyed baseline in
+`internal/matheval/testdata/baseline.json`:
+
+- **`rank1`** — search with no options: the fallback path production takes
+  when the λ cache yields nothing (small/degenerate corpora).
+- **`ridge`** — the shipped default: the harness injects
+  `WithRidgeSimilarity` at the GCV-selected λ, mirroring how the API layer
+  injects `ridgelambda.Cache`. The GCV λ is re-derived on every run and
+  recorded in the baseline (`gcvLambdaUnscored`) for observability only —
+  it is never asserted, so a grid or GCV change surfaces as a metric delta
+  rather than silent drift.
+
+Both profiles are asserted on every ordinary `go test` run with no opt-in
+flag, so a change that regresses either the production ridge blend or the
+rank-1 fallback fails CI.
 
 ## What is measured
 
@@ -58,7 +75,9 @@ changing anything that can push relevant issues out of the window entirely.
 
 ### Factor model: per-issue R² distribution
 
-The harness runs `issuemath.ComputeFactorDecomposition` over the corpus and
+The harness runs each profile's decomposition over the corpus —
+`issuemath.ComputeFactorDecomposition` (rank-1) for the `rank1` profile,
+`issuemath.ComputeRidgeDecomposition` at the GCV-selected λ for `ridge` — and
 summarizes the per-issue R² (the share of each embedding's variance explained
 by its tag loadings) as mean / median / p10 / p90, plus the resulting
 data-driven `factorWeight` and `aggregateR2`. These are *descriptive*
@@ -67,6 +86,8 @@ not automatically better — so the harness flags drift in **either**
 direction beyond a small tolerance.
 
 ## Pass/fail semantics
+
+Applied independently to each baseline profile (`rank1` and `ridge`):
 
 - **NDCG@8 / Recall@8**: the test fails if a metric drops more than 0.005
   below the baseline. Improvements pass and log a suggestion to ratchet the

@@ -4,9 +4,14 @@
 > quantitative signals built on stable themes (Stage 2) and validated loadings.
 > Queue: [README.md](./README.md).
 
-Entry criteria: WP-204 shipped (themes with stable IDs behind an API) and its
-soak criteria held. WP-302's person fixture strongly recommended before
-WP-401's flip decision.
+Entry criteria: WP-204 shipped (themes with stable IDs behind an API) —
+satisfied. Debug-tier WPs may start on Stage 2's fixture-soak evidence;
+**promotion of any surface out of debug tier requires WP-208 (dev-corpus
+soak) and WP-406 (identity + label persistence)** — identities and labels
+resetting on process restart is acceptable at debug tier and not beyond
+(WP-203's own design note). WP-302's person fixture strongly recommended
+before WP-401's flip decision. WP-207 (full H export) should land before
+WP-402/403 build on top-5 approximations of `H`.
 Exit criteria: the five overlay signals computable, tested, and exposed —
 debug-tier first, promoted per-surface when a UI consumes them.
 
@@ -14,8 +19,8 @@ A shared principle for the whole stage: **overlays are read-model math, not
 new state.** Every signal below is a deterministic function of the theme cache
 (`W`, `H`, stable IDs), the decomposition cache (`f_i`), and existing
 primitives (specificity, authority, lifecycle). The only new state in the
-stage is WP-405's snapshots. Keep it that way — it is what makes these cheap
-to build and safe to change.
+stage is WP-405's snapshots and WP-406's tiny identity/label tables. Keep it
+that way — it is what makes these cheap to build and safe to change.
 
 ---
 
@@ -216,9 +221,9 @@ care. Validate snapshot coverage on the dev corpus before committing to A
 (if snapshots turn out sparse for old issues, B-going-forward is the honest
 fallback and the endpoint says "history begins at …").
 
-Also resolved here (flagged in WP-203): if Stage 4 surfaces are promoted to
-user-visible, persist the **theme identity state** (stable ID → H row) so
-process restarts don't reset identities. Same PR family as option B's table.
+Theme identity persistence, originally parked here, moved to its own WP-406 —
+promotion can arrive well before drift work, and a promotion gate buried in
+the stage's largest, last-ordered WP is how it gets lost.
 
 ### Steps
 
@@ -245,12 +250,53 @@ still holds W mass corpus-wide). Document the limitation on the endpoint.
 
 ---
 
+## WP-406 — Theme identity + label persistence
+
+**Size:** S–M · **Depends on:** WP-204. **Gates promotion of any Stage 4
+surface out of debug tier** (with WP-208). Can land any time; must land
+before the first promotion.
+
+### Context
+
+Two deferred obligations from Stage 2 point here:
+
+- WP-203 kept identity state in memory: theme IDs reset on process restart —
+  explicitly noted as "acceptable for the debug tier, unacceptable when
+  Stage 4 ships user-visible profiles."
+- WP-205 deferred label persistence ("table lands with the Stage-4 identity
+  persistence"): labels cost an LLM call, and restart-relabeling both wastes
+  it and can silently rename themes users have learned.
+
+### Design
+
+Two small tables, append-mostly, written by the theme cache on mint/relabel:
+
+- **Identity state:** stable theme ID → H row at last refresh (~K×T floats),
+  plus the mint counter. Loaded at startup so the first post-restart refresh
+  matches against real previous themes instead of minting a fresh set.
+- **Labels:** stable ID, label, description, H-row-at-label, created_at —
+  the exact shape WP-205 sketched. `previousLabel` continuity survives
+  restarts for free once rows persist.
+
+Not in scope: theme *snapshot* history (per-window W aggregates) — that is
+WP-405's decision and a different table with different retention questions.
+
+### Acceptance criteria
+
+Restart a process mid-corpus: theme IDs and labels identical before and
+after (integration test with a re-opened store); mint counter never reuses
+IDs across restarts; no LLM call on restart for an already-labeled theme.
+
+---
+
 ## Stage-4 exit checklist
 
 - [ ] All five signals live at debug tier with tests and worked examples.
 - [ ] WP-401 flip/hold decision recorded with comparison data.
 - [ ] Snapshot decision (405) recorded; any new tables documented in
       data-model docs.
+- [ ] WP-406 landed before (or with) the first surface promoted out of debug
+      tier; no promotion happened while identities/labels reset on restart.
 - [ ] math-evolution Part II Track B rewritten into Part I as-built prose.
 - [ ] A demo pass on the dev corpus: profile → coverage → gaps → fit → drift,
       screenshotted or transcripted in the PR that closes the stage.

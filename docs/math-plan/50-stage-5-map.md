@@ -10,9 +10,10 @@ Entry criteria (both hard):
 1. **WP-303 shipped** — the three map metrics (neighborhood preservation,
    cluster legibility, refresh stability) baselined on the current
    projection. Without them this stage cannot measure what it risks.
-2. **WP-203 soaked** — theme identities stable on the dev corpus through
-   normal usage. Positions derived from themes inherit every identity wobble
-   as layout wobble.
+2. **WP-208 done** — theme identities stable on the dev corpus through
+   normal usage (the dev-corpus soak and qualitative read, split out of
+   Stage 2 with its own owner). Positions derived from themes inherit every
+   identity wobble as layout wobble.
 
 **What exists today (verified):** `ComputePositionsAligned`
 (`internal/issuemath/projection.go`) — PCA over the N×T issue-tag relevance
