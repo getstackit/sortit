@@ -49,10 +49,15 @@ queue.
 - When a WP changes any metric-bearing code path, it must re-run
   `internal/matheval` and commit updated baselines in the same stack, with the
   before/after numbers in the PR description.
-- Fixture caveat: the synthetic corpus generates embeddings from tag sums and
-  structurally favors tag-space methods. Until WP-301 (real-embedding fixture)
-  lands, treat fixture deltas as floor arguments. Never cite a fixture number
-  without this caveat in a doc or PR description.
+- Fixture caveat: the harness now runs two fixtures. The **synthetic** corpus
+  generates embeddings from tag sums and structurally favors tag-space methods —
+  its deltas are floor arguments, never cite one without this caveat. The
+  **real** fixture (WP-301, shipped) re-embeds the same texts with production
+  `text-embedding-3-small`; cite it for any claim about real geometry. Its
+  headline result: the ridge tag-space ranking win *inverts* on real embeddings
+  (rank-1 0.905 vs ridge 0.754 NDCG@8, GCV λ falls to the 0.01 grid floor, tag
+  R² collapses to ~0.16) — see math-evolution §4 caveat 3. A fixture number
+  without its fixture name (`synthetic`/`real`) is meaningless.
 
 ## 4. Determinism is a feature
 

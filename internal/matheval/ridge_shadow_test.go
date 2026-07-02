@@ -34,12 +34,17 @@ var ridgeShadow = flag.Bool("ridge", false, "run the ridge-vs-rank1 shadow compa
 //     judgments. R² at that λ falls to ~0.80, an honest middle ground.
 //     Tag-space beats reconstruction-space, settling the Phase 3b
 //     similarity-shape fork in favor of cos(f_A,f_B).
-//   - Caveat: these fixtures generate embeddings AS relevance-weighted tag
-//     sums, so they structurally favor the tag-direction story and cannot
+//   - Caveat: the SYNTHETIC fixture generates embeddings AS relevance-weighted
+//     tag sums, so it structurally favors the tag-direction story and cannot
 //     show ridge's real edge (analyzer-vs-geometry divergence / the drift
-//     signal). The win here is therefore a floor, and GCV — not a fixture-fit
-//     constant — is what carries forward: it re-derives λ on whatever real
-//     K/D/conditioning production has.
+//     signal). The win there is a floor. WP-301 added a REAL fixture (the same
+//     texts re-embedded with text-embedding-3-small) and the verdict inverts:
+//     ridge tag-space regresses ranking hard (NDCG 0.754 vs rank-1 0.905), GCV
+//     λ drops to the 0.01 grid floor, tag R² collapses to ~0.16, and
+//     recon-space beats tag-space. See math-evolution §4 caveat 3. GCV — not a
+//     fixture-fit constant — is what carries forward: it re-derives λ on
+//     whatever real K/D/conditioning production has, and on real geometry it
+//     correctly reads that the penalty should be minimal.
 //
 // TestRidgeShadowComparison measures the full-rank anchored-ridge model
 // against the rank-1 projection on the fixture corpus. It originated
@@ -61,10 +66,19 @@ func TestRidgeShadowComparison(t *testing.T) {
 		t.Skip("ridge shadow comparison is opt-in: rerun with -ridge -v")
 	}
 
-	corpus, err := LoadCorpus(corpusPath)
-	if err != nil {
-		t.Fatalf("load corpus: %v", err)
-	}
+	syntheticCorpus, realCorpus := loadFixtures(t)
+	t.Log("===== fixture: synthetic (tag-sum embeddings, dim 24) =====")
+	runRidgeShadow(t, syntheticCorpus)
+	t.Log("===== fixture: real (text-embedding-3-small, dim 1536) =====")
+	runRidgeShadow(t, realCorpus)
+}
+
+// runRidgeShadow measures the full-rank anchored-ridge model against the rank-1
+// projection on one fixture corpus, logging the similarity-shape comparison
+// (tag-space vs reconstruction-space), the GCV λ sweep, the full ranking-path
+// A/B, and a centering on/off check.
+func runRidgeShadow(t *testing.T, corpus Corpus) {
+	t.Helper()
 	judgments, err := LoadJudgments(judgmentsPath, corpus)
 	if err != nil {
 		t.Fatalf("load judgments: %v", err)
@@ -181,6 +195,37 @@ func TestRidgeShadowComparison(t *testing.T) {
 	t.Logf("%-26s  %8.4f  %8.4f", "rank-1 (current default)", pathRank1NDCG, pathRank1Recall)
 	t.Logf("%-26s  %8.4f  %8.4f", "ridge tag-space (GCV)", pathRidgeNDCG, pathRidgeRecall)
 	t.Logf("full-path ridge NDCG@8 vs rank-1: %+.4f (Recall %+.4f)", pathRidgeNDCG-pathRank1NDCG, pathRidgeRecall-pathRank1Recall)
+
+	// Centering on/off: does subtracting the corpus mean before the ridge solve
+	// matter on this geometry? Real embeddings carry a large anisotropic common
+	// direction; centering removes it. Re-select λ and re-decompose on the RAW
+	// (uncentered) embeddings and rank tag-space, versus the centered path above.
+	rawIssue := corpus.IssueEmbeddings()
+	rawTag := corpus.TagEmbeddings()
+	rawLambda, ok := issuemath.SelectRidgeLambdaGCV(storeIssues, tagNames, rawIssue, rawTag,
+		scoring.RidgeAnchorLambdaScored, nil)
+	if !ok {
+		rawLambda = gcvLambda
+	}
+	rawDecomp := issuemath.ComputeRidgeDecomposition(storeIssues, tagNames, rawIssue, rawTag,
+		scoring.RidgeAnchorLambdaScored, rawLambda)
+	rawRank := func(q CorpusQuery) []string {
+		qv := issuemath.DecomposeRidgeEmbedding(q.Embedding, toTagRelevances(q.Tags), tagNames, rawTag,
+			scoring.RidgeAnchorLambdaScored, rawLambda)
+		return rankByScore(storeIssues, func(id string) (float64, bool) {
+			cv, ok := rawDecomp.VectorsFor(id)
+			if !ok {
+				return 0, false
+			}
+			_, _, blended := issuemath.RidgeBlend(rawDecomp, qv, cv, issuemath.RidgeTagSpace)
+			return blended, true
+		})
+	}
+	rawNDCG, rawRecall := shadowMetrics(corpus, judgments, rawRank)
+	t.Logf("--- centering on/off (ridge tag-space, GCV λ) ---")
+	t.Logf("%-26s  %8s  %8s  %10s", "model", "NDCG@8", "Recall@8", "λ")
+	t.Logf("%-26s  %8.4f  %8.4f  %10.3f", "centered (shipped)", gtNDCG, gtRecall, gcvLambda)
+	t.Logf("%-26s  %8.4f  %8.4f  %10.3f", "uncentered (raw)", rawNDCG, rawRecall, rawLambda)
 
 	// Does the high ridge R² reflect tags explaining the text, or unscored
 	// tags overfitting the embedding under a weak penalty? Sweep λ_unscored:

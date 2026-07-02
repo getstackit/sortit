@@ -6,8 +6,12 @@
 // so any change to internal/scoring/constants.go or the math packages is
 // measurable instead of hand-felt (whitepaper §10.2, item 9).
 //
-// No network or AI services are involved: embeddings are small deterministic
-// vectors synthesized from FNV hashes at corpus-generation time.
+// The harness runs two fixtures over the same texts and judgments: `synthetic`
+// (embeddings synthesized deterministically from FNV hashes at generation time)
+// and `real` (the same texts re-embedded with production text-embedding-3-small,
+// committed to testdata/real_embeddings.json by the embedfixture tool). Ordinary
+// `go test` runs need no network or key for either — the real vectors are
+// committed; only regenerating them (cmd/embedfixture) calls the API.
 package matheval
 
 import (

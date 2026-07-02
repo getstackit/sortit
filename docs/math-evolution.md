@@ -426,18 +426,38 @@ layers: `internal/issuethemes` stays a pure, deterministic NMF library;
 ## 4. Evidence: what the numbers say (and don't)
 
 The evaluation harness (`internal/matheval`, [math-eval.md](./math-eval.md))
-is a synthetic corpus: 16 tags, 48 issues, 32 fully-judged queries, embedding
-dim 24, NDCG@8 / Recall@8.
+runs two fixtures over the *same* 16 tags / 48 issues / 32 fully-judged
+queries and the same judgment set. The **synthetic** fixture synthesizes
+embeddings as relevance-weighted tag sums (dim 24); the **real** fixture
+(WP-301) re-embeds the identical tag descriptors, issue texts, and query texts
+with the production `text-embedding-3-small` model (dim 1536), committed to
+`testdata/real_embeddings.json` so CI needs no network. Both fixtures, both
+similarity paths, are asserted on every `go test` run (four baseline entries).
+
+**Synthetic fixture** (embeddings built from tags — a floor argument):
 
 | Measurement | NDCG@8 | Recall@8 | Where |
 |---|---|---|---|
 | Pre-centering baseline | 0.823 | 0.855 | whitepaper §2.0 |
-| Rank-1, centered (committed golden baseline) | 0.8658 | 0.9117 | `matheval/testdata/baseline.json` → `rank1` |
-| Ridge, GCV λ_unscored = 3.0, tag-space (committed golden baseline) | **0.9309** | **0.9586** | `matheval/testdata/baseline.json` → `ridge` |
-| Full-path A/B (ridge vs rank-1 through the whole pipeline) | +0.0651 | +0.0469 | both baseline rows above, asserted every run |
-| Rank-1, similarity-only (historical shadow run) | 0.874 | 0.928 | `ridge_shadow_test.go` |
-| Ridge, fixed λ_unscored = 0.05 (overfit, R² ~0.90) (historical shadow run) | 0.867 | — | shadow harness — *regression* |
-| Ridge, GCV λ_unscored ≈ 3.0 (R² ~0.80), tag-space (historical shadow run) | 0.933 | 0.964 | shadow harness |
+| Rank-1, centered (golden baseline) | 0.8658 | 0.9117 | `baseline.json` → `synthetic.rank1` |
+| Ridge, GCV λ_unscored = 3.0, tag-space (golden baseline) | **0.9309** | **0.9586** | `baseline.json` → `synthetic.ridge` |
+| Full-path A/B (ridge − rank-1) | **+0.0651** | **+0.0469** | both rows above, asserted every run |
+
+**Real fixture** (production `text-embedding-3-small` geometry, WP-301):
+
+| Measurement | NDCG@8 | Recall@8 | Where |
+|---|---|---|---|
+| Rank-1, centered (golden baseline) | **0.9050** | **0.8688** | `baseline.json` → `real.rank1` |
+| Ridge, GCV λ_unscored = 0.01, tag-space (golden baseline) | 0.7536 | 0.5929 | `baseline.json` → `real.ridge` |
+| Full-path A/B (ridge − rank-1) | **−0.1514** | **−0.2759** | both rows above, asserted every run |
+| Ridge tag-space, similarity-only (shadow) | 0.7910 | 0.6472 | `ridge_shadow_test.go` — *regression* |
+| Ridge recon-space, similarity-only (shadow) | 0.8744 | 0.8294 | shadow harness — still below rank-1 |
+| Ridge tag-space, GCV, **uncentered** (shadow) | 0.9514 | 0.9112 | shadow — centering *hurts* here |
+
+Reproduce with `go test ./internal/matheval -run TestRidgeShadowComparison
+-ridge -v` (both fixtures) and `go test ./internal/matheval -run TestMathEval
+-v` (committed baselines). Regenerate the real vectors with `go run
+./internal/matheval/cmd/embedfixture` (needs `OPENAI_API_KEY`).
 
 Honest caveats, all of which are Track D work:
 
@@ -456,10 +476,57 @@ Honest caveats, all of which are Track D work:
    similarity-shape and fixed-λ overfit sweeps, but the numbers that gate
    regressions are the two committed baseline rows above, not its log output —
    both derive λ through the same `ridgeGCVFixture` helper.
-3. **The fixture corpus structurally favors the tag story.** Its embeddings are
-   generated as relevance-weighted tag sums plus anisotropy plus noise — so the
-   ridge win over rank-1 on fixtures is a floor argument, not proof on real
-   embeddings. The harness flags this itself.
+3. **On real embedding geometry, the ridge tag-space win does not transfer — it
+   inverts. This is the most important negative result in the program so far,
+   and it is stated here without softening.** WP-301 re-embedded the identical
+   fixture texts with the production `text-embedding-3-small` model and re-ran
+   the full comparison. Every ridge-vs-rank-1 number before this used embeddings
+   *constructed from tags*, where a tag-space model wins by construction — a
+   floor argument. On real geometry:
+
+   - **The shipped ridge default (centered, tag-space, GCV λ) regresses ranking
+     substantially: NDCG@8 0.7536 vs rank-1's 0.9050 (−0.1514), Recall@8 0.5929
+     vs 0.8688 (−0.2759)**, full-path. It regresses similarity-only too (0.7910
+     vs 0.8867). The synthetic fixture's +0.065 NDCG win became a −0.15 loss.
+   - **Tags explain almost none of the real embedding variance.** Aggregate R²
+     collapses from ~0.80 (synthetic ridge) to **~0.16**; the 16 tags span a
+     16-dim subspace of a 1536-dim space, so projecting an issue onto tag-space
+     discards ~84% of its semantic signal. Because the blend weights the factor
+     term by that R², the tag term is *already* near-silent on a real corpus —
+     but the ridge tag-space similarity shape still underperforms rank-1's
+     factor+residual blend on what remains.
+   - **GCV selected λ_unscored = 0.01, the grid floor (censored — it wants even
+     lower)**, versus 3.0 on the synthetic fixture. GCV correctly reads the real
+     geometry as one where the penalty should be minimal; it is *not* a
+     fixture-fit constant, exactly as designed. It simply cannot rescue a
+     similarity shape that discards the residual.
+   - **Two shape/preprocessing findings that flipped sign versus synthetic:**
+     reconstruction-space similarity (0.8744) beats tag-space (0.7910) on real
+     geometry — the opposite of the Phase 3b synthetic verdict that picked
+     tag-space; and **centering *before* the tag-space ridge hurts** on real
+     embeddings (uncentered tag-space GCV scores 0.9514 vs centered 0.7910).
+     Neither should be read as a new default — they are single-fixture signals —
+     but both say the shipped configuration was tuned on a geometry that does not
+     resemble production.
+
+   **Interpretation against the pre-committed rule (this plan's §WP-301 risk):**
+   ridge does not beat rank-1 on real geometry within noise — it loses cleanly
+   and by a wide margin on the shipped tag-space path. Per the pre-commitment,
+   the ridge-default flip now warrants re-examination: its cost is complexity,
+   and on real geometry the complexity is not buying a ranking win. Stages 4–5
+   still stand — they consume `f_i` for *structure* (themes, drift, map input),
+   not for ranking wins, and the drift signal (analyzer-vs-geometry divergence)
+   is a different quantity than ranking NDCG. But any claim that "ridge improves
+   search ranking" must now cite the real-fixture rows, where it does not.
+
+   **Layer caveat (spec's own escalation rule).** This is *layer 1*: real-model
+   embeddings over texts that were themselves generated *from* the tag structure.
+   Those texts are more realistic than tag-sum vectors but are still one step
+   removed from a real corpus. Layer 1 discriminated sharply (it did not
+   saturate), so the layer-2 curation of a real anonymized corpus is *not*
+   forced by a null result — but the direction it points (real geometry demotes
+   the tag-space ranking story) is the signal layer 2 would sharpen, not
+   reverse.
 4. **Only search is harness-validated.** Explore and person recommendations
    inherit the identical model and blend code but have no eval of their own.
 

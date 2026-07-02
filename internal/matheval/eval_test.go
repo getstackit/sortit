@@ -29,11 +29,21 @@ const (
 	r2Tolerance = 0.02
 )
 
-// Baseline is the golden metrics file. It guards both similarity models search
-// can run: the rank-1 fallback (no options) and the ridge tag-space default the
-// API layer injects via WithRidgeSimilarity. Regenerate after an intentional
-// math change with `go test ./internal/matheval -update`.
+// Baseline is the golden metrics file. It keys the metrics by fixture:
+// `synthetic` (embeddings synthesized from tag sums, the original harness) and
+// `real` (the same corpus/judgments re-embedded with the production
+// text-embedding-3-small model, WP-301). Every ordinary `go test` run asserts
+// both fixtures with no network, using the committed vectors. Regenerate after
+// an intentional math change with `go test ./internal/matheval -update`.
 type Baseline struct {
+	Synthetic FixtureBaseline `json:"synthetic"`
+	Real      FixtureBaseline `json:"real"`
+}
+
+// FixtureBaseline guards both similarity models search can run on one fixture:
+// the rank-1 fallback (no options) and the ridge tag-space default the API
+// layer injects via WithRidgeSimilarity.
+type FixtureBaseline struct {
 	Rank1 PathMetrics `json:"rank1"`
 	Ridge PathMetrics `json:"ridge"`
 }
@@ -63,18 +73,23 @@ type FactorModelMetrics struct {
 }
 
 // TestMathEval is the offline evaluation harness (whitepaper §10.2, item 9).
-// It drives SearchFromQueryWithTags end-to-end over the fixture corpus for
-// every labeled query on both similarity models — the rank-1 fallback and the
-// ridge tag-space default (WithRidgeSimilarity at the GCV-selected penalty) —
-// summarizes per-issue R² for each, and compares both against the recorded
-// baseline. Run with -v to see the metrics; see docs/math-eval.md for
-// interpretation.
+// It drives SearchFromQueryWithTags end-to-end over both fixtures — `synthetic`
+// (tag-sum embeddings) and `real` (production text-embedding-3-small vectors
+// over the same texts, WP-301) — for every labeled query on both similarity
+// models — the rank-1 fallback and the ridge tag-space default
+// (WithRidgeSimilarity at the GCV-selected penalty) — summarizes per-issue R²
+// for each, and compares all four entries against the recorded baseline. No
+// network: the real fixture uses committed vectors. Run with -v to see the
+// metrics; see docs/math-eval.md for interpretation.
 func TestMathEval(t *testing.T) {
-	got := computeMetrics(t)
+	syntheticCorpus, realCorpus := loadFixtures(t)
+	got := Baseline{
+		Synthetic: computeFixtureMetrics(t, syntheticCorpus),
+		Real:      computeFixtureMetrics(t, realCorpus),
+	}
 
-	logPath(t, "rank1", got.Rank1)
-	logPath(t, "ridge", got.Ridge)
-	t.Logf("ridge GCV λ_unscored = %.4f", got.Ridge.GCVLambdaUnscored)
+	logFixture(t, "synthetic", got.Synthetic)
+	logFixture(t, "real", got.Real)
 
 	if *update {
 		data, err := json.MarshalIndent(got, "", "  ")
@@ -97,8 +112,42 @@ func TestMathEval(t *testing.T) {
 		t.Fatalf("parse %s: %v", baselinePath, err)
 	}
 
-	assertPath(t, "rank1", got.Rank1, want.Rank1)
-	assertPath(t, "ridge", got.Ridge, want.Ridge)
+	assertFixture(t, "synthetic", got.Synthetic, want.Synthetic)
+	assertFixture(t, "real", got.Real, want.Real)
+}
+
+// loadFixtures loads the synthetic corpus and, overlaid on it, the real-model
+// corpus (same texts/judgments, committed text-embedding-3-small vectors).
+func loadFixtures(t *testing.T) (synthetic, real Corpus) {
+	t.Helper()
+	synthetic, err := LoadCorpus(corpusPath)
+	if err != nil {
+		t.Fatalf("load corpus: %v", err)
+	}
+	re, err := LoadRealEmbeddings(realEmbeddingsPath)
+	if err != nil {
+		t.Fatalf("load real embeddings (run `go run ./internal/matheval/cmd/embedfixture` to regenerate): %v", err)
+	}
+	real, err = synthetic.RealCorpus(re)
+	if err != nil {
+		t.Fatalf("build real corpus: %v", err)
+	}
+	return synthetic, real
+}
+
+// logFixture prints one fixture's rank-1 and ridge metrics under -v.
+func logFixture(t *testing.T, fixture string, fb FixtureBaseline) {
+	t.Helper()
+	logPath(t, fixture+"/rank1", fb.Rank1)
+	logPath(t, fixture+"/ridge", fb.Ridge)
+	t.Logf("[%s] ridge GCV λ_unscored = %.4f", fixture, fb.Ridge.GCVLambdaUnscored)
+}
+
+// assertFixture asserts one fixture's rank-1 and ridge metrics against baseline.
+func assertFixture(t *testing.T, fixture string, got, want FixtureBaseline) {
+	t.Helper()
+	assertPath(t, fixture+"/rank1", got.Rank1, want.Rank1)
+	assertPath(t, fixture+"/ridge", got.Ridge, want.Ridge)
 }
 
 // assertPath asserts one similarity model's metrics against its baseline entry.
@@ -154,12 +203,12 @@ func assertWithinDrift(t *testing.T, name string, got, want float64) {
 	}
 }
 
-func computeMetrics(t *testing.T) Baseline {
+// computeFixtureMetrics runs the full rank-1 and ridge-GCV evaluation over one
+// fixture corpus. Both fixtures share the same judgment set (judgments grade
+// query↔issue relevance, not vectors), so the real fixture reuses judgments.json
+// unchanged.
+func computeFixtureMetrics(t *testing.T, corpus Corpus) FixtureBaseline {
 	t.Helper()
-	corpus, err := LoadCorpus(corpusPath)
-	if err != nil {
-		t.Fatalf("load corpus: %v", err)
-	}
 	judgments, err := LoadJudgments(judgmentsPath, corpus)
 	if err != nil {
 		t.Fatalf("load judgments: %v", err)
@@ -194,7 +243,7 @@ func computeMetrics(t *testing.T) Baseline {
 		t.Fatal("ridge decomposition fell back to hardcoded weights; the corpus should always be large enough to decompose")
 	}
 
-	return Baseline{
+	return FixtureBaseline{
 		Rank1: PathMetrics{
 			Search:      searchMetrics(len(judgments), rank1NDCG, rank1Recall),
 			FactorModel: factorMetrics(rank1Decomp.FactorWeight, rank1Decomp.AggregateR2, collectR2(rank1Decomp.AllR2)),
