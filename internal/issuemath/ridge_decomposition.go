@@ -12,14 +12,15 @@ import (
 )
 
 // RidgeSimilarityMode selects which space the "factor" side of the ridge
-// blend compares. The two are measured head-to-head in the matheval shadow
-// harness before either becomes the ranking default.
+// blend compares. The two were measured head-to-head in the matheval shadow
+// harness; RidgeTagSpace won and is the shipped ranking default.
 type RidgeSimilarityMode int
 
 const (
 	// RidgeTagSpace compares the tag-space loadings cos(f_A, f_B). It is the
 	// most interpretable: two issues are close when their refined tag
-	// geometry agrees.
+	// geometry agrees. This is what search, explore, and person
+	// recommendations use by default.
 	RidgeTagSpace RidgeSimilarityMode = iota
 	// RidgeReconSpace compares the embedding-space reconstructions
 	// cos(Tᵀf_A, Tᵀf_B). It stays closest to today's rank-1 blend, which

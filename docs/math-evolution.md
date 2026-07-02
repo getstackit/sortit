@@ -431,11 +431,9 @@ design, and why. These are decisions, not drift — the as-built column wins.
 | Dismiss provenance sourced from `/tags/dismiss` | **Unwired** | That endpoint dismisses tag-merge suggestions, not per-issue relevance. A real dismiss affordance is future work (Track D). |
 | NMF "~50 iterations to convergence" | Fixed 50 iterations, no convergence check | Simplification; acceptable at current scale, revisit with telemetry (§12). |
 
-Documentation debt created by the flip (tracked in Track D): the comment header
-over the ridge constants (`internal/scoring/constants.go`) still says
-"debug/shadow only — not wired into ranking"; whitepaper §10.3 still describes
-anchored ridge as shadow-mode while §2's status header correctly says it is the
-default. Both are stale text, not stale code.
+Documentation debt created by the flip — **resolved by WP-102**: the ridge
+constants header now teaches the two-λ regime, whitepaper §10.3 describes the
+shipped default, and the rank-1 aggregate comment says pooled, not mean.
 
 ## 6. Status board
 
@@ -613,9 +611,9 @@ copy paths were audited for negation-field loss and are correct — whole-struct
 assignment carries the value-type provenance fields; only the pointer/slice
 fields need the explicit re-copies they already have.)
 
-**D7. Stale-text sweep.** `internal/scoring/constants.go` ridge header
-("debug/shadow only"); whitepaper §10.3 shadow-mode paragraph; any remaining
-`‖f − r‖` drift references. One small PR.
+**D7. Stale-text sweep.** Done (WP-102): constants header, whitepaper §10.3,
+the "mean R²" comment, and two further stale ridge-mode comments found by
+sweep (`RidgeSimilarityMode` docs, shadow-test header).
 
 **D8. Standardize `TagDrift.Delta`.** Raw per-tag deltas are not comparable
 across tags (Λ varies per tag). Standardize against each tag's corpus delta

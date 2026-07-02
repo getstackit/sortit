@@ -47,7 +47,7 @@ work top-to-bottom unless a WP's dependency note says otherwise.
 | WP | Title | Size | Depends on | Status |
 |---|---|---|---|---|
 | WP-101 | Put the ridge default under the golden baseline | S–M | — | shipped (in stack) |
-| WP-102 | Stale-text and misleading-comment sweep | XS | — | todo |
+| WP-102 | Stale-text and misleading-comment sweep | XS | — | shipped (in stack) |
 | WP-103 | Revision-keyed ridge decomposition cache + solver concurrency | M–L | WP-101 | todo |
 | WP-104 | Standardize per-tag drift deltas | S | — | todo |
 | WP-105 | GCV solver cost and factorization consistency | S–M | WP-101 | todo |

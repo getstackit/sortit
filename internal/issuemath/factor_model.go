@@ -35,7 +35,7 @@ type FactorDecomposition struct {
 
 	FactorWeight   float64 // data-driven weight for factor similarity
 	ResidualWeight float64 // data-driven weight for residual similarity
-	AggregateR2    float64 // mean R² across all decomposed issues
+	AggregateR2    float64 // pooled variance-weighted R² across all decomposed issues (Σ factor var / Σ total var, not an average of per-issue R²)
 }
 
 func newFactorDecomposition(capacity int) FactorDecomposition {

@@ -42,16 +42,18 @@ var ridgeShadow = flag.Bool("ridge", false, "run the ridge-vs-rank1 shadow compa
 //     K/D/conditioning production has.
 //
 // TestRidgeShadowComparison measures the full-rank anchored-ridge model
-// against the current rank-1 projection on the fixture corpus, before any
-// ranking path consumes the ridge scores (math-evolution.md Phase 3a).
+// against the rank-1 projection on the fixture corpus. It originated
+// (math-evolution.md Phase 3a) before any ranking path consumed the ridge
+// scores; ranking now defaults to ridge (Phase 3c), and this harness
+// continues as the offline regression check for that choice.
 //
 // It compares the *similarity model in isolation*: candidates are ranked by
 // the blended similarity alone, with none of the freshness/velocity/
 // authority/specificity modifiers the production search applies. Those
 // modifiers are identical across models, so including them would only dilute
 // the comparison. Both ridge similarity shapes — tag-space cos(f_A,f_B) and
-// reconstruction-space cos(Tᵀf_A,Tᵀf_B) — are reported so the harness, not a
-// guess, picks the shape that becomes the Phase 3b default.
+// reconstruction-space cos(Tᵀf_A,Tᵀf_B) — are reported; the harness picked
+// tag-space, which became (and remains) the Phase 3b default.
 //
 // Run with: go test ./internal/matheval -run TestRidgeShadowComparison -ridge -v
 func TestRidgeShadowComparison(t *testing.T) {
