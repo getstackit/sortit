@@ -370,3 +370,15 @@ tolerance.
 Low. Numerical: Cholesky requires SPD — Λ has strictly positive entries on
 every path today (0.05 floor); add a defensive check that falls back to LU
 with a telemetry counter rather than panicking.
+
+### Outcome (shipped) — and a spec correction
+
+The spec's suggested identity `tr(A⁻¹TTᵀ) = ‖L⁻¹T‖²_F` is **slower** at the
+production shape (O(K²D), ~3.5× the original at D≫K). The winning form is the
+diagonal identity `df = tr(I) − tr(A⁻¹Λ) = K − Σ_k λ_k (A⁻¹)_kk`, needing only
+`diag(A⁻¹)` via Cholesky inverse (~K³/3): full 7-point recompute at
+K200/D1536/200 samples 7.04s → 4.61s (trace step 3.50ms → 1.76ms/op); equality
+asserted to 1e-9 over seeded fixtures. Ranking solver unified on Cholesky
+(same factorization as GCV), with a non-SPD LU fallback behind an atomic
+counter + rate-limited warn (`RidgeCholeskyFallbackCount`). Baselines
+bit-identical to 4 decimals; determinism held.

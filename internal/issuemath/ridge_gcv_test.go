@@ -1,12 +1,87 @@
 package issuemath
 
 import (
+	"math"
+	"math/rand"
 	"testing"
+
+	"gonum.org/v1/gonum/mat"
 
 	"sortit/internal/issues"
 	"sortit/internal/scoring"
 	"sortit/internal/vectors"
 )
+
+// TestGCVTraceIdentityMatchesDirect asserts that the cheaper GCV degrees-of-
+// freedom computation — df = K − Σ_k λ_k (A⁻¹)_kk via chol.InverseTo, as used
+// in aggregateRidgeGCV — matches the original direct trace tr(A⁻¹ TTᵀ) (a full
+// K×K solve plus mat.Trace) to 1e-9. Fixtures are randomized SPD systems
+// A = TTᵀ + Λ across several deterministic seeds and shapes.
+func TestGCVTraceIdentityMatchesDirect(t *testing.T) {
+	shapes := []struct{ k, d int }{
+		{8, 24}, {16, 32}, {40, 64}, {64, 128},
+	}
+	for _, seed := range []int64{1, 7, 42, 1234, 99991} {
+		rng := rand.New(rand.NewSource(seed))
+		for _, sh := range shapes {
+			k, d := sh.k, sh.d
+
+			// Random tag matrix T (k×d) and per-tag penalties λ (strictly
+			// positive, mixed like the scored/unscored regime).
+			tm := make([][]float64, k)
+			for i := range k {
+				v := make([]float64, d)
+				for j := range v {
+					v[j] = rng.NormFloat64()
+				}
+				tm[i] = v
+			}
+			lambdas := make([]float64, k)
+			for i := range k {
+				if i%3 == 0 {
+					lambdas[i] = scoring.RidgeAnchorLambdaScored
+				} else {
+					lambdas[i] = 0.05 + 0.5*rng.Float64()
+				}
+			}
+
+			gram := ridgeGramMatrix(tm, k)
+			a := mat.NewSymDense(k, nil)
+			a.CopySym(gram)
+			for i := range k {
+				a.SetSym(i, i, a.At(i, i)+lambdas[i])
+			}
+
+			var chol mat.Cholesky
+			if !chol.Factorize(a) {
+				t.Fatalf("seed %d shape %dx%d: factorize failed", seed, k, d)
+			}
+
+			// Direct: tr(A⁻¹ TTᵀ) = tr(A⁻¹ gram).
+			var xinv mat.Dense
+			if err := chol.SolveTo(&xinv, gram); err != nil {
+				t.Fatalf("seed %d shape %dx%d: SolveTo: %v", seed, k, d, err)
+			}
+			direct := mat.Trace(&xinv)
+
+			// Identity: K − Σ_k λ_k (A⁻¹)_kk.
+			var ainv mat.SymDense
+			if err := chol.InverseTo(&ainv); err != nil {
+				t.Fatalf("seed %d shape %dx%d: InverseTo: %v", seed, k, d, err)
+			}
+			var lambdaTraceInv float64
+			for i := range k {
+				lambdaTraceInv += lambdas[i] * ainv.At(i, i)
+			}
+			identity := float64(k) - lambdaTraceInv
+
+			if math.Abs(direct-identity) > 1e-9 {
+				t.Errorf("seed %d shape %dx%d: trace identity mismatch: direct=%.15f identity=%.15f (Δ=%.3e)",
+					seed, k, d, direct, identity, math.Abs(direct-identity))
+			}
+		}
+	}
+}
 
 // orthogonalAxis returns a unit vector along axis k in dim-dimensional space.
 func orthogonalAxis(k, dim int) []float64 {

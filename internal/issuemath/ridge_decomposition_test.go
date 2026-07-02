@@ -184,3 +184,49 @@ func TestDecomposeRidgeEmbedding_MatchesCorpusSolve(t *testing.T) {
 		t.Errorf("R²: query %f != corpus %f", query.R2, corpus.R2)
 	}
 }
+
+// TestRidgeCholeskyFallbackObservable exercises the defensive LU-fallback
+// instrumentation: recordRidgeCholeskyFallback increments the process-level
+// counter and RidgeCholeskyFallbackCount exposes it, while a healthy
+// decomposition (SPD A on every solve) never trips the fallback. The fallback
+// itself is unreachable through the public path — Λ's 0.05 floor keeps
+// A = TTᵀ+Λ strictly positive definite — so its wiring is asserted directly.
+func TestRidgeCholeskyFallbackObservable(t *testing.T) {
+	tagEmb := map[string][]float64{
+		"alpha": unitVec([]float64{1, 0, 0, 0}),
+		"beta":  unitVec([]float64{0, 1, 0, 0}),
+		"gamma": unitVec([]float64{0, 0, 1, 0}),
+	}
+	tagNames := []string{"alpha", "beta", "gamma"}
+	embeddings := map[string][]float64{
+		"a": unitVec([]float64{0.95, 0.30, 0, 0}),
+		"b": unitVec([]float64{0.90, 0.40, 0, 0}),
+		"c": unitVec([]float64{0.30, 0.95, 0, 0}),
+		"d": unitVec([]float64{0.20, 0.10, 0.95, 0}),
+		"e": unitVec([]float64{0.10, 0.20, 0.90, 0.3}),
+	}
+	tagsByIssue := map[string][]issues.TagRelevance{
+		"a": {{Tag: "alpha", Relevance: 0.9}},
+		"b": {{Tag: "alpha", Relevance: 0.85}},
+		"c": {{Tag: "beta", Relevance: 0.9}},
+		"d": {{Tag: "gamma", Relevance: 0.9}},
+		"e": {{Tag: "gamma", Relevance: 0.8}},
+	}
+	items := ridgeTestItems(embeddings, tagsByIssue)
+
+	before := RidgeCholeskyFallbackCount()
+	d := ComputeRidgeDecomposition(items, tagNames, embeddings, tagEmb,
+		scoring.RidgeAnchorLambdaScored, 0.05)
+	if !d.Decomposed() {
+		t.Fatal("expected the fixture corpus to decompose")
+	}
+	if got := RidgeCholeskyFallbackCount(); got != before {
+		t.Errorf("healthy decomposition tripped the Cholesky fallback: %d -> %d", before, got)
+	}
+
+	// The counter and its accessor are wired: a recorded fallback is observable.
+	recordRidgeCholeskyFallback()
+	if got := RidgeCholeskyFallbackCount(); got != before+1 {
+		t.Errorf("RidgeCholeskyFallbackCount did not observe the fallback: want %d, got %d", before+1, got)
+	}
+}

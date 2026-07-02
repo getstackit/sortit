@@ -1,7 +1,10 @@
 package issuemath
 
 import (
+	"log/slog"
 	"math"
+	"sync/atomic"
+	"time"
 
 	"gonum.org/v1/gonum/floats"
 	"gonum.org/v1/gonum/mat"
@@ -10,6 +13,40 @@ import (
 	"sortit/internal/scoring"
 	"sortit/internal/vectors"
 )
+
+// ridgeCholeskyFallbacks counts how many times the ranking ridge solve fell
+// back from Cholesky to LU because A = T Tᵀ + Λ failed Cholesky factorization
+// (not numerically SPD). GCV selection and ranking share the Cholesky path, so
+// λ is chosen on the same numerical footing that ranks. On a healthy corpus Λ
+// has strictly positive diagonal entries (0.05 floor), so A is SPD and this
+// never fires; a nonzero count flags numerical pathology in the tag geometry.
+// Ranking still succeeds via the LU fallback — the counter only observes.
+var ridgeCholeskyFallbacks atomic.Uint64
+
+// ridgeCholeskyFallbackLastLog is the unix-nano timestamp of the last warning,
+// so a pathological corpus doesn't flood the logs; the counter keeps the exact
+// tally. Mirrors internal/map's embedding-fallback rate-limiting at smaller
+// scale (a plain atomic pair instead of a mutex-guarded map).
+var ridgeCholeskyFallbackLastLog atomic.Int64
+
+const ridgeCholeskyFallbackLogInterval = time.Minute
+
+func recordRidgeCholeskyFallback() {
+	count := ridgeCholeskyFallbacks.Add(1)
+	now := time.Now().UnixNano()
+	last := ridgeCholeskyFallbackLastLog.Load()
+	if now-last >= int64(ridgeCholeskyFallbackLogInterval) &&
+		ridgeCholeskyFallbackLastLog.CompareAndSwap(last, now) {
+		slog.Warn("ridge solve fell back from Cholesky to LU: A = TTᵀ+Λ not numerically SPD",
+			"count", count)
+	}
+}
+
+// RidgeCholeskyFallbackCount returns how many times the ranking ridge solve
+// fell back from Cholesky to LU since process start. Zero on a healthy corpus.
+func RidgeCholeskyFallbackCount() uint64 {
+	return ridgeCholeskyFallbacks.Load()
+}
 
 // RidgeSimilarityMode selects which space the "factor" side of the ridge
 // blend compares. The two were measured head-to-head in the matheval shadow
@@ -285,47 +322,65 @@ func factorZero(v RidgeVectors, mode RidgeSimilarityMode) bool {
 // ComputeRidgeScoresDiagonal, so the loadings are bit-for-bit identical.
 //
 // A ridgeSolver is NOT safe for concurrent use: solve mutates shared scratch
-// buffers (gram, projection, rhs, f, out) in place. Each ComputeRidgeDecomposition
-// / DecomposeRidgeEmbedding call constructs its own solver, so the invariant is
-// "one solver, one goroutine". The revision-keyed decomposition cache
-// (internal/ridgedecomp) relies on this: its compute runs under a single-flight
-// mutex, so exactly one solver is ever live per corpus revision.
+// buffers (symA, projection, rhs, f, out and the Cholesky factor) in place.
+// Each ComputeRidgeDecomposition / DecomposeRidgeEmbedding call constructs its
+// own solver, so the invariant is "one solver, one goroutine". The
+// revision-keyed decomposition cache (internal/ridgedecomp) relies on this: its
+// compute runs under a single-flight mutex, so exactly one solver is ever live
+// per corpus revision.
+//
+// The per-issue solve is Cholesky (A = T Tᵀ + Λ is SPD), the same factorization
+// SelectRidgeLambdaGCV uses to pick λ — so ranking and λ-selection share one
+// numerical path. A defensive LU fallback (recordRidgeCholeskyFallback) covers
+// the pathological case where A is not numerically SPD; it never fires on a
+// healthy corpus (Λ floor 0.05 > 0).
 type ridgeSolver struct {
 	tagMatrix [][]float64
 	dim       int
 	tagCount  int
 
-	tMat     *mat.Dense
-	baseGram *mat.Dense
+	tMat    *mat.Dense
+	baseSym *mat.SymDense
 
-	// Scratch reused across solve calls. gram holds baseGram plus the
-	// per-issue diagonal penalty; out holds the latest loadings and is
-	// overwritten on the next solve, so callers that retain it must copy.
-	gram       mat.Dense
+	// Scratch reused across solve calls. symA holds baseSym plus the per-issue
+	// diagonal penalty and is factorized in place by chol; out holds the latest
+	// loadings and is overwritten on the next solve, so callers that retain it
+	// must copy.
+	symA       *mat.SymDense
+	chol       mat.Cholesky
 	projection mat.VecDense
 	rhs        *mat.VecDense
 	f          mat.VecDense
 	out        []float64
 }
 
-// newRidgeSolver precomputes T and T Tᵀ. Every row of tagMatrix must already
-// be dim-length (ridgeTagMatrix guarantees this); zero rows for missing tag
-// embeddings are fine and contribute nothing to the gram.
+// newRidgeSolver precomputes T and the symmetric base gram T Tᵀ. Every row of
+// tagMatrix must already be dim-length (ridgeTagMatrix guarantees this); zero
+// rows for missing tag embeddings are fine and contribute nothing to the gram.
 func newRidgeSolver(tagMatrix [][]float64, dim int) *ridgeSolver {
 	tagCount := len(tagMatrix)
 	tMat := mat.NewDense(tagCount, dim, nil)
 	for i, vec := range tagMatrix {
 		tMat.SetRow(i, vec)
 	}
+	// baseSym = T Tᵀ. Built from the dense product's upper triangle so its
+	// values are bit-identical to the prior LU path's gram; only the solve
+	// factorization changes (LU → Cholesky).
 	var baseGram mat.Dense
 	baseGram.Mul(tMat, tMat.T())
+	baseSym := mat.NewSymDense(tagCount, nil)
+	for i := range tagCount {
+		for j := i; j < tagCount; j++ {
+			baseSym.SetSym(i, j, baseGram.At(i, j))
+		}
+	}
 	return &ridgeSolver{
 		tagMatrix: tagMatrix,
 		dim:       dim,
 		tagCount:  tagCount,
 		tMat:      tMat,
-		baseGram:  &baseGram,
-		gram:      *mat.NewDense(tagCount, tagCount, nil),
+		baseSym:   baseSym,
+		symA:      mat.NewSymDense(tagCount, nil),
 		rhs:       mat.NewVecDense(tagCount, nil),
 		out:       make([]float64, tagCount),
 	}
@@ -340,9 +395,9 @@ func (s *ridgeSolver) solve(e, anchor, lambdas []float64) []float64 {
 	}
 
 	// A = T Tᵀ + Λ (copy the shared base gram, then add the per-issue diagonal).
-	s.gram.Copy(s.baseGram)
+	s.symA.CopySym(s.baseSym)
 	for i := range s.tagCount {
-		s.gram.Set(i, i, s.gram.At(i, i)+lambdas[i])
+		s.symA.SetSym(i, i, s.symA.At(i, i)+lambdas[i])
 	}
 
 	// projection = T e.
@@ -354,9 +409,20 @@ func (s *ridgeSolver) solve(e, anchor, lambdas []float64) []float64 {
 		s.rhs.SetVec(i, s.projection.AtVec(i)+lambdas[i]*anchor[i])
 	}
 
-	if err := s.f.SolveVec(&s.gram, s.rhs); err != nil {
-		return nil
+	// Primary: Cholesky (A is SPD), matching the GCV λ-selection path. The
+	// unfactorized symA is preserved through Factorize, so it is reused as the
+	// LU operand when Cholesky reports A is not numerically SPD.
+	if s.chol.Factorize(s.symA) {
+		if err := s.chol.SolveVecTo(&s.f, s.rhs); err != nil {
+			return nil
+		}
+	} else {
+		recordRidgeCholeskyFallback()
+		if err := s.f.SolveVec(s.symA, s.rhs); err != nil {
+			return nil
+		}
 	}
+
 	for i := range s.tagCount {
 		s.out[i] = s.f.AtVec(i)
 	}

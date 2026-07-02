@@ -123,7 +123,7 @@ func aggregateRidgeGCV(
 	var (
 		chol mat.Cholesky
 		f    mat.VecDense
-		xinv mat.Dense
+		ainv mat.SymDense
 	)
 	for _, s := range samples {
 		// A = T Tᵀ + Λ (symmetric positive definite: gram is PSD, Λ > 0).
@@ -154,11 +154,32 @@ func aggregateRidgeGCV(
 
 		residSq := ridgeReconResidualSq(tagMatrix, &f, s.embedding, recon, numTags)
 
-		// Effective degrees of freedom df = tr(A⁻¹ T Tᵀ).
-		if err := chol.SolveTo(&xinv, gram); err != nil {
+		// Effective degrees of freedom df = tr(A⁻¹ T Tᵀ). Rather than
+		// materialize the full K×K product A⁻¹(TTᵀ) and take its trace (a Potrs
+		// solve over K right-hand sides plus a K×K allocation per sample), use
+		// the identity TTᵀ = A − Λ, so
+		//
+		//	df = tr(A⁻¹(A − Λ)) = tr(I_K) − tr(A⁻¹Λ) = K − Σ_k λ_k (A⁻¹)_kk
+		//
+		// because Λ is diagonal. Only the diagonal of A⁻¹ is needed: InverseTo
+		// (LAPACK Potri, ~K³/3) is ~2× cheaper than the SolveTo (Potrs, ~K³)
+		// this replaces, and it computes A⁻¹ in place without the extra product.
+		// Numerically identical to the direct trace to ~1e-13 (see
+		// TestGCVTraceIdentityMatchesDirect); the tag matrix T (K×D) is never
+		// re-touched here — the ‖L⁻¹T‖²_F form would be O(K²D), slower for the
+		// production D≫K shape.
+		if err := chol.InverseTo(&ainv); err != nil {
 			return 0, false
 		}
-		df := mat.Trace(&xinv)
+		var lambdaTraceInv float64
+		for k := range numTags {
+			lambda := lambdaUnscored
+			if s.scored[k] {
+				lambda = lambdaScored
+			}
+			lambdaTraceInv += lambda * ainv.At(k, k)
+		}
+		df := float64(numTags) - lambdaTraceInv
 
 		denom := float64(embDim) - df
 		if denom <= 0 {

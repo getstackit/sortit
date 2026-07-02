@@ -214,8 +214,11 @@ what makes "missing tag" detection possible (§3.6).
   — the O(K²·D) cost. (Rows of `T` are tag embeddings, so the K×K Gram is
   `TTᵀ`.)
 - Per issue: copy the Gram, add `Λ_i` to the diagonal, form
-  `rhs = T e_i + Λ_i r_i`, one LU solve. O(K²) per issue; microseconds at
-  K ≈ 200.
+  `rhs = T e_i + Λ_i r_i`, one Cholesky solve (`A = TTᵀ + Λ_i` is SPD). O(K²)
+  per issue; microseconds at K ≈ 200. This is the **same factorization GCV λ
+  selection uses**, so ranking and λ selection share one numerical path (Track
+  D5); a defensive LU fallback with a process counter
+  (`RidgeCholeskyFallbackCount`) covers the never-observed non-SPD case.
 - The solver reuses scratch buffers and is therefore **not concurrency-safe**
   — currently fine (single-threaded per request), flagged in Track D.
 - Per-issue outputs (`RidgeVectors`): unit loading `f`, unit reconstruction
@@ -243,9 +246,13 @@ df_i(λ)     = tr( (TTᵀ + Λ_i)⁻¹ TTᵀ )        (effective degrees of free
 grid        = {0.01, 0.03, 0.1, 0.3, 1.0, 3.0, 10.0}
 ```
 
-Per grid point, each sampled issue costs a Cholesky factorization plus a
-trace computed by materializing `A⁻¹·Gram` — the compute hot spot (Track D).
-A grid point where `D − df ≤ 0` for any sample is rejected outright: GCV is
+Per grid point, each sampled issue costs a Cholesky factorization plus a trace
+`df = tr(A⁻¹ TTᵀ)`. Rather than materialize the K×K product `A⁻¹·Gram`, this is
+computed via the identity `df = K − Σ_k λ_k (A⁻¹)_kk` (since `TTᵀ = A − Λ` and
+`Λ` is diagonal), reading only the diagonal of `A⁻¹` from the existing
+factorization — ~2× cheaper than the old materialized solve at K≈200/D=1536 and
+allocation-free per sample (Track D5). A grid point where `D − df ≤ 0` for any
+sample is rejected outright: GCV is
 unusable when effective df reaches the embedding dimension, i.e. the K ≥ D
 regime silently falls back to rank-1.
 
@@ -595,12 +602,17 @@ Make the solver concurrency story explicit at the same time (per-goroutine
 solver or pooled scratch) — the shared-scratch solver is a latent race if
 anything ever parallelizes.
 
-**D5. GCV cost and consistency.** Two smaller solver items: (a) the trace
-`tr(A⁻¹·Gram)` materializes a full K×K product per sample per grid point —
-compute it via Cholesky column solves accumulating only the diagonal, or accept
-it with a comment (fine at K ≈ 200, not at K ≈ 1000); (b) GCV selects λ on a
-Cholesky path while the ranker solves via LU — numerically close but not
-identical; unify on one factorization when touching either.
+**D5. GCV cost and consistency. (Done, WP-105.)** Two smaller solver items,
+both landed: (a) the trace `tr(A⁻¹·Gram)` no longer materializes the full K×K
+product — it uses `df = K − Σ_k λ_k (A⁻¹)_kk`, reading only `diag(A⁻¹)` from the
+factorization (~2× faster; a full λ-recompute at the K=200/D=1536/2000-sample
+bound drops from ≈70s to ≈46s extrapolated, with the trace step itself 3.5ms→1.8ms
+per sample). Note: the spec's suggested `‖L⁻¹T‖²_F` form is *slower* here because
+D≫K makes it O(K²D); the diagonal identity was the right choice. (b) the ranker
+now solves via Cholesky, the same factorization GCV uses, so λ is selected on the
+path that ranks — with a defensive LU fallback (`RidgeCholeskyFallbackCount`,
+never fires while Λ ≥ 0.05 keeps A SPD). matheval baselines unmoved (rank1
+0.8658/0.9117, ridge 0.9309/0.9586).
 
 **D6. Negation completion or cleanup.** Decide the two dead provenances:
 build a real per-issue tag-dismiss affordance emitting `dismiss` negations
