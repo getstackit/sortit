@@ -64,6 +64,28 @@ type RidgeDecomposition struct {
 	AggregateR2    float64
 }
 
+// WithoutReconstructions returns a shallow copy of the decomposition with every
+// per-issue Reconstruction dropped (set nil). The reconstruction (Tᵀf, D
+// floats/issue) is the largest per-issue vector and is only read by the
+// non-default RidgeReconSpace blend and the per-request debug endpoint; the
+// revision-keyed corpus cache (internal/ridgedecomp) stores this trimmed form
+// so a 10k-issue corpus keeps loading+residual (~K+D floats/issue) rather than
+// loading+recon+residual (~K+2D). RidgeBlend in RidgeTagSpace mode — the
+// shipped ranking default — never reads Reconstruction, so cached ranking is
+// unaffected.
+func (d RidgeDecomposition) WithoutReconstructions() RidgeDecomposition {
+	if !d.used {
+		return d
+	}
+	out := d
+	out.vecs = make([]RidgeVectors, len(d.vecs))
+	copy(out.vecs, d.vecs)
+	for i := range out.vecs {
+		out.vecs[i].Reconstruction = nil
+	}
+	return out
+}
+
 // VectorsFor returns the stored decomposition for an issue.
 func (d RidgeDecomposition) VectorsFor(id string) (RidgeVectors, bool) {
 	if !d.used {
@@ -87,6 +109,37 @@ func (d RidgeDecomposition) AllR2(fn func(id string, r2 float64)) {
 	for id, i := range d.index {
 		fn(id, d.vecs[i].R2)
 	}
+}
+
+// CorpusRidgeDecomposition bundles a full-corpus ridge decomposition with the
+// tag space and centering it was solved in, so an external embedding (a search
+// query or a person profile) can be decomposed into the *same* tag-space basis
+// before blending against the cached per-issue vectors. Search, explore, and
+// people receive this from the revision-keyed decomposition cache
+// (internal/ridgedecomp) and use it instead of recomputing the solve per
+// request.
+//
+// TagEmbeddings are already corpus-mean centered — the same space
+// Decomposition's per-issue vectors live in. Means is exposed so callers that
+// hold an uncentered external embedding (the person path) can center it
+// consistently before decomposing.
+type CorpusRidgeDecomposition struct {
+	Decomposition  RidgeDecomposition
+	TagNames       []string
+	TagEmbeddings  map[string][]float64
+	Means          CorpusMeans
+	LambdaScored   float64
+	LambdaUnscored float64
+}
+
+// Decomposed reports whether the bundle carries a usable decomposition.
+func (c CorpusRidgeDecomposition) Decomposed() bool { return c.Decomposition.Decomposed() }
+
+// DecomposeQuery decomposes an external, already-centered embedding into the
+// cached tag-space basis, so its loading/residual are comparable with the
+// cached per-issue vectors via RidgeBlend.
+func (c CorpusRidgeDecomposition) DecomposeQuery(embedding []float64, tagScores []issues.TagRelevance) RidgeVectors {
+	return DecomposeRidgeEmbedding(embedding, tagScores, c.TagNames, c.TagEmbeddings, c.LambdaScored, c.LambdaUnscored)
 }
 
 // ComputeRidgeDecomposition runs the anchored ridge solve over a corpus.
@@ -230,6 +283,13 @@ func factorZero(v RidgeVectors, mode RidgeSimilarityMode) bool {
 // (O(K²·D)) dwarfs the per-issue Cholesky solve. The per-issue arithmetic is
 // the same gonum operations on the same operands as the standalone
 // ComputeRidgeScoresDiagonal, so the loadings are bit-for-bit identical.
+//
+// A ridgeSolver is NOT safe for concurrent use: solve mutates shared scratch
+// buffers (gram, projection, rhs, f, out) in place. Each ComputeRidgeDecomposition
+// / DecomposeRidgeEmbedding call constructs its own solver, so the invariant is
+// "one solver, one goroutine". The revision-keyed decomposition cache
+// (internal/ridgedecomp) relies on this: its compute runs under a single-flight
+// mutex, so exactly one solver is ever live per corpus revision.
 type ridgeSolver struct {
 	tagMatrix [][]float64
 	dim       int

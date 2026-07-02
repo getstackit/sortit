@@ -241,6 +241,19 @@ that this drops.
   once it exists; if explore regresses, explore can keep set-relative weights
   computed from cached per-issue R² — cheap, since the vectors are cached.
 
+### Outcome (shipped)
+
+`internal/ridgedecomp.Cache` (ridgelambda shape, single-flight, full corpus,
+Reconstruction dropped → ~135 MiB/revision at 10k×K200×D1536). All four API
+surfaces resolve ridge as: decomp cache → λ-only in-place → rank-1. The
+cached bundle carries the tag space (`CorpusRidgeDecomposition.DecomposeQuery`)
+so queries/targets/persons decompose into the cached basis — required for
+correctness beyond the spec's phrasing. Equivalence proven to 1e-9 (search +
+explore); 8-goroutine race test asserts one compute per revision; matheval
+baselines untouched (full-corpus candidates don't exercise the set→corpus
+weight change; production subsets do — watch WP-302). Covariance double-build
+deferred: it lives in the rank-1 path and needs a signature change there.
+
 ---
 
 ## WP-104 — Standardize per-tag drift deltas

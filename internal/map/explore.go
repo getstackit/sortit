@@ -66,7 +66,8 @@ type ExploreResponse struct {
 type ExploreOption func(*exploreConfig)
 
 type exploreConfig struct {
-	ridgeLambda *float64
+	ridgeLambda        *float64
+	ridgeDecomposition *issuemath.CorpusRidgeDecomposition
 }
 
 // WithExploreRidgeSimilarity switches explore's similarity model to the
@@ -77,6 +78,19 @@ func WithExploreRidgeSimilarity(lambda float64) ExploreOption {
 	return func(c *exploreConfig) {
 		if lambda > 0 {
 			c.ridgeLambda = &lambda
+		}
+	}
+}
+
+// WithExploreRidgeDecomposition supplies the revision-cached full-corpus
+// anchored-ridge decomposition so explore scores both the target and its
+// candidates from the cached per-issue vectors instead of solving the
+// decomposition over the neighborhood. Takes precedence over
+// WithExploreRidgeSimilarity; an empty bundle is ignored (rank-1 fallback).
+func WithExploreRidgeDecomposition(d issuemath.CorpusRidgeDecomposition) ExploreOption {
+	return func(c *exploreConfig) {
+		if d.Decomposed() {
+			c.ridgeDecomposition = &d
 		}
 	}
 }
@@ -121,7 +135,12 @@ func ExploreFromIssuesWithTags(storeIssues []issues.Issue, storeTags []issues.Ta
 		targetRidge issuemath.RidgeVectors
 		useRidge    bool
 	)
-	if cfg.ridgeLambda != nil && useDecomp {
+	if cfg.ridgeDecomposition != nil && useDecomp {
+		// Cached path: both the target and the candidates are looked up from the
+		// full-corpus decomposition — no per-neighborhood solve.
+		ridgeDecomp = cfg.ridgeDecomposition.Decomposition
+		targetRidge, useRidge = ridgeDecomp.VectorsFor(target.ID)
+	} else if cfg.ridgeLambda != nil && useDecomp {
 		ridgeDecomp = issuemath.ComputeRidgeDecomposition(mapIssues, tagNames, issueEmbeddings, tagEmbeddings,
 			scoring.RidgeAnchorLambdaScored, *cfg.ridgeLambda)
 		if ridgeDecomp.Decomposed() {
