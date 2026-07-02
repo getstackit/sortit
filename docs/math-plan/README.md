@@ -56,8 +56,8 @@ work top-to-bottom unless a WP's dependency note says otherwise.
 
 | WP | Title | Size | Depends on | Status |
 |---|---|---|---|---|
-| WP-201 | Corpus loadings source for themes | S | WP-103 | todo |
-| WP-202 | Revision-keyed theme cache | S | WP-201 | todo |
+| WP-201 | Corpus loadings source for themes | S | WP-103 | shipped (in stack) |
+| WP-202 | Revision-keyed theme cache | S | WP-201 | shipped (in stack) |
 | WP-203 | Theme identity stability across refreshes | M | WP-202 | todo |
 | WP-204 | Themes debug API | S | WP-203 | todo |
 | WP-205 | Theme labeling | S–M | WP-204 | todo |

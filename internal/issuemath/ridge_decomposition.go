@@ -74,6 +74,7 @@ type RidgeVectors struct {
 	Loading        []float64 // unit f (tag space)
 	Reconstruction []float64 // unit Tᵀf (embedding space)
 	Residual       []float64 // unit (e − Tᵀf) (embedding space)
+	LoadingNorm    float64   // ‖f‖ before normalization; raw f = Loading·LoadingNorm
 	ReconNorm      float64   // ‖Tᵀf‖ before normalization
 	ResidualNorm   float64   // ‖e − Tᵀf‖ before normalization
 	R2             float64   // 1 − ‖residual‖²/‖e‖² (honest; may be < 0)
@@ -463,6 +464,13 @@ func ridgeVectorsFor(
 	}
 
 	loading := append([]float64(nil), f...)
+	// ‖f‖ is captured before unit-normalization so the raw magnitude survives:
+	// raw f = Loading·LoadingNorm. The ranker only ever compares the unit
+	// Loading (cosine), so this field is purely additive — it does not touch any
+	// ranking path — but the theme NMF (internal/themes) needs the raw f
+	// magnitudes: an issue with a stronger tag geometry must contribute more mass
+	// to V = max(0, f), which unit loadings would flatten.
+	loadingNorm := math.Sqrt(dotProduct(loading, loading))
 	vectors.NormalizeUnit(loading)
 	vectors.NormalizeUnit(recon)
 	if !vectors.IsZero(residual) {
@@ -473,6 +481,7 @@ func ridgeVectorsFor(
 		Loading:        loading,
 		Reconstruction: recon,
 		Residual:       residual,
+		LoadingNorm:    loadingNorm,
 		ReconNorm:      reconNorm,
 		ResidualNorm:   residualNorm,
 		R2:             r2,
