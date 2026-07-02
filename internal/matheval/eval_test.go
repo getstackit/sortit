@@ -40,12 +40,17 @@ type Baseline struct {
 	Real      FixtureBaseline `json:"real"`
 }
 
-// FixtureBaseline guards both similarity models search can run on one fixture:
-// the rank-1 fallback (no options) and the ridge tag-space default the API
-// layer injects via WithRidgeSimilarity.
+// FixtureBaseline guards every surface on one fixture. The top-level `rank1`
+// and `ridge` are the SEARCH path (rank-1 fallback and the ridge tag-space
+// default injected via WithRidgeSimilarity) with their factor-model summaries;
+// their values are frozen by the WP-101/301 guards. `explore` and `person`
+// (WP-302) add the two derived surfaces that inherited the ridge default without
+// coverage, each on both models.
 type FixtureBaseline struct {
-	Rank1 PathMetrics `json:"rank1"`
-	Ridge PathMetrics `json:"ridge"`
+	Rank1   PathMetrics     `json:"rank1"`
+	Ridge   PathMetrics     `json:"ridge"`
+	Explore SurfaceBaseline `json:"explore"`
+	Person  SurfaceBaseline `json:"person"`
 }
 
 // PathMetrics is one similarity model's golden numbers. GCVLambdaUnscored is
@@ -135,19 +140,48 @@ func loadFixtures(t *testing.T) (synthetic, real Corpus) {
 	return synthetic, real
 }
 
-// logFixture prints one fixture's rank-1 and ridge metrics under -v.
+// logFixture prints one fixture's search, explore, and person metrics under -v.
 func logFixture(t *testing.T, fixture string, fb FixtureBaseline) {
 	t.Helper()
 	logPath(t, fixture+"/rank1", fb.Rank1)
 	logPath(t, fixture+"/ridge", fb.Ridge)
 	t.Logf("[%s] ridge GCV λ_unscored = %.4f", fixture, fb.Ridge.GCVLambdaUnscored)
+	logSurface(t, fixture+"/explore", fb.Explore)
+	logSurface(t, fixture+"/person", fb.Person)
 }
 
-// assertFixture asserts one fixture's rank-1 and ridge metrics against baseline.
+// logSurface prints one derived surface's rank-1 and ridge ranking metrics.
+func logSurface(t *testing.T, name string, s SurfaceBaseline) {
+	t.Helper()
+	t.Logf("[%s] rank1: seeds=%d NDCG@%d=%.4f Recall@%d=%.4f", name, s.Rank1.Queries, evalK, s.Rank1.NDCG, evalK, s.Rank1.Recall)
+	t.Logf("[%s] ridge: seeds=%d NDCG@%d=%.4f Recall@%d=%.4f", name, s.Ridge.Queries, evalK, s.Ridge.NDCG, evalK, s.Ridge.Recall)
+	t.Logf("[%s] ridge − rank1: NDCG %+.4f Recall %+.4f", name, s.Ridge.NDCG-s.Rank1.NDCG, s.Ridge.Recall-s.Rank1.Recall)
+}
+
+// assertFixture asserts one fixture's search, explore, and person metrics
+// against baseline.
 func assertFixture(t *testing.T, fixture string, got, want FixtureBaseline) {
 	t.Helper()
 	assertPath(t, fixture+"/rank1", got.Rank1, want.Rank1)
 	assertPath(t, fixture+"/ridge", got.Ridge, want.Ridge)
+	assertSurface(t, fixture+"/explore", got.Explore, want.Explore)
+	assertSurface(t, fixture+"/person", got.Person, want.Person)
+}
+
+// assertSurface asserts one derived surface's rank-1 and ridge ranking metrics.
+func assertSurface(t *testing.T, name string, got, want SurfaceBaseline) {
+	t.Helper()
+	assertSurfacePath(t, name+"/rank1", got.Rank1, want.Rank1)
+	assertSurfacePath(t, name+"/ridge", got.Ridge, want.Ridge)
+}
+
+func assertSurfacePath(t *testing.T, name string, got, want SearchMetrics) {
+	t.Helper()
+	if got.Queries != want.Queries {
+		t.Errorf("[%s] fixture set changed: %d entries, baseline has %d — rerun with -update", name, got.Queries, want.Queries)
+	}
+	assertNoRegression(t, name+" NDCG@8", got.NDCG, want.NDCG)
+	assertNoRegression(t, name+" Recall@8", got.Recall, want.Recall)
 }
 
 // assertPath asserts one similarity model's metrics against its baseline entry.
@@ -243,6 +277,13 @@ func computeFixtureMetrics(t *testing.T, corpus Corpus) FixtureBaseline {
 		t.Fatal("ridge decomposition fell back to hardcoded weights; the corpus should always be large enough to decompose")
 	}
 
+	// Derived-surface coverage (WP-302): explore (seeded by an issue) and person
+	// recommendation (seeded by a profile) inherit the same blend + ridge default
+	// but a different query shape, so each is evaluated on both models through its
+	// production entry point at the same GCV penalty.
+	explore := exploreSurfaceMetrics(t, corpus, storeIssues, storeTags, gcvLambda)
+	person := personSurfaceMetrics(t, corpus, storeIssues, storeTags)
+
 	return FixtureBaseline{
 		Rank1: PathMetrics{
 			Search:      searchMetrics(len(judgments), rank1NDCG, rank1Recall),
@@ -253,6 +294,8 @@ func computeFixtureMetrics(t *testing.T, corpus Corpus) FixtureBaseline {
 			FactorModel:       factorMetrics(ridgeDecomp.FactorWeight, ridgeDecomp.AggregateR2, collectR2(ridgeDecomp.AllR2)),
 			GCVLambdaUnscored: round4(gcvLambda),
 		},
+		Explore: explore,
+		Person:  person,
 	}
 }
 

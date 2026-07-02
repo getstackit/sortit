@@ -75,7 +75,7 @@ debug tier and gates WP-501.
 | WP | Title | Size | Depends on | Status |
 |---|---|---|---|---|
 | WP-301 | Real-embedding fixture | M | — | shipped (in stack) |
-| WP-302 | Explore and person-recommendation eval coverage | M | — | todo |
+| WP-302 | Explore and person-recommendation eval coverage | M | — | shipped (in stack) |
 | WP-303 | Map-projection quality metric | M | — | todo |
 | WP-304 | Ridge default re-examination on real geometry | M | WP-301 | todo — **elevated** |
 

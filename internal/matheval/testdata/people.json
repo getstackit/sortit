@@ -1,0 +1,119 @@
+{
+  "_comment": "MECHANICALLY DERIVED from the generator's tag-domain ground truth (derivePersonJudgments, pinned by TestExplorePersonFixturesMatchDerivation). `history` is the person's resolved-issue set (hand-chosen from ground-truth regions); `expected` grades each OPEN candidate (non-history issue) by overlap with the person's history regions: candidate primary domain in the history's primary domains = 3, any shared non-generic domain = 2, otherwise omitted (0). CIRCULARITY CAVEAT: grades 'same region', not 'actually useful' — a regression guard, not a usefulness calibration (WP-302 Risks). Regenerate with `go test ./internal/matheval -update`.",
+  "people": [
+    {
+      "person": "p-money",
+      "history": [
+        "bill-01",
+        "bill-02",
+        "bill-03",
+        "pay-01",
+        "pay-02"
+      ],
+      "expected": {
+        "bill-04": 3,
+        "pay-03": 3
+      }
+    },
+    {
+      "person": "p-identity",
+      "history": [
+        "auth-01",
+        "auth-02",
+        "auth-03",
+        "auth-04",
+        "login-01",
+        "login-02"
+      ],
+      "expected": {
+        "email-01": 2,
+        "email-02": 2,
+        "email-03": 2,
+        "exp-04": 2,
+        "ios-01": 2,
+        "notif-01": 2,
+        "notif-02": 2,
+        "notif-03": 2
+      }
+    },
+    {
+      "person": "p-docs",
+      "history": [
+        "exp-01",
+        "exp-02",
+        "exp-03",
+        "pdf-01",
+        "pdf-02"
+      ],
+      "expected": {
+        "db-03": 2,
+        "db-04": 2,
+        "exp-04": 3,
+        "perf-01": 2,
+        "perf-02": 2,
+        "perf-03": 2,
+        "srch-03": 2
+      }
+    },
+    {
+      "person": "p-mobile",
+      "history": [
+        "mob-01",
+        "mob-02",
+        "mob-03",
+        "ios-01",
+        "ios-02"
+      ],
+      "expected": {
+        "auth-03": 2,
+        "email-01": 2,
+        "email-02": 2,
+        "email-03": 2,
+        "exp-04": 2,
+        "mob-04": 3,
+        "notif-01": 2,
+        "notif-02": 2,
+        "notif-03": 2,
+        "pay-03": 2
+      }
+    },
+    {
+      "person": "p-data",
+      "history": [
+        "db-01",
+        "db-02",
+        "db-03",
+        "mig-01",
+        "perf-01",
+        "perf-03"
+      ],
+      "expected": {
+        "db-04": 3,
+        "exp-03": 2,
+        "perf-02": 3,
+        "srch-03": 2
+      }
+    },
+    {
+      "person": "p-comms",
+      "history": [
+        "notif-01",
+        "notif-02",
+        "notif-03",
+        "email-01",
+        "email-02",
+        "email-03"
+      ],
+      "expected": {
+        "auth-01": 2,
+        "auth-02": 2,
+        "auth-03": 2,
+        "auth-04": 2,
+        "exp-04": 2,
+        "ios-01": 2,
+        "login-01": 2,
+        "login-02": 2
+      }
+    }
+  ]
+}

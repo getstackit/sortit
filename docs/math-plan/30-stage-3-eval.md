@@ -206,6 +206,62 @@ useful". Acceptable for a *regression* guard (detects change); pair with
 WP-301's real fixture for calibration where possible, and say so in the
 judgment files' headers.
 
+### Outcome (shipped 2026-07-02) — explore + person corroborate WP-304
+
+Both surfaces are now regression-guarded on both fixtures and both models,
+asserted every `go test ./internal/matheval` run with no network. New baseline
+keys `synthetic/real → {explore, person} → {rank1, ridge}`; the four search
+entries and `real_embeddings.json` are untouched (byte-identical).
+
+| Fixture | Surface | rank-1 NDCG@8 / Recall@8 | ridge NDCG@8 / Recall@8 | ridge − rank-1 NDCG |
+|---|---|---|---|---|
+| synthetic | explore | 0.9275 / 0.8681 | 0.9260 / 0.8738 | −0.0015 (ties) |
+| synthetic | person  | 0.5367 / 0.4381 | 0.6279 / 0.4488 | **+0.0912** (win) |
+| real | explore | 0.8057 / 0.7228 | 0.5784 / 0.5426 | **−0.2273** (regress) |
+| real | person  | 0.5594 / 0.4726 | 0.4984 / 0.4589 | **−0.0610** (regress) |
+
+**Corroborates WP-304, does not complicate it.** On the synthetic fixture the
+two surfaces reproduce the search story (ridge ties or wins); on real geometry
+both ridge paths *regress* — explore by a wide margin (−0.2273 NDCG), person by
+a clear one (−0.0610). Explore is seeded by an *issue* embedding rather than a
+query text and re-decomposes over its open-neighborhood rather than the full
+corpus, so its geometry is not identical to search — yet it lands the same
+direction. That the real-geometry ridge loss reproduces across three
+differently-shaped ranking surfaces (query-seeded search, issue-seeded explore,
+profile-seeded person) makes the WP-304 verdict harder to dismiss as a
+search-only or single-fixture artifact, not easier. The one nuance: on the
+synthetic fixture person ridge posts its largest relative win (+0.0912),
+because person recommendation's small, capped candidate set (`PersonMaxRecommend
+= 5`) amplifies the tag-space model's synthetic advantage — which is exactly why
+the real-fixture row is the load-bearing one.
+
+**Evaluation seams.** Explore drives `issuemap.ExploreFromIssuesWithTags`
+through the production option shape — rank-1 with no options, ridge via
+`WithExploreRidgeSimilarity(gcvLambda)` (the same GCV λ the search eval derives
+in `ridgeGCVFixture`), full-path (relationship boost, freshness^0.5, authority
+all ON). Person drives the exported handler
+`people.GetPersonDetailHandler.Handle` per person, with a fake read-only store
+(the person's history closed + assigned to them, every other issue open +
+unassigned as the candidate pool) and a real `ridgelambda.Cache` over the full
+corpus for the ridge model; rank-1 leaves `RidgeLambda` nil. `Handle` is the
+lowest seam that exercises the model choice honestly — `recommendOpenIssues` is
+unexported and reads its tag catalog + λ cache from the handler, so calling it
+in isolation would skip the selection or re-implement the wiring.
+
+**Judgment derivation.** Mechanical, from the generator's tag-domain ground
+truth (`generate.go` `tagSpecs`): an issue's region is the domain of its
+highest-relevance non-generic tag (ties broken alphabetically). Explore grades
+each other issue for a seed as same-region = 3, any shared non-generic domain =
+2, else 0. Person grades each open candidate as primary-domain ∈ the history's
+primary domains = 3, any shared non-generic domain with the history = 2, else 0.
+The committed files (`testdata/explore_judgments.json`, `testdata/people.json`)
+carry a `_comment` header stating the rule and the circularity caveat, and are
+pinned to the derivation by `TestExplorePersonFixturesMatchDerivation`
+(`-update` regenerates them, mirroring `corpus.json`). Because the grades come
+from the same tag structure the synthetic embeddings are built from, they are
+circular on the synthetic fixture in the same way — the real-fixture rows are
+the calibration, per the Risk above.
+
 ---
 
 ## WP-303 — Map-projection quality metric

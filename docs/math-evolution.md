@@ -442,6 +442,8 @@ similarity paths, are asserted on every `go test` run (four baseline entries).
 | Rank-1, centered (golden baseline) | 0.8658 | 0.9117 | `baseline.json` → `synthetic.rank1` |
 | Ridge, GCV λ_unscored = 3.0, tag-space (golden baseline) | **0.9309** | **0.9586** | `baseline.json` → `synthetic.ridge` |
 | Full-path A/B (ridge − rank-1) | **+0.0651** | **+0.0469** | both rows above, asserted every run |
+| Explore rank-1 / ridge, full-path (WP-302) | 0.9275 / 0.9260 | 0.8681 / 0.8738 | `synthetic.explore` — ridge ≈ ties (NDCG −0.0015, Recall +0.0057) |
+| Person rank-1 / ridge, full-path (WP-302) | 0.5367 / 0.6279 | 0.4381 / 0.4488 | `synthetic.person` — ridge **wins** (NDCG +0.0912) |
 
 **Real fixture** (production `text-embedding-3-small` geometry, WP-301):
 
@@ -453,6 +455,8 @@ similarity paths, are asserted on every `go test` run (four baseline entries).
 | Ridge tag-space, similarity-only (shadow) | 0.7910 | 0.6472 | `ridge_shadow_test.go` — *regression* |
 | Ridge recon-space, similarity-only (shadow) | 0.8744 | 0.8294 | shadow harness — still below rank-1 |
 | Ridge tag-space, GCV, **uncentered** (shadow) | 0.9514 | 0.9112 | shadow — centering *hurts* here |
+| Explore rank-1 / ridge, full-path (WP-302) | 0.8057 / 0.5784 | 0.7228 / 0.5426 | `real.explore` — ridge **regresses** (NDCG −0.2273) |
+| Person rank-1 / ridge, full-path (WP-302) | 0.5594 / 0.4984 | 0.4726 / 0.4589 | `real.person` — ridge **regresses** (NDCG −0.0610) |
 
 Reproduce with `go test ./internal/matheval -run TestRidgeShadowComparison
 -ridge -v` (both fixtures) and `go test ./internal/matheval -run TestMathEval
@@ -527,8 +531,26 @@ Honest caveats, all of which are Track D work:
    forced by a null result — but the direction it points (real geometry demotes
    the tag-space ranking story) is the signal layer 2 would sharpen, not
    reverse.
-4. **Only search is harness-validated.** Explore and person recommendations
-   inherit the identical model and blend code but have no eval of their own.
+4. **Explore and person recommendations are now harness-validated too (WP-302),
+   and they corroborate the real-geometry verdict above.** Both surfaces share
+   the blend + ridge default but not the query shape — explore is seeded by an
+   issue, person fit by a profile — so each got its own judged fixture (12 explore
+   seeds; 6 synthetic person histories over the existing 48-issue corpus) with
+   mechanical grades derived from the generator's tag-domain ground truth, both on
+   both models and both fixtures, asserted every `go test` run. The rows are in
+   the two tables above. The pattern matches search exactly: on the **synthetic**
+   fixture ridge ties explore and wins person (+0.09 NDCG); on the **real** fixture
+   ridge **regresses both** — explore −0.2273 NDCG / −0.1802 Recall, person −0.0610
+   / −0.0137. So the ridge default's real-geometry loss is not a search-only
+   artifact — it reproduces across all three ranking surfaces. Explore seeds by an
+   issue embedding (not a query text), so the geometry is not identical to search,
+   yet it lands the same direction, which strengthens rather than complicates the
+   WP-304 read. Caveat: the explore/person judgments are mechanically derived from
+   the same tag-domain ground truth the synthetic embeddings are built from, so on
+   the synthetic fixture they are circular in the same way; the real-fixture rows
+   are the load-bearing evidence. The reproduce commands are `go test
+   ./internal/matheval -run TestMathEval -v` (asserts every row) — see the
+   `explore`/`person` baseline keys.
 
 ## 5. Deviations ledger: design vs. as-built
 
@@ -557,7 +579,7 @@ shipped default, and the rank-1 aggregate comment says pooled, not mean.
 | **Phase 0** — foundations | **Done (reshaped).** Σ tightening dropped in favor of corpus-mean centering; drift shipped as `DriftCosine`. | `internal/issuemath/centering.go`, `ridgescore.go` |
 | **Phase 1** — signed relevance | **Shipped end-to-end.** Analyzer negation with evidence gate, verifier negations (anti-alignment 0.5 / dominance 0.25), 0.7 cap honored on every path, JSONB persistence. Emitting: `analyzer-negation`, `verifier-dominance`. Dead constants: `dismiss`, `cooccurrence`. | `internal/ai/*`, `internal/issueenrichment/verify.go`, `internal/domain/tags.go` |
 | **Phase 2** — ridge shadow | **Shipped.** Per-request anchored ridge behind `GET /debug/issues/{id}/ridge`, signed anchor, diagonal penalties. | `internal/issuemath/ridgescore.go`, `internal/diagnostics/debug_ridge_score.go` |
-| **Phase 3** — default flip | **Shipped.** GCV λ revision-cached (`internal/ridgelambda`, stride-sampled ≤2000, centered with corpus means); search, explore, and person recommendations default to ridge tag-space blend with rank-1 fallback; downstream modifiers untouched. Both paths under the golden baseline since WP-101; remaining caveat: only search is harness-validated (WP-302). | `internal/issuemath/ridge_decomposition.go`, `ridge_gcv.go`, `internal/ridgelambda/`, `internal/map/search.go`, `explore.go`, `internal/people/person_detail.go` |
+| **Phase 3** — default flip | **Shipped.** GCV λ revision-cached (`internal/ridgelambda`, stride-sampled ≤2000, centered with corpus means); search, explore, and person recommendations default to ridge tag-space blend with rank-1 fallback; downstream modifiers untouched. All three surfaces now under the golden baseline: search since WP-101, explore + person recommendations since WP-302 (both models, both fixtures) — and on real geometry all three regress under ridge, the evidence WP-304 acts on. | `internal/issuemath/ridge_decomposition.go`, `ridge_gcv.go`, `internal/ridgelambda/`, `internal/map/search.go`, `explore.go`, `internal/people/person_detail.go` |
 | **Phase 3.5** — drift consumers | **Shipped (beyond original plan).** Tag-health sweep at fixed loose λ; curation detector uses drift as primary mis-tagging signal; rank-1 residual clusters demoted to uncovered-concept mining (propose-only). | `internal/diagnostics/debug_tag_health.go`, `internal/curation/detect.go`, `internal/issuemath/residual_clusters.go`, `internal/memories/synthesizer.go` |
 | **Phase 4** — themes | **Shipped to debug tier (plan Stage 2, PRs #206/#207/#212).** Revision-keyed theme cache over corpus ridge loadings; stable identities (Hungarian match, threshold 0.6); LLM labels with deterministic fallback; NMF early-stop + per-refresh telemetry; K=8 kept by a dated sweep decision; three `/debug/themes` endpoints. Open follow-ons: full-H export (WP-207), dev-corpus soak (WP-208), identity/label persistence (WP-406). | `internal/issuethemes/`, `internal/themes/`, `internal/diagnostics/debug_themes.go` |
 | **Phase 5** — planning overlays | Not started. Person profiles still aggregate raw `r_i` (specificity-weighted). | — |

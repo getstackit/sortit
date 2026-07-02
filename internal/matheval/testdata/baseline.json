@@ -36,6 +36,30 @@
         }
       },
       "gcvLambdaUnscored": 3
+    },
+    "explore": {
+      "rank1": {
+        "queries": 12,
+        "ndcg@8": 0.9275,
+        "recall@8": 0.8681
+      },
+      "ridge": {
+        "queries": 12,
+        "ndcg@8": 0.926,
+        "recall@8": 0.8738
+      }
+    },
+    "person": {
+      "rank1": {
+        "queries": 6,
+        "ndcg@8": 0.5367,
+        "recall@8": 0.4381
+      },
+      "ridge": {
+        "queries": 6,
+        "ndcg@8": 0.6279,
+        "recall@8": 0.4488
+      }
     }
   },
   "real": {
@@ -75,6 +99,30 @@
         }
       },
       "gcvLambdaUnscored": 0.01
+    },
+    "explore": {
+      "rank1": {
+        "queries": 12,
+        "ndcg@8": 0.8057,
+        "recall@8": 0.7228
+      },
+      "ridge": {
+        "queries": 12,
+        "ndcg@8": 0.5784,
+        "recall@8": 0.5426
+      }
+    },
+    "person": {
+      "rank1": {
+        "queries": 6,
+        "ndcg@8": 0.5594,
+        "recall@8": 0.4726
+      },
+      "ridge": {
+        "queries": 6,
+        "ndcg@8": 0.4984,
+        "recall@8": 0.4589
+      }
     }
   }
 }

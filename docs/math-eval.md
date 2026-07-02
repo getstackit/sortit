@@ -164,6 +164,13 @@ not gates — they never fail on metric values.
   metric values are not comparable to production quality. Only *relative*
   movement under a math change is meaningful.
 - The AI analyzer (tag assignment quality) and the enrichment verifier.
-- Region-aware re-ranking options (`WithRegionTarget`,
-  `WithAntiCorrelators`) and explore/person-recommendation scoring — natural
-  next extensions of the same corpus.
+- Region-aware re-ranking options (`WithRegionTarget`, `WithAntiCorrelators`)
+  — a natural next extension of the same corpus.
+
+Explore and person-recommendation scoring **are** covered as of WP-302: 12
+explore seeds and 6 synthetic person histories (over the existing 48-issue
+corpus), graded mechanically from the generator's tag-domain ground truth, are
+evaluated on both models and both fixtures and asserted under the `explore` /
+`person` baseline keys. The judgment files (`testdata/explore_judgments.json`,
+`testdata/people.json`) are pinned to their derivation by
+`TestExplorePersonFixturesMatchDerivation` and regenerate with `-update`.
