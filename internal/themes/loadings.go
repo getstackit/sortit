@@ -83,6 +83,47 @@ func loadingsFromDecomposition(
 	return loadings, counts
 }
 
+// ParticipationStatus classifies why a single issue does or does not feed the
+// theme factorization, mirroring the corpus-wide rule loadingsFromDecomposition
+// applies. Exported for the debug API (WP-204's /debug/issues/{id}/themes),
+// which needs the classification for one issue on request without re-running
+// the whole-corpus adapter or duplicating the rule.
+type ParticipationStatus string
+
+const (
+	// ParticipationParticipating means the issue cleared both gates and fed
+	// the NMF.
+	ParticipationParticipating ParticipationStatus = "participating"
+	// ParticipationExcludedNoEmbedding means the decomposition has no usable
+	// vectors for this issue (no embedding, or one the decomposition rejected).
+	ParticipationExcludedNoEmbedding ParticipationStatus = "excluded-no-embedding"
+	// ParticipationExcludedNoAnchor means the issue has a usable embedding but
+	// no analyzer opinion (scored or negated) on any catalog tag.
+	ParticipationExcludedNoAnchor ParticipationStatus = "excluded-no-anchor"
+)
+
+// ClassifyParticipation reports the participation status of one issue against
+// a corpus ridge decomposition, applying the exact rule
+// loadingsFromDecomposition applies corpus-wide. A nil decomposition (no
+// decomposition available at all) reports ParticipationExcludedNoEmbedding —
+// there is nothing to have decomposed the issue into.
+func ClassifyParticipation(decomp *issuemath.CorpusRidgeDecomposition, issue issues.Issue) ParticipationStatus {
+	if decomp == nil {
+		return ParticipationExcludedNoEmbedding
+	}
+	if _, ok := decomp.Decomposition.VectorsFor(issue.ID); !ok {
+		return ParticipationExcludedNoEmbedding
+	}
+	tagIndex := make(map[string]int, len(decomp.TagNames))
+	for i, tag := range decomp.TagNames {
+		tagIndex[tag] = i
+	}
+	if !anchoredAny(issue.TagScores, tagIndex) {
+		return ParticipationExcludedNoAnchor
+	}
+	return ParticipationParticipating
+}
+
 // anchoredAny reports whether the analyzer expressed an opinion on any catalog
 // tag — the same "anchoredAny" notion as ComputeCorpusDrift. Presence in the
 // tag index is the test, matching signedAnchor's `scored` mask (a zero-relevance

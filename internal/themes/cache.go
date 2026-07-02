@@ -21,6 +21,7 @@ import (
 	"context"
 	"sync"
 
+	"sortit/internal/issuemath"
 	"sortit/internal/issues"
 	"sortit/internal/issuethemes"
 	"sortit/internal/ridgedecomp"
@@ -69,9 +70,62 @@ type Result struct {
 	ExcludedNoEmbedding int
 	// ExcludedNoAnchor counts issues with a usable embedding but no anchored tag.
 	ExcludedNoAnchor int
+	// Means are the corpus-mean centering vectors the decomposition (and this
+	// factorization's TagEmbeddings/Centroid space) were computed in. WP-204's
+	// centroid-nearest-issue lookup needs to center a raw issue embedding into
+	// the same space as a theme's Centroid; the decomposition cache already
+	// computes these means (internal/ridgedecomp reads them from
+	// internal/centering), so this field just carries the value through rather
+	// than re-deriving it. Zero when the decomposition centered against
+	// nothing (e.g. no centering cache wired) — issuemath.CenterVector
+	// degrades to unit-normalization in that case.
+	Means issuemath.CorpusMeans
+
+	// Identities carries the stable theme identity metadata, index-aligned with
+	// the embedded Result.Themes: Identities[i] is the stable ID and match score
+	// for Themes[i]. Populated by WP-203 identity matching against the previous
+	// revision's themes retained in the cache.
+	Identities []ThemeIdentity
+	// MintedIDs are the stable IDs first assigned this revision — themes with no
+	// qualifying predecessor (a fresh theme, a split-off, or a match that fell
+	// below themeMatchThreshold). WP-206 aggregates these as churn telemetry.
+	MintedIDs []string
+	// RetiredIDs are previous-revision stable IDs that no new theme inherited —
+	// a theme that disappeared or merged into another. Consumers decide whether
+	// to keep showing a retired theme; the cache stops tracking it. WP-206
+	// telemetry input.
+	RetiredIDs []string
+
+	// Telemetry is the per-refresh quality/convergence summary (WP-206),
+	// aggregating the pure factorization's convergence signal (reconstruction
+	// error, iterations used) with WP-203 identity churn (mint/retire counts and
+	// the mean predecessor match score). It is logged on every recompute and
+	// surfaced on the debug themes list so "is K=8 right, does 50-iteration MU
+	// converge" is answerable from telemetry rather than a code read.
+	Telemetry Telemetry
+
+	// Labels carries the WP-205 human name/description for each theme,
+	// index-aligned with Themes (Labels[i] labels Themes[i]) like Identities.
+	// A newly minted or relabeled theme carries the deterministic top-tag
+	// fallback (e.g. "mobile / ui") immediately; when a Labeler is configured the
+	// LLM name swaps in asynchronously (never blocking compute — see the Cache
+	// doc). Empty when no theme has a stable ID.
+	Labels []ThemeLabel
 }
 
-// Cache memoizes the corpus theme factorization by revision.
+// Cache memoizes the corpus theme factorization by revision and carries theme
+// identity across those revisions.
+//
+// Identity (WP-203): the cache retains the previous revision's themes (H rows by
+// stable ID) so a recompute can match new themes to old ones and keep stable IDs
+// steady through small corpus mutations — NMF alone guarantees only that the
+// SAME input is reproducible, not that SIMILAR inputs stay aligned. This identity
+// state is in-memory, so constructing a new Cache (a process restart) resets it:
+// the first compute after restart mints fresh IDs for every theme. That is
+// acceptable at the debug tier (WP-204); persisting the tiny identity state is
+// the second trigger for theme persistence (after WP-405's drift snapshots) and
+// is deferred to Stage 4, when user-visible profiles make a restart-time ID
+// change a visible regression.
 type Cache struct {
 	// Decomp is the revision-keyed full-corpus ridge decomposition this cache
 	// consumes. Required: without a usable decomposition there are no loadings
@@ -83,12 +137,44 @@ type Cache struct {
 	// cache always recomputes.
 	Revisions RevisionSource
 
+	// Labeler names and describes themes via an LLM. Optional — when nil every
+	// theme keeps its deterministic top-tag fallback label and no background work
+	// is spawned. When set, minted/relabeled themes are labeled asynchronously so
+	// labeling never blocks or delays Current (see labeling.go).
+	Labeler Labeler
+
+	// ThemeCount overrides the factorization's K when positive; zero keeps
+	// issuethemes' default (8). Exists for the WP-206 K-sweep experiment and any
+	// future data-driven K choice — note the participation floor stays tied to
+	// the default K, so a sweep at higher K on a small corpus still computes.
+	ThemeCount int
+
 	mu           sync.Mutex
 	revision     uint64
 	result       Result
 	ok           bool
 	computed     bool
 	computeCount int // number of actual computes; asserted by the concurrency test
+
+	// identity is the cross-revision theme identity memory (previous H rows by
+	// stable ID + the mint counter). Retained across recomputes so stable IDs
+	// survive small corpus mutations; reset only by constructing a new Cache
+	// (process restart). Mutated only inside compute, under mu.
+	identity identityState
+
+	// labels is the in-memory theme-label store keyed by stable theme ID (see
+	// labeling.go). Like identity it is in-memory only, so a process restart
+	// relabels — acceptable and documented at the debug tier; the durable
+	// theme_labels table lands with Stage-4 identity persistence. Mutated under mu
+	// (from compute, and from the async label writeback).
+	labels themeLabelStore
+	// labelInFlight guards against launching a duplicate labeling job for a stable
+	// ID whose current label generation is already being computed; keyed by ID,
+	// valued by the label generation in flight. Guarded by mu.
+	labelInFlight map[string]int
+	// labelWG tracks outstanding async label jobs so tests can wait for them (and
+	// prove no goroutine leaks); production never waits.
+	labelWG sync.WaitGroup
 }
 
 // Current returns the theme factorization at the current revision, recomputing
@@ -151,14 +237,49 @@ func (c *Cache) compute(ctx context.Context, rev uint64) (Result, bool, error) {
 	// TagEmbeddings from the bundle are corpus-mean centered, so theme centroids
 	// land in the same centered space as issue embeddings — the space WP-204's
 	// centroid-nearest lookup compares against.
-	factorization := issuethemes.Build(loadings, decomp.TagNames, decomp.TagEmbeddings, issuethemes.Options{})
-	return Result{
+	factorization := issuethemes.Build(loadings, decomp.TagNames, decomp.TagEmbeddings, issuethemes.Options{ThemeCount: c.ThemeCount})
+	result := Result{
 		Result:              factorization,
 		Revision:            rev,
 		Participating:       counts.participating,
 		ExcludedNoEmbedding: counts.noEmbedding,
 		ExcludedNoAnchor:    counts.noAnchor,
-	}, true, nil
+		Means:               decomp.Means,
+	}
+	c.identify(&result)
+	result.Telemetry = buildTelemetry(&result)
+	logTelemetry(rev, len(result.Themes), result.Telemetry)
+	c.label(&result, items)
+	return result, true, nil
+}
+
+// identify attaches stable theme IDs and mint/retire diagnostics to a freshly
+// factorized result by matching its themes against the previous revision's, then
+// advances the cross-revision identity state to this revision. It runs only on a
+// successful (ok) compute — a degenerate revision that returns (zero, false)
+// leaves the identity state untouched, so identity resumes (rather than churns)
+// if the corpus recovers above the participation floor. Called only from
+// compute, under c.mu.
+func (c *Cache) identify(result *Result) {
+	newRows := make([]themeRow, len(result.Themes))
+	for i, theme := range result.Themes {
+		newRows[i] = themeRowFrom(theme)
+	}
+
+	match := matchThemes(c.identity.prev, newRows, c.identity.counter)
+
+	identities := make([]ThemeIdentity, len(newRows))
+	next := make([]identifiedTheme, len(newRows))
+	for i := range newRows {
+		identities[i] = ThemeIdentity{StableID: match.ids[i], MatchScore: match.scores[i]}
+		next[i] = identifiedTheme{id: match.ids[i], row: newRows[i]}
+	}
+	result.Identities = identities
+	result.MintedIDs = match.minted
+	result.RetiredIDs = match.retired
+
+	c.identity.prev = next
+	c.identity.counter = match.counter
 }
 
 func (c *Cache) currentRevision() uint64 {

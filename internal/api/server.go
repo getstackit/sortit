@@ -34,6 +34,7 @@ import (
 	"sortit/internal/search"
 	"sortit/internal/tagcooccurrence"
 	"sortit/internal/tags"
+	"sortit/internal/themes"
 	"sortit/internal/tracing"
 )
 
@@ -87,6 +88,9 @@ type Server struct {
 	debugTagCooccurrence   diagnostics.DebugTagCooccurrenceHandler
 	debugRidgeScore        diagnostics.DebugRidgeScoreHandler
 	debugEmbeddingFalls    diagnostics.DebugEmbeddingFallbacksHandler
+	debugThemesList        diagnostics.DebugThemesListHandler
+	debugThemeDetail       diagnostics.DebugThemeDetailHandler
+	debugIssueThemes       diagnostics.DebugIssueThemesHandler
 	exploreIssue           mapview.ExploreIssueHandler
 	getPersonProfile       people.GetPersonProfileHandler
 	getPersonDetail        people.GetPersonDetailHandler
@@ -296,6 +300,9 @@ func (s *Server) registerDedicatedAPIRoutes(r chi.Router) {
 			r.Get("/tag-cooccurrence", s.handleDebugTagCooccurrence)
 			r.Get("/issues/{id}/ridge", s.handleDebugRidgeScore)
 			r.Get("/embedding-fallbacks", s.handleDebugEmbeddingFallbacks)
+			r.Get("/themes", s.handleDebugThemesList)
+			r.Get("/themes/{id}", s.handleDebugThemeDetail)
+			r.Get("/issues/{id}/themes", s.handleDebugIssueThemes)
 		})
 	})
 }
@@ -343,6 +350,9 @@ func (s *Server) registerUIRoutes(r chi.Router) {
 			r.Get("/tag-cooccurrence", s.handleDebugTagCooccurrence)
 			r.Get("/issues/{id}/ridge", s.handleDebugRidgeScore)
 			r.Get("/embedding-fallbacks", s.handleDebugEmbeddingFallbacks)
+			r.Get("/themes", s.handleDebugThemesList)
+			r.Get("/themes/{id}", s.handleDebugThemeDetail)
+			r.Get("/issues/{id}/themes", s.handleDebugIssueThemes)
 		})
 	})
 }
@@ -697,6 +707,12 @@ func NewServer(cfg ServerConfig) *Server {
 		Centering: centeringCache,
 		Lambda:    ridgeLambdaCache,
 	}
+	themesCache := &themes.Cache{
+		Decomp:    ridgeDecompCache,
+		Store:     store,
+		Revisions: revisions,
+		Labeler:   newThemeLabeler(cfg.Analyzer, store, logger),
+	}
 	var customRegionStore regions.CustomRegionStore = store
 	var customRegionWriter regions.CustomRegionWriter = store
 	regionsLoader := &regions.Loader{
@@ -817,6 +833,9 @@ func NewServer(cfg ServerConfig) *Server {
 		debugTagCooccurrence: diagnostics.DebugTagCooccurrenceHandler{Store: store, Cache: cooccurrenceCache},
 		debugRidgeScore:      diagnostics.DebugRidgeScoreHandler{Store: store, Catalog: catalog, Centering: centeringCache},
 		debugEmbeddingFalls:  diagnostics.DebugEmbeddingFallbacksHandler{},
+		debugThemesList:      diagnostics.DebugThemesListHandler{Cache: themesCache},
+		debugThemeDetail:     diagnostics.DebugThemeDetailHandler{Cache: themesCache, Store: store},
+		debugIssueThemes:     diagnostics.DebugIssueThemesHandler{Store: store, Cache: themesCache, RidgeDecomp: ridgeDecompCache},
 		getPersonProfile:     people.GetPersonProfileHandler{Store: store, Catalog: catalog},
 		getPersonDetail:      people.GetPersonDetailHandler{Store: store, Catalog: catalog, RidgeDecomp: ridgeDecompCache, RidgeLambda: ridgeLambdaCache},
 		workCorrelations:     people.WorkCorrelationsHandler{Store: store, Catalog: catalog},

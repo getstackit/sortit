@@ -19,6 +19,7 @@ type Analyzer struct {
 	embedder      Embedder
 	canonicalizer Canonicalizer
 	profiler      ConceptProfiler
+	labeler       ThemeLabeler
 }
 
 func NewAnalyzer(tagger Tagger, embedder Embedder) *Analyzer {
@@ -31,6 +32,7 @@ func NewAnalyzerWithCanonicalizer(tagger Tagger, embedder Embedder, canonicalize
 		embedder:      embedder,
 		canonicalizer: canonicalizer,
 		profiler:      NewStubConceptProfiler(),
+		labeler:       NewStubThemeLabeler(),
 	}
 }
 
@@ -39,6 +41,14 @@ func NewAnalyzerWithCanonicalizer(tagger Tagger, embedder Embedder, canonicalize
 func (a *Analyzer) SetConceptProfiler(profiler ConceptProfiler) {
 	if a != nil && profiler != nil {
 		a.profiler = profiler
+	}
+}
+
+// SetThemeLabeler swaps in a theme labeler (e.g. the OpenAI-backed one).
+// Defaults to a deterministic stub, so callers that don't set it still work.
+func (a *Analyzer) SetThemeLabeler(labeler ThemeLabeler) {
+	if a != nil && labeler != nil {
+		a.labeler = labeler
 	}
 }
 
@@ -124,6 +134,13 @@ func (a *Analyzer) ProposeConceptFromCluster(ctx context.Context, issueSummaries
 		return "", "", ErrNotConfigured
 	}
 	return a.profiler.ProposeConceptFromCluster(ctx, issueSummaries, frame)
+}
+
+func (a *Analyzer) ProposeThemeLabel(ctx context.Context, topTags []ThemeLabelTag, issueTitles []string, frame ConceptFrame) (string, string, error) {
+	if a == nil || a.labeler == nil {
+		return "", "", ErrNotConfigured
+	}
+	return a.labeler.ProposeThemeLabel(ctx, topTags, issueTitles, frame)
 }
 
 func normalizeScores(scores []TagScore, taxonomy []Tag) []TagScore {

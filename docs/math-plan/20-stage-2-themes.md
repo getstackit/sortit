@@ -165,6 +165,17 @@ Theme IDs survive small corpus mutations; permutation alone can never change
 an ID; mint/retire events are observable in the result; thresholds are named
 constants with rationale comments.
 
+### Outcome (shipped)
+
+Potentials-based O(n³) Hungarian in-package; rows keyed by tag NAME over the
+union (catalog changes align correctly); threshold 0.6 inclusive, boundary
+asserted. Soak: 6 themes × 12 mutation refreshes → zero churn; deleting a
+theme's tag+issues retires exactly that ID. Two behaviors beyond the spec,
+both documented in code: matching operates on the top-5 tags exposed by
+`issuethemes.Theme.Tags` (full H not exported; WP-206 remediation path noted),
+and identity state survives degenerate `(zero,false)` revisions so a
+temporarily-shrunk corpus resumes rather than churns.
+
 ---
 
 ## WP-204 — Themes debug API
@@ -204,6 +215,42 @@ K/preprocessing question (WP-206) before building anything on top.
 Three endpoints, tested, documented in the API docs alongside the other debug
 endpoints; a recorded qualitative read of dev-corpus themes in the PR
 description.
+
+### Outcome (shipped)
+
+Shipped as designed with two scope adjustments, both because there was no
+live seeded dev server available in this environment (debug tier, no state
+mutation permitted):
+
+- **Qualitative read done on the matheval fixture corpus, not a seeded dev
+  corpus.** `internal/themes/qualitative_test.go` runs the real themes cache
+  over `matheval.GenerateCorpus()` (48 issues, 16 tags in 8 correlated
+  domain pairs) and logs the theme list. Result: 8/8 themes cleanly recovered
+  a real domain group (money, identity, documents, mobile, data+performance,
+  discovery, and communications split cleanly into notifications/email) —
+  not garbage, so no WP-206 stop-and-report was triggered. The dev-corpus
+  manual pass from the Validation section above is still open and belongs to
+  whoever seeds a long-lived dev server.
+- **Centroid-nearest issues moved from the list endpoint to the detail
+  endpoint only.** `GET /debug/themes` returns stable ID, weight share, top
+  tags, and match diagnostics; `GET /debug/themes/{id}` adds centroid-top
+  issues and top issues by W weight. Every issue's centroid similarity
+  against every theme is O(themes × issues) — cheap enough per-theme on
+  request, wasteful to compute for every theme on every list call. The full H
+  row was not exposed either (`GET /debug/themes/{id}` surfaces the same
+  top-5 tags as the list, with the limitation documented in the response's
+  `tagsNote` field) — issuethemes does not export more than top-5, and this
+  WP does not touch issuethemes (that's the WP-206 remediation path WP-203
+  already flagged).
+
+Plan correction: `internal/themes.Result` gained a `Means` field
+(`issuemath.CorpusMeans`, additive) so the detail endpoint can center a raw
+issue embedding into the same space as a theme's centroid — the decomposition
+cache already computes these means, this just carries the value through
+rather than re-deriving them. `internal/themes` also gained an exported
+`ClassifyParticipation` (loadings.go) so `/debug/issues/{id}/themes` can
+classify one issue's participation status without re-running the whole-corpus
+adapter or duplicating the participation rule.
 
 ---
 
@@ -246,6 +293,20 @@ Every theme in the debug API carries a name; names survive refreshes and
 restarts (if the table was built) or the deferral is documented; LLM-off path
 tested.
 
+### Outcome (shipped)
+
+`ThemeLabeler` in `internal/ai` (OpenAI + deterministic stub top-tag join),
+bridged into `internal/themes` via a local `Labeler` interface with the
+frame-assembling adapter at the composition root — themes stays decoupled
+from `internal/ai`. Lifecycle: fallback label attached synchronously on mint,
+LLM name arrives via a background job (mutex never held across the call;
+generation-stale writebacks discarded); relabel below top-tag cosine 0.5
+(`themeRelabelThreshold`, deliberately under the 0.6 identity threshold) with
+`previousLabel` retained. **Persistence deferred**: in-memory store, restart
+relabels, table lands with the Stage-4 identity persistence. Relabel decision
+tested as a pure function (the 0.5–0.6 band is too narrow for a robust NMF
+fixture).
+
 ---
 
 ## WP-206 — NMF convergence, K, and quality telemetry
@@ -286,6 +347,55 @@ unmeasured at real scale.
 Early stop shipped with a determinism test; telemetry visible in the debug
 API; the K table exists in this document with a dated decision; HALS trigger
 documented.
+
+### Outcome (shipped; K decision dated 2026-07-02)
+
+Early stop: relative Frobenius improvement < 1e-4 terminates the MU loop, cap
+raised to 200 as a backstop; `issuethemes.Result` carries `Iterations` and
+`ReconstructionError`; determinism and monotone-objective tests included.
+Notable: the old fixed-50 count was *under-converged* — the fixtures converge
+at 58 (matheval, K=8) and 114 (soak) iterations, so early-stop+200 improved
+factorization quality, not just cost. `themes.Result.Telemetry` (recon error,
+iterations, mint/retire counts, mean inherited match score) is logged per
+refresh and surfaced on `/debug/themes`. The cache gained an optional
+`ThemeCount` override for experiments.
+
+K sweep (opt-in `go test ./internal/themes/ -run ThemeCountSweep -themesweep -v`),
+churn = mints+retires across 12 small deterministic mutations:
+
+matheval fixture corpus (48 issues, 16 tags, true structure ≈ 8 groups):
+
+| K | reconErr | iterations | churn/12 |
+|---|----------|------------|----------|
+| 4 | 0.7086 | 15 | 4 |
+| 5 | 0.6452 | 15 | 0 |
+| 6 | 0.5957 | 15 | 4 |
+| 7 | 0.5452 | 19 | 0 |
+| 8 | 0.4829 | 58 | 0 |
+| 9 | 0.4254 | 102 | 12 |
+| 10 | 0.3843 | 103 | 12 |
+| 11 | 0.3427 | 107 | 8 |
+| 12 | 0.3187 | 81 | 26 |
+
+soak corpus (6 orthogonal groups × 8 issues, 6 tags; K clamps at 6):
+
+| K | reconErr | iterations | churn/12 |
+|---|----------|------------|----------|
+| 4 | 0.5733 | 10 | 2 |
+| 5 | 0.4060 | 20 | 4 |
+| 6 | 0.0015 | 114 | 0 |
+| 7 | 0.0015 | 114 | 0 |
+| 8 | 0.0015 | 114 | 0 |
+
+**Decision: keep K = 8.** Reconstruction error falls monotonically with K (it
+must), so the elbow alone is a weak criterion; identity stability is the
+discriminating signal, and it cliffs immediately past the corpus's true
+structure count — K=9..12 churn 8–26 events per 12 refreshes vs zero at
+K=7–8. Adaptive K remains unauthorized: the sweep directly demonstrates the
+failure mode (K above structure ⇒ ghost themes that reshuffle every refresh).
+Revisit only with real-corpus telemetry showing recon error stuck high AND
+zero churn at K=8. **HALS trigger: not near firing** — max observed 114
+iterations vs the 200 cap, no cap hits, refresh cost is milliseconds.
 
 ---
 

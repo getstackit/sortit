@@ -736,7 +736,9 @@ Unchanged in spirit from the original design, restated against current reality:
 | Negation pipeline | `internal/ai/openai.go`, `internal/ai/service.go`, `internal/issueenrichment/verify.go`, `internal/domain/tags.go` |
 | Rank-1 fallback model | `internal/issuemath/factor_model.go` |
 | Residual-cluster concept mining | `internal/issuemath/residual_clusters.go`, `internal/memories/synthesizer.go` |
-| NMF themes (unwired) | `internal/issuethemes/themes.go` |
+| NMF themes (pure library) | `internal/issuethemes/themes.go` |
+| Themes service (loadings adapter, revision cache, WP-203 identity) | `internal/themes/cache.go`, `internal/themes/loadings.go`, `internal/themes/identity.go` |
+| Themes debug API (WP-204) | `internal/diagnostics/debug_themes.go`, `internal/api/debug.go` — `GET /debug/themes`, `GET /debug/themes/{id}`, `GET /debug/issues/{id}/themes` |
 | Ranking consumers | `internal/map/search.go`, `internal/map/explore.go`, `internal/people/person_detail.go` |
 | Map projection (Phase 6 target) | `internal/issuemath/projection.go` |
 | Constants | `internal/scoring/constants.go` |
