@@ -1,0 +1,4 @@
+interface:
+  display_name: "Sortit Split"
+  short_description: "Split an issue into child issues"
+  default_prompt: "Use $sortit-split to split an issue into child issues."

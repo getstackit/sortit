@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { TagBadge } from "@/components/tag-badge";
 import { cn } from "@/lib/utils";
+import { formatDate } from "@/lib/format";
 import type { MemoryKind, MemoryRecord, MemoryStatus } from "@/lib/memories";
 
 export const KIND_STYLES: Record<MemoryKind, string> = {
@@ -24,12 +25,6 @@ const STATUS_STYLES: Record<MemoryStatus, string> = {
   superseded: "border-amber-500/40 text-amber-600 dark:text-amber-300",
   archived: "border-border text-muted-foreground",
 };
-
-function formatDate(value: string) {
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) return "";
-  return date.toLocaleDateString(undefined, { month: "short", day: "numeric", year: "numeric" });
-}
 
 export function MemoryCard({ memory }: { memory: MemoryRecord }) {
   const reinforcement = Math.max(0, Math.min(1, memory.confidence ?? 0));

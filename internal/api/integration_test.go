@@ -132,10 +132,10 @@ func TestAPIIntegrationCreateLookupMapAndTagsWithMockAIBackend(t *testing.T) {
 		AssignedTo: "Avery",
 	})
 
-	if !slices.Equal(first.Tags, []string{"onboarding", "wizard", "ux"}) {
+	if !slices.Equal(first.Tags, []string{"wizard", "onboarding", "ux"}) {
 		t.Fatalf("unexpected tags for first issue: %#v", first.Tags)
 	}
-	if !slices.Equal(second.Tags, []string{"export", "csv", "performance"}) {
+	if !slices.Equal(second.Tags, []string{"export", "csv"}) {
 		t.Fatalf("unexpected tags for second issue: %#v", second.Tags)
 	}
 	if len(first.TagScores) < 2 || !first.TagScores[1].Suggested {

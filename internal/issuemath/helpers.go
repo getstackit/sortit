@@ -6,24 +6,6 @@ import (
 	"gonum.org/v1/gonum/floats"
 )
 
-func normalizeVector(vector []float64) {
-	// floats.Dot(v, v) is the sum of squares through the unrolled kernel.
-	magnitude := floats.Dot(vector, vector)
-	if magnitude == 0 {
-		return
-	}
-	floats.Scale(1/math.Sqrt(magnitude), vector)
-}
-
-func isZeroVector(values []float64) bool {
-	for _, value := range values {
-		if value != 0 {
-			return false
-		}
-	}
-	return true
-}
-
 func dotProduct(a, b []float64) float64 {
 	if len(a) != len(b) {
 		return 0

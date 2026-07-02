@@ -1,0 +1,4 @@
+interface:
+  display_name: "Sortit Combine"
+  short_description: "Combine duplicate issues into one"
+  default_prompt: "Use $sortit-combine to combine duplicate issues into one."

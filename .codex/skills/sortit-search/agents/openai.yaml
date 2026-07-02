@@ -1,0 +1,4 @@
+interface:
+  display_name: "Sortit Search"
+  short_description: "Search Sortit issues by symptom, area, or quote"
+  default_prompt: "Use $sortit-search to search Sortit issues by symptom, area, or quote."

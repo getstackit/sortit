@@ -21,6 +21,16 @@ export function formatRelativeTime(value: string) {
   return "just now";
 }
 
+export function formatDate(value: string) {
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return "";
+  return date.toLocaleDateString(undefined, { month: "short", day: "numeric", year: "numeric" });
+}
+
+export function formatDateTime(value: string) {
+  return new Date(value).toLocaleString();
+}
+
 export function scoreClasses(score: number) {
   if (score >= 0.65) return "bg-emerald-100 text-emerald-700";
   if (score >= 0.35) return "bg-amber-100 text-amber-700";

@@ -5,7 +5,6 @@ import (
 	"database/sql"
 	"fmt"
 	"net/url"
-	"os"
 	"sync"
 	"testing"
 
@@ -28,12 +27,12 @@ type Harness struct {
 }
 
 func Start(ctx context.Context, database string) (*Harness, error) {
-	if os.Getenv("TESTCONTAINERS_RYUK_DISABLED") == "" {
-		if err := os.Setenv("TESTCONTAINERS_RYUK_DISABLED", "true"); err != nil {
-			return nil, fmt.Errorf("disable ryuk: %w", err)
-		}
-	}
-
+	// Ryuk (the testcontainers reaper sidecar) is left ENABLED on purpose. Each
+	// harness package terminates its container in TestMain, but that only runs on a
+	// clean exit — an interrupted run (Ctrl-C, `go test -timeout` kill, IDE stop,
+	// panic) would orphan the container with nothing to reap it. Ryuk is exactly that
+	// backstop: it watches the session and force-removes the container when the test
+	// process dies. Disabling it previously caused ParadeDB containers to pile up.
 	container, err := postgres.Run(
 		ctx,
 		image,

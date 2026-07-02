@@ -12,6 +12,7 @@ import (
 	"sortit/internal/issueanalytics"
 	"sortit/internal/issuemath"
 	"sortit/internal/issues"
+	"sortit/internal/vectors"
 )
 
 func BuildMapFromIssues(storeIssues []issues.Issue, viewport *Viewport) (MapResponse, error) {
@@ -444,8 +445,8 @@ func runtimeTagRelevances(tags []string) []TagRelevance {
 func runtimeStoredEmbedding(storeIssue issues.Issue, prepared issues.Issue, tagEmbeddings map[string][]float64) []float64 {
 	if len(storeIssue.Embedding) > 0 {
 		embedding := append([]float64(nil), storeIssue.Embedding...)
-		if !isZeroVector(embedding) {
-			normalizeVector(embedding)
+		if !vectors.IsZero(embedding) {
+			vectors.NormalizeUnit(embedding)
 			return embedding
 		}
 	}
@@ -463,10 +464,10 @@ func runtimeIssueEmbedding(issue issues.Issue, tagEmbeddings map[string][]float6
 		addScaled(vector, tagEmbeddings[tag.Tag], 0.9*tag.Relevance)
 	}
 
-	if isZeroVector(vector) {
+	if vectors.IsZero(vector) {
 		return embeddingFromText(issue.ID + " " + issue.Raw)
 	}
-	normalizeVector(vector)
+	vectors.NormalizeUnit(vector)
 	return vector
 }
 
@@ -495,10 +496,10 @@ func embeddingFromText(text string) []float64 {
 		}
 	}
 
-	if isZeroVector(vector) {
+	if vectors.IsZero(vector) {
 		return vector
 	}
-	normalizeVector(vector)
+	vectors.NormalizeUnit(vector)
 	return vector
 }
 
@@ -531,13 +532,4 @@ func addScaled(dst, src []float64, scale float64) {
 	for i := range dst {
 		dst[i] += src[i] * scale
 	}
-}
-
-func isZeroVector(values []float64) bool {
-	for _, value := range values {
-		if value != 0 {
-			return false
-		}
-	}
-	return true
 }

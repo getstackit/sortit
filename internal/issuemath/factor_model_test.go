@@ -6,6 +6,7 @@ import (
 
 	"sortit/internal/issues"
 	"sortit/internal/scoring"
+	"sortit/internal/vectors"
 )
 
 func TestComputeFactorDecomposition_PureFactorIssues(t *testing.T) {
@@ -257,10 +258,10 @@ func TestDecomposeEmbedding_Consistency(t *testing.T) {
 	}
 
 	// Factor and residual should be non-zero for tagged issue with residual.
-	if isZeroVector(dv.Factor) {
+	if vectors.IsZero(dv.Factor) {
 		t.Error("factor embedding should not be zero for tagged issue")
 	}
-	if isZeroVector(dv.Residual) {
+	if vectors.IsZero(dv.Residual) {
 		t.Error("residual embedding should not be zero for issue with residual component")
 	}
 	if dv.FactorNorm <= 0 {
@@ -287,7 +288,7 @@ func TestDecomposeEmbedding_NoTags(t *testing.T) {
 
 	dv := DecomposeEmbedding(emb, nil, tagNames, tagEmb, tagCov)
 
-	if !isZeroVector(dv.Factor) {
+	if !vectors.IsZero(dv.Factor) {
 		t.Error("factor should be zero for issue with no tags")
 	}
 	// Residual should preserve direction while being normalized for similarity use.
@@ -424,7 +425,7 @@ func TestComputeFactorDecomposition_AntiAlignedEmbedding(t *testing.T) {
 	if !ok {
 		t.Fatal("anti-aligned issue should still be decomposed")
 	}
-	if !isZeroVector(dv.Factor) {
+	if !vectors.IsZero(dv.Factor) {
 		t.Error("anti-aligned issue should have a zero factor, not a sign-flipped one")
 	}
 	if dv.FactorNorm != 0 {
@@ -435,7 +436,7 @@ func TestComputeFactorDecomposition_AntiAlignedEmbedding(t *testing.T) {
 	}
 
 	aligned, _ := decomp.DecomposedFor("aligned-A")
-	if isZeroVector(aligned.Factor) {
+	if vectors.IsZero(aligned.Factor) {
 		t.Error("aligned issue should keep its factor component")
 	}
 }

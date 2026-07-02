@@ -1,0 +1,4 @@
+interface:
+  display_name: "Sortit People"
+  short_description: "Inspect people analytics"
+  default_prompt: "Use $sortit-people to inspect people analytics."

@@ -14,10 +14,8 @@ import (
 )
 
 const (
-	claudeSkillsDir   = ".claude/skills"
-	codexSkillsDir    = ".codex/skills"
-	claudeSkillsLabel = "~/.claude/skills"
-	codexSkillsLabel  = "~/.codex/skills"
+	claudeSkillsDir = ".claude/skills"
+	codexSkillsDir  = ".codex/skills"
 
 	claudeInstructionsPath = ".claude/CLAUDE.md"
 	codexInstructionsPath  = ".codex/AGENTS.md"
@@ -32,6 +30,59 @@ const (
 	agentSkillFormatClaude agentSkillFormat = "claude"
 	agentSkillFormatCodex  agentSkillFormat = "codex"
 )
+
+// installScope is a destination root for an install. "global" installs into the
+// user's home directory (~/.claude, ~/.codex); "local" installs into the current
+// project directory (./.claude, ./.codex) so the skills can be checked in.
+type installScope struct {
+	name    string // "local" | "global", for messages
+	baseDir string // filesystem root the skill/instruction paths are joined onto
+	global  bool   // true when baseDir is the home directory (controls display labels)
+}
+
+// resolveInstallScopes turns the --local/--global flags into the destination
+// roots to install into. With neither flag set it defaults to global only, which
+// preserves the historical home-directory behavior. Passing both installs into
+// the project and the home directory in a single run.
+func resolveInstallScopes(local, global bool) ([]installScope, error) {
+	if !local && !global {
+		global = true
+	}
+
+	scopes := make([]installScope, 0, 2)
+	if global {
+		home, err := os.UserHomeDir()
+		if err != nil {
+			return nil, fmt.Errorf("resolve home directory: %w", err)
+		}
+		scopes = append(scopes, installScope{name: "global", baseDir: home, global: true})
+	}
+	if local {
+		cwd, err := os.Getwd()
+		if err != nil {
+			return nil, fmt.Errorf("resolve working directory: %w", err)
+		}
+		scopes = append(scopes, installScope{name: "local", baseDir: cwd})
+	}
+	return scopes, nil
+}
+
+// skillsLabel renders the human-facing destination for a format under this scope:
+// "~/.claude/skills" for global, ".claude/skills" for local.
+func (s installScope) skillsLabel(format agentSkillFormat) string {
+	dir := skillsDirForFormat(format)
+	if s.global {
+		return "~/" + dir
+	}
+	return dir
+}
+
+func skillsDirForFormat(format agentSkillFormat) string {
+	if format == agentSkillFormatCodex {
+		return codexSkillsDir
+	}
+	return claudeSkillsDir
+}
 
 type fileGroup struct {
 	templatePath string
@@ -63,34 +114,49 @@ func newAgentInstallCmd(version string) *cobra.Command {
 	var force bool
 	var formats []string
 	var instructions bool
+	var local bool
+	var global bool
 
 	cmd := &cobra.Command{
 		Use:   "install",
 		Short: "Install Sortit skill files",
-		Long: `Install Sortit skill files into your home directory.
+		Long: `Install Sortit skill files globally (your home directory) or locally (the
+current project directory).
 
-This creates one or both skill sets under:
-  - ~/.claude/skills
-  - ~/.codex/skills
+This creates one or both skill sets under, for each chosen scope:
+  - <root>/.claude/skills
+  - <root>/.codex/skills
+
+where <root> is ~ for --global (the default) and the current working directory
+for --local. Pass both flags to install into the project and your home directory
+in a single run.
 
 The installed skill teaches agents to use the Sortit CLI, starting with issue
 search, create, and explore workflows plus the rest of the issue operations.`,
 		RunE: func(cmd *cobra.Command, _ []string) error {
-			baseDir, err := os.UserHomeDir()
-			if err != nil {
-				return fmt.Errorf("resolve home directory: %w", err)
-			}
-			targets, err := selectInstallTargets(baseDir, formats, cmd.InOrStdin(), cmd.OutOrStdout())
+			scopes, err := resolveInstallScopes(local, global)
 			if err != nil {
 				return err
 			}
-			return installSkillTargetsWithOptions(baseDir, targets, force, version, instructions, cmd.OutOrStdout())
+			selectedFormats, err := selectInstallFormats(scopes, formats, cmd.InOrStdin(), cmd.OutOrStdout())
+			if err != nil {
+				return err
+			}
+			for _, scope := range scopes {
+				targets := targetsForFormats(selectedFormats, scope)
+				if err := installSkillTargetsWithOptions(scope.baseDir, targets, force, version, instructions, cmd.OutOrStdout()); err != nil {
+					return err
+				}
+			}
+			return nil
 		},
 	}
 
 	cmd.Flags().BoolVar(&force, "force", false, "Overwrite an existing installation")
 	cmd.Flags().StringSliceVar(&formats, "format", nil, "Skill format(s) to install (claude,codex). Repeat flag or use comma-separated values")
 	cmd.Flags().BoolVar(&instructions, "instructions", false, "Also install managed always-on Sortit workflow instructions")
+	cmd.Flags().BoolVar(&local, "local", false, "Install into the current project directory (./.claude, ./.codex)")
+	cmd.Flags().BoolVar(&global, "global", false, "Install into your home directory (~/.claude, ~/.codex); the default when neither --local nor --global is set")
 
 	return cmd
 }
@@ -436,17 +502,25 @@ func checkExistingInstallation(baseDir string, target agentInstallTarget, force 
 	return nil
 }
 
-func selectInstallTargets(baseDir string, rawFormats []string, in io.Reader, out io.Writer) ([]agentInstallTarget, error) {
+// selectInstallFormats decides which skill formats (claude, codex) to install.
+// It is scope-independent: the same formats are installed into every resolved
+// scope, so the prompt runs at most once. When --format is omitted it auto-detects
+// from whichever .claude/.codex directories already exist across any of the scopes.
+func selectInstallFormats(scopes []installScope, rawFormats []string, in io.Reader, out io.Writer) ([]agentSkillFormat, error) {
 	if len(rawFormats) > 0 {
-		formats, err := parseAgentSkillFormats(rawFormats)
-		if err != nil {
-			return nil, err
-		}
-		return targetsForFormats(formats), nil
+		return parseAgentSkillFormats(rawFormats)
 	}
 
-	hasClaudeDir := dirExists(filepath.Join(baseDir, ".claude"))
-	hasCodexDir := dirExists(filepath.Join(baseDir, ".codex"))
+	hasClaudeDir := false
+	hasCodexDir := false
+	for _, scope := range scopes {
+		if dirExists(filepath.Join(scope.baseDir, ".claude")) {
+			hasClaudeDir = true
+		}
+		if dirExists(filepath.Join(scope.baseDir, ".codex")) {
+			hasCodexDir = true
+		}
+	}
 	preSelected := []bool{hasClaudeDir, hasCodexDir}
 	if !hasClaudeDir && !hasCodexDir {
 		preSelected = []bool{true, false}
@@ -457,8 +531,8 @@ func selectInstallTargets(baseDir string, rawFormats []string, in io.Reader, out
 		out,
 		"Which skill format(s) would you like to install?",
 		[]string{
-			"Claude Code - Claude Code CLI skill format (~/.claude/skills/sortit-*)",
-			"Codex - Codex skill format (~/.codex/skills/sortit-*)",
+			"Claude Code - Claude Code CLI skill format (.claude/skills/sortit-*)",
+			"Codex - Codex skill format (.codex/skills/sortit-*)",
 		},
 		preSelected,
 	)
@@ -471,7 +545,7 @@ func selectInstallTargets(baseDir string, rawFormats []string, in io.Reader, out
 			fallback = append(fallback, agentSkillFormatCodex)
 		}
 		if len(fallback) > 0 {
-			return targetsForFormats(fallback), nil
+			return dedupeFormats(fallback), nil
 		}
 		return nil, fmt.Errorf("format selection requires interactive mode; use --format=claude or --format=codex")
 	}
@@ -486,7 +560,7 @@ func selectInstallTargets(baseDir string, rawFormats []string, in io.Reader, out
 	if len(formats) == 0 {
 		return nil, fmt.Errorf("at least one format must be selected")
 	}
-	return targetsForFormats(formats), nil
+	return formats, nil
 }
 
 func parseSelectedFormatLabels(selected []string) ([]agentSkillFormat, error) {
@@ -536,23 +610,14 @@ func parseAgentSkillFormat(raw string) (agentSkillFormat, error) {
 	}
 }
 
-func targetsForFormats(formats []agentSkillFormat) []agentInstallTarget {
+func targetsForFormats(formats []agentSkillFormat, scope installScope) []agentInstallTarget {
 	targets := make([]agentInstallTarget, 0, len(formats))
 	for _, format := range formats {
-		switch format {
-		case agentSkillFormatClaude:
-			targets = append(targets, agentInstallTarget{
-				format:      agentSkillFormatClaude,
-				skillsDir:   claudeSkillsDir,
-				displayPath: claudeSkillsLabel,
-			})
-		case agentSkillFormatCodex:
-			targets = append(targets, agentInstallTarget{
-				format:      agentSkillFormatCodex,
-				skillsDir:   codexSkillsDir,
-				displayPath: codexSkillsLabel,
-			})
-		}
+		targets = append(targets, agentInstallTarget{
+			format:      format,
+			skillsDir:   skillsDirForFormat(format),
+			displayPath: scope.skillsLabel(format),
+		})
 	}
 	return targets
 }

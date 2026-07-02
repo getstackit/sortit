@@ -422,6 +422,18 @@ func TestDebugEvalTagsReportsAggregateMetrics(t *testing.T) {
 	}
 }
 
+func TestPredictedEvalTagRelevanceUsesEffectiveRelevance(t *testing.T) {
+	negated := 0.5
+	tags := predictedEvalTagRelevance([]issues.TagRelevance{
+		{Tag: "backend", Relevance: 0.45, Negation: &negated},
+		{Tag: "signed-relevance", Relevance: 0.4},
+	})
+
+	if len(tags) != 1 || tags[0] != "signed-relevance" {
+		t.Fatalf("expected eval prediction to ignore net-negated tag, got %#v", tags)
+	}
+}
+
 func TestDebugEvalTagsLoadsNamedEmbeddedFixtures(t *testing.T) {
 	handler := DebugEvalTagsHandler{}
 

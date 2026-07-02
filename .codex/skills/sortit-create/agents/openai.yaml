@@ -1,0 +1,4 @@
+interface:
+  display_name: "Sortit Create"
+  short_description: "Create a new Sortit issue from raw text"
+  default_prompt: "Use $sortit-create to create a new Sortit issue from raw text."

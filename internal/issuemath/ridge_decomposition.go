@@ -133,7 +133,7 @@ func ComputeRidgeDecomposition(
 	valid := 0
 	for _, item := range items {
 		e := issueEmbeddings[item.ID]
-		if len(e) != embDim || isZeroVector(e) {
+		if len(e) != embDim || vectors.IsZero(e) {
 			continue
 		}
 		totalVar := dotProduct(e, e)
@@ -169,7 +169,7 @@ func DecomposeRidgeEmbedding(
 	lambdaScored, lambdaUnscored float64,
 ) RidgeVectors {
 	embDim := len(embedding)
-	if embDim == 0 || len(tagNames) == 0 || isZeroVector(embedding) {
+	if embDim == 0 || len(tagNames) == 0 || vectors.IsZero(embedding) {
 		return residualOnlyRidgeVectors(embedding, math.Sqrt(dotProduct(embedding, embedding)))
 	}
 	if embeddingDim(tagEmbeddings) != embDim {
@@ -202,7 +202,7 @@ func RidgeBlend(d RidgeDecomposition, a, b RidgeVectors, mode RidgeSimilarityMod
 
 	wF, wR := d.FactorWeight, d.ResidualWeight
 	noFactor := factorZero(a, mode) || factorZero(b, mode)
-	noResidual := isZeroVector(a.Residual) || isZeroVector(b.Residual)
+	noResidual := vectors.IsZero(a.Residual) || vectors.IsZero(b.Residual)
 	switch {
 	case noFactor && !noResidual:
 		wF, wR = 0, 1
@@ -216,9 +216,9 @@ func RidgeBlend(d RidgeDecomposition, a, b RidgeVectors, mode RidgeSimilarityMod
 
 func factorZero(v RidgeVectors, mode RidgeSimilarityMode) bool {
 	if mode == RidgeReconSpace {
-		return isZeroVector(v.Reconstruction)
+		return vectors.IsZero(v.Reconstruction)
 	}
-	return isZeroVector(v.Loading)
+	return vectors.IsZero(v.Loading)
 }
 
 // ridgeSolver factors the per-issue anchored-ridge solve into a one-time
@@ -314,12 +314,12 @@ func ridgeVectorsFor(
 ) (RidgeVectors, float64) {
 	anchor, lambdas := ridgeAnchorAndLambdas(tagScores, tagIndex, solver.tagCount, lambdaScored, lambdaUnscored)
 	f := solver.solve(e, anchor, lambdas)
-	if f == nil || isZeroVector(f) {
+	if f == nil || vectors.IsZero(f) {
 		return residualOnlyRidgeVectors(e, math.Sqrt(totalVar)), totalVar
 	}
 
 	recon := reconstructEmbedding(f, solver.tagMatrix, embDim)
-	if isZeroVector(recon) {
+	if vectors.IsZero(recon) {
 		return residualOnlyRidgeVectors(e, math.Sqrt(totalVar)), totalVar
 	}
 	residual := make([]float64, embDim)
@@ -336,10 +336,10 @@ func ridgeVectorsFor(
 	}
 
 	loading := append([]float64(nil), f...)
-	normalizeVector(loading)
-	normalizeVector(recon)
-	if !isZeroVector(residual) {
-		normalizeVector(residual)
+	vectors.NormalizeUnit(loading)
+	vectors.NormalizeUnit(recon)
+	if !vectors.IsZero(residual) {
+		vectors.NormalizeUnit(residual)
 	}
 
 	return RidgeVectors{
@@ -357,8 +357,8 @@ func ridgeVectorsFor(
 // as residual, R² of zero.
 func residualOnlyRidgeVectors(e []float64, totalNorm float64) RidgeVectors {
 	residual := append([]float64(nil), e...)
-	if !isZeroVector(residual) {
-		normalizeVector(residual)
+	if !vectors.IsZero(residual) {
+		vectors.NormalizeUnit(residual)
 	}
 	return RidgeVectors{
 		Loading:        nil,
