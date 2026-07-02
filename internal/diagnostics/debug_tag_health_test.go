@@ -4,9 +4,70 @@ import (
 	"context"
 	"testing"
 
+	"sortit/internal/issuemath"
 	"sortit/internal/issues"
 	"sortit/internal/tags"
 )
+
+func ptrFloat(v float64) *float64 { return &v }
+
+// splitDriftTags ranks by |zDelta| where present and gates on both the raw
+// floor and the z-threshold, falling back to the raw-delta rule for rows with no
+// valid z-score. This exercises: (a) the z-rule flipping raw order, (b) a
+// z-scored row below the threshold being dropped even though it clears the raw
+// floor, (c) a raw-only row surviving and ranking behind z-scored rows, and (d)
+// the payload carrying both delta and zDelta.
+func TestSplitDriftTagsCombinedRule(t *testing.T) {
+	rows := []issuemath.TagDrift{
+		// Spurious (anchored, Δ<0). "highvar" has the larger raw |Δ| but the
+		// smaller |z|; "genuine" wins on the z-rule → must rank first.
+		{Tag: "highvar", Anchored: true, Delta: -0.9, ZDelta: ptrFloat(-2.5)},
+		{Tag: "genuine", Anchored: true, Delta: -0.5, ZDelta: ptrFloat(-5.0)},
+		// z present but |z| < 2.0 → dropped despite clearing the raw floor.
+		{Tag: "lowz", Anchored: true, Delta: -0.4, ZDelta: ptrFloat(-1.0)},
+		// No valid z-score → raw-delta fallback → survives, ranks after z rows.
+		{Tag: "rawonly", Anchored: true, Delta: -0.6, ZDelta: nil},
+		// Below the raw floor → dropped regardless of z.
+		{Tag: "tiny", Anchored: true, Delta: -0.1, ZDelta: ptrFloat(-9.0)},
+		// Missing (unanchored, Δ>0), z-scored above threshold.
+		{Tag: "missing", Anchored: false, Delta: 0.7, ZDelta: ptrFloat(3.1)},
+	}
+
+	spurious, missing := splitDriftTags(rows)
+
+	gotOrder := make([]string, len(spurious))
+	for i, s := range spurious {
+		gotOrder[i] = s.Tag
+	}
+	wantOrder := []string{"genuine", "highvar", "rawonly"}
+	if len(gotOrder) != len(wantOrder) {
+		t.Fatalf("spurious tags = %v, want %v", gotOrder, wantOrder)
+	}
+	for i := range wantOrder {
+		if gotOrder[i] != wantOrder[i] {
+			t.Fatalf("spurious order = %v, want %v (z-rule must flip raw order and rank raw-only last)", gotOrder, wantOrder)
+		}
+	}
+
+	// Payload carries both delta and the standardized zDelta.
+	if spurious[0].ZDelta == nil || *spurious[0].ZDelta != -5.0 {
+		t.Errorf("genuine zDelta = %v, want -5.0 in payload", spurious[0].ZDelta)
+	}
+	if spurious[0].Delta != -0.5 {
+		t.Errorf("genuine delta = %f, want -0.5 in payload", spurious[0].Delta)
+	}
+	// Raw-only candidate keeps a nil zDelta.
+	if spurious[2].Tag != "rawonly" || spurious[2].ZDelta != nil {
+		t.Errorf("rawonly should carry nil zDelta, got %+v", spurious[2])
+	}
+
+	if len(missing) != 1 || missing[0].Tag != "missing" {
+		t.Fatalf("missing tags = %+v, want [missing]", missing)
+	}
+	if missing[0].ZDelta == nil || *missing[0].ZDelta != 3.1 {
+		t.Errorf("missing zDelta = %v, want 3.1", missing[0].ZDelta)
+	}
+}
 
 // With a sub-MinCenteringVectors corpus (2 tags, 3 embeddings) centering is a
 // no-op, so the orthonormal alpha/beta geometry yields the closed-form drift

@@ -29,11 +29,23 @@ const (
 	r2Tolerance = 0.02
 )
 
-// Baseline is the golden metrics file. Regenerate after an intentional math
-// change with `go test ./internal/matheval -update`.
+// Baseline is the golden metrics file. It guards both similarity models search
+// can run: the rank-1 fallback (no options) and the ridge tag-space default the
+// API layer injects via WithRidgeSimilarity. Regenerate after an intentional
+// math change with `go test ./internal/matheval -update`.
 type Baseline struct {
-	Search      SearchMetrics      `json:"search"`
-	FactorModel FactorModelMetrics `json:"factorModel"`
+	Rank1 PathMetrics `json:"rank1"`
+	Ridge PathMetrics `json:"ridge"`
+}
+
+// PathMetrics is one similarity model's golden numbers. GCVLambdaUnscored is
+// recorded for the ridge path only, for observability — it is re-derived each
+// run and never asserted, so a grid or GCV change surfaces as a search-metric
+// delta rather than silent λ drift.
+type PathMetrics struct {
+	Search            SearchMetrics      `json:"search"`
+	FactorModel       FactorModelMetrics `json:"factorModel"`
+	GCVLambdaUnscored float64            `json:"gcvLambdaUnscored,omitempty"`
 }
 
 // SearchMetrics aggregates ranking quality over the judgment set.
@@ -52,18 +64,17 @@ type FactorModelMetrics struct {
 
 // TestMathEval is the offline evaluation harness (whitepaper §10.2, item 9).
 // It drives SearchFromQueryWithTags end-to-end over the fixture corpus for
-// every labeled query, summarizes per-issue R² from the factor decomposition,
-// and compares both against the recorded baseline. Run with -v to see the
-// metrics; see docs/math-eval.md for interpretation.
+// every labeled query on both similarity models — the rank-1 fallback and the
+// ridge tag-space default (WithRidgeSimilarity at the GCV-selected penalty) —
+// summarizes per-issue R² for each, and compares both against the recorded
+// baseline. Run with -v to see the metrics; see docs/math-eval.md for
+// interpretation.
 func TestMathEval(t *testing.T) {
 	got := computeMetrics(t)
 
-	t.Logf("search: queries=%d NDCG@%d=%.4f Recall@%d=%.4f",
-		got.Search.Queries, evalK, got.Search.NDCG, evalK, got.Search.Recall)
-	t.Logf("factor model: factorWeight=%.4f aggregateR2=%.4f", got.FactorModel.FactorWeight, got.FactorModel.AggregateR2)
-	t.Logf("per-issue R²: n=%d mean=%.4f median=%.4f p10=%.4f p90=%.4f",
-		got.FactorModel.R2.Count, got.FactorModel.R2.Mean, got.FactorModel.R2.Median,
-		got.FactorModel.R2.P10, got.FactorModel.R2.P90)
+	logPath(t, "rank1", got.Rank1)
+	logPath(t, "ridge", got.Ridge)
+	t.Logf("ridge GCV λ_unscored = %.4f", got.Ridge.GCVLambdaUnscored)
 
 	if *update {
 		data, err := json.MarshalIndent(got, "", "  ")
@@ -86,21 +97,41 @@ func TestMathEval(t *testing.T) {
 		t.Fatalf("parse %s: %v", baselinePath, err)
 	}
 
-	if got.Search.Queries != want.Search.Queries {
-		t.Errorf("judgment set changed: %d queries, baseline has %d — rerun with -update", got.Search.Queries, want.Search.Queries)
-	}
-	assertNoRegression(t, "NDCG@8", got.Search.NDCG, want.Search.NDCG)
-	assertNoRegression(t, "Recall@8", got.Search.Recall, want.Search.Recall)
+	assertPath(t, "rank1", got.Rank1, want.Rank1)
+	assertPath(t, "ridge", got.Ridge, want.Ridge)
+}
 
-	assertWithinDrift(t, "factorWeight", got.FactorModel.FactorWeight, want.FactorModel.FactorWeight)
-	assertWithinDrift(t, "aggregateR2", got.FactorModel.AggregateR2, want.FactorModel.AggregateR2)
-	assertWithinDrift(t, "r2.mean", got.FactorModel.R2.Mean, want.FactorModel.R2.Mean)
-	assertWithinDrift(t, "r2.median", got.FactorModel.R2.Median, want.FactorModel.R2.Median)
-	assertWithinDrift(t, "r2.p10", got.FactorModel.R2.P10, want.FactorModel.R2.P10)
-	assertWithinDrift(t, "r2.p90", got.FactorModel.R2.P90, want.FactorModel.R2.P90)
-	if got.FactorModel.R2.Count != want.FactorModel.R2.Count {
-		t.Errorf("r2.count = %d, baseline %d — corpus changed, rerun with -update", got.FactorModel.R2.Count, want.FactorModel.R2.Count)
+// assertPath asserts one similarity model's metrics against its baseline entry.
+// The GCV λ is deliberately not asserted: it is re-derived each run, so its
+// effect reaches the assertions through the ridge search metrics.
+func assertPath(t *testing.T, name string, got, want PathMetrics) {
+	t.Helper()
+	if got.Search.Queries != want.Search.Queries {
+		t.Errorf("[%s] judgment set changed: %d queries, baseline has %d — rerun with -update", name, got.Search.Queries, want.Search.Queries)
 	}
+	assertNoRegression(t, name+" NDCG@8", got.Search.NDCG, want.Search.NDCG)
+	assertNoRegression(t, name+" Recall@8", got.Search.Recall, want.Search.Recall)
+
+	assertWithinDrift(t, name+" factorWeight", got.FactorModel.FactorWeight, want.FactorModel.FactorWeight)
+	assertWithinDrift(t, name+" aggregateR2", got.FactorModel.AggregateR2, want.FactorModel.AggregateR2)
+	assertWithinDrift(t, name+" r2.mean", got.FactorModel.R2.Mean, want.FactorModel.R2.Mean)
+	assertWithinDrift(t, name+" r2.median", got.FactorModel.R2.Median, want.FactorModel.R2.Median)
+	assertWithinDrift(t, name+" r2.p10", got.FactorModel.R2.P10, want.FactorModel.R2.P10)
+	assertWithinDrift(t, name+" r2.p90", got.FactorModel.R2.P90, want.FactorModel.R2.P90)
+	if got.FactorModel.R2.Count != want.FactorModel.R2.Count {
+		t.Errorf("[%s] r2.count = %d, baseline %d — corpus changed, rerun with -update", name, got.FactorModel.R2.Count, want.FactorModel.R2.Count)
+	}
+}
+
+// logPath prints one similarity model's metrics under -v.
+func logPath(t *testing.T, name string, p PathMetrics) {
+	t.Helper()
+	t.Logf("[%s] search: queries=%d NDCG@%d=%.4f Recall@%d=%.4f",
+		name, p.Search.Queries, evalK, p.Search.NDCG, evalK, p.Search.Recall)
+	t.Logf("[%s] factor model: factorWeight=%.4f aggregateR2=%.4f", name, p.FactorModel.FactorWeight, p.FactorModel.AggregateR2)
+	t.Logf("[%s] per-issue R²: n=%d mean=%.4f median=%.4f p10=%.4f p90=%.4f",
+		name, p.FactorModel.R2.Count, p.FactorModel.R2.Mean, p.FactorModel.R2.Median,
+		p.FactorModel.R2.P10, p.FactorModel.R2.P90)
 }
 
 // assertNoRegression fails when a quality metric drops below the baseline.
@@ -139,38 +170,74 @@ func computeMetrics(t *testing.T) Baseline {
 	now := time.Now().UTC()
 	storeIssues := corpus.StoreIssues(now)
 	storeTags := corpus.StoreTags()
+	tagNames := corpus.TagNames()
 
-	ndcg, recall := rankingMetrics(t, corpus, judgments, storeIssues, storeTags)
+	// Center against the corpus means and select the ridge penalty by GCV, the
+	// same call shape ridgelambda.Cache.compute runs in production.
+	issueEmb, tagEmb, _, gcvLambda := ridgeGCVFixture(t, corpus, storeIssues)
 
-	// Mirror the runtime corpus-load boundary: the map/search layer centers
-	// issue and tag embeddings against the corpus means before decomposing.
-	issueEmbeddings, tagEmbeddings, _ := issuemath.CenterEmbeddings(corpus.IssueEmbeddings(), corpus.TagEmbeddings())
-	decomp := issuemath.ComputeFactorDecomposition(storeIssues, corpus.TagNames(), issueEmbeddings, tagEmbeddings)
-	if !decomp.Decomposed() {
+	// Rank-1 fallback path: search with no options, the model small or
+	// degenerate corpora still fall back to.
+	rank1NDCG, rank1Recall := rankingMetrics(t, corpus, judgments, storeIssues, storeTags)
+	rank1Decomp := issuemath.ComputeFactorDecomposition(storeIssues, tagNames, issueEmb, tagEmb)
+	if !rank1Decomp.Decomposed() {
 		t.Fatal("factor decomposition fell back to hardcoded weights; the corpus should always be large enough to decompose")
 	}
-	r2s := make([]float64, 0, decomp.DecomposedCount())
-	decomp.AllR2(func(_ string, r2 float64) {
-		r2s = append(r2s, r2)
-	})
-	r2Dist := Summarize(r2s)
+
+	// Ridge default path: mirror the API layer injecting WithRidgeSimilarity at
+	// the GCV-selected penalty.
+	ridgeNDCG, ridgeRecall := rankingMetrics(t, corpus, judgments, storeIssues, storeTags,
+		issuemap.WithRidgeSimilarity(gcvLambda))
+	ridgeDecomp := issuemath.ComputeRidgeDecomposition(storeIssues, tagNames, issueEmb, tagEmb,
+		scoring.RidgeAnchorLambdaScored, gcvLambda)
+	if !ridgeDecomp.Decomposed() {
+		t.Fatal("ridge decomposition fell back to hardcoded weights; the corpus should always be large enough to decompose")
+	}
 
 	return Baseline{
-		Search: SearchMetrics{
-			Queries: len(judgments),
-			NDCG:    round4(ndcg),
-			Recall:  round4(recall),
+		Rank1: PathMetrics{
+			Search:      searchMetrics(len(judgments), rank1NDCG, rank1Recall),
+			FactorModel: factorMetrics(rank1Decomp.FactorWeight, rank1Decomp.AggregateR2, collectR2(rank1Decomp.AllR2)),
 		},
-		FactorModel: FactorModelMetrics{
-			FactorWeight: round4(decomp.FactorWeight),
-			AggregateR2:  round4(decomp.AggregateR2),
-			R2: Distribution{
-				Count:  r2Dist.Count,
-				Mean:   round4(r2Dist.Mean),
-				Median: round4(r2Dist.Median),
-				P10:    round4(r2Dist.P10),
-				P90:    round4(r2Dist.P90),
-			},
+		Ridge: PathMetrics{
+			Search:            searchMetrics(len(judgments), ridgeNDCG, ridgeRecall),
+			FactorModel:       factorMetrics(ridgeDecomp.FactorWeight, ridgeDecomp.AggregateR2, collectR2(ridgeDecomp.AllR2)),
+			GCVLambdaUnscored: round4(gcvLambda),
+		},
+	}
+}
+
+// ridgeGCVFixture centers the fixture corpus embeddings against the corpus
+// means and selects the unscored ridge penalty by GCV with the scored penalty
+// held fixed — the same call shape ridgelambda.Cache.compute runs in
+// production. The golden ridge baseline and TestRidgeShadowComparison both
+// derive λ through here so they stay on one selection path.
+func ridgeGCVFixture(t *testing.T, corpus Corpus, storeIssues []issues.Issue) (issueEmb, tagEmb map[string][]float64, means issuemath.CorpusMeans, lambda float64) {
+	t.Helper()
+	issueEmb, tagEmb, means = issuemath.CenterEmbeddings(corpus.IssueEmbeddings(), corpus.TagEmbeddings())
+	lambda, ok := issuemath.SelectRidgeLambdaGCV(storeIssues, corpus.TagNames(), issueEmb, tagEmb,
+		scoring.RidgeAnchorLambdaScored, nil)
+	if !ok {
+		t.Fatal("GCV λ selection fell back; the fixture corpus should be large enough to select a penalty")
+	}
+	return issueEmb, tagEmb, means, lambda
+}
+
+func searchMetrics(queries int, ndcg, recall float64) SearchMetrics {
+	return SearchMetrics{Queries: queries, NDCG: round4(ndcg), Recall: round4(recall)}
+}
+
+func factorMetrics(factorWeight, aggregateR2 float64, r2s []float64) FactorModelMetrics {
+	d := Summarize(r2s)
+	return FactorModelMetrics{
+		FactorWeight: round4(factorWeight),
+		AggregateR2:  round4(aggregateR2),
+		R2: Distribution{
+			Count:  d.Count,
+			Mean:   round4(d.Mean),
+			Median: round4(d.Median),
+			P10:    round4(d.P10),
+			P90:    round4(d.P90),
 		},
 	}
 }

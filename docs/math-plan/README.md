@@ -46,18 +46,18 @@ work top-to-bottom unless a WP's dependency note says otherwise.
 
 | WP | Title | Size | Depends on | Status |
 |---|---|---|---|---|
-| WP-101 | Put the ridge default under the golden baseline | S–M | — | todo |
-| WP-102 | Stale-text and misleading-comment sweep | XS | — | todo |
-| WP-103 | Revision-keyed ridge decomposition cache + solver concurrency | M–L | WP-101 | todo |
-| WP-104 | Standardize per-tag drift deltas | S | — | todo |
-| WP-105 | GCV solver cost and factorization consistency | S–M | WP-101 | todo |
+| WP-101 | Put the ridge default under the golden baseline | S–M | — | shipped (in stack) |
+| WP-102 | Stale-text and misleading-comment sweep | XS | — | shipped (in stack) |
+| WP-103 | Revision-keyed ridge decomposition cache + solver concurrency | M–L | WP-101 | shipped (in stack) |
+| WP-104 | Standardize per-tag drift deltas | S | — | shipped (in stack) |
+| WP-105 | GCV solver cost and factorization consistency | S–M | WP-101 | shipped (in stack) |
 
 ### Stage 2 — Themes to production ([20-stage-2-themes.md](./20-stage-2-themes.md))
 
 | WP | Title | Size | Depends on | Status |
 |---|---|---|---|---|
-| WP-201 | Corpus loadings source for themes | S | WP-103 | todo |
-| WP-202 | Revision-keyed theme cache | S | WP-201 | todo |
+| WP-201 | Corpus loadings source for themes | S | WP-103 | shipped (in stack) |
+| WP-202 | Revision-keyed theme cache | S | WP-201 | shipped (in stack) |
 | WP-203 | Theme identity stability across refreshes | M | WP-202 | todo |
 | WP-204 | Themes debug API | S | WP-203 | todo |
 | WP-205 | Theme labeling | S–M | WP-204 | todo |

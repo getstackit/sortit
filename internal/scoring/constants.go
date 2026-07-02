@@ -140,8 +140,14 @@ const (
 	DefaultMaturity       = 0.5 // maturity fallback when lifecycle metrics are absent
 )
 
-// Anchored ridge regression (debug/shadow only — not wired into ranking).
-// Per-tag penalties for the diagonal solve f = (TTᵀ + Λ)⁻¹(Te + Λr).
+// Anchored ridge regression. Per-tag penalties for the diagonal solve
+// f = (TTᵀ + Λ)⁻¹(Te + Λr). Two λ regimes share the same scored anchor:
+//   - Ranking (search/explore/person recommendations) pairs
+//     RidgeAnchorLambdaScored with a GCV-selected unscored penalty, memoized
+//     by corpus revision in internal/ridgelambda — not this fixed constant.
+//   - Drift/tag-health diagnostics deliberately hold the unscored penalty at
+//     the fixed, loose RidgeAnchorLambdaUnscored below, so unscored tags
+//     float freely and missing-tag candidates (f_k ≫ r_k) surface.
 const (
 	// RidgeAnchorLambdaScored anchors tags where the analyzer expressed an
 	// opinion (a TagRelevance entry exists, including negation-only ones).

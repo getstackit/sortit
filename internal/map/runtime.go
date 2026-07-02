@@ -217,6 +217,37 @@ func centerRuntimeCorpus(
 	}
 }
 
+// ComputeCorpusRidgeDecomposition builds the runtime corpus over the supplied
+// issue set (centered with means) and runs the anchored-ridge solve at the
+// given penalties, returning the bundle the revision-keyed decomposition cache
+// (internal/ridgedecomp) memoizes. It reproduces exactly the corpus-prep and
+// solve that SearchFromQueryWithTags / ExploreFromIssuesWithTags run in-place,
+// so feeding the cached bundle back through WithRidgeDecomposition is
+// equivalent to the in-place compute when the candidate set is the full corpus.
+//
+// The per-issue Reconstruction is dropped from the cached vectors — the shipped
+// RidgeTagSpace blend never reads it (see RidgeDecomposition.WithoutReconstructions).
+func ComputeCorpusRidgeDecomposition(
+	storeIssues []issues.Issue,
+	storeTags []issues.Tag,
+	means issuemath.CorpusMeans,
+	lambdaScored, lambdaUnscored float64,
+) issuemath.CorpusRidgeDecomposition {
+	corpus := runtimeMapInputsWithMeans(storeIssues, storeTags, &means)
+	decomp := issuemath.ComputeRidgeDecomposition(
+		corpus.issues, corpus.tagNames, corpus.issueEmbeddings, corpus.tagEmbeddings,
+		lambdaScored, lambdaUnscored,
+	)
+	return issuemath.CorpusRidgeDecomposition{
+		Decomposition:  decomp.WithoutReconstructions(),
+		TagNames:       corpus.tagNames,
+		TagEmbeddings:  corpus.tagEmbeddings,
+		Means:          corpus.means,
+		LambdaScored:   lambdaScored,
+		LambdaUnscored: lambdaUnscored,
+	}
+}
+
 func runtimeProjectionInputs(
 	storeIssues []issues.MapProjectionIssue,
 	storeTags []issues.Tag,

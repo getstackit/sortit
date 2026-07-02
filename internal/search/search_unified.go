@@ -12,6 +12,7 @@ import (
 	"sortit/internal/issues"
 	issueviews "sortit/internal/issues/views"
 	issuemap "sortit/internal/map"
+	"sortit/internal/ridgedecomp"
 	"sortit/internal/ridgelambda"
 	"sortit/internal/tags"
 )
@@ -34,12 +35,24 @@ type SearchUnifiedHandler struct {
 	// Centering provides revision-cached full-corpus embedding means —
 	// see SearchIssuesHandler.Centering.
 	Centering *centering.Cache
+	// RidgeDecomp provides the revision-cached full-corpus ridge decomposition,
+	// preferred over RidgeLambda — see SearchIssuesHandler.RidgeDecomp.
+	RidgeDecomp *ridgedecomp.Cache
 	// RidgeLambda selects the anchored-ridge similarity model when wired —
 	// see SearchIssuesHandler.RidgeLambda.
 	RidgeLambda *ridgelambda.Cache
 }
 
 func (h SearchUnifiedHandler) ridgeOption(ctx context.Context) ([]issuemap.SearchOption, error) {
+	if h.RidgeDecomp != nil {
+		decomp, ok, err := h.RidgeDecomp.Current(ctx)
+		if err != nil {
+			return nil, err
+		}
+		if ok {
+			return []issuemap.SearchOption{issuemap.WithRidgeDecomposition(*decomp)}, nil
+		}
+	}
 	if h.RidgeLambda == nil {
 		return nil, nil
 	}

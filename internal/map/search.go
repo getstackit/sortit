@@ -57,6 +57,13 @@ type searchConfig struct {
 	// search does not run the selection itself. Phase 3b A/B opt-in;
 	// production default leaves it unset (rank-1).
 	ridgeLambda *float64
+	// ridgeDecomposition, when non-nil, carries the revision-cached full-corpus
+	// anchored-ridge decomposition (internal/ridgedecomp). Search uses its
+	// per-issue vectors and corpus-level weights directly instead of running the
+	// solve over the candidate set, and decomposes the query into the same cached
+	// tag space. Takes precedence over ridgeLambda; the lambdas ride along inside
+	// the bundle so the query decomposition stays in the corpus regime.
+	ridgeDecomposition *issuemath.CorpusRidgeDecomposition
 }
 
 func WithOffset(offset int) SearchOption {
@@ -130,6 +137,22 @@ func WithRidgeSimilarity(lambda float64) SearchOption {
 			return
 		}
 		c.ridgeLambda = &lambda
+	}
+}
+
+// WithRidgeDecomposition switches search to the revision-cached full-corpus
+// anchored-ridge decomposition: candidates are scored from the cached per-issue
+// vectors (VectorsFor) with the corpus-level factor/residual weights, and the
+// query is decomposed into the same cached tag space. This replaces the
+// per-request solve that WithRidgeSimilarity triggers. When the bundle carries
+// no usable decomposition, search falls back to rank-1 automatically. Takes
+// precedence over WithRidgeSimilarity.
+func WithRidgeDecomposition(d issuemath.CorpusRidgeDecomposition) SearchOption {
+	return func(c *searchConfig) {
+		if !d.Decomposed() {
+			return
+		}
+		c.ridgeDecomposition = &d
 	}
 }
 
@@ -250,21 +273,31 @@ func SearchFromQueryWithTags(
 		searchDecomp.FactorWeight, searchDecomp.ResidualWeight = adjustFactorWeight(decomp.FactorWeight)
 	}
 
-	// Ridge similarity model (Phase 3b, opt-in via WithRidgeSimilarity). Only
-	// engaged when the corpus is large enough for both decompositions; falls
-	// back to rank-1 otherwise.
-	useRidge := cfg.ridgeLambda != nil && useDecomp
+	// Ridge similarity model (Phase 3b, opt-in). Engaged when the corpus is
+	// large enough to decompose and either the revision-cached full-corpus
+	// decomposition (WithRidgeDecomposition, preferred) or a GCV penalty for an
+	// in-place solve (WithRidgeSimilarity) is supplied; falls back to rank-1
+	// otherwise.
+	useRidge := (cfg.ridgeDecomposition != nil || cfg.ridgeLambda != nil) && useDecomp
 	var ridgeDecomp issuemath.RidgeDecomposition
 	var queryRidge issuemath.RidgeVectors
 	if useRidge {
-		ridgeDecomp = issuemath.ComputeRidgeDecomposition(mapIssues, tagNames, issueEmbeddings, tagEmbeddings,
-			scoring.RidgeAnchorLambdaScored, *cfg.ridgeLambda)
-		if ridgeDecomp.Decomposed() {
+		if cfg.ridgeDecomposition != nil {
+			// Cached path: corpus vectors and tag space come from the cache; only
+			// the query is decomposed here, into that same cached tag space.
+			ridgeDecomp = cfg.ridgeDecomposition.Decomposition
 			ridgeDecomp.FactorWeight, ridgeDecomp.ResidualWeight = adjustFactorWeight(ridgeDecomp.FactorWeight)
-			queryRidge = issuemath.DecomposeRidgeEmbedding(queryVector, querySummary.Tags, tagNames, tagEmbeddings,
-				scoring.RidgeAnchorLambdaScored, *cfg.ridgeLambda)
+			queryRidge = cfg.ridgeDecomposition.DecomposeQuery(queryVector, querySummary.Tags)
 		} else {
-			useRidge = false
+			ridgeDecomp = issuemath.ComputeRidgeDecomposition(mapIssues, tagNames, issueEmbeddings, tagEmbeddings,
+				scoring.RidgeAnchorLambdaScored, *cfg.ridgeLambda)
+			if ridgeDecomp.Decomposed() {
+				ridgeDecomp.FactorWeight, ridgeDecomp.ResidualWeight = adjustFactorWeight(ridgeDecomp.FactorWeight)
+				queryRidge = issuemath.DecomposeRidgeEmbedding(queryVector, querySummary.Tags, tagNames, tagEmbeddings,
+					scoring.RidgeAnchorLambdaScored, *cfg.ridgeLambda)
+			} else {
+				useRidge = false
+			}
 		}
 	}
 

@@ -42,16 +42,18 @@ var ridgeShadow = flag.Bool("ridge", false, "run the ridge-vs-rank1 shadow compa
 //     K/D/conditioning production has.
 //
 // TestRidgeShadowComparison measures the full-rank anchored-ridge model
-// against the current rank-1 projection on the fixture corpus, before any
-// ranking path consumes the ridge scores (math-evolution.md Phase 3a).
+// against the rank-1 projection on the fixture corpus. It originated
+// (math-evolution.md Phase 3a) before any ranking path consumed the ridge
+// scores; ranking now defaults to ridge (Phase 3c), and this harness
+// continues as the offline regression check for that choice.
 //
 // It compares the *similarity model in isolation*: candidates are ranked by
 // the blended similarity alone, with none of the freshness/velocity/
 // authority/specificity modifiers the production search applies. Those
 // modifiers are identical across models, so including them would only dilute
 // the comparison. Both ridge similarity shapes — tag-space cos(f_A,f_B) and
-// reconstruction-space cos(Tᵀf_A,Tᵀf_B) — are reported so the harness, not a
-// guess, picks the shape that becomes the Phase 3b default.
+// reconstruction-space cos(Tᵀf_A,Tᵀf_B) — are reported; the harness picked
+// tag-space, which became (and remains) the Phase 3b default.
 //
 // Run with: go test ./internal/matheval -run TestRidgeShadowComparison -ridge -v
 func TestRidgeShadowComparison(t *testing.T) {
@@ -73,9 +75,11 @@ func TestRidgeShadowComparison(t *testing.T) {
 	storeTags := corpus.StoreTags()
 	tagNames := corpus.TagNames()
 
-	// Mirror the runtime corpus-load boundary: center issue and tag
-	// embeddings against the corpus means before decomposing.
-	issueEmb, tagEmb, means := issuemath.CenterEmbeddings(corpus.IssueEmbeddings(), corpus.TagEmbeddings())
+	// Center and select λ via the shared helper — the same path the golden
+	// ridge baseline (TestMathEval) is guarded on. That baseline, not this
+	// log-only harness, is the source of truth for the shipped numbers; this
+	// test stays for its similarity-shape and fixed-λ overfit sweeps.
+	issueEmb, tagEmb, means, gcvLambda := ridgeGCVFixture(t, corpus, storeIssues)
 
 	// Rank-1 model.
 	fdecomp := issuemath.ComputeFactorDecomposition(storeIssues, tagNames, issueEmb, tagEmb)
@@ -93,11 +97,6 @@ func TestRidgeShadowComparison(t *testing.T) {
 
 	// Ridge model at the GCV-selected unscored penalty — derived from the
 	// data, not hardcoded.
-	gcvLambda, ok := issuemath.SelectRidgeLambdaGCV(storeIssues, tagNames, issueEmb, tagEmb,
-		scoring.RidgeAnchorLambdaScored, nil)
-	if !ok {
-		t.Fatal("GCV λ selection fell back; corpus should be large enough")
-	}
 	gcvDecomp := issuemath.ComputeRidgeDecomposition(storeIssues, tagNames, issueEmb, tagEmb,
 		scoring.RidgeAnchorLambdaScored, gcvLambda)
 

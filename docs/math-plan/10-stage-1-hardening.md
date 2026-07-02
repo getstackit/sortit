@@ -75,6 +75,15 @@ Baseline file grows from one entry to a keyed structure, e.g.
 tamper test: perturb `RidgeAnchorLambdaScored` locally and confirm the ridge
 baseline fails while rank-1 passes. `mise run check` before submit.
 
+### Outcome (shipped)
+
+Both paths guarded on every test run. Measured: rank1 0.8658/0.9117 (the old
+0.8645 was stale-within-tolerance), ridge **0.9309/0.9586** at grid-stable
+GCV λ=3.0 — full-path delta +0.0651/+0.0469, matching the historical shadow
+run. Tamper finding: λ_scored 0.5→0.8 *improves* ranking and passes; the
+guard was proven at λ_scored=3.0 (ridge fails on factorWeight/R² drift, rank1
+green). Determinism held across runs; the pin-λ fallback was not needed.
+
 ### Acceptance criteria
 
 - A change that regresses the ridge blend fails CI without any opt-in flag.
@@ -232,6 +241,19 @@ that this drops.
   once it exists; if explore regresses, explore can keep set-relative weights
   computed from cached per-issue R² — cheap, since the vectors are cached.
 
+### Outcome (shipped)
+
+`internal/ridgedecomp.Cache` (ridgelambda shape, single-flight, full corpus,
+Reconstruction dropped → ~135 MiB/revision at 10k×K200×D1536). All four API
+surfaces resolve ridge as: decomp cache → λ-only in-place → rank-1. The
+cached bundle carries the tag space (`CorpusRidgeDecomposition.DecomposeQuery`)
+so queries/targets/persons decompose into the cached basis — required for
+correctness beyond the spec's phrasing. Equivalence proven to 1e-9 (search +
+explore); 8-goroutine race test asserts one compute per revision; matheval
+baselines untouched (full-corpus candidates don't exercise the set→corpus
+weight change; production subsets do — watch WP-302). Covariance double-build
+deferred: it lives in the rank-1 path and needs a signature change there.
+
 ---
 
 ## WP-104 — Standardize per-tag drift deltas
@@ -281,6 +303,14 @@ should get more plausible, not just different).
 Candidate ranking is z-based with documented small-sample and low-variance
 guards; the curation detector's input ordering reflects it; constants named
 in `debug_tag_health.go` with the rationale.
+
+### Outcome (shipped)
+
+`TagDrift.ZDelta *float64` (nil under the guards: < 20 observations or
+std < 1e-6), second-pass standardization in `ComputeCorpusDrift`. Tag-health
+gates on raw floor AND |z| ≥ 2.0 when a z exists; z-scored candidates rank
+ahead of raw-only ones (the two scales aren't comparable). Curation consumed
+the new ordering with zero code change. Matheval baselines unmoved.
 
 ---
 
@@ -340,3 +370,15 @@ tolerance.
 Low. Numerical: Cholesky requires SPD — Λ has strictly positive entries on
 every path today (0.05 floor); add a defensive check that falls back to LU
 with a telemetry counter rather than panicking.
+
+### Outcome (shipped) — and a spec correction
+
+The spec's suggested identity `tr(A⁻¹TTᵀ) = ‖L⁻¹T‖²_F` is **slower** at the
+production shape (O(K²D), ~3.5× the original at D≫K). The winning form is the
+diagonal identity `df = tr(I) − tr(A⁻¹Λ) = K − Σ_k λ_k (A⁻¹)_kk`, needing only
+`diag(A⁻¹)` via Cholesky inverse (~K³/3): full 7-point recompute at
+K200/D1536/200 samples 7.04s → 4.61s (trace step 3.50ms → 1.76ms/op); equality
+asserted to 1e-9 over seeded fixtures. Ranking solver unified on Cholesky
+(same factorization as GCV), with a non-SPD LU fallback behind an atomic
+counter + rate-limited warn (`RidgeCholeskyFallbackCount`). Baselines
+bit-identical to 4 decimals; determinism held.

@@ -29,6 +29,7 @@ import (
 	"sortit/internal/memories"
 	"sortit/internal/people"
 	"sortit/internal/regions"
+	"sortit/internal/ridgedecomp"
 	"sortit/internal/ridgelambda"
 	"sortit/internal/search"
 	"sortit/internal/tagcooccurrence"
@@ -689,6 +690,13 @@ func NewServer(cfg ServerConfig) *Server {
 		Revisions: revisions,
 		Centering: centeringCache,
 	}
+	ridgeDecompCache := &ridgedecomp.Cache{
+		Store:     store,
+		Tags:      catalog,
+		Revisions: revisions,
+		Centering: centeringCache,
+		Lambda:    ridgeLambdaCache,
+	}
 	var customRegionStore regions.CustomRegionStore = store
 	var customRegionWriter regions.CustomRegionWriter = store
 	regionsLoader := &regions.Loader{
@@ -722,6 +730,7 @@ func NewServer(cfg ServerConfig) *Server {
 		DetailReader: store,
 		SearchStore:  semanticSearchStoreFromStore(baseStore),
 		Catalog:      catalog,
+		RidgeDecomp:  ridgeDecompCache,
 		RidgeLambda:  ridgeLambdaCache,
 	}
 	curationDetector := curation.NewDetector(store, store, exploreHandler,
@@ -785,6 +794,7 @@ func NewServer(cfg ServerConfig) *Server {
 			Store:        baseStore,
 			Cooccurrence: cooccurrenceCache,
 			Centering:    centeringCache,
+			RidgeDecomp:  ridgeDecompCache,
 			RidgeLambda:  ridgeLambdaCache,
 		},
 		searchUnified: search.SearchUnifiedHandler{
@@ -792,6 +802,7 @@ func NewServer(cfg ServerConfig) *Server {
 			Catalog:     catalog,
 			Store:       baseStore,
 			Centering:   centeringCache,
+			RidgeDecomp: ridgeDecompCache,
 			RidgeLambda: ridgeLambdaCache,
 		},
 		exploreIssue:         exploreHandler,
@@ -807,7 +818,7 @@ func NewServer(cfg ServerConfig) *Server {
 		debugRidgeScore:      diagnostics.DebugRidgeScoreHandler{Store: store, Catalog: catalog, Centering: centeringCache},
 		debugEmbeddingFalls:  diagnostics.DebugEmbeddingFallbacksHandler{},
 		getPersonProfile:     people.GetPersonProfileHandler{Store: store, Catalog: catalog},
-		getPersonDetail:      people.GetPersonDetailHandler{Store: store, Catalog: catalog, RidgeLambda: ridgeLambdaCache},
+		getPersonDetail:      people.GetPersonDetailHandler{Store: store, Catalog: catalog, RidgeDecomp: ridgeDecompCache, RidgeLambda: ridgeLambdaCache},
 		workCorrelations:     people.WorkCorrelationsHandler{Store: store, Catalog: catalog},
 		regions:              regionsHandler,
 		customRegions:        customRegionHandler,

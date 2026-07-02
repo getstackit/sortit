@@ -12,6 +12,7 @@ import (
 	"sortit/internal/issuemath"
 	"sortit/internal/issues"
 	issueviews "sortit/internal/issues/views"
+	"sortit/internal/ridgedecomp"
 	"sortit/internal/ridgelambda"
 	"sortit/internal/scoring"
 	"sortit/internal/tags"
@@ -42,6 +43,11 @@ type PersonDetail struct {
 type GetPersonDetailHandler struct {
 	Store   issues.Store
 	Catalog *tags.CatalogService
+	// RidgeDecomp provides the revision-cached full-corpus ridge decomposition,
+	// preferred over RidgeLambda: recommendations score candidates from the
+	// cached per-issue vectors and decompose the person profile into the same
+	// cached tag space, instead of re-solving over the open-issue set.
+	RidgeDecomp *ridgedecomp.Cache
 	// RidgeLambda selects the anchored-ridge similarity model for
 	// recommendations when wired and the corpus is large enough; otherwise
 	// recommendations use the rank-1 factor model. Mirrors the search path.
@@ -153,12 +159,14 @@ func (h GetPersonDetailHandler) recommendOpenIssues(
 	// scored (not a similarity-retrieved subset), so self-derived means are
 	// unbiased here. The person embedding is centered with the same issue
 	// mean, never with its own statistics.
+	rawPersonEmbedding := personEmbedding
 	issueEmbeddings, tagEmbeddings, corpusMeans := issuemath.CenterEmbeddings(issueEmbeddings, tagEmbeddings)
 	personEmbedding = issuemath.CenterVector(personEmbedding, corpusMeans.Issue)
 
-	// Prefer the anchored-ridge model (Phase 3c) when a GCV penalty is
-	// available; otherwise fall back to the rank-1 factor decomposition. Only
-	// the chosen model is computed.
+	// Prefer the anchored-ridge model (Phase 3c) when it is available: first the
+	// revision-cached full-corpus decomposition, then an in-place solve at the
+	// GCV penalty, otherwise the rank-1 factor decomposition. Only the chosen
+	// model is computed.
 	var (
 		ridgeDecomp      issuemath.RidgeDecomposition
 		personRidge      issuemath.RidgeVectors
@@ -166,7 +174,22 @@ func (h GetPersonDetailHandler) recommendOpenIssues(
 		personDecomposed issuemath.DecomposedEmbedding
 		useRidge         bool
 	)
-	if h.RidgeLambda != nil {
+	if h.RidgeDecomp != nil {
+		cached, ok, derr := h.RidgeDecomp.Current(ctx)
+		if derr != nil {
+			return nil, derr
+		}
+		if ok {
+			// Cached path: candidate vectors and tag space come from the full
+			// corpus. Center the person profile with the same corpus means so it
+			// decomposes into that space, then blend against cached vectors.
+			ridgeDecomp = cached.Decomposition
+			personForCache := issuemath.CenterVector(rawPersonEmbedding, cached.Means.Issue)
+			personRidge = cached.DecomposeQuery(personForCache, profile)
+			useRidge = true
+		}
+	}
+	if !useRidge && h.RidgeLambda != nil {
 		lambda, ok, lerr := h.RidgeLambda.Current(ctx)
 		if lerr != nil {
 			return nil, lerr

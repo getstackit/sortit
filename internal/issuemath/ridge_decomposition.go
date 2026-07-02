@@ -1,7 +1,10 @@
 package issuemath
 
 import (
+	"log/slog"
 	"math"
+	"sync/atomic"
+	"time"
 
 	"gonum.org/v1/gonum/floats"
 	"gonum.org/v1/gonum/mat"
@@ -11,15 +14,50 @@ import (
 	"sortit/internal/vectors"
 )
 
+// ridgeCholeskyFallbacks counts how many times the ranking ridge solve fell
+// back from Cholesky to LU because A = T Tᵀ + Λ failed Cholesky factorization
+// (not numerically SPD). GCV selection and ranking share the Cholesky path, so
+// λ is chosen on the same numerical footing that ranks. On a healthy corpus Λ
+// has strictly positive diagonal entries (0.05 floor), so A is SPD and this
+// never fires; a nonzero count flags numerical pathology in the tag geometry.
+// Ranking still succeeds via the LU fallback — the counter only observes.
+var ridgeCholeskyFallbacks atomic.Uint64
+
+// ridgeCholeskyFallbackLastLog is the unix-nano timestamp of the last warning,
+// so a pathological corpus doesn't flood the logs; the counter keeps the exact
+// tally. Mirrors internal/map's embedding-fallback rate-limiting at smaller
+// scale (a plain atomic pair instead of a mutex-guarded map).
+var ridgeCholeskyFallbackLastLog atomic.Int64
+
+const ridgeCholeskyFallbackLogInterval = time.Minute
+
+func recordRidgeCholeskyFallback() {
+	count := ridgeCholeskyFallbacks.Add(1)
+	now := time.Now().UnixNano()
+	last := ridgeCholeskyFallbackLastLog.Load()
+	if now-last >= int64(ridgeCholeskyFallbackLogInterval) &&
+		ridgeCholeskyFallbackLastLog.CompareAndSwap(last, now) {
+		slog.Warn("ridge solve fell back from Cholesky to LU: A = TTᵀ+Λ not numerically SPD",
+			"count", count)
+	}
+}
+
+// RidgeCholeskyFallbackCount returns how many times the ranking ridge solve
+// fell back from Cholesky to LU since process start. Zero on a healthy corpus.
+func RidgeCholeskyFallbackCount() uint64 {
+	return ridgeCholeskyFallbacks.Load()
+}
+
 // RidgeSimilarityMode selects which space the "factor" side of the ridge
-// blend compares. The two are measured head-to-head in the matheval shadow
-// harness before either becomes the ranking default.
+// blend compares. The two were measured head-to-head in the matheval shadow
+// harness; RidgeTagSpace won and is the shipped ranking default.
 type RidgeSimilarityMode int
 
 const (
 	// RidgeTagSpace compares the tag-space loadings cos(f_A, f_B). It is the
 	// most interpretable: two issues are close when their refined tag
-	// geometry agrees.
+	// geometry agrees. This is what search, explore, and person
+	// recommendations use by default.
 	RidgeTagSpace RidgeSimilarityMode = iota
 	// RidgeReconSpace compares the embedding-space reconstructions
 	// cos(Tᵀf_A, Tᵀf_B). It stays closest to today's rank-1 blend, which
@@ -36,6 +74,7 @@ type RidgeVectors struct {
 	Loading        []float64 // unit f (tag space)
 	Reconstruction []float64 // unit Tᵀf (embedding space)
 	Residual       []float64 // unit (e − Tᵀf) (embedding space)
+	LoadingNorm    float64   // ‖f‖ before normalization; raw f = Loading·LoadingNorm
 	ReconNorm      float64   // ‖Tᵀf‖ before normalization
 	ResidualNorm   float64   // ‖e − Tᵀf‖ before normalization
 	R2             float64   // 1 − ‖residual‖²/‖e‖² (honest; may be < 0)
@@ -63,6 +102,28 @@ type RidgeDecomposition struct {
 	AggregateR2    float64
 }
 
+// WithoutReconstructions returns a shallow copy of the decomposition with every
+// per-issue Reconstruction dropped (set nil). The reconstruction (Tᵀf, D
+// floats/issue) is the largest per-issue vector and is only read by the
+// non-default RidgeReconSpace blend and the per-request debug endpoint; the
+// revision-keyed corpus cache (internal/ridgedecomp) stores this trimmed form
+// so a 10k-issue corpus keeps loading+residual (~K+D floats/issue) rather than
+// loading+recon+residual (~K+2D). RidgeBlend in RidgeTagSpace mode — the
+// shipped ranking default — never reads Reconstruction, so cached ranking is
+// unaffected.
+func (d RidgeDecomposition) WithoutReconstructions() RidgeDecomposition {
+	if !d.used {
+		return d
+	}
+	out := d
+	out.vecs = make([]RidgeVectors, len(d.vecs))
+	copy(out.vecs, d.vecs)
+	for i := range out.vecs {
+		out.vecs[i].Reconstruction = nil
+	}
+	return out
+}
+
 // VectorsFor returns the stored decomposition for an issue.
 func (d RidgeDecomposition) VectorsFor(id string) (RidgeVectors, bool) {
 	if !d.used {
@@ -86,6 +147,37 @@ func (d RidgeDecomposition) AllR2(fn func(id string, r2 float64)) {
 	for id, i := range d.index {
 		fn(id, d.vecs[i].R2)
 	}
+}
+
+// CorpusRidgeDecomposition bundles a full-corpus ridge decomposition with the
+// tag space and centering it was solved in, so an external embedding (a search
+// query or a person profile) can be decomposed into the *same* tag-space basis
+// before blending against the cached per-issue vectors. Search, explore, and
+// people receive this from the revision-keyed decomposition cache
+// (internal/ridgedecomp) and use it instead of recomputing the solve per
+// request.
+//
+// TagEmbeddings are already corpus-mean centered — the same space
+// Decomposition's per-issue vectors live in. Means is exposed so callers that
+// hold an uncentered external embedding (the person path) can center it
+// consistently before decomposing.
+type CorpusRidgeDecomposition struct {
+	Decomposition  RidgeDecomposition
+	TagNames       []string
+	TagEmbeddings  map[string][]float64
+	Means          CorpusMeans
+	LambdaScored   float64
+	LambdaUnscored float64
+}
+
+// Decomposed reports whether the bundle carries a usable decomposition.
+func (c CorpusRidgeDecomposition) Decomposed() bool { return c.Decomposition.Decomposed() }
+
+// DecomposeQuery decomposes an external, already-centered embedding into the
+// cached tag-space basis, so its loading/residual are comparable with the
+// cached per-issue vectors via RidgeBlend.
+func (c CorpusRidgeDecomposition) DecomposeQuery(embedding []float64, tagScores []issues.TagRelevance) RidgeVectors {
+	return DecomposeRidgeEmbedding(embedding, tagScores, c.TagNames, c.TagEmbeddings, c.LambdaScored, c.LambdaUnscored)
 }
 
 // ComputeRidgeDecomposition runs the anchored ridge solve over a corpus.
@@ -229,42 +321,67 @@ func factorZero(v RidgeVectors, mode RidgeSimilarityMode) bool {
 // (O(K²·D)) dwarfs the per-issue Cholesky solve. The per-issue arithmetic is
 // the same gonum operations on the same operands as the standalone
 // ComputeRidgeScoresDiagonal, so the loadings are bit-for-bit identical.
+//
+// A ridgeSolver is NOT safe for concurrent use: solve mutates shared scratch
+// buffers (symA, projection, rhs, f, out and the Cholesky factor) in place.
+// Each ComputeRidgeDecomposition / DecomposeRidgeEmbedding call constructs its
+// own solver, so the invariant is "one solver, one goroutine". The
+// revision-keyed decomposition cache (internal/ridgedecomp) relies on this: its
+// compute runs under a single-flight mutex, so exactly one solver is ever live
+// per corpus revision.
+//
+// The per-issue solve is Cholesky (A = T Tᵀ + Λ is SPD), the same factorization
+// SelectRidgeLambdaGCV uses to pick λ — so ranking and λ-selection share one
+// numerical path. A defensive LU fallback (recordRidgeCholeskyFallback) covers
+// the pathological case where A is not numerically SPD; it never fires on a
+// healthy corpus (Λ floor 0.05 > 0).
 type ridgeSolver struct {
 	tagMatrix [][]float64
 	dim       int
 	tagCount  int
 
-	tMat     *mat.Dense
-	baseGram *mat.Dense
+	tMat    *mat.Dense
+	baseSym *mat.SymDense
 
-	// Scratch reused across solve calls. gram holds baseGram plus the
-	// per-issue diagonal penalty; out holds the latest loadings and is
-	// overwritten on the next solve, so callers that retain it must copy.
-	gram       mat.Dense
+	// Scratch reused across solve calls. symA holds baseSym plus the per-issue
+	// diagonal penalty and is factorized in place by chol; out holds the latest
+	// loadings and is overwritten on the next solve, so callers that retain it
+	// must copy.
+	symA       *mat.SymDense
+	chol       mat.Cholesky
 	projection mat.VecDense
 	rhs        *mat.VecDense
 	f          mat.VecDense
 	out        []float64
 }
 
-// newRidgeSolver precomputes T and T Tᵀ. Every row of tagMatrix must already
-// be dim-length (ridgeTagMatrix guarantees this); zero rows for missing tag
-// embeddings are fine and contribute nothing to the gram.
+// newRidgeSolver precomputes T and the symmetric base gram T Tᵀ. Every row of
+// tagMatrix must already be dim-length (ridgeTagMatrix guarantees this); zero
+// rows for missing tag embeddings are fine and contribute nothing to the gram.
 func newRidgeSolver(tagMatrix [][]float64, dim int) *ridgeSolver {
 	tagCount := len(tagMatrix)
 	tMat := mat.NewDense(tagCount, dim, nil)
 	for i, vec := range tagMatrix {
 		tMat.SetRow(i, vec)
 	}
+	// baseSym = T Tᵀ. Built from the dense product's upper triangle so its
+	// values are bit-identical to the prior LU path's gram; only the solve
+	// factorization changes (LU → Cholesky).
 	var baseGram mat.Dense
 	baseGram.Mul(tMat, tMat.T())
+	baseSym := mat.NewSymDense(tagCount, nil)
+	for i := range tagCount {
+		for j := i; j < tagCount; j++ {
+			baseSym.SetSym(i, j, baseGram.At(i, j))
+		}
+	}
 	return &ridgeSolver{
 		tagMatrix: tagMatrix,
 		dim:       dim,
 		tagCount:  tagCount,
 		tMat:      tMat,
-		baseGram:  &baseGram,
-		gram:      *mat.NewDense(tagCount, tagCount, nil),
+		baseSym:   baseSym,
+		symA:      mat.NewSymDense(tagCount, nil),
 		rhs:       mat.NewVecDense(tagCount, nil),
 		out:       make([]float64, tagCount),
 	}
@@ -279,9 +396,9 @@ func (s *ridgeSolver) solve(e, anchor, lambdas []float64) []float64 {
 	}
 
 	// A = T Tᵀ + Λ (copy the shared base gram, then add the per-issue diagonal).
-	s.gram.Copy(s.baseGram)
+	s.symA.CopySym(s.baseSym)
 	for i := range s.tagCount {
-		s.gram.Set(i, i, s.gram.At(i, i)+lambdas[i])
+		s.symA.SetSym(i, i, s.symA.At(i, i)+lambdas[i])
 	}
 
 	// projection = T e.
@@ -293,9 +410,20 @@ func (s *ridgeSolver) solve(e, anchor, lambdas []float64) []float64 {
 		s.rhs.SetVec(i, s.projection.AtVec(i)+lambdas[i]*anchor[i])
 	}
 
-	if err := s.f.SolveVec(&s.gram, s.rhs); err != nil {
-		return nil
+	// Primary: Cholesky (A is SPD), matching the GCV λ-selection path. The
+	// unfactorized symA is preserved through Factorize, so it is reused as the
+	// LU operand when Cholesky reports A is not numerically SPD.
+	if s.chol.Factorize(s.symA) {
+		if err := s.chol.SolveVecTo(&s.f, s.rhs); err != nil {
+			return nil
+		}
+	} else {
+		recordRidgeCholeskyFallback()
+		if err := s.f.SolveVec(s.symA, s.rhs); err != nil {
+			return nil
+		}
 	}
+
 	for i := range s.tagCount {
 		s.out[i] = s.f.AtVec(i)
 	}
@@ -336,6 +464,13 @@ func ridgeVectorsFor(
 	}
 
 	loading := append([]float64(nil), f...)
+	// ‖f‖ is captured before unit-normalization so the raw magnitude survives:
+	// raw f = Loading·LoadingNorm. The ranker only ever compares the unit
+	// Loading (cosine), so this field is purely additive — it does not touch any
+	// ranking path — but the theme NMF (internal/themes) needs the raw f
+	// magnitudes: an issue with a stronger tag geometry must contribute more mass
+	// to V = max(0, f), which unit loadings would flatten.
+	loadingNorm := math.Sqrt(dotProduct(loading, loading))
 	vectors.NormalizeUnit(loading)
 	vectors.NormalizeUnit(recon)
 	if !vectors.IsZero(residual) {
@@ -346,6 +481,7 @@ func ridgeVectorsFor(
 		Loading:        loading,
 		Reconstruction: recon,
 		Residual:       residual,
+		LoadingNorm:    loadingNorm,
 		ReconNorm:      reconNorm,
 		ResidualNorm:   residualNorm,
 		R2:             r2,
