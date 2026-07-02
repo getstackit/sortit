@@ -73,9 +73,11 @@ func TestRidgeShadowComparison(t *testing.T) {
 	storeTags := corpus.StoreTags()
 	tagNames := corpus.TagNames()
 
-	// Mirror the runtime corpus-load boundary: center issue and tag
-	// embeddings against the corpus means before decomposing.
-	issueEmb, tagEmb, means := issuemath.CenterEmbeddings(corpus.IssueEmbeddings(), corpus.TagEmbeddings())
+	// Center and select λ via the shared helper — the same path the golden
+	// ridge baseline (TestMathEval) is guarded on. That baseline, not this
+	// log-only harness, is the source of truth for the shipped numbers; this
+	// test stays for its similarity-shape and fixed-λ overfit sweeps.
+	issueEmb, tagEmb, means, gcvLambda := ridgeGCVFixture(t, corpus, storeIssues)
 
 	// Rank-1 model.
 	fdecomp := issuemath.ComputeFactorDecomposition(storeIssues, tagNames, issueEmb, tagEmb)
@@ -93,11 +95,6 @@ func TestRidgeShadowComparison(t *testing.T) {
 
 	// Ridge model at the GCV-selected unscored penalty — derived from the
 	// data, not hardcoded.
-	gcvLambda, ok := issuemath.SelectRidgeLambdaGCV(storeIssues, tagNames, issueEmb, tagEmb,
-		scoring.RidgeAnchorLambdaScored, nil)
-	if !ok {
-		t.Fatal("GCV λ selection fell back; corpus should be large enough")
-	}
 	gcvDecomp := issuemath.ComputeRidgeDecomposition(storeIssues, tagNames, issueEmb, tagEmb,
 		scoring.RidgeAnchorLambdaScored, gcvLambda)
 

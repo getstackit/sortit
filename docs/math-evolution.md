@@ -384,23 +384,30 @@ dim 24, NDCG@8 / Recall@8.
 | Measurement | NDCG@8 | Recall@8 | Where |
 |---|---|---|---|
 | Pre-centering baseline | 0.823 | 0.855 | whitepaper §2.0 |
-| Rank-1, centered (committed golden baseline) | 0.8645 | 0.9117 | `matheval/testdata/baseline.json` |
-| Rank-1, similarity-only (shadow harness) | 0.874 | 0.928 | `ridge_shadow_test.go` |
-| Ridge, fixed λ_unscored = 0.05 (overfit, R² ~0.90) | 0.867 | — | shadow harness — *regression* |
-| Ridge, GCV λ_unscored ≈ 3.0 (R² ~0.80), tag-space | **0.933** | **0.964** | shadow harness |
-| Full-path A/B (ridge vs rank-1 through the whole pipeline) | +0.065 | +0.047 | one logged shadow run — recorded nowhere in code |
+| Rank-1, centered (committed golden baseline) | 0.8658 | 0.9117 | `matheval/testdata/baseline.json` → `rank1` |
+| Ridge, GCV λ_unscored = 3.0, tag-space (committed golden baseline) | **0.9309** | **0.9586** | `matheval/testdata/baseline.json` → `ridge` |
+| Full-path A/B (ridge vs rank-1 through the whole pipeline) | +0.0651 | +0.0469 | both baseline rows above, asserted every run |
+| Rank-1, similarity-only (historical shadow run) | 0.874 | 0.928 | `ridge_shadow_test.go` |
+| Ridge, fixed λ_unscored = 0.05 (overfit, R² ~0.90) (historical shadow run) | 0.867 | — | shadow harness — *regression* |
+| Ridge, GCV λ_unscored ≈ 3.0 (R² ~0.80), tag-space (historical shadow run) | 0.933 | 0.964 | shadow harness |
 
 Honest caveats, all of which are Track D work:
 
-1. **The committed golden baseline still guards the rank-1 path.** The default
-   flip lives in the API layer (the handler injects `WithRidgeSimilarity` from
-   the λ cache); the matheval golden run calls `SearchFromQueryWithTags` with
-   no options — so the numbers that gate regressions are rank-1 numbers, and
-   **the shipped production default has no regression guard.**
-2. **The shadow numbers are documentation, not assertions.** The ridge shadow
-   comparison is opt-in (`-ridge` flag) and log-only, and the full-path A/B
-   deltas are not written down anywhere in the harness — they survive only as
-   a run log cited in this document. WP-101 re-runs and pins them.
+1. **Both similarity paths are now under the golden baseline.** WP-101 grew
+   `matheval/testdata/baseline.json` from one entry to two — `rank1` (search
+   with no options, the fallback path) and `ridge` (the shipped default: the
+   eval injects `WithRidgeSimilarity` at the GCV-selected λ, mirroring the API
+   layer's `ridgelambda.Cache` injection). Both are asserted on every ordinary
+   `go test` run with no opt-in flag, so a change that regresses the production
+   ridge blend fails CI. The GCV λ is re-derived each run and recorded for
+   observability only (`ridge.gcvLambdaUnscored`); it is never hardcoded in the
+   assertions, so a grid or GCV change surfaces as a metric delta, not silent
+   drift.
+2. **The full-path A/B deltas are now pinned, not a run log.** The ridge shadow
+   comparison (`ridge_shadow_test.go`, opt-in `-ridge`) survives for its
+   similarity-shape and fixed-λ overfit sweeps, but the numbers that gate
+   regressions are the two committed baseline rows above, not its log output —
+   both derive λ through the same `ridgeGCVFixture` helper.
 3. **The fixture corpus structurally favors the tag story.** Its embeddings are
    generated as relevance-weighted tag sums plus anisotropy plus noise — so the
    ridge win over rank-1 on fixtures is a floor argument, not proof on real

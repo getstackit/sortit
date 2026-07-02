@@ -75,6 +75,15 @@ Baseline file grows from one entry to a keyed structure, e.g.
 tamper test: perturb `RidgeAnchorLambdaScored` locally and confirm the ridge
 baseline fails while rank-1 passes. `mise run check` before submit.
 
+### Outcome (shipped)
+
+Both paths guarded on every test run. Measured: rank1 0.8658/0.9117 (the old
+0.8645 was stale-within-tolerance), ridge **0.9309/0.9586** at grid-stable
+GCV λ=3.0 — full-path delta +0.0651/+0.0469, matching the historical shadow
+run. Tamper finding: λ_scored 0.5→0.8 *improves* ranking and passes; the
+guard was proven at λ_scored=3.0 (ridge fails on factorWeight/R² drift, rank1
+green). Determinism held across runs; the pin-λ fallback was not needed.
+
 ### Acceptance criteria
 
 - A change that regresses the ridge blend fails CI without any opt-in flag.
