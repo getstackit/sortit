@@ -76,7 +76,7 @@ debug tier and gates WP-501.
 |---|---|---|---|---|
 | WP-301 | Real-embedding fixture | M | — | shipped (in stack) |
 | WP-302 | Explore and person-recommendation eval coverage | M | — | shipped (in stack) |
-| WP-303 | Map-projection quality metric | M | — | todo |
+| WP-303 | Map-projection quality metric | M | — | shipped (in stack) — neighborhood/silhouette/stability baselined; real-embedding overlap 0.33–0.40 is the layout ceiling Stage 5 must beat |
 | WP-304 | Ridge default re-examination on real geometry | M | WP-301 | shipped (in stack) — verdict: ranking default switched to **uncentered** tag-space ridge |
 
 Stage 3 can interleave with Stage 2 — it shares no code with it. WP-303 gates

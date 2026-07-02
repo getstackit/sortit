@@ -124,5 +124,28 @@
         "recall@8": 0.428
       }
     }
+  },
+  "map": {
+    "issues": 48,
+    "neighborhood": {
+      "groundTruthDomain": {
+        "k5": 0.4429,
+        "k10": 0.3262
+      },
+      "embeddingSynthetic": {
+        "k5": 0.4667,
+        "k10": 0.4979
+      },
+      "embeddingReal": {
+        "k5": 0.3333,
+        "k10": 0.4021
+      }
+    },
+    "silhouette": 0.0622,
+    "stability": {
+      "steps": 12,
+      "meanDisplacement": 0.0364,
+      "p95Displacement": 0.1278
+    }
   }
 }

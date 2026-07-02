@@ -38,6 +38,11 @@ const (
 type Baseline struct {
 	Synthetic FixtureBaseline `json:"synthetic"`
 	Real      FixtureBaseline `json:"real"`
+	// Map is the map-projection quality baseline (WP-303). Unlike the ranking
+	// surfaces it is not per-fixture: the layout is a single artifact computed
+	// once over the synthetic geometry, and only its two embedding-reference
+	// neighborhood rows depend on a fixture. See projection_eval_test.go.
+	Map MapBaseline `json:"map"`
 }
 
 // FixtureBaseline guards every surface on one fixture. The top-level `rank1`
@@ -91,10 +96,12 @@ func TestMathEval(t *testing.T) {
 	got := Baseline{
 		Synthetic: computeFixtureMetrics(t, syntheticCorpus),
 		Real:      computeFixtureMetrics(t, realCorpus),
+		Map:       computeMapMetrics(t, syntheticCorpus, realCorpus),
 	}
 
 	logFixture(t, "synthetic", got.Synthetic)
 	logFixture(t, "real", got.Real)
+	logMap(t, got.Map)
 
 	if *update {
 		data, err := json.MarshalIndent(got, "", "  ")
@@ -119,6 +126,7 @@ func TestMathEval(t *testing.T) {
 
 	assertFixture(t, "synthetic", got.Synthetic, want.Synthetic)
 	assertFixture(t, "real", got.Real, want.Real)
+	assertMap(t, got.Map, want.Map)
 }
 
 // loadFixtures loads the synthetic corpus and, overlaid on it, the real-model

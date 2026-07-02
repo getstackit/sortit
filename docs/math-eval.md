@@ -166,6 +166,53 @@ data-driven weight (0.62 plus the per-query tag-correlation nudge) sits in
 that plateau, slightly above the best fixed override. Sweeps are reports,
 not gates — they never fail on metric values.
 
+## Map projection: neighborhood, silhouette, stability (WP-303)
+
+The map has its own baseline, under the top-level `map` key in
+`baseline.json`, asserted on every ordinary run. It scores the current
+production projection (`issuemath.ComputePositionsAligned` — PCA over the
+issue-tag relevance matrix X smeared by the centered tag covariance Σ, then
+Procrustes-aligned and IQR-normalized into the `[0.05, 0.95]` square). The
+projection reads issue-**tag relevance**, never the embedding, so these are
+the map's honest scores, not a semantic layout's.
+
+The layout is a single artifact: it is computed **once** over the synthetic
+fixture's tag geometry, so every map metric is fixture-independent **except**
+the two embedding-reference neighborhood rows, which hold the same layout fixed
+and change only the reference space (synthetic 24-d vs real 1536-d). Three
+deliberately-separate measurements (`projection_metrics.go`), so a successor
+projection (Stage 5 replaces the input with theme weights) can be argued
+against each individually rather than by one flattering aggregate:
+
+- **Neighborhood preservation** — for k ∈ {5, 10}, how much each issue's
+  k nearest neighbors in the 2-D layout overlap its k nearest in a reference
+  space. Two references, reported separately: (a) **centered embedding cosine**
+  (whitepaper §2.0 — the geometry the similarity math uses), on **both**
+  fixtures (the tag layout is unchanged; only the reference neighbors move);
+  (b) **ground-truth domain purity** — the fraction of layout-kNN sharing the
+  issue's primary generator region. *Failure smell:* a drop means the layout
+  scatters issues that belong together. The real-embedding row is low by
+  design (0.33–0.40) — a tag-relevance layout cannot resolve what the 16 tags
+  do not encode; watch it for *regression*, not for its absolute value.
+- **Cluster legibility** — the mean silhouette of the ground-truth domains
+  under 2-D Euclidean distance (mirrors `internal/map/cluster.go`'s
+  `silhouetteScore`, generalized to string labels). +1 is clean separation,
+  ≤ 0 means the regions are collapsed or interleaved. *Failure smell:* it goes
+  negative when domains that should occupy distinct areas overlap in the plane.
+- **Refresh stability** — a deterministic 12-step mutation sequence (add a
+  cloned issue, tweak a tag score, remove the newest) recomputes the layout
+  each step **with the production Procrustes alignment** against the previous
+  layout, and reports the mean and p95 per-issue displacement (in layout
+  units) of surviving issues. Lower is better; this is the continuity users
+  actually feel. *Failure smell:* a jump means a small corpus edit now
+  reshuffles the whole map — the property most worth protecting when the
+  projection's input changes.
+
+Pass/fail: the three quality metrics use `assertNoRegression` (fail on a drop
+> 0.005 below baseline); the two stability numbers use `assertNoIncrease`
+(fail on a rise > 0.01 above baseline, ~1% of the map span). Re-record with
+`-update` after an intentional projection change and explain the movement.
+
 ## What this harness does not cover
 
 - A real *corpus*: the `real` fixture (WP-301) covers real embedding geometry

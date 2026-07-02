@@ -409,3 +409,57 @@ Metric choice can bake in the current projection's biases (it was tuned by
 eyeball on these fixtures). Mitigate by keeping the three measurements
 separate rather than collapsing to one score — Stage 5 argues against each
 individually.
+
+### Outcome (shipped 2026-07-02) — map baselined; the tag layout is honestly modest
+
+All three metrics ship as pure functions in `internal/matheval`
+(`projection_metrics.go`), unit-tested on hand-built configs (perfect grid →
+overlap 1, shuffled → chance, collapsed → silhouette ≤ 0, interleaved →
+silhouette < 0, zero-mutation → displacement 0). A new top-level `map` key in
+`testdata/baseline.json` is asserted on every ordinary `go test
+./internal/matheval` run — quality metrics guarded against *regression*
+(`assertNoRegression`), stability displacement against *increase*
+(`assertNoIncrease`). The layout is a single artifact computed once over the
+synthetic fixture's tag geometry (`ComputePositionsAligned`, PCA over tag
+relevance X smeared by the centered tag covariance Σ); only the two
+embedding-reference rows change with the fixture. Positions math is untouched
+(`git diff internal/issuemath` empty) — this WP only measures.
+
+| Metric | k=5 | k=10 | Reads as |
+|---|---|---|---|
+| Neighborhood — ground-truth domain purity | 0.4429 | 0.3262 | ~40% of a layout neighbour shares the issue's generator region |
+| Neighborhood — embedding overlap, **synthetic** (24-d, centered cosine) | 0.4667 | 0.4979 | half the tag-layout neighbours are also embedding neighbours |
+| Neighborhood — embedding overlap, **real** (1536-d, centered cosine) | 0.3333 | 0.4021 | the honest ceiling of a tag-based layout on real geometry |
+
+| Metric | Value | Reads as |
+|---|---|---|
+| Cluster legibility — silhouette of ground-truth domains | 0.0622 | weakly positive: regions lean apart but overlap heavily in 2-D |
+| Refresh stability — mean per-issue displacement / 12 steps | 0.0364 | surviving issues move ~4% of the map's span under corpus churn |
+| Refresh stability — p95 per-issue displacement | 0.1278 | the worst-moved 5% shift ~13% of the span |
+
+**Reading the numbers.** The layout is a *legible sketch, not a faithful
+embedding view.* Against real 1536-d geometry the neighborhood overlap is only
+0.33–0.40 — a third to two-fifths of what a semantic layout would preserve —
+which is exactly the ceiling the design predicts: the projection sees
+issue-tag relevance (16 tags), never the embedding, so it cannot resolve
+distinctions the tags do not encode. That is the number Stage 5 must beat, and
+0.33/0.40 leaves clear room. The synthetic overlap is higher (0.47–0.50)
+because the synthetic embeddings are *built from* the same tags the layout
+consumes — the gap between the synthetic and real rows is itself the tag
+model's information loss, made visible. Domain purity (0.44/0.33) confirms the
+map keeps same-region issues loosely together but not tightly, and the
+near-zero silhouette (0.06) says the ground-truth regions are separable but far
+from cleanly clustered in 2-D — a legibility ceiling a theme-weight input
+(Stage 5) is meant to raise. Stability is the current projection's strength:
+the Procrustes chain holds mean displacement to ~0.036 with a p95 of ~0.128
+under add/tweak/remove churn, so the continuity users feel is real — and it is
+now the guard that keeps any successor honest about it.
+
+**What shipped:** `internal/matheval/projection_metrics.go` (metrics +
+`meanAndP95`); `projection_metrics_test.go` (nine unit tests);
+`projection_eval_test.go` (the runner, the 12-step mutation sequence, the
+`MapBaseline` shape, and assertions, wired into `TestMathEval`); the `map`
+section of `testdata/baseline.json`; docs (`math-eval.md` map section, this
+Outcome, the README row). The silhouette mirrors
+`internal/map/cluster.go`'s `silhouetteScore`, generalized from integer
+k-means indices to string ground-truth labels.
