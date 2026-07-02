@@ -48,8 +48,13 @@ func NewAnalyzerFromEnv() (*Analyzer, error) {
 		if err != nil {
 			return nil, err
 		}
+		labeler, err := NewOpenAIThemeLabeler(cfg)
+		if err != nil {
+			return nil, err
+		}
 		analyzer := NewAnalyzerWithCanonicalizer(tagger, embedder, canonicalizer)
 		analyzer.SetConceptProfiler(profiler)
+		analyzer.SetThemeLabeler(labeler)
 		return analyzer, nil
 	default:
 		return nil, fmt.Errorf("unsupported AI_PROVIDER %q", provider)

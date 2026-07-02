@@ -293,6 +293,20 @@ Every theme in the debug API carries a name; names survive refreshes and
 restarts (if the table was built) or the deferral is documented; LLM-off path
 tested.
 
+### Outcome (shipped)
+
+`ThemeLabeler` in `internal/ai` (OpenAI + deterministic stub top-tag join),
+bridged into `internal/themes` via a local `Labeler` interface with the
+frame-assembling adapter at the composition root — themes stays decoupled
+from `internal/ai`. Lifecycle: fallback label attached synchronously on mint,
+LLM name arrives via a background job (mutex never held across the call;
+generation-stale writebacks discarded); relabel below top-tag cosine 0.5
+(`themeRelabelThreshold`, deliberately under the 0.6 identity threshold) with
+`previousLabel` retained. **Persistence deferred**: in-memory store, restart
+relabels, table lands with the Stage-4 identity persistence. Relabel decision
+tested as a pure function (the 0.5–0.6 band is too narrow for a robust NMF
+fixture).
+
 ---
 
 ## WP-206 — NMF convergence, K, and quality telemetry

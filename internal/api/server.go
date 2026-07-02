@@ -711,6 +711,7 @@ func NewServer(cfg ServerConfig) *Server {
 		Decomp:    ridgeDecompCache,
 		Store:     store,
 		Revisions: revisions,
+		Labeler:   newThemeLabeler(cfg.Analyzer, store, logger),
 	}
 	var customRegionStore regions.CustomRegionStore = store
 	var customRegionWriter regions.CustomRegionWriter = store

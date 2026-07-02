@@ -95,6 +95,14 @@ type Result struct {
 	// to keep showing a retired theme; the cache stops tracking it. WP-206
 	// telemetry input.
 	RetiredIDs []string
+
+	// Labels carries the WP-205 human name/description for each theme,
+	// index-aligned with Themes (Labels[i] labels Themes[i]) like Identities.
+	// A newly minted or relabeled theme carries the deterministic top-tag
+	// fallback (e.g. "mobile / ui") immediately; when a Labeler is configured the
+	// LLM name swaps in asynchronously (never blocking compute — see the Cache
+	// doc). Empty when no theme has a stable ID.
+	Labels []ThemeLabel
 }
 
 // Cache memoizes the corpus theme factorization by revision and carries theme
@@ -121,6 +129,12 @@ type Cache struct {
 	// cache always recomputes.
 	Revisions RevisionSource
 
+	// Labeler names and describes themes via an LLM. Optional — when nil every
+	// theme keeps its deterministic top-tag fallback label and no background work
+	// is spawned. When set, minted/relabeled themes are labeled asynchronously so
+	// labeling never blocks or delays Current (see labeling.go).
+	Labeler Labeler
+
 	mu           sync.Mutex
 	revision     uint64
 	result       Result
@@ -133,6 +147,20 @@ type Cache struct {
 	// survive small corpus mutations; reset only by constructing a new Cache
 	// (process restart). Mutated only inside compute, under mu.
 	identity identityState
+
+	// labels is the in-memory theme-label store keyed by stable theme ID (see
+	// labeling.go). Like identity it is in-memory only, so a process restart
+	// relabels — acceptable and documented at the debug tier; the durable
+	// theme_labels table lands with Stage-4 identity persistence. Mutated under mu
+	// (from compute, and from the async label writeback).
+	labels themeLabelStore
+	// labelInFlight guards against launching a duplicate labeling job for a stable
+	// ID whose current label generation is already being computed; keyed by ID,
+	// valued by the label generation in flight. Guarded by mu.
+	labelInFlight map[string]int
+	// labelWG tracks outstanding async label jobs so tests can wait for them (and
+	// prove no goroutine leaks); production never waits.
+	labelWG sync.WaitGroup
 }
 
 // Current returns the theme factorization at the current revision, recomputing
@@ -205,6 +233,7 @@ func (c *Cache) compute(ctx context.Context, rev uint64) (Result, bool, error) {
 		Means:               decomp.Means,
 	}
 	c.identify(&result)
+	c.label(&result, items)
 	return result, true, nil
 }
 

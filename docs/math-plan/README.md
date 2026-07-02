@@ -60,7 +60,7 @@ work top-to-bottom unless a WP's dependency note says otherwise.
 | WP-202 | Revision-keyed theme cache | S | WP-201 | merged (PR #206) |
 | WP-203 | Theme identity stability across refreshes | M | WP-202 | shipped (in stack) |
 | WP-204 | Themes debug API | S | WP-203 | shipped (in stack) |
-| WP-205 | Theme labeling | S–M | WP-204 | todo |
+| WP-205 | Theme labeling | S–M | WP-204 | shipped (in stack) |
 | WP-206 | NMF convergence, K, and quality telemetry | S–M | WP-202 | todo |
 
 ### Stage 3 — Evaluation expansion ([30-stage-3-eval.md](./30-stage-3-eval.md))

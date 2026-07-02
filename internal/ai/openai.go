@@ -54,6 +54,11 @@ type OpenAIConceptProfiler struct {
 	model  string
 }
 
+type OpenAIThemeLabeler struct {
+	client *openAIClient
+	model  string
+}
+
 type OpenAIEmbedder struct {
 	client         *openAIClient
 	model          string
@@ -141,6 +146,17 @@ func NewOpenAIConceptProfiler(cfg OpenAIConfig) (*OpenAIConceptProfiler, error) 
 		return nil, err
 	}
 	return &OpenAIConceptProfiler{
+		client: client,
+		model:  withDefault(strings.TrimSpace(cfg.CanonicalModel), defaultOpenAICanonicalModel),
+	}, nil
+}
+
+func NewOpenAIThemeLabeler(cfg OpenAIConfig) (*OpenAIThemeLabeler, error) {
+	client, err := newOpenAIClient(cfg)
+	if err != nil {
+		return nil, err
+	}
+	return &OpenAIThemeLabeler{
 		client: client,
 		model:  withDefault(strings.TrimSpace(cfg.CanonicalModel), defaultOpenAICanonicalModel),
 	}, nil
@@ -668,6 +684,85 @@ func buildOpenAIClusterConceptSystemPrompt(frame ConceptFrame) string {
 		"name is a short, lowercase, reusable subject tag (1 to 3 words) naming the concrete subsystem, workflow, surface, or artifact the issues share — fit the project's existing vocabulary and naming style. " +
 		"Do not invent a synonym for an existing tag, a generic bucket (improvement, backend, ui, performance), or a restatement of issue type; name the specific missing noun. " +
 		"profile is concise plain prose: what the concept is, why it exists, and how it behaves, grounded in the example issues. No headings, no issue IDs."
+}
+
+type openAIThemeLabelResponse struct {
+	Name        string `json:"name"`
+	Description string `json:"description"`
+}
+
+// ProposeThemeLabel names and describes a corpus theme from its top tags (with
+// loadings) and a few centroid-nearest issue titles, primed by the project frame
+// so the name fits the project's vocabulary. It returns a short display name and
+// a one-sentence description as a JSON object.
+func (l *OpenAIThemeLabeler) ProposeThemeLabel(ctx context.Context, topTags []ThemeLabelTag, issueTitles []string, frame ConceptFrame) (string, string, error) {
+	request := openAIChatCompletionRequest{
+		Model:       l.model,
+		Temperature: 0,
+		ResponseFormat: &openAIResponseFormat{
+			Type: "json_object",
+		},
+		Messages: []openAIChatMessageRequest{
+			{
+				Role:    chatRoleSystem,
+				Content: buildOpenAIThemeLabelSystemPrompt(frame),
+			},
+			{
+				Role:    chatRoleUser,
+				Content: buildOpenAIThemeLabelPrompt(topTags, issueTitles),
+			},
+		},
+	}
+
+	var response openAIChatCompletionResponse
+	if err := l.client.doJSON(ctx, "/chat/completions", request, &response); err != nil {
+		return "", "", err
+	}
+	if len(response.Choices) == 0 {
+		return "", "", errors.New("openai returned no completion choices")
+	}
+
+	var payload openAIThemeLabelResponse
+	if err := json.Unmarshal([]byte(response.Choices[0].Message.Content), &payload); err != nil {
+		return "", "", fmt.Errorf("decode theme label response: %w", err)
+	}
+	return strings.TrimSpace(payload.Name), strings.TrimSpace(payload.Description), nil
+}
+
+func buildOpenAIThemeLabelSystemPrompt(frame ConceptFrame) string {
+	return conceptFramePreamble(frame) +
+		"A theme is a cluster of tags that co-occur across the corpus — a recurring area the issues orbit, surfaced by factorizing the tag model. " +
+		"Name and describe one theme from its heaviest tags and a few representative issue titles. " +
+		"Return a JSON object with two keys: name and description. " +
+		"name is a short human-readable display name of at most 4 words naming the area the theme covers — fit the project's existing vocabulary and naming style, and prefer a concrete area (a surface, workflow, subsystem, or domain) over a generic bucket. " +
+		"Do not restate the tag list verbatim, wrap the name in quotes, or use the word 'theme'. " +
+		"description is a single plain-prose sentence stating what the theme is about, grounded in the tags and example issues. No headings, no issue IDs."
+}
+
+func buildOpenAIThemeLabelPrompt(topTags []ThemeLabelTag, issueTitles []string) string {
+	var builder strings.Builder
+	builder.WriteString("Theme top tags (tag: loading, heaviest first):\n")
+	for _, tag := range topTags {
+		name := strings.TrimSpace(tag.Tag)
+		if name == "" {
+			continue
+		}
+		fmt.Fprintf(&builder, "- %s: %.3f\n", name, tag.Loading)
+	}
+	if len(issueTitles) > 0 {
+		builder.WriteString("\nRepresentative issues nearest the theme's centroid:\n")
+		for _, title := range issueTitles {
+			title = strings.TrimSpace(title)
+			if title == "" {
+				continue
+			}
+			builder.WriteString("- ")
+			builder.WriteString(title)
+			builder.WriteString("\n")
+		}
+	}
+	builder.WriteString("\nName and describe this theme.")
+	return strings.TrimSpace(builder.String())
 }
 
 func buildOpenAIClusterConceptPrompt(issueSummaries []string) string {

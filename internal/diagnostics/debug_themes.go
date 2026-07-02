@@ -38,6 +38,17 @@ type DebugThemeSummary struct {
 	// StableID is the WP-203 cross-refresh identity, not the NMF component
 	// index or display position.
 	StableID string `json:"stableId"`
+	// Label is the theme's human name (WP-205): an LLM name when the labeler has
+	// produced one, otherwise the deterministic top-tag fallback (e.g.
+	// "billing / payments"). Every theme always carries one.
+	Label string `json:"label,omitempty"`
+	// Description is the theme's one-sentence summary; empty until the LLM label
+	// lands (the fallback carries no description).
+	Description string `json:"description,omitempty"`
+	// PreviousLabel is the name this theme carried before its most recent
+	// relabel, surfaced so a consumer can show continuity; omitted when the
+	// theme has never relabeled.
+	PreviousLabel string `json:"previousLabel,omitempty"`
 	// Weight is this theme's share of total W mass across all themes this
 	// revision (sums to ~1 across the list response).
 	Weight float64         `json:"weight"`
@@ -154,12 +165,16 @@ func (h DebugThemesListHandler) Handle(ctx context.Context) (DebugThemesListResu
 	summaries := make([]DebugThemeSummary, len(res.Themes))
 	for i, theme := range res.Themes {
 		identity := identityAt(res.Identities, i)
+		label := labelAt(res.Labels, i)
 		summaries[i] = DebugThemeSummary{
-			StableID:   identity.StableID,
-			Weight:     round3(themeWeightShare(theme.Weight, totalWeight)),
-			Tags:       toDebugThemeTags(theme.Tags),
-			MatchScore: round3(identity.MatchScore),
-			Minted:     minted[identity.StableID],
+			StableID:      identity.StableID,
+			Label:         label.Label,
+			Description:   label.Description,
+			PreviousLabel: label.PreviousLabel,
+			Weight:        round3(themeWeightShare(theme.Weight, totalWeight)),
+			Tags:          toDebugThemeTags(theme.Tags),
+			MatchScore:    round3(identity.MatchScore),
+			Minted:        minted[identity.StableID],
 		}
 	}
 	sortDebugThemeSummaries(summaries)
@@ -207,6 +222,7 @@ func (h DebugThemeDetailHandler) Handle(ctx context.Context, stableID string) (D
 	}
 	theme := res.Themes[index]
 	identity := res.Identities[index]
+	label := labelAt(res.Labels, index)
 
 	minted := false
 	for _, id := range res.MintedIDs {
@@ -228,11 +244,14 @@ func (h DebugThemeDetailHandler) Handle(ctx context.Context, stableID string) (D
 	return DebugThemeDetailResult{
 		Computed: true,
 		DebugThemeSummary: DebugThemeSummary{
-			StableID:   identity.StableID,
-			Weight:     round3(themeWeightShare(theme.Weight, totalThemeWeight(res.Themes))),
-			Tags:       toDebugThemeTags(theme.Tags),
-			MatchScore: round3(identity.MatchScore),
-			Minted:     minted,
+			StableID:      identity.StableID,
+			Label:         label.Label,
+			Description:   label.Description,
+			PreviousLabel: label.PreviousLabel,
+			Weight:        round3(themeWeightShare(theme.Weight, totalThemeWeight(res.Themes))),
+			Tags:          toDebugThemeTags(theme.Tags),
+			MatchScore:    round3(identity.MatchScore),
+			Minted:        minted,
 		},
 		TagsNote:          "tags are issuethemes.Theme's top-5 H-row loadings, not the full row (issuethemes exports no more; see internal/themes/identity.go)",
 		CentroidTopIssues: centroidTopIssues(theme.Centroid, res.Means, storeIssues),
@@ -315,6 +334,13 @@ func identityAt(identities []themes.ThemeIdentity, i int) themes.ThemeIdentity {
 		return themes.ThemeIdentity{}
 	}
 	return identities[i]
+}
+
+func labelAt(labels []themes.ThemeLabel, i int) themes.ThemeLabel {
+	if i < 0 || i >= len(labels) {
+		return themes.ThemeLabel{}
+	}
+	return labels[i]
 }
 
 func totalThemeWeight(themeList []issuethemes.Theme) float64 {

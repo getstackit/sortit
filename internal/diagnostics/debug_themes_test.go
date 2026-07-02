@@ -134,6 +134,39 @@ func TestDebugThemesListShapeAndOrder(t *testing.T) {
 	}
 }
 
+// TestDebugThemesCarryLabels asserts the WP-205 acceptance criterion: every
+// theme in the debug API carries a name. With no Labeler wired the cache attaches
+// the deterministic top-tag fallback synchronously, so it is present on both the
+// list and detail responses.
+func TestDebugThemesCarryLabels(t *testing.T) {
+	ctx := context.Background()
+	fx := newDebugThemesFixture(t, debugThemesIssues(24))
+
+	list, err := (DebugThemesListHandler{Cache: fx.themes}).Handle(ctx)
+	if err != nil {
+		t.Fatalf("list handle: %v", err)
+	}
+	if len(list.Themes) == 0 {
+		t.Fatal("expected at least one theme")
+	}
+	for _, theme := range list.Themes {
+		if theme.Label == "" {
+			t.Fatalf("theme %s carries no label", theme.StableID)
+		}
+	}
+
+	detail, err := (DebugThemeDetailHandler{Cache: fx.themes, Store: fx.store}).Handle(ctx, list.Themes[0].StableID)
+	if err != nil {
+		t.Fatalf("detail handle: %v", err)
+	}
+	if detail.Label == "" {
+		t.Fatalf("detail for %s carries no label", detail.StableID)
+	}
+	if detail.Label != list.Themes[0].Label {
+		t.Fatalf("list/detail label mismatch: %q vs %q", list.Themes[0].Label, detail.Label)
+	}
+}
+
 func TestDebugThemesListDegradedWhenCacheNotOK(t *testing.T) {
 	ctx := context.Background()
 	// Below the theme participation floor (minThemeParticipants=16), so the
