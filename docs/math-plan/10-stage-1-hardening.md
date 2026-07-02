@@ -291,6 +291,14 @@ Candidate ranking is z-based with documented small-sample and low-variance
 guards; the curation detector's input ordering reflects it; constants named
 in `debug_tag_health.go` with the rationale.
 
+### Outcome (shipped)
+
+`TagDrift.ZDelta *float64` (nil under the guards: < 20 observations or
+std < 1e-6), second-pass standardization in `ComputeCorpusDrift`. Tag-health
+gates on raw floor AND |z| ≥ 2.0 when a z exists; z-scored candidates rank
+ahead of raw-only ones (the two scales aren't comparable). Curation consumed
+the new ordering with zero code change. Matheval baselines unmoved.
+
 ---
 
 ## WP-105 — GCV solver cost and factorization consistency
