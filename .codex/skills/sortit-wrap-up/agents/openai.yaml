@@ -1,0 +1,4 @@
+interface:
+  display_name: "Sortit Wrap Up"
+  short_description: "Run the end-of-turn Sortit checklist"
+  default_prompt: "Use $sortit-wrap-up to run the end-of-turn Sortit checklist."

@@ -1,0 +1,4 @@
+interface:
+  display_name: "Sortit Tags"
+  short_description: "Inspect the tag catalog"
+  default_prompt: "Use $sortit-tags to inspect the tag catalog."

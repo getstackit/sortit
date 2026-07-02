@@ -1,0 +1,4 @@
+interface:
+  display_name: "Sortit Progress"
+  short_description: "Log progress on issues"
+  default_prompt: "Use $sortit-progress to log progress on issues."

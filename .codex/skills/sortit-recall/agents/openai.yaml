@@ -1,0 +1,4 @@
+interface:
+  display_name: "Sortit Recall"
+  short_description: "Recall durable memories relevant to the task"
+  default_prompt: "Use $sortit-recall to recall durable memories relevant to the task."

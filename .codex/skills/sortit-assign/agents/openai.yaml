@@ -1,0 +1,4 @@
+interface:
+  display_name: "Sortit Assign"
+  short_description: "Assign or unassign issues"
+  default_prompt: "Use $sortit-assign to assign or unassign issues."

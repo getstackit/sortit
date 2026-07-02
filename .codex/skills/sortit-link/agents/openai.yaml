@@ -1,0 +1,4 @@
+interface:
+  display_name: "Sortit Link"
+  short_description: "Link two issues with a relationship"
+  default_prompt: "Use $sortit-link to link two issues with a relationship."
