@@ -36,14 +36,21 @@ explainable ranking signal.
 
 ## 2. The factor / residual decomposition
 
-> **Status (Phase 3c):** the similarity-ranked surfaces — issue **search**,
-> **explore** (related issues), and **person recommendations** — now default
-> to the full-rank anchored-ridge model described in
-> [math-evolution.md §5](./math-evolution.md#5-anchored-ridge-regression-f_i),
-> with its unscored-tag penalty selected per corpus by GCV
-> (`internal/ridgelambda`). The rank-1 decomposition documented in this
-> section remains the **fallback** on those surfaces (small corpora, or no
-> penalty available) and still backs the debug R²/factor-weight endpoints.
+> **Status (Phase 3c, re-decided by WP-304):** the similarity-ranked surfaces
+> — issue **search** (including unified search), **explore** (related issues),
+> and **person recommendations** — default to the full-rank anchored-ridge
+> model, ranked from the revision-cached full-corpus bundle
+> (`internal/ridgedecomp`) with the unscored-tag penalty selected per corpus
+> by GCV (`internal/ridgelambda`). Since WP-304 the ranking solve runs on
+> **uncentered** (unit-normalized, not mean-subtracted) inputs, with λ
+> selected on the same uncentered geometry: on real-embedding evidence the
+> centered tag-space ridge *lost* to the rank-1 fallback while the uncentered
+> one beats it on both fixtures (math-evolution §4, caveat 5). The centering
+> described in §2.0 still governs everything else — the rank-1 model, plain
+> semantic similarity, drift diagnostics, and themes, which keep their own
+> centered ridge cache. The rank-1 decomposition documented in this section
+> remains the **fallback** on the ranking surfaces (small corpora, or no
+> bundle available) and still backs the debug R²/factor-weight endpoints.
 > The 2-D **map projection** is unaffected — it is PCA on the tag-relevance
 > matrix (§3), not this embedding decomposition. The rank-1 model is
 > documented here because it is the foundation the ridge model refines and
@@ -673,12 +680,16 @@ and are part of the current system:
   (`internal/issuemath/ridgescore.go`) now backs search, explore, and
   person recommendations at the GCV-selected unscored-tag penalty
   (`internal/ridgelambda`, memoized by corpus revision), consistent with
-  the §2 status header and §10.2 item 1. Each surface computes the
-  decomposition fresh per request — it is not persisted anywhere. The
-  debug endpoint, `GET /api/v1/debug/issues/{id}/ridge`, remains and still
-  anchors on signed `r⁺ − r⁻` alongside a drift cosine between anchor and
-  refined scores; it now doubles as a way to inspect the same decomposition
-  ranking uses, rather than a preview of an unshipped path.
+  the §2 status header and §10.2 item 1. Since WP-304 the ranking solve
+  runs on **uncentered** inputs (the centered configuration lost to the
+  rank-1 fallback on real embedding geometry — math-evolution §4 caveat 5)
+  and is served from the revision-cached full-corpus bundle
+  (`internal/ridgedecomp` with `Uncentered: true`) rather than recomputed
+  per request; it is still never persisted. The debug endpoint,
+  `GET /api/v1/debug/issues/{id}/ridge`, remains and still anchors on
+  signed `r⁺ − r⁻` alongside a drift cosine between anchor and refined
+  scores — it inspects the centered per-request decomposition, the same
+  space the drift diagnostics and themes use.
 
 See math-evolution.md §10.1 for the full phase-by-phase status.
 

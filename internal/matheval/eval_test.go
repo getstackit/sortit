@@ -29,13 +29,32 @@ const (
 	r2Tolerance = 0.02
 )
 
-// Baseline is the golden metrics file. It guards both similarity models search
-// can run: the rank-1 fallback (no options) and the ridge tag-space default the
-// API layer injects via WithRidgeSimilarity. Regenerate after an intentional
-// math change with `go test ./internal/matheval -update`.
+// Baseline is the golden metrics file. It keys the metrics by fixture:
+// `synthetic` (embeddings synthesized from tag sums, the original harness) and
+// `real` (the same corpus/judgments re-embedded with the production
+// text-embedding-3-small model, WP-301). Every ordinary `go test` run asserts
+// both fixtures with no network, using the committed vectors. Regenerate after
+// an intentional math change with `go test ./internal/matheval -update`.
 type Baseline struct {
-	Rank1 PathMetrics `json:"rank1"`
-	Ridge PathMetrics `json:"ridge"`
+	Synthetic FixtureBaseline `json:"synthetic"`
+	Real      FixtureBaseline `json:"real"`
+	// Map is the map-projection quality baseline (WP-303). Unlike the ranking
+	// surfaces it is not per-fixture: the layout is a single artifact computed
+	// once over the synthetic geometry, and only its two embedding-reference
+	// neighborhood rows depend on a fixture. See projection_eval_test.go.
+	Map MapBaseline `json:"map"`
+}
+
+// FixtureBaseline guards every surface on one fixture. The top-level `rank1`
+// and `ridge` are the SEARCH path (rank-1 fallback and the UNCENTERED ridge
+// tag-space default injected via WithRidgeDecomposition, WP-304) with their
+// factor-model summaries. `explore` and `person` (WP-302) add the two derived
+// surfaces that share the ranking default, each on both models.
+type FixtureBaseline struct {
+	Rank1   PathMetrics     `json:"rank1"`
+	Ridge   PathMetrics     `json:"ridge"`
+	Explore SurfaceBaseline `json:"explore"`
+	Person  SurfaceBaseline `json:"person"`
 }
 
 // PathMetrics is one similarity model's golden numbers. GCVLambdaUnscored is
@@ -63,18 +82,26 @@ type FactorModelMetrics struct {
 }
 
 // TestMathEval is the offline evaluation harness (whitepaper §10.2, item 9).
-// It drives SearchFromQueryWithTags end-to-end over the fixture corpus for
-// every labeled query on both similarity models — the rank-1 fallback and the
-// ridge tag-space default (WithRidgeSimilarity at the GCV-selected penalty) —
-// summarizes per-issue R² for each, and compares both against the recorded
-// baseline. Run with -v to see the metrics; see docs/math-eval.md for
-// interpretation.
+// It drives SearchFromQueryWithTags end-to-end over both fixtures — `synthetic`
+// (tag-sum embeddings) and `real` (production text-embedding-3-small vectors
+// over the same texts, WP-301) — for every labeled query on both similarity
+// models — the rank-1 fallback and the UNCENTERED ridge tag-space default
+// (the WP-304 verdict: the full-corpus bundle via WithRidgeDecomposition at
+// the GCV penalty selected on uncentered inputs) — summarizes per-issue R² for
+// each, and compares all four entries against the recorded baseline. No
+// network: the real fixture uses committed vectors. Run with -v to see the
+// metrics; see docs/math-eval.md for interpretation.
 func TestMathEval(t *testing.T) {
-	got := computeMetrics(t)
+	syntheticCorpus, realCorpus := loadFixtures(t)
+	got := Baseline{
+		Synthetic: computeFixtureMetrics(t, syntheticCorpus),
+		Real:      computeFixtureMetrics(t, realCorpus),
+		Map:       computeMapMetrics(t, syntheticCorpus, realCorpus),
+	}
 
-	logPath(t, "rank1", got.Rank1)
-	logPath(t, "ridge", got.Ridge)
-	t.Logf("ridge GCV λ_unscored = %.4f", got.Ridge.GCVLambdaUnscored)
+	logFixture(t, "synthetic", got.Synthetic)
+	logFixture(t, "real", got.Real)
+	logMap(t, got.Map)
 
 	if *update {
 		data, err := json.MarshalIndent(got, "", "  ")
@@ -97,8 +124,72 @@ func TestMathEval(t *testing.T) {
 		t.Fatalf("parse %s: %v", baselinePath, err)
 	}
 
-	assertPath(t, "rank1", got.Rank1, want.Rank1)
-	assertPath(t, "ridge", got.Ridge, want.Ridge)
+	assertFixture(t, "synthetic", got.Synthetic, want.Synthetic)
+	assertFixture(t, "real", got.Real, want.Real)
+	assertMap(t, got.Map, want.Map)
+}
+
+// loadFixtures loads the synthetic corpus and, overlaid on it, the real-model
+// corpus (same texts/judgments, committed text-embedding-3-small vectors).
+func loadFixtures(t *testing.T) (synthetic, real Corpus) {
+	t.Helper()
+	synthetic, err := LoadCorpus(corpusPath)
+	if err != nil {
+		t.Fatalf("load corpus: %v", err)
+	}
+	re, err := LoadRealEmbeddings(realEmbeddingsPath)
+	if err != nil {
+		t.Fatalf("load real embeddings (run `go run ./internal/matheval/cmd/embedfixture` to regenerate): %v", err)
+	}
+	real, err = synthetic.RealCorpus(re)
+	if err != nil {
+		t.Fatalf("build real corpus: %v", err)
+	}
+	return synthetic, real
+}
+
+// logFixture prints one fixture's search, explore, and person metrics under -v.
+func logFixture(t *testing.T, fixture string, fb FixtureBaseline) {
+	t.Helper()
+	logPath(t, fixture+"/rank1", fb.Rank1)
+	logPath(t, fixture+"/ridge", fb.Ridge)
+	t.Logf("[%s] ridge GCV λ_unscored = %.4f", fixture, fb.Ridge.GCVLambdaUnscored)
+	logSurface(t, fixture+"/explore", fb.Explore)
+	logSurface(t, fixture+"/person", fb.Person)
+}
+
+// logSurface prints one derived surface's rank-1 and ridge ranking metrics.
+func logSurface(t *testing.T, name string, s SurfaceBaseline) {
+	t.Helper()
+	t.Logf("[%s] rank1: seeds=%d NDCG@%d=%.4f Recall@%d=%.4f", name, s.Rank1.Queries, evalK, s.Rank1.NDCG, evalK, s.Rank1.Recall)
+	t.Logf("[%s] ridge: seeds=%d NDCG@%d=%.4f Recall@%d=%.4f", name, s.Ridge.Queries, evalK, s.Ridge.NDCG, evalK, s.Ridge.Recall)
+	t.Logf("[%s] ridge − rank1: NDCG %+.4f Recall %+.4f", name, s.Ridge.NDCG-s.Rank1.NDCG, s.Ridge.Recall-s.Rank1.Recall)
+}
+
+// assertFixture asserts one fixture's search, explore, and person metrics
+// against baseline.
+func assertFixture(t *testing.T, fixture string, got, want FixtureBaseline) {
+	t.Helper()
+	assertPath(t, fixture+"/rank1", got.Rank1, want.Rank1)
+	assertPath(t, fixture+"/ridge", got.Ridge, want.Ridge)
+	assertSurface(t, fixture+"/explore", got.Explore, want.Explore)
+	assertSurface(t, fixture+"/person", got.Person, want.Person)
+}
+
+// assertSurface asserts one derived surface's rank-1 and ridge ranking metrics.
+func assertSurface(t *testing.T, name string, got, want SurfaceBaseline) {
+	t.Helper()
+	assertSurfacePath(t, name+"/rank1", got.Rank1, want.Rank1)
+	assertSurfacePath(t, name+"/ridge", got.Ridge, want.Ridge)
+}
+
+func assertSurfacePath(t *testing.T, name string, got, want SearchMetrics) {
+	t.Helper()
+	if got.Queries != want.Queries {
+		t.Errorf("[%s] fixture set changed: %d entries, baseline has %d — rerun with -update", name, got.Queries, want.Queries)
+	}
+	assertNoRegression(t, name+" NDCG@8", got.NDCG, want.NDCG)
+	assertNoRegression(t, name+" Recall@8", got.Recall, want.Recall)
 }
 
 // assertPath asserts one similarity model's metrics against its baseline entry.
@@ -154,12 +245,12 @@ func assertWithinDrift(t *testing.T, name string, got, want float64) {
 	}
 }
 
-func computeMetrics(t *testing.T) Baseline {
+// computeFixtureMetrics runs the full rank-1 and ridge-GCV evaluation over one
+// fixture corpus. Both fixtures share the same judgment set (judgments grade
+// query↔issue relevance, not vectors), so the real fixture reuses judgments.json
+// unchanged.
+func computeFixtureMetrics(t *testing.T, corpus Corpus) FixtureBaseline {
 	t.Helper()
-	corpus, err := LoadCorpus(corpusPath)
-	if err != nil {
-		t.Fatalf("load corpus: %v", err)
-	}
 	judgments, err := LoadJudgments(judgmentsPath, corpus)
 	if err != nil {
 		t.Fatalf("load judgments: %v", err)
@@ -172,29 +263,34 @@ func computeMetrics(t *testing.T) Baseline {
 	storeTags := corpus.StoreTags()
 	tagNames := corpus.TagNames()
 
-	// Center against the corpus means and select the ridge penalty by GCV, the
-	// same call shape ridgelambda.Cache.compute runs in production.
-	issueEmb, tagEmb, _, gcvLambda := ridgeGCVFixture(t, corpus, storeIssues)
-
 	// Rank-1 fallback path: search with no options, the model small or
-	// degenerate corpora still fall back to.
+	// degenerate corpora still fall back to. Its decomposition runs in the
+	// corpus-mean-centered space, unchanged by the WP-304 default switch.
+	issueEmb, tagEmb, _ := issuemath.CenterEmbeddings(corpus.IssueEmbeddings(), corpus.TagEmbeddings())
 	rank1NDCG, rank1Recall := rankingMetrics(t, corpus, judgments, storeIssues, storeTags)
 	rank1Decomp := issuemath.ComputeFactorDecomposition(storeIssues, tagNames, issueEmb, tagEmb)
 	if !rank1Decomp.Decomposed() {
 		t.Fatal("factor decomposition fell back to hardcoded weights; the corpus should always be large enough to decompose")
 	}
 
-	// Ridge default path: mirror the API layer injecting WithRidgeSimilarity at
-	// the GCV-selected penalty.
+	// Ridge default path (WP-304): the UNCENTERED tag-space bundle at the
+	// GCV penalty selected on the same uncentered inputs — mirroring the API
+	// layer's uncentered ridgedecomp cache injected via WithRidgeDecomposition.
+	// Everything else (semantic similarity, rank-1 centering) stays centered,
+	// exactly as production leaves it.
+	uncLambda, bundle := ridgeUncenteredFixture(t, corpus, storeIssues, storeTags)
 	ridgeNDCG, ridgeRecall := rankingMetrics(t, corpus, judgments, storeIssues, storeTags,
-		issuemap.WithRidgeSimilarity(gcvLambda))
-	ridgeDecomp := issuemath.ComputeRidgeDecomposition(storeIssues, tagNames, issueEmb, tagEmb,
-		scoring.RidgeAnchorLambdaScored, gcvLambda)
-	if !ridgeDecomp.Decomposed() {
-		t.Fatal("ridge decomposition fell back to hardcoded weights; the corpus should always be large enough to decompose")
-	}
+		issuemap.WithRidgeDecomposition(bundle))
+	ridgeDecomp := bundle.Decomposition
 
-	return Baseline{
+	// Derived-surface coverage (WP-302): explore (seeded by an issue) and person
+	// recommendation (seeded by a profile) inherit the same blend + ridge default
+	// but a different query shape, so each is evaluated on both models through its
+	// production entry point over the same uncentered bundle/caches.
+	explore := exploreSurfaceMetrics(t, corpus, storeIssues, storeTags, bundle)
+	person := personSurfaceMetrics(t, corpus, storeIssues, storeTags)
+
+	return FixtureBaseline{
 		Rank1: PathMetrics{
 			Search:      searchMetrics(len(judgments), rank1NDCG, rank1Recall),
 			FactorModel: factorMetrics(rank1Decomp.FactorWeight, rank1Decomp.AggregateR2, collectR2(rank1Decomp.AllR2)),
@@ -202,16 +298,45 @@ func computeMetrics(t *testing.T) Baseline {
 		Ridge: PathMetrics{
 			Search:            searchMetrics(len(judgments), ridgeNDCG, ridgeRecall),
 			FactorModel:       factorMetrics(ridgeDecomp.FactorWeight, ridgeDecomp.AggregateR2, collectR2(ridgeDecomp.AllR2)),
-			GCVLambdaUnscored: round4(gcvLambda),
+			GCVLambdaUnscored: round4(uncLambda),
 		},
+		Explore: explore,
+		Person:  person,
 	}
+}
+
+// ridgeUncenteredFixture selects the ranking-regime penalty on uncentered
+// (unit-normalized) inputs and builds the uncentered full-corpus bundle — the
+// same artifacts the Uncentered ridgelambda/ridgedecomp caches produce, which
+// is how the API layer wires every ranking surface after WP-304.
+func ridgeUncenteredFixture(
+	t *testing.T,
+	corpus Corpus,
+	storeIssues []issues.Issue,
+	storeTags []issues.Tag,
+) (lambda float64, bundle issuemath.CorpusRidgeDecomposition) {
+	t.Helper()
+	uncIssueEmb, uncTagEmb := issuemath.CenterEmbeddingsWith(issuemath.CorpusMeans{},
+		corpus.IssueEmbeddings(), corpus.TagEmbeddings())
+	lambda, ok := issuemath.SelectRidgeLambdaGCV(storeIssues, corpus.TagNames(), uncIssueEmb, uncTagEmb,
+		scoring.RidgeAnchorLambdaScored, nil)
+	if !ok {
+		t.Fatal("GCV λ selection fell back on uncentered inputs; the fixture corpus should be large enough")
+	}
+	bundle = issuemap.ComputeCorpusRidgeDecomposition(storeIssues, storeTags, issuemath.CorpusMeans{},
+		scoring.RidgeAnchorLambdaScored, lambda)
+	if !bundle.Decomposed() {
+		t.Fatal("uncentered ridge decomposition fell back; the fixture corpus should always decompose")
+	}
+	return lambda, bundle
 }
 
 // ridgeGCVFixture centers the fixture corpus embeddings against the corpus
 // means and selects the unscored ridge penalty by GCV with the scored penalty
-// held fixed — the same call shape ridgelambda.Cache.compute runs in
-// production. The golden ridge baseline and TestRidgeShadowComparison both
-// derive λ through here so they stay on one selection path.
+// held fixed — the CENTERED selection regime (the pre-WP-304 ranking default,
+// still the structure/themes regime). The shadow harness and the WP-304 config
+// matrix derive the centered reference through here; the golden ridge baseline
+// now uses ridgeUncenteredFixture, matching the shipped ranking default.
 func ridgeGCVFixture(t *testing.T, corpus Corpus, storeIssues []issues.Issue) (issueEmb, tagEmb map[string][]float64, means issuemath.CorpusMeans, lambda float64) {
 	t.Helper()
 	issueEmb, tagEmb, means = issuemath.CenterEmbeddings(corpus.IssueEmbeddings(), corpus.TagEmbeddings())

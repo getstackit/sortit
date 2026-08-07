@@ -54,7 +54,14 @@ type Cache struct {
 	// Centering supplies the revision-cached corpus means so the GCV solve
 	// runs in the same centered space as the ranker. Optional — when nil the
 	// embeddings are centered against their own freshly computed means.
+	// Ignored when Uncentered is set.
 	Centering *centering.Cache
+	// Uncentered selects λ on uncentered inputs: embeddings are unit-normalized
+	// but corpus-mean centering is skipped, matching the uncentered ranking
+	// decomposition (WP-304: on real embedding geometry, centering collapses
+	// the ridge model's ranking signal). The centered selection stays reachable
+	// by leaving this false; the two regimes must not share a cache instance.
+	Uncentered bool
 
 	mu       sync.Mutex
 	revision uint64
@@ -149,13 +156,19 @@ func (c *Cache) compute(ctx context.Context) (float64, bool, error) {
 	return lambda, ok, nil
 }
 
-// centeredEmbeddings centers the GCV inputs against the revision-cached corpus
-// means when a centering cache is wired, matching the ranker's space; without
-// one it centers against freshly computed means.
+// centeredEmbeddings prepares the GCV inputs in the ranker's space. In the
+// uncentered regime the raw embeddings are unit-normalized only (zero means
+// through CenterEmbeddingsWith). Otherwise they are centered against the
+// revision-cached corpus means when a centering cache is wired, or against
+// freshly computed means without one.
 func (c *Cache) centeredEmbeddings(
 	ctx context.Context,
 	rawIssueEmbeddings, rawTagEmbeddings map[string][]float64,
 ) (map[string][]float64, map[string][]float64, error) {
+	if c.Uncentered {
+		issueEmb, tagEmb := issuemath.CenterEmbeddingsWith(issuemath.CorpusMeans{}, rawIssueEmbeddings, rawTagEmbeddings)
+		return issueEmb, tagEmb, nil
+	}
 	if c.Centering != nil {
 		means, err := c.Centering.Current(ctx)
 		if err != nil {

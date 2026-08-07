@@ -52,8 +52,19 @@ type Cache struct {
 	Revisions RevisionSource
 	// Centering supplies the revision-cached corpus means so the decomposition
 	// runs in the same centered space as the ranker. Optional — when nil the
-	// embeddings are centered against their own freshly computed statistics.
+	// embeddings are unit-normalized but not centered. Ignored when Uncentered
+	// is set.
 	Centering *centering.Cache
+	// Uncentered solves the decomposition on uncentered inputs (unit-normalized,
+	// no corpus-mean subtraction) and stamps zero Means on the bundle, so query
+	// and profile embeddings decompose into the same uncentered space. This is
+	// the ranking-regime default (WP-304: on real embedding geometry the
+	// centered tag-space ridge loses to rank-1; the uncentered one wins).
+	// Structure consumers (themes) keep their own centered instance — the two
+	// regimes must not share a cache. Lambda should be an Uncentered
+	// ridgelambda cache so the penalty is selected on the same geometry it
+	// parameterizes.
+	Uncentered bool
 	// Lambda supplies the GCV-selected unscored penalty that parameterizes the
 	// ranking-regime solve. Required: without it the cache degrades to
 	// "not available" and callers fall back to rank-1.
@@ -143,11 +154,13 @@ func (c *Cache) compute(ctx context.Context) (*issuemath.CorpusRidgeDecompositio
 	return &decomp, true, nil
 }
 
-// corpusMeans returns the revision-cached corpus means when a centering cache is
-// wired, matching the ranker's space; without one it returns zero means, and the
-// decomposition centers each embedding against its own unit norm.
+// corpusMeans returns the means the decomposition is solved with. In the
+// uncentered regime (and when no centering cache is wired) they are zero, so
+// the solve runs on unit-normalized, uncentered embeddings and the bundle's
+// Means keep external query/profile embeddings in that same space. Otherwise
+// the revision-cached corpus means match the centered ranker space.
 func (c *Cache) corpusMeans(ctx context.Context) (issuemath.CorpusMeans, error) {
-	if c.Centering == nil {
+	if c.Uncentered || c.Centering == nil {
 		return issuemath.CorpusMeans{}, nil
 	}
 	return c.Centering.Current(ctx)

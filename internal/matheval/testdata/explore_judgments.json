@@ -1,0 +1,150 @@
+{
+  "_comment": "MECHANICALLY DERIVED from the generator's tag-domain ground truth (deriveExploreJudgments, pinned by TestExplorePersonFixturesMatchDerivation). For each seed, every other issue is graded by region overlap: same primary domain = 3, any shared non-generic domain = 2, otherwise omitted (0). CIRCULARITY CAVEAT: this grades 'same region', not 'actually useful' — same failure mode as the synthetic embeddings; it is a regression guard, not a usefulness calibration (WP-302 Risks). Regenerate with `go test ./internal/matheval -update`.",
+  "seeds": [
+    {
+      "seed": "bill-01",
+      "expected": {
+        "bill-02": 3,
+        "bill-03": 3,
+        "bill-04": 3,
+        "pay-01": 3,
+        "pay-02": 3,
+        "pay-03": 3
+      }
+    },
+    {
+      "seed": "pay-02",
+      "expected": {
+        "bill-01": 3,
+        "bill-02": 3,
+        "bill-03": 3,
+        "bill-04": 3,
+        "pay-01": 3,
+        "pay-03": 3
+      }
+    },
+    {
+      "seed": "auth-02",
+      "expected": {
+        "auth-01": 3,
+        "auth-03": 3,
+        "auth-04": 3,
+        "login-01": 3,
+        "login-02": 3,
+        "notif-02": 2
+      }
+    },
+    {
+      "seed": "login-01",
+      "expected": {
+        "auth-01": 3,
+        "auth-02": 3,
+        "auth-03": 3,
+        "auth-04": 3,
+        "login-02": 3,
+        "notif-02": 2
+      }
+    },
+    {
+      "seed": "exp-01",
+      "expected": {
+        "exp-02": 3,
+        "exp-03": 3,
+        "exp-04": 3,
+        "pdf-01": 3,
+        "pdf-02": 3
+      }
+    },
+    {
+      "seed": "pdf-02",
+      "expected": {
+        "exp-01": 3,
+        "exp-02": 3,
+        "exp-03": 3,
+        "exp-04": 3,
+        "pdf-01": 3
+      }
+    },
+    {
+      "seed": "srch-03",
+      "expected": {
+        "db-03": 2,
+        "db-04": 2,
+        "exp-03": 2,
+        "perf-01": 2,
+        "perf-02": 2,
+        "perf-03": 2,
+        "srch-01": 3,
+        "srch-02": 3
+      }
+    },
+    {
+      "seed": "perf-03",
+      "expected": {
+        "db-01": 3,
+        "db-02": 3,
+        "db-03": 3,
+        "db-04": 3,
+        "exp-03": 2,
+        "mig-01": 3,
+        "perf-01": 2,
+        "perf-02": 2,
+        "srch-03": 2
+      }
+    },
+    {
+      "seed": "mob-01",
+      "expected": {
+        "ios-01": 3,
+        "ios-02": 3,
+        "mob-02": 3,
+        "mob-03": 3,
+        "mob-04": 3,
+        "pay-03": 2
+      }
+    },
+    {
+      "seed": "ios-01",
+      "expected": {
+        "auth-03": 2,
+        "email-01": 2,
+        "email-02": 2,
+        "email-03": 2,
+        "exp-04": 2,
+        "ios-02": 3,
+        "mob-01": 3,
+        "mob-02": 3,
+        "mob-03": 3,
+        "mob-04": 3,
+        "notif-01": 2,
+        "notif-02": 2,
+        "notif-03": 2,
+        "pay-03": 2
+      }
+    },
+    {
+      "seed": "notif-01",
+      "expected": {
+        "auth-03": 2,
+        "email-01": 3,
+        "email-02": 3,
+        "email-03": 3,
+        "exp-04": 2,
+        "ios-01": 2,
+        "notif-02": 3,
+        "notif-03": 3
+      }
+    },
+    {
+      "seed": "db-02",
+      "expected": {
+        "db-01": 3,
+        "db-03": 3,
+        "db-04": 3,
+        "mig-01": 3,
+        "perf-01": 2,
+        "perf-03": 3
+      }
+    }
+  ]
+}

@@ -52,10 +52,12 @@ type searchConfig struct {
 	factorWeightOverride *float64
 	// ridgeLambda, when non-nil, switches the similarity model from the
 	// rank-1 factor projection to the full-rank anchored-ridge blend
-	// (tag-space), with this value as the unscored-tag penalty. The value is
-	// expected to be GCV-derived upstream and cached by corpus revision —
-	// search does not run the selection itself. Phase 3b A/B opt-in;
-	// production default leaves it unset (rank-1).
+	// (tag-space), with this value as the unscored-tag penalty, solved
+	// in place over the candidate corpus in its centered space. The value is
+	// expected to be GCV-derived upstream — search does not run the selection
+	// itself. Since WP-304 production wires the uncentered cached bundle
+	// (ridgeDecomposition) instead; this in-place option remains as the
+	// explicit path to the centered configuration (evals, tests).
 	ridgeLambda *float64
 	// ridgeDecomposition, when non-nil, carries the revision-cached full-corpus
 	// anchored-ridge decomposition (internal/ridgedecomp). Search uses its
@@ -225,7 +227,11 @@ func SearchFromQueryWithTags(
 		}, tagEmbeddings)
 	}
 	// Center the query with the corpus means — never with statistics derived
-	// from the query or the candidate set itself.
+	// from the query or the candidate set itself. The raw query is retained
+	// because the cached ridge bundle carries its own Means (zero in the
+	// uncentered ranking regime), and the query must be decomposed in the
+	// bundle's space, not the corpus-centered one.
+	rawQueryVector := queryVector
 	queryVector = issuemath.CenterVector(queryVector, corpus.means.Issue)
 
 	// Fall back to legacy factor vectors when decomposition didn't produce per-issue vectors.
@@ -284,10 +290,14 @@ func SearchFromQueryWithTags(
 	if useRidge {
 		if cfg.ridgeDecomposition != nil {
 			// Cached path: corpus vectors and tag space come from the cache; only
-			// the query is decomposed here, into that same cached tag space.
+			// the query is decomposed here, into that same cached tag space. The
+			// raw query is centered with the BUNDLE's means (zero in the
+			// uncentered regime) so it lands in the space the cached vectors were
+			// solved in, mirroring the person handler's profile centering.
 			ridgeDecomp = cfg.ridgeDecomposition.Decomposition
 			ridgeDecomp.FactorWeight, ridgeDecomp.ResidualWeight = adjustFactorWeight(ridgeDecomp.FactorWeight)
-			queryRidge = cfg.ridgeDecomposition.DecomposeQuery(queryVector, querySummary.Tags)
+			bundleQuery := issuemath.CenterVector(rawQueryVector, cfg.ridgeDecomposition.Means.Issue)
+			queryRidge = cfg.ridgeDecomposition.DecomposeQuery(bundleQuery, querySummary.Tags)
 		} else {
 			ridgeDecomp = issuemath.ComputeRidgeDecomposition(mapIssues, tagNames, issueEmbeddings, tagEmbeddings,
 				scoring.RidgeAnchorLambdaScored, *cfg.ridgeLambda)

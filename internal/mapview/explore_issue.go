@@ -37,6 +37,9 @@ type ExploreIssueHandler struct {
 // exploreOpts returns the anchored-ridge explore option, or nil when ridge is
 // unavailable. It prefers the cached full-corpus decomposition and falls back
 // to the GCV-penalty in-place solve — the chain decomp-cache → λ-only → rank-1.
+// Production wires only the uncentered decomp cache (WP-304): the in-place
+// solve runs in the neighborhood's centered space, so wire RidgeLambda only
+// with a centered-regime cache.
 func (h ExploreIssueHandler) exploreOpts(ctx context.Context) ([]issuemap.ExploreOption, error) {
 	if h.RidgeDecomp != nil {
 		decomp, ok, err := h.RidgeDecomp.Current(ctx)

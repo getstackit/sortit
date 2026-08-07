@@ -157,10 +157,14 @@ func (d RidgeDecomposition) AllR2(fn func(id string, r2 float64)) {
 // (internal/ridgedecomp) and use it instead of recomputing the solve per
 // request.
 //
-// TagEmbeddings are already corpus-mean centered — the same space
-// Decomposition's per-issue vectors live in. Means is exposed so callers that
-// hold an uncentered external embedding (the person path) can center it
-// consistently before decomposing.
+// TagEmbeddings are already in the space the bundle was solved in — the same
+// space Decomposition's per-issue vectors live in. Means records that space:
+// the corpus means the inputs were centered with, or zero means in the
+// uncentered ranking regime (WP-304), where inputs are unit-normalized only.
+// Callers holding a raw external embedding (a search query or a person
+// profile) center it with Means before decomposing so it lands in the
+// bundle's space — CenterVector with zero/empty means reduces to
+// unit-normalization, so the same call is correct in both regimes.
 type CorpusRidgeDecomposition struct {
 	Decomposition  RidgeDecomposition
 	TagNames       []string
@@ -173,9 +177,10 @@ type CorpusRidgeDecomposition struct {
 // Decomposed reports whether the bundle carries a usable decomposition.
 func (c CorpusRidgeDecomposition) Decomposed() bool { return c.Decomposition.Decomposed() }
 
-// DecomposeQuery decomposes an external, already-centered embedding into the
-// cached tag-space basis, so its loading/residual are comparable with the
-// cached per-issue vectors via RidgeBlend.
+// DecomposeQuery decomposes an external embedding — already brought into the
+// bundle's space via CenterVector(raw, Means.Issue) — into the cached
+// tag-space basis, so its loading/residual are comparable with the cached
+// per-issue vectors via RidgeBlend.
 func (c CorpusRidgeDecomposition) DecomposeQuery(embedding []float64, tagScores []issues.TagRelevance) RidgeVectors {
 	return DecomposeRidgeEmbedding(embedding, tagScores, c.TagNames, c.TagEmbeddings, c.LambdaScored, c.LambdaUnscored)
 }
