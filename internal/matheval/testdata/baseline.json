@@ -1,39 +1,151 @@
 {
-  "rank1": {
-    "search": {
-      "queries": 32,
-      "ndcg@8": 0.8658,
-      "recall@8": 0.9117
+  "synthetic": {
+    "rank1": {
+      "search": {
+        "queries": 32,
+        "ndcg@8": 0.8658,
+        "recall@8": 0.9117
+      },
+      "factorModel": {
+        "factorWeight": 0.623,
+        "aggregateR2": 0.623,
+        "r2": {
+          "count": 48,
+          "mean": 0.623,
+          "median": 0.6487,
+          "p10": 0.4175,
+          "p90": 0.8553
+        }
+      }
     },
-    "factorModel": {
-      "factorWeight": 0.623,
-      "aggregateR2": 0.623,
-      "r2": {
-        "count": 48,
-        "mean": 0.623,
-        "median": 0.6487,
-        "p10": 0.4175,
-        "p90": 0.8553
+    "ridge": {
+      "search": {
+        "queries": 32,
+        "ndcg@8": 0.9366,
+        "recall@8": 0.956
+      },
+      "factorModel": {
+        "factorWeight": 0.9005,
+        "aggregateR2": 0.9005,
+        "r2": {
+          "count": 48,
+          "mean": 0.9005,
+          "median": 0.9272,
+          "p10": 0.8572,
+          "p90": 0.9523
+        }
+      },
+      "gcvLambdaUnscored": 1
+    },
+    "explore": {
+      "rank1": {
+        "queries": 12,
+        "ndcg@8": 0.9275,
+        "recall@8": 0.8681
+      },
+      "ridge": {
+        "queries": 12,
+        "ndcg@8": 0.9011,
+        "recall@8": 0.8438
+      }
+    },
+    "person": {
+      "rank1": {
+        "queries": 6,
+        "ndcg@8": 0.5367,
+        "recall@8": 0.4381
+      },
+      "ridge": {
+        "queries": 6,
+        "ndcg@8": 0.5516,
+        "recall@8": 0.4113
       }
     }
   },
-  "ridge": {
-    "search": {
-      "queries": 32,
-      "ndcg@8": 0.9309,
-      "recall@8": 0.9586
-    },
-    "factorModel": {
-      "factorWeight": 0.7964,
-      "aggregateR2": 0.7964,
-      "r2": {
-        "count": 48,
-        "mean": 0.7964,
-        "median": 0.8438,
-        "p10": 0.6511,
-        "p90": 0.9202
+  "real": {
+    "rank1": {
+      "search": {
+        "queries": 32,
+        "ndcg@8": 0.905,
+        "recall@8": 0.8688
+      },
+      "factorModel": {
+        "factorWeight": 0.1108,
+        "aggregateR2": 0.1108,
+        "r2": {
+          "count": 48,
+          "mean": 0.1108,
+          "median": 0.0969,
+          "p10": 0.0151,
+          "p90": 0.23
+        }
       }
     },
-    "gcvLambdaUnscored": 3
+    "ridge": {
+      "search": {
+        "queries": 32,
+        "ndcg@8": 0.9399,
+        "recall@8": 0.9195
+      },
+      "factorModel": {
+        "factorWeight": 0.1729,
+        "aggregateR2": 0.1729,
+        "r2": {
+          "count": 48,
+          "mean": 0.1729,
+          "median": 0.1721,
+          "p10": 0.0497,
+          "p90": 0.2686
+        }
+      },
+      "gcvLambdaUnscored": 0.3
+    },
+    "explore": {
+      "rank1": {
+        "queries": 12,
+        "ndcg@8": 0.8057,
+        "recall@8": 0.7228
+      },
+      "ridge": {
+        "queries": 12,
+        "ndcg@8": 0.8877,
+        "recall@8": 0.8146
+      }
+    },
+    "person": {
+      "rank1": {
+        "queries": 6,
+        "ndcg@8": 0.5594,
+        "recall@8": 0.4726
+      },
+      "ridge": {
+        "queries": 6,
+        "ndcg@8": 0.5763,
+        "recall@8": 0.428
+      }
+    }
+  },
+  "map": {
+    "issues": 48,
+    "neighborhood": {
+      "groundTruthDomain": {
+        "k5": 0.4429,
+        "k10": 0.3262
+      },
+      "embeddingSynthetic": {
+        "k5": 0.4667,
+        "k10": 0.4979
+      },
+      "embeddingReal": {
+        "k5": 0.3333,
+        "k10": 0.4021
+      }
+    },
+    "silhouette": 0.0622,
+    "stability": {
+      "steps": 12,
+      "meanDisplacement": 0.0364,
+      "p95Displacement": 0.1278
+    }
   }
 }

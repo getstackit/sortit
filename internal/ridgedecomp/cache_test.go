@@ -7,8 +7,12 @@ import (
 	"sync/atomic"
 	"testing"
 
+	"sortit/internal/centering"
+	"sortit/internal/issuemath"
 	"sortit/internal/issues"
+	issuemap "sortit/internal/map"
 	"sortit/internal/ridgelambda"
+	"sortit/internal/scoring"
 )
 
 type stubStore struct {
@@ -201,5 +205,59 @@ func TestCacheSingleFlightUnderConcurrency(t *testing.T) {
 	hammer()
 	if c.computeCount != 2 {
 		t.Fatalf("expected exactly 2 computes across the revision bump, got %d", c.computeCount)
+	}
+}
+
+// TestCacheUncenteredRegime asserts the ranking regime introduced by WP-304:
+// an Uncentered cache solves on unit-normalized, uncentered inputs, stamps
+// zero Means on the bundle (so external query/profile embeddings stay
+// uncentered when centered with them), and ignores a wired centering cache.
+func TestCacheUncenteredRegime(t *testing.T) {
+	items, tags := twoClusterCorpus()
+	store := &stubStore{items: items}
+	tagSrc := &stubTags{tags: tags}
+	rev := &stubRevisions{}
+	rev.rev.Store(1)
+	c := &Cache{
+		Store:      store,
+		Tags:       tagSrc,
+		Revisions:  rev,
+		Uncentered: true,
+		// A wired centering cache must be ignored in the uncentered regime.
+		Centering: &centering.Cache{Store: store},
+		Lambda:    &ridgelambda.Cache{Store: store, Tags: tagSrc, Revisions: rev, Uncentered: true},
+	}
+
+	decomp, ok, err := c.Current(context.Background())
+	if err != nil {
+		t.Fatalf("Current: %v", err)
+	}
+	if !ok || decomp == nil || !decomp.Decomposed() {
+		t.Fatalf("expected a usable uncentered decomposition, got (%v, %v)", decomp, ok)
+	}
+	if !decomp.Means.IsZero() {
+		t.Fatalf("uncentered bundle must carry zero Means, got issue=%v tag=%v", decomp.Means.Issue, decomp.Means.Tag)
+	}
+
+	// The solve must match an explicit zero-means corpus decomposition at the
+	// same λ — the uncentered reference.
+	lambda, lok, err := c.Lambda.Current(context.Background())
+	if err != nil || !lok {
+		t.Fatalf("uncentered λ unavailable: (%v, %v, %v)", lambda, lok, err)
+	}
+	want := issuemap.ComputeCorpusRidgeDecomposition(items, tags, issuemath.CorpusMeans{},
+		scoring.RidgeAnchorLambdaScored, lambda)
+	got, found := decomp.Decomposition.VectorsFor("a1")
+	wantVec, wantFound := want.Decomposition.VectorsFor("a1")
+	if !found || !wantFound {
+		t.Fatalf("expected vectors for a1 in both decompositions (cache=%v reference=%v)", found, wantFound)
+	}
+	if len(got.Loading) != len(wantVec.Loading) {
+		t.Fatalf("loading length mismatch: %d vs %d", len(got.Loading), len(wantVec.Loading))
+	}
+	for i := range got.Loading {
+		if math.Abs(got.Loading[i]-wantVec.Loading[i]) > 1e-12 {
+			t.Fatalf("loading[%d] = %v, want %v (uncentered reference)", i, got.Loading[i], wantVec.Loading[i])
+		}
 	}
 }

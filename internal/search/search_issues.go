@@ -59,7 +59,10 @@ type SearchIssuesHandler struct {
 // ridge is unavailable so search uses the rank-1 model. It prefers the cached
 // full-corpus decomposition (WithRidgeDecomposition) and falls back to the
 // GCV-penalty in-place solve (WithRidgeSimilarity) — the graceful chain
-// decomp-cache → λ-only → rank-1.
+// decomp-cache → λ-only → rank-1. Production wires only the uncentered decomp
+// cache (WP-304): the in-place solve runs in the centered corpus space, so
+// pairing it with an uncentered λ would be incoherent; wire RidgeLambda only
+// with a centered-regime cache.
 func (h SearchIssuesHandler) ridgeOption(ctx context.Context) ([]issuemap.SearchOption, error) {
 	if h.RidgeDecomp != nil {
 		decomp, ok, err := h.RidgeDecomp.Current(ctx)

@@ -277,6 +277,12 @@ to point at it.
 
 ## Parking lot (not WPs yet — promote when real)
 
+- **Dual cache pairs after WP-304** — ranking runs the uncentered
+  ridgelambda+ridgedecomp pair while themes/drift keep the centered pair, so
+  a revision now computes and holds two full decompositions (~2× the WP-103
+  memory estimate). Fine at current scale; trigger: memory pressure or a
+  structure-regime re-examination that lets one pair serve both.
+
 - **HALS for NMF** — trigger: WP-206 telemetry shows iteration-cap hits or
   refresh latency that matters.
 - **Blend-weight discontinuity at the 5-issue fallback boundary**

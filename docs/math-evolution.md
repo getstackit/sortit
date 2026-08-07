@@ -123,6 +123,15 @@ and the GCV selector expect pre-centered inputs
 with the same revision-cached means the ranker uses
 (`internal/ridgelambda/cache.go`, `centeredEmbeddings`).
 
+**One deliberate exception (WP-304):** the *ranking-regime* ridge — the
+similarity blend behind search, explore, and person recommendations — runs on
+**uncentered** (unit-normalized only) inputs, because on real embedding
+geometry centering the K≪D tag space collapses its ranking signal (§4, caveat
+5). Everything else — the rank-1 fallback, plain semantic similarity, the map,
+drift diagnostics, and the themes factorization — stays centered as described
+above. The two regimes live in separate cache instances
+(`ridgelambda.Cache.Uncentered` / `ridgedecomp.Cache.Uncentered`).
+
 One consequence worth restating: centered tag-tag cosines are legitimately
 signed. Negative entries encode genuine anti-correlation between tag
 directions. This is why the originally planned "tighten Σ to `max(0, cos)`"
@@ -261,11 +270,14 @@ regime silently falls back to rank-1.
 **Caching** (`internal/ridgelambda/cache.go`): the selected λ is memoized per
 corpus revision, invalidated on any corpus write via the shared revision
 counter. The GCV sample is a deterministic stride sample over the ID-sorted
-corpus, capped at 2000 issues; it is centered with the same revision-cached
-corpus means the ranker uses. The cache returns `(0, false)` — the
-fall-back-to-rank-1 signal — for corpora under `MinDecompositionIssues` (5),
-tagless catalogs, or catalogs with no tag embeddings. On the eval fixtures GCV
-picks `λ_unscored ≈ 3.0` (honest R² ~0.80).
+corpus, capped at 2000 issues; it is prepared in the same space the consuming
+solve runs in — **uncentered** (unit-normalized, `Uncentered: true`) for the
+ranking regime since WP-304, centered with the revision-cached corpus means
+for the structure regime (themes). λ is always re-selected per regime, never
+shared across geometries. On the eval fixtures the ranking selection picks
+`λ_unscored = 1.0` (synthetic) and `0.3` (real); the centered selection picks
+`3.0` and `0.01` (grid-floor censored) respectively — the spread itself is the
+argument for selecting rather than hardcoding.
 
 ### 3.5 Similarity in production: the default flip
 
@@ -280,14 +292,22 @@ with marginalization: a pair where one side has no factor evidence puts full
 weight on the residual side, and vice versa; candidates missing from the
 decomposition score as pure semantic similarity at full weight.
 
-**Wiring:** one shared `ridgelambda.Cache` is threaded through the API into
-search (`internal/map/search.go`, `WithRidgeSimilarity`), explore
-(`internal/map/explore.go`, `WithExploreRidgeSimilarity`), and person
-recommendations (`internal/people/person_detail.go`). All three default to
-ridge whenever the cache yields a λ; otherwise they fall back to the rank-1
-blend, and below that to the legacy fixed-weight cosine blend. There is no
-feature flag — the "flag" is the cache's `(λ, ok)` return, which is exactly
-the graceful-degradation behavior we want.
+**Wiring (as of WP-304):** an **uncentered** ranking pair —
+`ridgelambda.Cache{Uncentered: true}` feeding
+`ridgedecomp.Cache{Uncentered: true}` — is threaded through the API into
+search and unified search (`WithRidgeDecomposition`), explore
+(`WithExploreRidgeDecomposition`), and person recommendations
+(`GetPersonDetailHandler.RidgeDecomp`). All four rank from the revision-cached
+full-corpus bundle, whose zero `Means` keep query and profile embeddings in
+the same uncentered space; when the bundle is unavailable they fall back to
+the rank-1 blend, and below that to the legacy fixed-weight cosine blend.
+There is no feature flag — the "flag" is the cache's `(bundle, ok)` return,
+which is exactly the graceful-degradation behavior we want. The in-place
+per-request options (`WithRidgeSimilarity`, `WithExploreRidgeSimilarity`, the
+person `RidgeLambda` field) remain in code as the explicit path to the
+previous centered configuration; production no longer wires them, because a
+centered in-place solve at an uncentered λ would be incoherent and their
+availability conditions coincide with the bundle cache's.
 
 **Every downstream modifier is model-agnostic and unchanged**: the
 tag-correlation factor nudge, generic-co-occurrence and region boosts,
@@ -426,26 +446,54 @@ layers: `internal/issuethemes` stays a pure, deterministic NMF library;
 ## 4. Evidence: what the numbers say (and don't)
 
 The evaluation harness (`internal/matheval`, [math-eval.md](./math-eval.md))
-is a synthetic corpus: 16 tags, 48 issues, 32 fully-judged queries, embedding
-dim 24, NDCG@8 / Recall@8.
+runs two fixtures over the *same* 16 tags / 48 issues / 32 fully-judged
+queries and the same judgment set. The **synthetic** fixture synthesizes
+embeddings as relevance-weighted tag sums (dim 24); the **real** fixture
+(WP-301) re-embeds the identical tag descriptors, issue texts, and query texts
+with the production `text-embedding-3-small` model (dim 1536), committed to
+`testdata/real_embeddings.json` so CI needs no network. Both fixtures, both
+similarity paths, are asserted on every `go test` run (four baseline entries).
+
+**Synthetic fixture** (embeddings built from tags — a floor argument):
 
 | Measurement | NDCG@8 | Recall@8 | Where |
 |---|---|---|---|
 | Pre-centering baseline | 0.823 | 0.855 | whitepaper §2.0 |
-| Rank-1, centered (committed golden baseline) | 0.8658 | 0.9117 | `matheval/testdata/baseline.json` → `rank1` |
-| Ridge, GCV λ_unscored = 3.0, tag-space (committed golden baseline) | **0.9309** | **0.9586** | `matheval/testdata/baseline.json` → `ridge` |
-| Full-path A/B (ridge vs rank-1 through the whole pipeline) | +0.0651 | +0.0469 | both baseline rows above, asserted every run |
-| Rank-1, similarity-only (historical shadow run) | 0.874 | 0.928 | `ridge_shadow_test.go` |
-| Ridge, fixed λ_unscored = 0.05 (overfit, R² ~0.90) (historical shadow run) | 0.867 | — | shadow harness — *regression* |
-| Ridge, GCV λ_unscored ≈ 3.0 (R² ~0.80), tag-space (historical shadow run) | 0.933 | 0.964 | shadow harness |
+| Rank-1, centered (golden baseline) | 0.8658 | 0.9117 | `baseline.json` → `synthetic.rank1` |
+| Ridge, **centered**, GCV λ = 3.0, tag-space (default until WP-304) | 0.9309 | 0.9586 | WP-304 config matrix, config 2 |
+| Ridge, **uncentered**, GCV λ = 1.0, tag-space (**shipped default**, golden baseline) | **0.9366** | **0.9560** | `baseline.json` → `synthetic.ridge` |
+| Full-path A/B (shipped ridge − rank-1) | **+0.0708** | **+0.0443** | both baseline rows, asserted every run |
+| Explore rank-1 / ridge, full-path (WP-302/304) | 0.9275 / 0.9011 | 0.8681 / 0.8438 | `synthetic.explore` — ridge loses NDCG −0.0264 (the verdict's one synthetic cost; see caveat 5) |
+| Person rank-1 / ridge, full-path (WP-302/304) | 0.5367 / 0.5516 | 0.4381 / 0.4113 | `synthetic.person` — ridge wins NDCG +0.0149 |
+
+**Real fixture** (production `text-embedding-3-small` geometry, WP-301):
+
+| Measurement | NDCG@8 | Recall@8 | Where |
+|---|---|---|---|
+| Rank-1, centered (golden baseline) | 0.9050 | 0.8688 | `baseline.json` → `real.rank1` |
+| Ridge, **centered**, GCV λ = 0.01, tag-space (default until WP-304) | 0.7536 | 0.5929 | WP-304 config matrix, config 2 — the inversion that triggered WP-304 |
+| Ridge, **uncentered**, GCV λ = 0.3, tag-space (**shipped default**, golden baseline) | **0.9399** | **0.9195** | `baseline.json` → `real.ridge` |
+| Full-path A/B (shipped ridge − rank-1) | **+0.0349** | **+0.0507** | both baseline rows, asserted every run |
+| Ridge recon-space centered / uncentered, similarity-only | 0.8744 / 0.9394 | 0.8294 / 0.9112 | config matrix, configs 4/5 — no full-path seam; both disqualified (caveat 5) |
+| Pure semantic cosine (null model), full-path | 0.8560 | 0.7997 | config matrix, config 6 — below rank-1 and shipped ridge |
+| Explore rank-1 / ridge, full-path (WP-302/304) | 0.8057 / 0.8877 | 0.7228 / 0.8146 | `real.explore` — ridge **wins** NDCG +0.0820 |
+| Person rank-1 / ridge, full-path (WP-302/304) | 0.5594 / 0.5763 | 0.4726 / 0.4280 | `real.person` — ridge wins NDCG +0.0169, loses Recall −0.0446 (6-person surface) |
+
+Reproduce with `go test ./internal/matheval -run TestMathEval -v` (committed
+baselines), `go test ./internal/matheval -run TestRidgeConfigMatrix
+-configmatrix -v` (the full WP-304 six-config matrix on both fixtures), and
+`go test ./internal/matheval -run TestRidgeShadowComparison -ridge -v` (the
+centered-regime shadow sweeps). Regenerate the real vectors with `go run
+./internal/matheval/cmd/embedfixture` (needs `OPENAI_API_KEY`).
 
 Honest caveats, all of which are Track D work:
 
 1. **Both similarity paths are now under the golden baseline.** WP-101 grew
    `matheval/testdata/baseline.json` from one entry to two — `rank1` (search
-   with no options, the fallback path) and `ridge` (the shipped default: the
-   eval injects `WithRidgeSimilarity` at the GCV-selected λ, mirroring the API
-   layer's `ridgelambda.Cache` injection). Both are asserted on every ordinary
+   with no options, the fallback path) and `ridge` (the shipped default:
+   since WP-304 the eval injects the *uncentered* full-corpus bundle via
+   `WithRidgeDecomposition`, mirroring the API layer's uncentered
+   `ridgedecomp.Cache` injection). Both are asserted on every ordinary
    `go test` run with no opt-in flag, so a change that regresses the production
    ridge blend fails CI. The GCV λ is re-derived each run and recorded for
    observability only (`ridge.gcvLambdaUnscored`); it is never hardcoded in the
@@ -453,15 +501,120 @@ Honest caveats, all of which are Track D work:
    drift.
 2. **The full-path A/B deltas are now pinned, not a run log.** The ridge shadow
    comparison (`ridge_shadow_test.go`, opt-in `-ridge`) survives for its
-   similarity-shape and fixed-λ overfit sweeps, but the numbers that gate
-   regressions are the two committed baseline rows above, not its log output —
-   both derive λ through the same `ridgeGCVFixture` helper.
-3. **The fixture corpus structurally favors the tag story.** Its embeddings are
-   generated as relevance-weighted tag sums plus anisotropy plus noise — so the
-   ridge win over rank-1 on fixtures is a floor argument, not proof on real
-   embeddings. The harness flags this itself.
-4. **Only search is harness-validated.** Explore and person recommendations
-   inherit the identical model and blend code but have no eval of their own.
+   similarity-shape and fixed-λ overfit sweeps in the centered regime, and the
+   WP-304 config matrix (`config_matrix_test.go`, opt-in `-configmatrix`) is
+   the reproducible record of the default decision — but the numbers that gate
+   regressions are the committed baseline rows above, not log output. The
+   baseline's ridge entries derive λ through `ridgeUncenteredFixture`, the
+   same selection the production uncentered caches run.
+3. **On real embedding geometry, the ridge tag-space win does not transfer — it
+   inverts. This is the most important negative result in the program so far,
+   and it is stated here without softening.** WP-301 re-embedded the identical
+   fixture texts with the production `text-embedding-3-small` model and re-ran
+   the full comparison. Every ridge-vs-rank-1 number before this used embeddings
+   *constructed from tags*, where a tag-space model wins by construction — a
+   floor argument. On real geometry:
+
+   - **The then-shipped ridge default (centered, tag-space, GCV λ) regresses
+     ranking substantially: NDCG@8 0.7536 vs rank-1's 0.9050 (−0.1514), Recall@8
+     0.5929 vs 0.8688 (−0.2759)**, full-path. It regresses similarity-only too
+     (0.7910 vs 0.8867). The synthetic fixture's +0.065 NDCG win became a −0.15
+     loss.
+   - **Tags explain almost none of the real embedding variance.** Aggregate R²
+     collapses from ~0.80 (synthetic ridge) to **~0.16**; the 16 tags span a
+     16-dim subspace of a 1536-dim space, so projecting an issue onto tag-space
+     discards ~84% of its semantic signal. Because the blend weights the factor
+     term by that R², the tag term is *already* near-silent on a real corpus —
+     but the ridge tag-space similarity shape still underperforms rank-1's
+     factor+residual blend on what remains.
+   - **GCV selected λ_unscored = 0.01, the grid floor (censored — it wants even
+     lower)**, versus 3.0 on the synthetic fixture. GCV correctly reads the real
+     geometry as one where the penalty should be minimal; it is *not* a
+     fixture-fit constant, exactly as designed. It simply cannot rescue a
+     similarity shape that discards the residual.
+   - **Two shape/preprocessing findings that flipped sign versus synthetic:**
+     reconstruction-space similarity (0.8744) beats tag-space (0.7910) on real
+     geometry — the opposite of the Phase 3b synthetic verdict that picked
+     tag-space; and **centering *before* the tag-space ridge hurts** on real
+     embeddings (uncentered tag-space GCV scores 0.9514 vs centered 0.7910).
+     At the time these were single-fixture signals, not defaults; WP-304's
+     fuller matrix (caveat 5) subsequently confirmed the centering finding
+     across surfaces and made uncentered tag-space the default, while
+     recon-space failed qualification in both centering variants.
+
+   **Interpretation against the pre-committed rule (this plan's §WP-301 risk):**
+   ridge does not beat rank-1 on real geometry within noise — it loses cleanly
+   and by a wide margin on the then-shipped centered tag-space path. Per the
+   pre-commitment, the ridge-default flip warranted re-examination: its cost is
+   complexity, and on real geometry the centered configuration's complexity was
+   not buying a ranking win. Stages 4–5 still stand — they consume `f_i` for
+   *structure* (themes, drift, map input), not for ranking wins, and the drift
+   signal (analyzer-vs-geometry divergence) is a different quantity than
+   ranking NDCG. WP-304 executed that re-examination; caveat 5 records the
+   verdict.
+
+   **Layer caveat (spec's own escalation rule).** This is *layer 1*: real-model
+   embeddings over texts that were themselves generated *from* the tag structure.
+   Those texts are more realistic than tag-sum vectors but are still one step
+   removed from a real corpus. Layer 1 discriminated sharply (it did not
+   saturate), so the layer-2 curation of a real anonymized corpus is *not*
+   forced by a null result — but the direction it points (real geometry demotes
+   the tag-space ranking story) is the signal layer 2 would sharpen, not
+   reverse.
+4. **Explore and person recommendations are harness-validated too (WP-302),
+   and they corroborated the real-geometry inversion.** Both surfaces share
+   the blend + ridge default but not the query shape — explore is seeded by an
+   issue, person fit by a profile — so each got its own judged fixture (12 explore
+   seeds; 6 synthetic person histories over the existing 48-issue corpus) with
+   mechanical grades derived from the generator's tag-domain ground truth, both on
+   both models and both fixtures, asserted every `go test` run. Measured against
+   the then-default *centered* ridge, the pattern matched search exactly: on the
+   **synthetic** fixture ridge tied explore and won person (+0.09 NDCG); on the
+   **real** fixture ridge **regressed both** — explore −0.2273 NDCG, person
+   −0.0610. So the centered default's real-geometry loss was not a search-only
+   artifact — it reproduced across all three ranking surfaces, across three
+   different seed shapes (query text, issue embedding, person profile).
+   Caveat: the explore/person judgments are mechanically derived from
+   the same tag-domain ground truth the synthetic embeddings are built from, so on
+   the synthetic fixture they are circular in the same way; the real-fixture rows
+   are the load-bearing evidence. The baseline `explore`/`person` ridge entries
+   now guard the *uncentered* default that replaced it (caveat 5); the centered
+   numbers remain reproducible via the config matrix.
+5. **The default was re-decided on real evidence (WP-304): ranking now runs the
+   UNCENTERED tag-space ridge at an uncentered-selected GCV λ.** A six-config
+   matrix — {rank-1, ridge tag-space, ridge recon-space} × {centered,
+   uncentered} plus a pure-semantic null model, full-path where a production
+   seam exists (`config_matrix_test.go`, `-configmatrix`) — was measured on
+   both fixtures under a rule pre-committed *before* measurement: a config
+   qualifies iff it does not lose to rank-1 on the real fixture beyond ±0.01
+   NDCG@8 and does not lose > 0.02 NDCG@8 on synthetic versus the best there.
+   Exactly one config qualified — **ridge tag-space uncentered** (real 0.9399
+   vs rank-1 0.9050; synthetic 0.9366 vs the centered ridge's 0.9309, i.e. it
+   beat the previous best on *both* fixtures for search). The centered default
+   failed on real (−0.1514); recon-space failed centered (loses to rank-1 on
+   real similarity-only) and uncentered (loses materially on synthetic, and has
+   no full-path seam — the blend hardcodes tag-space); the pure-semantic null
+   failed on real (0.8560), so the uncentered win is not "the decomposition
+   does nothing". Finalist runs corroborated on the real fixture: explore
+   +0.0820, person +0.0169 NDCG over rank-1. **Recorded costs, not hidden:**
+   on the circular synthetic fixture the uncentered config loses explore NDCG
+   −0.0264 vs rank-1 and person NDCG −0.0763 vs the old centered ridge (whose
+   synthetic person win was the capped-candidate amplification WP-302 already
+   flagged); real person Recall@8 drops −0.0446 while its NDCG rises (a
+   6-person surface — one-issue swings are ~0.03–0.08 there). Why centering
+   hurts here: subtracting the corpus mean from a K=16≪D=1536 tag catalog
+   rotates tag directions toward corpus-specific noise, and GCV on centered
+   real inputs censors at the 0.01 grid floor (R² ~0.16), while on uncentered
+   inputs it selects an interior λ = 0.3 (R² ~0.17, synthetic λ = 1.0 at R²
+   0.90). Implementation kept the flip discipline: `Uncentered` is a
+   config-shaped flag on the `ridgelambda`/`ridgedecomp` caches; the API wires
+   an uncentered pair to the four ranking surfaces while **themes and the
+   drift/tag-health diagnostics keep the centered solve** (separate cache
+   instances — structure claims were never re-litigated by this ranking
+   decision); the centered configuration and the in-place per-request options
+   remain reachable in code. Everything is asserted by the golden baseline
+   rows above; layer-2 evidence (a judged real-corpus fixture) remains the
+   sharpening step if production telemetry ever disagrees.
 
 ## 5. Deviations ledger: design vs. as-built
 
@@ -478,6 +631,7 @@ design, and why. These are decisions, not drift — the as-built column wins.
 | `DownRank` multiplies relevance ×0.75 | Emits `r⁻ = 0.25` | Same effective shrink, but the negative evidence is explicit, signed, provenance-tracked, and visible to the ridge anchor. |
 | Dismiss provenance sourced from `/tags/dismiss` | **Unwired** | That endpoint dismisses tag-merge suggestions, not per-issue relevance. A real dismiss affordance is future work (Track D). |
 | NMF "~50 iterations to convergence" | Early stop: relative Frobenius improvement < 1e-4, cap 200 (WP-206) | The fixed-50 loop shipped first was under-converged (fixtures converge at 58–114 iterations); the early stop restored the design intent and improved quality. |
+| Ridge ranking default flipped on synthetic evidence (centered tag-space, Phase 3c) | **Re-decided on real evidence (WP-304):** ranking default is the *uncentered* tag-space ridge at an uncentered-selected GCV λ; themes/drift keep the centered solve in separate cache instances | The synthetic fixture builds embeddings from tags and structurally flattered the centered tag-space model; on real `text-embedding-3-small` geometry the centered default lost to the rank-1 fallback (−0.15 NDCG@8) while the uncentered config beat rank-1 on both fixtures. Evidence: §4 caveat 5, `config_matrix_test.go`. |
 
 Documentation debt created by the flip — **resolved by WP-102**: the ridge
 constants header now teaches the two-λ regime, whitepaper §10.3 describes the
@@ -490,7 +644,7 @@ shipped default, and the rank-1 aggregate comment says pooled, not mean.
 | **Phase 0** — foundations | **Done (reshaped).** Σ tightening dropped in favor of corpus-mean centering; drift shipped as `DriftCosine`. | `internal/issuemath/centering.go`, `ridgescore.go` |
 | **Phase 1** — signed relevance | **Shipped end-to-end.** Analyzer negation with evidence gate, verifier negations (anti-alignment 0.5 / dominance 0.25), 0.7 cap honored on every path, JSONB persistence. Emitting: `analyzer-negation`, `verifier-dominance`. Dead constants: `dismiss`, `cooccurrence`. | `internal/ai/*`, `internal/issueenrichment/verify.go`, `internal/domain/tags.go` |
 | **Phase 2** — ridge shadow | **Shipped.** Per-request anchored ridge behind `GET /debug/issues/{id}/ridge`, signed anchor, diagonal penalties. | `internal/issuemath/ridgescore.go`, `internal/diagnostics/debug_ridge_score.go` |
-| **Phase 3** — default flip | **Shipped.** GCV λ revision-cached (`internal/ridgelambda`, stride-sampled ≤2000, centered with corpus means); search, explore, and person recommendations default to ridge tag-space blend with rank-1 fallback; downstream modifiers untouched. Both paths under the golden baseline since WP-101; remaining caveat: only search is harness-validated (WP-302). | `internal/issuemath/ridge_decomposition.go`, `ridge_gcv.go`, `internal/ridgelambda/`, `internal/map/search.go`, `explore.go`, `internal/people/person_detail.go` |
+| **Phase 3** — default flip | **Shipped, then re-decided on real evidence (WP-304).** GCV λ revision-cached (`internal/ridgelambda`, stride-sampled ≤2000); search, unified search, explore, and person recommendations rank from the **uncentered** tag-space ridge bundle (`internal/ridgedecomp` with `Uncentered: true`, λ selected on the same uncentered inputs) with rank-1 fallback; downstream modifiers untouched. All three surfaces under the golden baseline on both fixtures, and the shipped config beats rank-1 on the real fixture on all three (§4 caveat 5). Themes/drift keep the centered solve. | `internal/issuemath/ridge_decomposition.go`, `ridge_gcv.go`, `internal/ridgelambda/`, `internal/ridgedecomp/`, `internal/map/search.go`, `explore.go`, `internal/people/person_detail.go`, `internal/api/server.go` |
 | **Phase 3.5** — drift consumers | **Shipped (beyond original plan).** Tag-health sweep at fixed loose λ; curation detector uses drift as primary mis-tagging signal; rank-1 residual clusters demoted to uncovered-concept mining (propose-only). | `internal/diagnostics/debug_tag_health.go`, `internal/curation/detect.go`, `internal/issuemath/residual_clusters.go`, `internal/memories/synthesizer.go` |
 | **Phase 4** — themes | **Shipped to debug tier (plan Stage 2, PRs #206/#207/#212).** Revision-keyed theme cache over corpus ridge loadings; stable identities (Hungarian match, threshold 0.6); LLM labels with deterministic fallback; NMF early-stop + per-refresh telemetry; K=8 kept by a dated sweep decision; three `/debug/themes` endpoints. Open follow-ons: full-H export (WP-207), dev-corpus soak (WP-208), identity/label persistence (WP-406). | `internal/issuethemes/`, `internal/themes/`, `internal/diagnostics/debug_themes.go` |
 | **Phase 5** — planning overlays | Not started. Person profiles still aggregate raw `r_i` (specificity-weighted). | — |
@@ -631,11 +785,12 @@ The audit-driven track. Ordered by how much risk each item retires.
 
 **D1. Put the production default under the golden baseline. (Done, WP-101.)**
 Both paths guarded on every test run: `baseline.json` carries keyed `rank1`
-and `ridge` entries (ridge injected at the GCV-selected λ exactly as the API
-layer does; the λ recorded for observability, never asserted). Measured: rank1
-0.8658/0.9117, ridge 0.9309/0.9586 — the full-path delta (+0.0651/+0.0469)
-is now pinned in CI. A tamper test proved the guard bites (λ_scored=3.0 fails
-ridge, leaves rank1 green).
+and `ridge` entries (ridge injected exactly as the API layer does; the λ
+recorded for observability, never asserted). Measured at the time: rank1
+0.8658/0.9117, ridge 0.9309/0.9586 — pinned in CI. A tamper test proved the
+guard bites (λ_scored=3.0 fails ridge, leaves rank1 green). The ridge entries
+were deliberately re-measured when WP-304 switched the default to the
+uncentered config (§4); the guard mechanism is unchanged.
 
 **D2. A real-embedding fixture.** The synthetic corpus generates embeddings as
 tag sums, structurally favoring ridge. Capture a small anonymized real corpus
@@ -666,8 +821,9 @@ per sample). Note: the spec's suggested `‖L⁻¹T‖²_F` form is *slower* her
 D≫K makes it O(K²D); the diagonal identity was the right choice. (b) the ranker
 now solves via Cholesky, the same factorization GCV uses, so λ is selected on the
 path that ranks — with a defensive LU fallback (`RidgeCholeskyFallbackCount`,
-never fires while Λ ≥ 0.05 keeps A SPD). matheval baselines unmoved (rank1
-0.8658/0.9117, ridge 0.9309/0.9586).
+never fires while Λ ≥ 0.05 keeps A SPD). matheval baselines unmoved by that
+work (rank1 0.8658/0.9117, ridge then 0.9309/0.9586 — the ridge entry was
+later re-measured by WP-304's default switch).
 
 **D6. Negation completion or cleanup.** Decide the two dead provenances:
 build a real per-issue tag-dismiss affordance emitting `dismiss` negations

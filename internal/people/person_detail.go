@@ -51,6 +51,9 @@ type GetPersonDetailHandler struct {
 	// RidgeLambda selects the anchored-ridge similarity model for
 	// recommendations when wired and the corpus is large enough; otherwise
 	// recommendations use the rank-1 factor model. Mirrors the search path.
+	// Production wires only RidgeDecomp (uncentered, WP-304): this in-place
+	// solve runs in the centered open-issue space, so wire it only with a
+	// centered-regime cache.
 	RidgeLambda *ridgelambda.Cache
 }
 
