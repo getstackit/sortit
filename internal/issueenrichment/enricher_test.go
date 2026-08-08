@@ -291,4 +291,10 @@ func TestAnalyzeTextCanDisableVerifier(t *testing.T) {
 	if result.TagScores[0].VerificationVerdict != "" {
 		t.Fatalf("expected verifier metadata to be omitted, got %#v", result.TagScores[0])
 	}
+	if result.Trace.Verification.Enabled || result.Trace.Verification.KeepCount != 0 {
+		t.Fatalf("expected trace to preserve disabled verifier state, got %#v", result.Trace.Verification)
+	}
+	if len(result.Trace.ModelOutput.Tags) != 1 || result.Trace.ModelOutput.Tags[0].Tag != "database" {
+		t.Fatalf("expected raw model output in trace, got %#v", result.Trace.ModelOutput)
+	}
 }

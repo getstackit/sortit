@@ -17,6 +17,7 @@ These docs describe the current product and implementation. Historical planning 
 - [White Paper](./whitepaper.md): the math behind enrichment, search, and map — with critical notes on where the implementation diverges from textbook.
 - [Math Evolution](./math-evolution.md): forward-looking design for signed tag loadings, ridge regression, and the quantitative planning layer.
 - [Math Evaluation Harness](./math-eval.md): the offline NDCG/Recall/R² harness that makes scoring-math changes measurable.
+- [Document Pipeline Evaluation](./pipeline-evaluation.md): the staged replay, metrics, and visualization plan for evaluating onboarding end to end.
 
 ## Quick Start
 

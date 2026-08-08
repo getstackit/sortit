@@ -61,6 +61,17 @@ identical results).
 
 **Size:** M · No dependencies. Gates WP-703.
 
+> **Status note (2026-08-08):** the design has been expanded into a full
+> pipeline-evaluation program — see
+> [../pipeline-evaluation.md](../pipeline-evaluation.md) (stage traces, replay
+> ports, fixture bundles, an evaluation workbench). `AnalysisTrace` and
+> `/debug/eval-tags` are the first landed pieces. That program supersedes the
+> *shape* below; this WP's **exit bar is unchanged and deliberately smaller
+> than the program**: a committed, reproducible per-model comparison table
+> (fidelity + negation FP rate + downstream NDCG + cost) and a written floor/
+> escalation budget. Ship that first; the replay/workbench machinery follows
+> as its own WPs.
+
 ### Context (verified)
 
 `internal/matheval` measures *ranking* (NDCG@8/Recall@8 over judged queries).

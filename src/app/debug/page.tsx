@@ -66,6 +66,42 @@ type IssueAnalysis = {
     tags: string[];
     similarity: number;
   }>;
+  trace: AnalysisTrace;
+};
+
+type AnalysisTrace = {
+  input: { characterCount: number };
+  candidateSelection: {
+    mode: string;
+    candidateCount: number;
+    hintCount: number;
+    sourceCounts: Record<string, number>;
+  };
+  context: {
+    fewShotExampleCount: number;
+    priorDecisionCount: number;
+    conceptCount: number;
+    hasProjectOverview: boolean;
+  };
+  modelOutput: {
+    assignedTagCount: number;
+    negatedTagCount: number;
+    tags: Array<{ tag: string; relevance: number; evidence?: string[] }>;
+    negated: Array<{ tag: string; confidence: number; evidence?: string[] }>;
+  };
+  postProcessing: {
+    relevanceFloorFilteredCount: number;
+    genericAttenuatedTags: string[];
+    persistedTagCount: number;
+  };
+  verification: {
+    enabled: boolean;
+    keepCount: number;
+    downRankedCount: number;
+    flaggedCount: number;
+    negatedCount: number;
+    evidenceCount: number;
+  };
 };
 
 type InvalidateMapProjectionResponse = {
@@ -156,14 +192,15 @@ type TagHealth = {
 };
 
 const SECTION_LINKS = [
-  { id: "prompt", title: "Prompt" },
-  { id: "factor-weights", title: "Factor weights" },
-  { id: "tag-health", title: "Tag health" },
-  { id: "candidates", title: "Candidates" },
-  { id: "tags", title: "Tags" },
-  { id: "embedding", title: "Embedding" },
-  { id: "similarity", title: "Similarity" },
-  { id: "json", title: "JSON" },
+  { id: "prompt", title: "1. Input" },
+  { id: "embedding", title: "2. Embedding" },
+  { id: "candidates", title: "3. Retrieval" },
+  { id: "model-output", title: "4. Classification" },
+  { id: "tags", title: "5. Verification" },
+  { id: "similarity", title: "6. Similarity" },
+  { id: "tag-health", title: "Corpus health" },
+  { id: "factor-weights", title: "Corpus math" },
+  { id: "json", title: "Raw JSON" },
 ];
 
 const DEFAULT_TEXT = `Safari export crashes when I try to download a PDF from the issue detail view on iPad. It hangs for a second, then the sheet disappears and nothing is saved.`;
@@ -304,6 +341,55 @@ function TagScoreList({
           <TagEvidenceQuotes score={score} sourceText={sourceText} />
         </div>
       ))}
+    </div>
+  );
+}
+
+function ModelOutputList({
+  tags,
+  negated,
+}: {
+  tags: AnalysisTrace["modelOutput"]["tags"];
+  negated: AnalysisTrace["modelOutput"]["negated"];
+}) {
+  if (tags.length === 0 && negated.length === 0) {
+    return <p className="text-sm text-muted-foreground">The model returned no tags or negations.</p>;
+  }
+
+  return (
+    <div className="space-y-3">
+      {tags.length > 0 && (
+        <div className="flex flex-wrap gap-2">
+          {tags.map((score) => (
+            <div key={`${score.tag}-${score.relevance}`} className="rounded-2xl border border-border/70 bg-background/70 px-3 py-2 text-sm">
+              <div className="flex items-center gap-2">
+                <span className="font-medium">{score.tag}</span>
+                <span className="text-muted-foreground">{formatFloat(score.relevance)}</span>
+              </div>
+              {score.evidence?.map((quote, index) => (
+                <blockquote key={`${score.tag}-model-evidence-${index}`} className="mt-2 border-l-2 border-sky-300 pl-2 text-xs italic leading-5 text-muted-foreground">
+                  &ldquo;{quote}&rdquo;
+                </blockquote>
+              ))}
+            </div>
+          ))}
+        </div>
+      )}
+      {negated.length > 0 && (
+        <div className="flex flex-wrap gap-2">
+          {negated.map((item) => (
+            <div key={`${item.tag}-${item.confidence}`} className="rounded-2xl border border-rose-300 bg-rose-50 px-3 py-2 text-sm">
+              <span className="font-medium">Not {item.tag}</span>
+              <span className="ml-2 text-muted-foreground">{formatFloat(item.confidence)}</span>
+              {item.evidence?.map((quote, index) => (
+                <blockquote key={`${item.tag}-model-negation-${index}`} className="mt-2 border-l-2 border-rose-300 pl-2 text-xs italic leading-5 text-muted-foreground">
+                  &ldquo;{quote}&rdquo;
+                </blockquote>
+              ))}
+            </div>
+          ))}
+        </div>
+      )}
     </div>
   );
 }
@@ -595,7 +681,7 @@ export default function DebugPage() {
         <div className="mx-auto flex w-full max-w-7xl flex-col gap-6 px-4 py-6 lg:px-6">
           <section
             id="prompt"
-            className="app-surface grid gap-6 p-5 lg:grid-cols-[minmax(0,1.4fr)_minmax(20rem,0.8fr)]"
+            className="app-surface order-1 grid gap-6 p-5 lg:grid-cols-[minmax(0,1.4fr)_minmax(20rem,0.8fr)]"
           >
             <div className="space-y-3">
               <div>
@@ -769,7 +855,7 @@ export default function DebugPage() {
             </div>
           </section>
 
-          <section id="tag-health" className="app-surface p-5">
+          <section id="tag-health" className="app-surface order-8 p-5">
             <div className="flex items-center justify-between gap-3">
               <div>
                 <p className="text-xs font-medium uppercase tracking-[0.18em] text-muted-foreground">
@@ -909,7 +995,7 @@ export default function DebugPage() {
 
           <section
             id="factor-weights"
-            className="app-surface p-5"
+            className="app-surface order-9 p-5"
           >
             <div className="flex items-center justify-between gap-3">
               <div>
@@ -1300,13 +1386,67 @@ export default function DebugPage() {
           </section>
 
           <section
-            id="candidates"
-            className="app-surface p-5"
+            id="trace"
+            className="app-surface order-2 p-5"
           >
             <div className="flex items-center justify-between gap-3">
               <div>
                 <p className="text-xs font-medium uppercase tracking-[0.18em] text-muted-foreground">
-                  Candidate set
+                  Pipeline overview
+                </p>
+                <p className="mt-1 text-sm text-muted-foreground">
+                  Follow the document from input through embedding, retrieval, classification, and verification. Prompt and retrieved-memory bodies remain private.
+                </p>
+              </div>
+              {result && (
+                <Badge variant="outline" className="text-xs">
+                  {result.trace.verification.enabled ? "Verifier on" : "Verifier off"}
+                </Badge>
+              )}
+            </div>
+
+            {result ? (
+              <div className="mt-4 grid gap-3 md:grid-cols-2 xl:grid-cols-3">
+                <div className="app-subtle-surface px-4 py-3">
+                  <p className="text-[11px] uppercase tracking-[0.16em] text-muted-foreground">1–3. Input, embedding & retrieval</p>
+                  <p className="mt-2 text-sm">{result.trace.input.characterCount} characters · {result.trace.candidateSelection.candidateCount} candidates</p>
+                  <p className="mt-1 text-xs text-muted-foreground">{result.trace.candidateSelection.hintCount} embedding hints · {formatCandidateMode(result.trace.candidateSelection.mode)}</p>
+                  <div className="mt-2 flex flex-wrap gap-1">
+                    {Object.entries(result.trace.candidateSelection.sourceCounts).map(([source, count]) => (
+                      <Badge key={source} variant="outline" className="text-[10px]">{source}: {count}</Badge>
+                    ))}
+                  </div>
+                </div>
+                <div className="app-subtle-surface px-4 py-3">
+                  <p className="text-[11px] uppercase tracking-[0.16em] text-muted-foreground">4. Classification context</p>
+                  <p className="mt-2 text-sm">{result.trace.context.fewShotExampleCount} examples · {result.trace.context.priorDecisionCount} decisions</p>
+                  <p className="mt-1 text-xs text-muted-foreground">{result.trace.context.conceptCount} concepts · {result.trace.context.hasProjectOverview ? "project overview included" : "no project overview"}</p>
+                  <p className="mt-2 text-sm">{result.trace.modelOutput.assignedTagCount} assigned · {result.trace.modelOutput.negatedTagCount} model-negated</p>
+                  <p className="mt-1 text-xs text-muted-foreground">Raw model tags and proposed quotations appear in step 4 below.</p>
+                </div>
+                <div className="app-subtle-surface px-4 py-3">
+                  <p className="text-[11px] uppercase tracking-[0.16em] text-muted-foreground">5. Verification & evidence</p>
+                  <p className="mt-2 text-sm">{result.trace.postProcessing.persistedTagCount} persisted · {result.trace.postProcessing.relevanceFloorFilteredCount} below floor</p>
+                  <p className="mt-1 text-xs text-muted-foreground">{result.trace.verification.keepCount} kept · {result.trace.verification.downRankedCount} down-ranked · {result.trace.verification.flaggedCount} flagged</p>
+                  <p className="mt-1 text-xs text-muted-foreground">{result.trace.verification.evidenceCount} grounded quotations · {result.trace.verification.negatedCount} negations</p>
+                  {result.trace.postProcessing.genericAttenuatedTags.length > 0 && (
+                    <p className="mt-2 text-xs text-muted-foreground">Generic attenuation: {result.trace.postProcessing.genericAttenuatedTags.join(", ")}</p>
+                  )}
+                </div>
+              </div>
+            ) : (
+              <p className="mt-4 text-sm text-muted-foreground">Analyze an issue to view its stage-by-stage trace.</p>
+            )}
+          </section>
+
+          <section
+            id="candidates"
+            className="app-surface order-4 p-5"
+          >
+            <div className="flex items-center justify-between gap-3">
+              <div>
+                <p className="text-xs font-medium uppercase tracking-[0.18em] text-muted-foreground">
+                  3. Candidate retrieval
                 </p>
                 <p className="mt-1 text-sm text-muted-foreground">
                   The exact taxonomy passed to the model, including how each tag entered the set.
@@ -1371,17 +1511,55 @@ export default function DebugPage() {
             )}
           </section>
 
+          <section id="model-output" className="app-surface order-5 p-5">
+            <div className="flex items-center justify-between gap-3">
+              <div>
+                <p className="text-xs font-medium uppercase tracking-[0.18em] text-muted-foreground">
+                  4. Model classification
+                </p>
+                <p className="mt-1 text-sm text-muted-foreground">
+                  The tagger&apos;s direct structured response before relevance filtering, generic attenuation, evidence resolution, or verification.
+                </p>
+              </div>
+              {result && (
+                <div className="flex items-center gap-2">
+                  <Badge variant="outline" className="text-xs">
+                    {result.trace.modelOutput.assignedTagCount} proposed
+                  </Badge>
+                  {result.trace.modelOutput.negatedTagCount > 0 && (
+                    <Badge variant="outline" className="text-xs">
+                      {result.trace.modelOutput.negatedTagCount} negated
+                    </Badge>
+                  )}
+                </div>
+              )}
+            </div>
+
+            {!result ? (
+              <p className="mt-4 text-sm text-muted-foreground">
+                Run an analysis to inspect the tagger&apos;s raw output and proposed quotations.
+              </p>
+            ) : (
+              <div className="mt-4">
+                <ModelOutputList
+                  tags={result.trace.modelOutput.tags}
+                  negated={result.trace.modelOutput.negated}
+                />
+              </div>
+            )}
+          </section>
+
           <section
             id="tags"
-            className="app-surface p-5"
+            className="app-surface order-6 p-5"
           >
             <div className="flex items-center justify-between gap-3">
               <div>
                 <p className="text-xs font-medium uppercase tracking-[0.18em] text-muted-foreground">
-                  Top tags
+                  5. Verification & citations
                 </p>
                 <p className="mt-1 text-sm text-muted-foreground">
-                  Highest relevance scores returned by the backend.
+                  Final tag scores after relevance filtering and deterministic verification. The amber quotations here are resolved against the source document—the citations you can trust.
                 </p>
               </div>
               {result && (
@@ -1406,12 +1584,12 @@ export default function DebugPage() {
 
           <section
             id="embedding"
-            className="app-surface p-5"
+            className="app-surface order-3 p-5"
           >
             <div className="flex items-center justify-between gap-3">
               <div>
                 <p className="text-xs font-medium uppercase tracking-[0.18em] text-muted-foreground">
-                  Embedding
+                  2. Embedding
                 </p>
                 <p className="mt-1 text-sm text-muted-foreground">
                   Chunking and pooling metadata for the final embedding.
@@ -1470,12 +1648,12 @@ export default function DebugPage() {
 
           <section
             id="similarity"
-            className="app-surface p-5"
+            className="app-surface order-7 p-5"
           >
             <div className="flex items-center justify-between gap-3">
               <div>
                 <p className="text-xs font-medium uppercase tracking-[0.18em] text-muted-foreground">
-                  Embedding similarity
+                  6. Corpus similarity
                 </p>
                 <p className="mt-1 text-sm text-muted-foreground">
                   Cosine similarity between the analyzed issue embedding and stored issue embeddings.
@@ -1544,7 +1722,7 @@ export default function DebugPage() {
 
           <section
             id="json"
-            className="app-surface p-5"
+            className="app-surface order-10 p-5"
           >
             <p className="text-xs font-medium uppercase tracking-[0.18em] text-muted-foreground">
               Raw JSON

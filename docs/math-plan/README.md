@@ -129,9 +129,9 @@ code except WP-704's touch on the ranking caches).
 
 | WP | Title | Size | Depends on | Status |
 |---|---|---|---|---|
-| WP-701 | Embedding call hygiene: one embed per analysis | S | — | todo |
-| WP-702 | Tagging-fidelity eval (the analyzer instrument) | M | — | todo |
-| WP-703 | Cheap-first analyzer tiering with escalation | M | WP-702 | todo |
+| WP-701 | Embedding call hygiene: one embed per analysis | S | — | shipped (commit 05ba013) |
+| WP-702 | Tagging-fidelity eval (the analyzer instrument) | M | — | in progress — design expanded by [../pipeline-evaluation.md](../pipeline-evaluation.md); `AnalysisTrace` + `/debug/eval-tags` landed; the committed comparison table + floor decision remain the WP's exit bar |
+| WP-703 | Cheap-first analyzer tiering with escalation | M | WP-702 | todo — note: the tag-model default has been switched ahead of WP-702's table; that flip should ride with (or behind) the measurement, per conventions §2–3 |
 | WP-704 | Learned tag matrix `T` (anchored transposed ridge) | M–L | WP-301 (shipped) | todo |
 | WP-705 | Mixed-kind fixture (documents / ideas / tasks) | M | WP-704 first study | todo |
 | WP-706 | Embedding-model qualification harness + migration checklist | S–M | WP-606 for small-D | todo |
