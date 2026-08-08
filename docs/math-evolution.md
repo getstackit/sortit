@@ -660,10 +660,11 @@ shipped default, and the rank-1 aggregate comment says pooled, not mean.
 > directory is the working plan. When they disagree, the plan directory is
 > more current.
 
-Four tracks. A → B is the product arc (themes, then overlays); C is the riskiest
+Five tracks. A → B is the product arc (themes, then overlays); C is the riskiest
 UX change and goes last; D is the hardening track that runs alongside and — in
-two places — gates A. Estimates assume the established pattern-reuse (the
-revision-cache shape already exists twice).
+two places — gates A; E (added 2026-08-07) is the cheap-model + learned-tag-layer
+program, independent of A–C. Estimates assume the established pattern-reuse
+(the revision-cache shape already exists twice).
 
 ## 7. Track A — Themes to production (finish Phase 4)
 
@@ -850,6 +851,48 @@ any phase): Ledoit–Wolf (or explicitly-documented heuristic) covariance
 shrinkage; the asymmetric authority/hubness slopes (0.25 vs 0.15); adaptive
 `k` in tag specificity. None block A–C; schedule opportunistically.
 
+## 10.5 Track E — Cheap-model economics and the learned tag layer
+
+> Added 2026-08-07. Execution detail:
+> [math-plan/70-stage-7-cheap-models-learned-layer.md](./math-plan/70-stage-7-cheap-models-learned-layer.md)
+> (WP-701..706). This section is the strategy view.
+
+The premise: the expensive part of Sortit is LLM opinion (tagging,
+canonicalization), and the math layer already contains the apparatus that can
+check and correct cheap opinion — the verifier's evidence gate, drift
+diagnostics, and the anchored ridge, whose whole design is "refine a noisy
+anchor with geometry." Track E uses that apparatus deliberately, on two
+independent lanes:
+
+**Economics lane.** Stop paying twice for identical embedding calls (a
+measured double-embed on every enrichment — WP-701); build a tagging-fidelity
+instrument over the fixture ground truth, with cost-per-1k-enrichments in the
+same table (WP-702); then route enrichment cheap-first with evidence-triggered
+escalation — verifier flags, unresolved evidence, and drift pick out the hard
+cases that earn the stronger model (WP-703). Constraint 5 is untouched: the
+analyzer's `r` stays load-bearing; only its producer economics change.
+
+**Geometry lane.** The real-fixture R² ≈ 0.16 (§4 caveat 3) says the
+descriptor-embedded tag basis explains almost none of real embedding variance.
+WP-704 learns the basis per corpus — anchored multi-output ridge in the
+*transposed* direction, `T_L = (RᵀR + γ₀I)⁻¹(RᵀE + γ₀T⁰)` — the same
+anchored-ridge trick as the ranking solve, pointed at `T` instead of `f`.
+Closed form, deterministic, revision-cached, cold tags pinned to their
+descriptors automatically. **Ranking regime only**: drift, the verifier,
+specificity, the map, and themes keep the descriptor basis as an independent
+witness — a witness fit from `r` is coached and goes blind to systematic
+mis-tagging. Judged by the WP-304 discipline (pre-committed rule, real fixture
+is load-bearing, config-matrix arms including a centroid baseline it must
+beat).
+
+The lanes compound: a learned basis that corrects loose anchors is precisely
+what makes a cheaper analyzer safe. The track also carries the mixed-kind
+fixture (WP-705) — the measurement instrument for the documents/ideas/tasks
+generalization, where cross-register ranking is the learned basis's strongest
+expected win — and the embedding-model qualification harness (WP-706, gated
+by WP-606 for small dimensions), which exists for local-first motivations
+rather than cost.
+
 ## 11. Sequencing
 
 ```
@@ -860,6 +903,9 @@ WP-207 (full H export) ───────────────────
 WP-406 (identity+label persistence) ─┬─► promotion of any overlay out of debug
 WP-208 (dev-corpus soak) ────────────┴─► C (map on W)  ◄── D3's map metric (WP-303)
 D6, D9: parallel, opportunistic; D2 before believing any new fixture delta.
+
+Track E (Stage 7): WP-701 ─► (WP-702 ─► WP-703)  ∥  WP-704 ─► WP-705
+                   WP-606 ─► WP-706. Independent of A–D; interleaves freely.
 ```
 
 Rules of the road, unchanged: every item is a small stacked PR; math changes

@@ -11,6 +11,7 @@ import (
 
 	"sortit/internal/ai"
 	"sortit/internal/diagnostics"
+	issueenrichment "sortit/internal/issueenrichment"
 	"sortit/internal/issues"
 	"sortit/internal/tags"
 )
@@ -30,14 +31,15 @@ type debugIssueSimilarity struct {
 }
 
 type debugIssueAnalyzeResponse struct {
-	Tags                   []issues.TagRelevance  `json:"tags"`
-	CandidateSet           tags.CandidateTaxonomy `json:"candidateSet"`
-	Embedding              ai.EmbeddingInfo       `json:"embedding"`
-	Tagger                 ai.ModelInfo           `json:"tagger"`
-	Embedder               ai.ModelInfo           `json:"embedder"`
-	ComparedIssueCount     int                    `json:"comparedIssueCount"`
-	AverageIssueSimilarity float64                `json:"averageIssueSimilarity"`
-	SimilarIssues          []debugIssueSimilarity `json:"similarIssues"`
+	Tags                   []issues.TagRelevance         `json:"tags"`
+	CandidateSet           tags.CandidateTaxonomy        `json:"candidateSet"`
+	Embedding              ai.EmbeddingInfo              `json:"embedding"`
+	Tagger                 ai.ModelInfo                  `json:"tagger"`
+	Embedder               ai.ModelInfo                  `json:"embedder"`
+	ComparedIssueCount     int                           `json:"comparedIssueCount"`
+	AverageIssueSimilarity float64                       `json:"averageIssueSimilarity"`
+	SimilarIssues          []debugIssueSimilarity        `json:"similarIssues"`
+	Trace                  issueenrichment.AnalysisTrace `json:"trace"`
 }
 
 type debugInvalidateMapProjectionResponse struct {
@@ -79,6 +81,7 @@ func (s *Server) handleDebugIssueAnalyze(w http.ResponseWriter, r *http.Request)
 		ComparedIssueCount:     analyzed.ComparedIssueCount,
 		AverageIssueSimilarity: analyzed.AverageIssueSimilarity,
 		SimilarIssues:          toDebugIssueSimilarities(analyzed.SimilarIssues),
+		Trace:                  analyzed.Trace,
 	})
 }
 

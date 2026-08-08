@@ -31,11 +31,11 @@
 
 ## Mapping to the strategy doc
 
-`math-evolution.md` Part II describes four tracks; this plan resequences them
+`math-evolution.md` Part II describes five tracks; this plan resequences them
 into stages by dependency: **Track D** (hardening) splits across Stage 1 (core
 guards), Stage 3 (eval expansion), and Stage 6 (long tail); **Track A**
 (themes) is Stage 2; **Track B** (overlays) is Stage 4; **Track C** (map) is
-Stage 5.
+Stage 5; **Track E** (cheap-model economics + learned tag layer) is Stage 7.
 
 ## The queue
 
@@ -120,6 +120,22 @@ are done. Ordered roughly by value.
 | WP-607 | Outcome supervision spike | L | Stage 4 | todo |
 | WP-608 | Curation & memory math whitepaper | M | — | todo |
 
+### Stage 7 — Cheap-model economics and the learned tag layer ([70-stage-7-cheap-models-learned-layer.md](./70-stage-7-cheap-models-learned-layer.md))
+
+Added 2026-08-07 (claims verified against code that date). Strategy: shift the
+heavy lifting from expensive LLM opinion onto cheap models plus the math layer
+— see math-evolution.md Track E. Interleaves freely with Stages 4–6 (no shared
+code except WP-704's touch on the ranking caches).
+
+| WP | Title | Size | Depends on | Status |
+|---|---|---|---|---|
+| WP-701 | Embedding call hygiene: one embed per analysis | S | — | shipped (commit 05ba013) |
+| WP-702 | Tagging-fidelity eval (the analyzer instrument) | M | — | in progress — design expanded by [../pipeline-evaluation.md](../pipeline-evaluation.md); `AnalysisTrace` + `/debug/eval-tags` landed; the committed comparison table + floor decision remain the WP's exit bar |
+| WP-703 | Cheap-first analyzer tiering with escalation | M | WP-702 | todo — note: the tag-model default has been switched ahead of WP-702's table; that flip should ride with (or behind) the measurement, per conventions §2–3 |
+| WP-704 | Learned tag matrix `T` (anchored transposed ridge) | M–L | WP-301 (shipped) | todo |
+| WP-705 | Mixed-kind fixture (documents / ideas / tasks) | M | WP-704 first study | todo |
+| WP-706 | Embedding-model qualification harness + migration checklist | S–M | WP-606 for small-D | todo |
+
 ## Dependency graph
 
 ```
@@ -133,15 +149,23 @@ WP-301 (real fixture) ─► WP-302 (explore/person eval) ─► Stage 4: WP-401
 WP-207 (full H export) ──────────────────────────────────┘  (land before WP-402/403)
 WP-406 (identity+label persistence) ─┬─► promotion of any Stage 4 surface out of debug
 WP-208 (dev-corpus soak) ────────────┴─► WP-501 ─► WP-502  ◄── WP-303 (map metric)
+
+WP-701 (call hygiene) ── standalone, anytime
+WP-702 (tagging eval) ─► WP-703 (cheap-first tiering)
+WP-301 (shipped) ──────► WP-704 (learned T) ─► WP-705 (mixed-kind fixture)
+WP-606 (K ≥ D GCV) ────► WP-706 (embedding-model qualification)
 ```
 
-**Current position (2026-07-02):** all of Stages 1–2 (WP-101..WP-206) merged
-(PRs #201–#207, #212). Recommended path: WP-301
-next (every ridge number is still a floor argument on tag-constructed
-embeddings), then WP-302 (its person fixture is the substrate for WP-401's
-flip decision), then Stage 4 debug-tier work with WP-207 landing before
-WP-402/403. WP-208 needs a seeded long-lived dev server — start it as soon as
-one exists, since it accrues calendar time.
+**Current position (2026-08-07):** Stages 1–3 shipped (WP-101..WP-304).
+Stage 7 added — the cheap-model + learned-layer program. Recommended path from
+here: **WP-701** (standalone cost win, pays for everything after it), then
+**WP-702 → WP-703** (instrument, then the cheap-first flip) with **WP-704**
+running in parallel (independent lane; the learned basis is also what makes a
+cheaper analyzer safe — the geometry corrects noisy anchors). WP-705 follows
+WP-704's first study. Stage 4 overlay work remains open and interleaves
+freely; WP-208's seeded dev server still accrues calendar time and should
+start whenever one exists. WP-606 moves up in priority if WP-706 ever chases a
+small-dimension embedding model.
 
 ## Why this order (one paragraph per stage)
 
@@ -169,6 +193,13 @@ memory), so it goes last, gated on theme stability soak and a map metric.
 **Stage 6** is the long tail: new negative-evidence sources, calibration,
 inherited weak spots, outcome supervision, and the undocumented curation math.
 It keeps the program honest for as long as anyone wants to keep working it.
+
+**Stage 7** attacks cost and the R² gap as one program: cheap models do the
+first pass because the math layer (verifier gate, drift, ridge refinement, and
+— new — a per-corpus *learned* tag basis) can correct loose anchors, and the
+learned basis is measured under the same pre-committed-rule discipline that
+re-decided the ridge default. It also carries the generalization instrument
+(mixed-kind fixture) for the documents/ideas/tasks direction.
 
 ## Status legend
 

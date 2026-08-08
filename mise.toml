@@ -8,8 +8,10 @@ _.file = ".env"
 _.path = ["{{ config_root }}/bin", "{{ env.HOME }}/go/bin"]
 NEXT_PUBLIC_API_ORIGIN = "http://localhost:8081"
 SORTIT_WEB_ORIGIN = "http://localhost:3000"
-SORTIT_DATABASE_URL = "postgres://sortit:sortit@localhost:5432/sortit?sslmode=disable"
-SORTIT_TEST_DATABASE_URL = "postgres://sortit:sortit@localhost:5432/sortit_test?sslmode=disable"
+# POSTGRES_PORT (from .env) also drives the docker-compose port mapping, so a machine
+# where 5432 is taken by another project can move both with one variable.
+SORTIT_DATABASE_URL = "postgres://sortit:sortit@localhost:{{ env.POSTGRES_PORT | default(value='5432') }}/sortit?sslmode=disable"
+SORTIT_TEST_DATABASE_URL = "postgres://sortit:sortit@localhost:{{ env.POSTGRES_PORT | default(value='5432') }}/sortit_test?sslmode=disable"
 
 [tools]
 go = "1.26.5"

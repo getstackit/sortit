@@ -157,6 +157,18 @@ func TestDebugIssueAnalyzeEndpoint(t *testing.T) {
 	if len(payload.CandidateSet.Tags) == 0 {
 		t.Fatal("expected candidate set metadata in analyze response")
 	}
+	if payload.Trace.Input.CharacterCount != len([]rune("Safari export crashes on iPad")) {
+		t.Fatalf("expected trace input size, got %#v", payload.Trace.Input)
+	}
+	if payload.Trace.CandidateSelection.CandidateCount != len(payload.CandidateSet.Tags) {
+		t.Fatalf("expected trace candidate count to match response, got %#v", payload.Trace.CandidateSelection)
+	}
+	if !payload.Trace.Verification.Enabled || payload.Trace.Verification.KeepCount != 2 {
+		t.Fatalf("expected trace to summarize verifier output, got %#v", payload.Trace.Verification)
+	}
+	if payload.Trace.Verification.EvidenceCount != 2 {
+		t.Fatalf("expected trace to count grounded quotations, got %#v", payload.Trace.Verification)
+	}
 	for _, tag := range payload.Tags {
 		if tag.VerificationVerdict != domain.TagVerificationVerdictKeep {
 			t.Fatalf("expected verifier to annotate kept tags by default, got %#v", payload.Tags)

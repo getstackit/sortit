@@ -42,6 +42,7 @@ type DebugAnalyzeIssueResult struct {
 	ComparedIssueCount     int
 	AverageIssueSimilarity float64
 	SimilarIssues          []DebugIssueSimilarity
+	Trace                  issueenrichment.AnalysisTrace
 }
 
 type DebugAnalyzeIssueHandler struct {
@@ -89,6 +90,7 @@ func (h DebugAnalyzeIssueHandler) Handle(ctx context.Context, input DebugAnalyze
 		ComparedIssueCount:     comparedIssueCount,
 		AverageIssueSimilarity: averageSimilarity,
 		SimilarIssues:          similarities,
+		Trace:                  analysis.Trace,
 	}, nil
 }
 

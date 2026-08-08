@@ -14,16 +14,23 @@ import (
 	"sortit/internal/tags"
 )
 
-func (s *IssueEnricher) analyzeWithCandidateTaxonomy(ctx context.Context, raw string, preferred []string, mode tags.CandidateMode, includePriorDecisions bool) (ai.AnalyzedIssue, tags.CandidateTaxonomy, error) {
+type analysisContext struct {
+	fewShotExampleCount int
+	priorDecisionCount  int
+	conceptCount        int
+	hasProjectOverview  bool
+}
+
+func (s *IssueEnricher) analyzeWithCandidateTaxonomy(ctx context.Context, raw string, preferred []string, mode tags.CandidateMode, includePriorDecisions bool) (ai.AnalyzedIssue, tags.CandidateTaxonomy, analysisContext, error) {
 	freshEmbedding, err := s.analyzer.EmbedText(ctx, raw)
 	if err != nil {
-		return ai.AnalyzedIssue{}, tags.CandidateTaxonomy{}, fmt.Errorf("embed raw for shortlist: %w", err)
+		return ai.AnalyzedIssue{}, tags.CandidateTaxonomy{}, analysisContext{}, fmt.Errorf("embed raw for shortlist: %w", err)
 	}
 	freshEmbeddingVector := Float32VectorToFloat64(freshEmbedding.Vector)
 
 	candidates, err := s.catalog.IssueTaxonomyCandidates(ctx, freshEmbeddingVector, preferred, mode, 15)
 	if err != nil {
-		return ai.AnalyzedIssue{}, tags.CandidateTaxonomy{}, err
+		return ai.AnalyzedIssue{}, tags.CandidateTaxonomy{}, analysisContext{}, err
 	}
 	candidates = s.catalog.AnnotateCandidateHints(ctx, candidates, freshEmbeddingVector, persistedIssueHintLimit)
 
@@ -46,12 +53,18 @@ func (s *IssueEnricher) analyzeWithCandidateTaxonomy(ctx context.Context, raw st
 		priorDecisions = s.relevantPriorDecisions(ctx, freshEmbeddingVector)
 		frame = s.projectConceptFrame(ctx)
 	}
-
-	analyzed, err := s.analyzer.AnalyzeIssueData(ctx, raw, candidates.AITags(), examples, frame, priorDecisions...)
-	if err != nil {
-		return ai.AnalyzedIssue{}, tags.CandidateTaxonomy{}, err
+	traceContext := analysisContext{
+		fewShotExampleCount: len(examples),
+		priorDecisionCount:  len(priorDecisions),
+		conceptCount:        len(frame.Concepts),
+		hasProjectOverview:  strings.TrimSpace(frame.Overview) != "",
 	}
-	return analyzed, candidates, nil
+
+	analyzed, err := s.analyzer.AnalyzeIssueDataWithEmbedding(ctx, raw, candidates.AITags(), examples, frame, freshEmbedding, priorDecisions...)
+	if err != nil {
+		return ai.AnalyzedIssue{}, tags.CandidateTaxonomy{}, analysisContext{}, err
+	}
+	return analyzed, candidates, traceContext, nil
 }
 
 // EmbedText returns the float64 embedding for raw text — the same embedding the
@@ -225,13 +238,15 @@ func (s *IssueEnricher) tagSpecificityMap(ctx context.Context) map[string]*float
 }
 
 func (s *IssueEnricher) AnalyzeText(ctx context.Context, raw string, opts AnalyzeTextOptions) (AnalyzeTextResult, error) {
-	analyzed, candidates, err := s.analyzeWithCandidateTaxonomy(ctx, raw, opts.PreferredTags, opts.CandidateMode, !opts.SkipPriorDecisions)
+	analyzed, candidates, context, err := s.analyzeWithCandidateTaxonomy(ctx, raw, opts.PreferredTags, opts.CandidateMode, !opts.SkipPriorDecisions)
 	if err != nil {
 		return AnalyzeTextResult{}, err
 	}
 
 	tagSpecificity := s.tagSpecificityMap(ctx)
-	tagScores := attenuateGenericScores(IssueTagScoresFromAnalysis(analyzed.Tags), tagSpecificity)
+	beforeFloor := len(analyzed.Tags)
+	beforeAttenuation := IssueTagScoresFromAnalysis(analyzed.Tags)
+	tagScores := attenuateGenericScores(beforeAttenuation, tagSpecificity)
 
 	tagScores = s.decorateAndVerifyTagScores(
 		ctx,
@@ -245,11 +260,67 @@ func (s *IssueEnricher) AnalyzeText(ctx context.Context, raw string, opts Analyz
 		opts.Verify,
 	)
 
+	trace := buildAnalysisTrace(raw, candidates, context, analyzed, beforeFloor-len(beforeAttenuation), beforeAttenuation, tagScores, opts.Verify)
 	return AnalyzeTextResult{
 		Analyzed:     analyzed,
 		CandidateSet: candidates,
 		TagScores:    tagScores,
+		Trace:        trace,
 	}, nil
+}
+
+func buildAnalysisTrace(raw string, candidates tags.CandidateTaxonomy, context analysisContext, analyzed ai.AnalyzedIssue, floorFiltered int, beforeAttenuation, scores []issues.TagRelevance, verify bool) AnalysisTrace {
+	sourceCounts := make(map[string]int)
+	hintCount := 0
+	for _, candidate := range candidates.Tags {
+		if candidate.Hint {
+			hintCount++
+		}
+		for _, source := range candidate.Sources {
+			sourceCounts[string(source)]++
+		}
+	}
+	attenuated := make([]string, 0)
+	beforeByTag := make(map[string]float64, len(beforeAttenuation))
+	for _, score := range beforeAttenuation {
+		beforeByTag[score.Tag] = score.Relevance
+	}
+	verification := AnalysisTraceVerification{Enabled: verify}
+	for _, score := range scores {
+		if before, ok := beforeByTag[score.Tag]; ok && score.Relevance < before {
+			attenuated = append(attenuated, score.Tag)
+		}
+		switch score.VerificationVerdict {
+		case domain.TagVerificationVerdictKeep:
+			verification.KeepCount++
+		case domain.TagVerificationVerdictDownRank:
+			verification.DownRankedCount++
+		case domain.TagVerificationVerdictFlagged:
+			verification.FlaggedCount++
+		}
+		if score.Negation != nil && *score.Negation > 0 {
+			verification.NegatedCount++
+		}
+		verification.EvidenceCount += len(score.Evidence)
+	}
+	return AnalysisTrace{
+		Input: AnalysisTraceInput{CharacterCount: len([]rune(raw))},
+		CandidateSelection: AnalysisTraceCandidateSelection{
+			Mode: candidates.Mode, CandidateCount: len(candidates.Tags), HintCount: hintCount, SourceCounts: sourceCounts,
+		},
+		Context: AnalysisTraceContext{
+			FewShotExampleCount: context.fewShotExampleCount, PriorDecisionCount: context.priorDecisionCount,
+			ConceptCount: context.conceptCount, HasProjectOverview: context.hasProjectOverview,
+		},
+		ModelOutput: AnalysisTraceModelOutput{
+			AssignedTagCount: len(analyzed.Tags), NegatedTagCount: len(analyzed.Negated),
+			Tags: append([]ai.TagScore(nil), analyzed.Tags...), Negated: append([]ai.NegatedTag(nil), analyzed.Negated...),
+		},
+		PostProcessing: AnalysisTracePostProcessing{
+			RelevanceFloorFilteredCount: floorFiltered, GenericAttenuatedTags: attenuated, PersistedTagCount: len(scores),
+		},
+		Verification: verification,
+	}
 }
 
 func IssueTagScoresFromAnalysis(scores []ai.TagScore) []issues.TagRelevance {
