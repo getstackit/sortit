@@ -47,7 +47,7 @@ func (s *IssueEnricher) analyzeWithCandidateTaxonomy(ctx context.Context, raw st
 		frame = s.projectConceptFrame(ctx)
 	}
 
-	analyzed, err := s.analyzer.AnalyzeIssueData(ctx, raw, candidates.AITags(), examples, frame, priorDecisions...)
+	analyzed, err := s.analyzer.AnalyzeIssueDataWithEmbedding(ctx, raw, candidates.AITags(), examples, frame, freshEmbedding, priorDecisions...)
 	if err != nil {
 		return ai.AnalyzedIssue{}, tags.CandidateTaxonomy{}, err
 	}

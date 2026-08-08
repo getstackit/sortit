@@ -53,6 +53,17 @@ func (a *Analyzer) SetThemeLabeler(labeler ThemeLabeler) {
 }
 
 func (a *Analyzer) AnalyzeIssueData(ctx context.Context, text string, tags []Tag, examples []FewShotExample, frame ConceptFrame, priorDecisions ...PriorDecision) (AnalyzedIssue, error) {
+	return a.analyzeIssueData(ctx, text, tags, examples, frame, nil, priorDecisions...)
+}
+
+// AnalyzeIssueDataWithEmbedding scores tags and returns the supplied embedding
+// rather than embedding text again. Callers that already embedded text for
+// candidate selection can use it to avoid a duplicate provider request.
+func (a *Analyzer) AnalyzeIssueDataWithEmbedding(ctx context.Context, text string, tags []Tag, examples []FewShotExample, frame ConceptFrame, embedding EmbeddingResult, priorDecisions ...PriorDecision) (AnalyzedIssue, error) {
+	return a.analyzeIssueData(ctx, text, tags, examples, frame, &embedding, priorDecisions...)
+}
+
+func (a *Analyzer) analyzeIssueData(ctx context.Context, text string, tags []Tag, examples []FewShotExample, frame ConceptFrame, precomputedEmbedding *EmbeddingResult, priorDecisions ...PriorDecision) (AnalyzedIssue, error) {
 	if a == nil || a.tagger == nil || a.embedder == nil {
 		return AnalyzedIssue{}, ErrNotConfigured
 	}
@@ -62,9 +73,15 @@ func (a *Analyzer) AnalyzeIssueData(ctx context.Context, text string, tags []Tag
 		return AnalyzedIssue{}, fmt.Errorf("score tags: %w", err)
 	}
 
-	embedding, err := a.embedder.EmbedText(ctx, text)
-	if err != nil {
-		return AnalyzedIssue{}, fmt.Errorf("embed text: %w", err)
+	var embedding EmbeddingResult
+	if precomputedEmbedding != nil {
+		embedding = *precomputedEmbedding
+	} else {
+		var err error
+		embedding, err = a.embedder.EmbedText(ctx, text)
+		if err != nil {
+			return AnalyzedIssue{}, fmt.Errorf("embed text: %w", err)
+		}
 	}
 
 	return AnalyzedIssue{

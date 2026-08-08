@@ -5,6 +5,59 @@ import (
 	"testing"
 )
 
+type serviceTestEmbedder struct {
+	calls int
+}
+
+func (e *serviceTestEmbedder) EmbedText(context.Context, string) (EmbeddingResult, error) {
+	e.calls++
+	return EmbeddingResult{Vector: []float32{9, 9, 9}}, nil
+}
+
+func (e *serviceTestEmbedder) Provider() string { return "test" }
+func (e *serviceTestEmbedder) Model() string    { return "test-embedding" }
+
+func TestAnalyzeIssueDataWithEmbeddingReusesProvidedVector(t *testing.T) {
+	embedder := &serviceTestEmbedder{}
+	analyzer := NewAnalyzer(NewStubTagger(), embedder)
+	provided := EmbeddingResult{
+		Vector: []float32{1, 2, 3},
+		Info: EmbeddingInfo{
+			Dimensions: 3,
+			ChunkCount: 1,
+		},
+	}
+
+	analyzed, err := analyzer.AnalyzeIssueDataWithEmbedding(
+		context.Background(), "database migration", nil, nil, ConceptFrame{}, provided,
+	)
+	if err != nil {
+		t.Fatalf("AnalyzeIssueDataWithEmbedding: %v", err)
+	}
+	if embedder.calls != 0 {
+		t.Fatalf("expected no extra embed call, got %d", embedder.calls)
+	}
+	if len(analyzed.Embedding.Vector) != len(provided.Vector) {
+		t.Fatalf("embedding length = %d, want %d", len(analyzed.Embedding.Vector), len(provided.Vector))
+	}
+	for i, want := range provided.Vector {
+		if got := analyzed.Embedding.Vector[i]; got != want {
+			t.Fatalf("embedding[%d] = %v, want %v", i, got, want)
+		}
+	}
+	if analyzed.Embedding.Info.Dimensions != provided.Info.Dimensions ||
+		analyzed.Embedding.Info.ChunkCount != provided.Info.ChunkCount ||
+		analyzed.Embedding.Info.PooledFromChunks != provided.Info.PooledFromChunks ||
+		len(analyzed.Embedding.Info.Preview) != len(provided.Info.Preview) {
+		t.Fatalf("embedding info = %+v, want %+v", analyzed.Embedding.Info, provided.Info)
+	}
+	for i, want := range provided.Info.Preview {
+		if got := analyzed.Embedding.Info.Preview[i]; got != want {
+			t.Fatalf("embedding preview[%d] = %v, want %v", i, got, want)
+		}
+	}
+}
+
 func TestNormalizeScoresCanonicalizesAndDeduplicates(t *testing.T) {
 	scores := []TagScore{
 		{Tag: " Bug ", Relevance: 0.9, Suggested: true, Description: "should be ignored"},
