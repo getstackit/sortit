@@ -259,8 +259,8 @@ func TestOpenAIModelDefaults(t *testing.T) {
 	if err != nil {
 		t.Fatalf("NewOpenAITagger returned error: %v", err)
 	}
-	if tagger.Model() != defaultOpenAITagModel {
-		t.Fatalf("expected default tag model %q, got %q", defaultOpenAITagModel, tagger.Model())
+	if tagger.Model() != "gpt-5.6-luna" {
+		t.Fatalf("expected default tag model %q, got %q", "gpt-5.6-luna", tagger.Model())
 	}
 
 	canonicalizer, err := NewOpenAICanonicalizer(cfg)

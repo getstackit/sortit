@@ -100,14 +100,11 @@ func TestAnalyzePersistedIssueUsesFreshEmbeddingForShortlist(t *testing.T) {
 		t.Fatalf("AnalyzePersistedIssue: %v", err)
 	}
 
-	if len(embedder.calls) != 2 {
-		t.Fatalf("expected 2 embed calls, got %d", len(embedder.calls))
+	if len(embedder.calls) != 1 {
+		t.Fatalf("expected 1 embed call, got %d", len(embedder.calls))
 	}
 	if embedder.calls[0] != "database issue" {
-		t.Fatalf("expected first embed call to use canonical raw, got %q", embedder.calls[0])
-	}
-	if embedder.calls[1] != "database issue" {
-		t.Fatalf("expected analyzer embed call to use canonical raw, got %q", embedder.calls[1])
+		t.Fatalf("expected embed call to use canonical raw, got %q", embedder.calls[0])
 	}
 
 	names := make(map[string]bool)
@@ -188,8 +185,8 @@ func TestAnalyzeCreateInputUsesShortlistAndKeepsExplicitTagsAsAnchors(t *testing
 		t.Fatalf("AnalyzeCreateInput: %v", err)
 	}
 
-	if len(embedder.calls) != 2 {
-		t.Fatalf("expected 2 embed calls, got %d", len(embedder.calls))
+	if len(embedder.calls) != 1 {
+		t.Fatalf("expected 1 embed call, got %d", len(embedder.calls))
 	}
 
 	names := make(map[string]bool)
@@ -293,5 +290,11 @@ func TestAnalyzeTextCanDisableVerifier(t *testing.T) {
 	}
 	if result.TagScores[0].VerificationVerdict != "" {
 		t.Fatalf("expected verifier metadata to be omitted, got %#v", result.TagScores[0])
+	}
+	if result.Trace.Verification.Enabled || result.Trace.Verification.KeepCount != 0 {
+		t.Fatalf("expected trace to preserve disabled verifier state, got %#v", result.Trace.Verification)
+	}
+	if len(result.Trace.ModelOutput.Tags) != 1 || result.Trace.ModelOutput.Tags[0].Tag != "database" {
+		t.Fatalf("expected raw model output in trace, got %#v", result.Trace.ModelOutput)
 	}
 }
