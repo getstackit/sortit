@@ -7,6 +7,7 @@ import (
 
 	"gonum.org/v1/gonum/mat"
 
+	"sortit/internal/domain"
 	"sortit/internal/issues"
 	"sortit/internal/scoring"
 	"sortit/internal/vectors"
@@ -138,7 +139,7 @@ func TestSelectRidgeLambdaGCV_AdaptsToConditioning(t *testing.T) {
 			issueEmb[id] = vec
 			items = append(items, issues.Issue{
 				ID:        id,
-				TagScores: []issues.TagRelevance{{Tag: tagNames[i%len(tagNames)], Relevance: 0.8}},
+				TagScores: []domain.TagRelevance{{Tag: tagNames[i%len(tagNames)], Relevance: 0.8}},
 			})
 		}
 		return items, issueEmb
@@ -167,7 +168,7 @@ func TestSelectRidgeLambdaGCV_AdaptsToConditioning(t *testing.T) {
 func TestSelectRidgeLambdaGCV_RejectsDegenerate(t *testing.T) {
 	tagEmb := map[string][]float64{"a": unitVec([]float64{1, 0, 0, 0})}
 	tagNames := []string{"a"}
-	items := []issues.Issue{{ID: "i0", TagScores: []issues.TagRelevance{{Tag: "a", Relevance: 0.8}}}}
+	items := []issues.Issue{{ID: "i0", TagScores: []domain.TagRelevance{{Tag: "a", Relevance: 0.8}}}}
 	issueEmb := map[string][]float64{"i0": unitVec([]float64{1, 0, 0, 0})}
 
 	if _, ok := SelectRidgeLambdaGCV(items, tagNames, issueEmb, tagEmb, scoring.RidgeAnchorLambdaScored, nil); ok {

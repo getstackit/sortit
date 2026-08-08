@@ -8,6 +8,7 @@ import (
 	"testing"
 	"time"
 
+	"sortit/internal/domain"
 	"sortit/internal/issues"
 	"sortit/internal/people"
 )
@@ -22,7 +23,7 @@ func TestPersonDetailReturnsAssignedQueueHeadAndRecommendations(t *testing.T) {
 		assignedTo string,
 		status issues.IssueStatus,
 		createdAt time.Time,
-		tagScores []issues.TagRelevance,
+		tagScores []domain.TagRelevance,
 		embedding []float64,
 	) issues.Issue {
 		issue := issues.BuildNewIssue(id, issues.CreateInput{
@@ -49,7 +50,7 @@ func TestPersonDetailReturnsAssignedQueueHeadAndRecommendations(t *testing.T) {
 			testPerson,
 			issues.StatusOpen,
 			time.Date(2026, 3, 1, 10, 0, 0, 0, time.UTC),
-			[]issues.TagRelevance{{Tag: "auth", Relevance: 0.9}, {Tag: "onboarding", Relevance: 0.6}},
+			[]domain.TagRelevance{{Tag: "auth", Relevance: 0.9}, {Tag: "onboarding", Relevance: 0.6}},
 			[]float64{1, 0},
 		),
 		makeIssue(
@@ -58,7 +59,7 @@ func TestPersonDetailReturnsAssignedQueueHeadAndRecommendations(t *testing.T) {
 			testPerson,
 			issues.StatusOpen,
 			time.Date(2026, 3, 4, 10, 0, 0, 0, time.UTC),
-			[]issues.TagRelevance{{Tag: "search", Relevance: 0.8}, {Tag: "ui", Relevance: 0.4}},
+			[]domain.TagRelevance{{Tag: "search", Relevance: 0.8}, {Tag: "ui", Relevance: 0.4}},
 			[]float64{0.7, 0.3},
 		),
 		makeIssue(
@@ -67,7 +68,7 @@ func TestPersonDetailReturnsAssignedQueueHeadAndRecommendations(t *testing.T) {
 			testPerson,
 			issues.StatusClosed,
 			time.Date(2026, 2, 25, 10, 0, 0, 0, time.UTC),
-			[]issues.TagRelevance{{Tag: "onboarding", Relevance: 0.7}, {Tag: "ui", Relevance: 0.3}},
+			[]domain.TagRelevance{{Tag: "onboarding", Relevance: 0.7}, {Tag: "ui", Relevance: 0.3}},
 			[]float64{0.9, 0.1},
 		),
 		makeIssue(
@@ -76,7 +77,7 @@ func TestPersonDetailReturnsAssignedQueueHeadAndRecommendations(t *testing.T) {
 			"",
 			issues.StatusOpen,
 			time.Date(2026, 3, 2, 10, 0, 0, 0, time.UTC),
-			[]issues.TagRelevance{{Tag: "auth", Relevance: 0.85}, {Tag: "onboarding", Relevance: 0.7}},
+			[]domain.TagRelevance{{Tag: "auth", Relevance: 0.85}, {Tag: "onboarding", Relevance: 0.7}},
 			[]float64{0.98, 0.02},
 		),
 		makeIssue(
@@ -85,7 +86,7 @@ func TestPersonDetailReturnsAssignedQueueHeadAndRecommendations(t *testing.T) {
 			"",
 			issues.StatusOpen,
 			time.Date(2026, 3, 3, 10, 0, 0, 0, time.UTC),
-			[]issues.TagRelevance{{Tag: "export", Relevance: 0.9}, {Tag: "safari", Relevance: 0.7}},
+			[]domain.TagRelevance{{Tag: "export", Relevance: 0.9}, {Tag: "safari", Relevance: 0.7}},
 			[]float64{0.05, 0.95},
 		),
 		makeIssue(
@@ -94,7 +95,7 @@ func TestPersonDetailReturnsAssignedQueueHeadAndRecommendations(t *testing.T) {
 			"Jordan",
 			issues.StatusOpen,
 			time.Date(2026, 3, 2, 11, 0, 0, 0, time.UTC),
-			[]issues.TagRelevance{{Tag: "auth", Relevance: 0.9}},
+			[]domain.TagRelevance{{Tag: "auth", Relevance: 0.9}},
 			[]float64{1, 0},
 		),
 	}
@@ -152,7 +153,7 @@ func TestPersonDetailRecommendationsPreferMatureIssueWhenBaseMatchIsNearEqual(t 
 		assignedTo string,
 		status issues.IssueStatus,
 		createdAt time.Time,
-		tagScores []issues.TagRelevance,
+		tagScores []domain.TagRelevance,
 		embedding []float64,
 	) issues.Issue {
 		issue := issues.BuildNewIssue(id, issues.CreateInput{
@@ -177,7 +178,7 @@ func TestPersonDetailRecommendationsPreferMatureIssueWhenBaseMatchIsNearEqual(t 
 			testPerson,
 			issues.StatusOpen,
 			time.Date(2026, 3, 1, 10, 0, 0, 0, time.UTC),
-			[]issues.TagRelevance{{Tag: "auth", Relevance: 0.9}, {Tag: "onboarding", Relevance: 0.6}},
+			[]domain.TagRelevance{{Tag: "auth", Relevance: 0.9}, {Tag: "onboarding", Relevance: 0.6}},
 			[]float64{1, 0},
 		),
 		makeIssue(
@@ -186,7 +187,7 @@ func TestPersonDetailRecommendationsPreferMatureIssueWhenBaseMatchIsNearEqual(t 
 			"",
 			issues.StatusOpen,
 			time.Date(2026, 3, 2, 10, 0, 0, 0, time.UTC),
-			[]issues.TagRelevance{{Tag: "auth", Relevance: 0.85}, {Tag: "onboarding", Relevance: 0.7}},
+			[]domain.TagRelevance{{Tag: "auth", Relevance: 0.85}, {Tag: "onboarding", Relevance: 0.7}},
 			[]float64{0.98, 0.02},
 		),
 		makeIssue(
@@ -195,7 +196,7 @@ func TestPersonDetailRecommendationsPreferMatureIssueWhenBaseMatchIsNearEqual(t 
 			"",
 			issues.StatusOpen,
 			time.Date(2026, 3, 2, 11, 0, 0, 0, time.UTC),
-			[]issues.TagRelevance{{Tag: "auth", Relevance: 0.85}, {Tag: "onboarding", Relevance: 0.7}},
+			[]domain.TagRelevance{{Tag: "auth", Relevance: 0.85}, {Tag: "onboarding", Relevance: 0.7}},
 			[]float64{0.98, 0.02},
 		),
 	})
@@ -214,7 +215,7 @@ func TestPersonDetailRecommendationsPreferMatureIssueWhenBaseMatchIsNearEqual(t 
 	seq1 := 1
 	if err := store.UpdateIssueFields(context.Background(), "issue-mature", issues.IssueFieldUpdate{
 		Raw:                      &raw1,
-		TagScores:                []issues.TagRelevance{{Tag: "auth", Relevance: 0.85}, {Tag: "onboarding", Relevance: 0.7}},
+		TagScores:                []domain.TagRelevance{{Tag: "auth", Relevance: 0.85}, {Tag: "onboarding", Relevance: 0.7}},
 		Embedding:                []float64{1, 0},
 		EnrichmentTargetSequence: &seq1,
 	}); err != nil {
@@ -224,7 +225,7 @@ func TestPersonDetailRecommendationsPreferMatureIssueWhenBaseMatchIsNearEqual(t 
 	seq2 := 2
 	if err := store.UpdateIssueFields(context.Background(), "issue-mature", issues.IssueFieldUpdate{
 		Raw:                      &raw2,
-		TagScores:                []issues.TagRelevance{{Tag: "auth", Relevance: 0.86}, {Tag: "onboarding", Relevance: 0.72}},
+		TagScores:                []domain.TagRelevance{{Tag: "auth", Relevance: 0.86}, {Tag: "onboarding", Relevance: 0.72}},
 		Embedding:                []float64{0.99, 0.01},
 		EnrichmentTargetSequence: &seq2,
 	}); err != nil {
@@ -234,7 +235,7 @@ func TestPersonDetailRecommendationsPreferMatureIssueWhenBaseMatchIsNearEqual(t 
 	seq3 := 1
 	if err := store.UpdateIssueFields(context.Background(), "issue-immature", issues.IssueFieldUpdate{
 		Raw:                      &raw3,
-		TagScores:                []issues.TagRelevance{{Tag: "auth", Relevance: 0.85}, {Tag: "onboarding", Relevance: 0.7}},
+		TagScores:                []domain.TagRelevance{{Tag: "auth", Relevance: 0.85}, {Tag: "onboarding", Relevance: 0.7}},
 		Embedding:                []float64{1, 0},
 		EnrichmentTargetSequence: &seq3,
 	}); err != nil {
@@ -244,7 +245,7 @@ func TestPersonDetailRecommendationsPreferMatureIssueWhenBaseMatchIsNearEqual(t 
 	seq4 := 2
 	if err := store.UpdateIssueFields(context.Background(), "issue-immature", issues.IssueFieldUpdate{
 		Raw:                      &raw4,
-		TagScores:                []issues.TagRelevance{{Tag: "onboarding", Relevance: 0.9}},
+		TagScores:                []domain.TagRelevance{{Tag: "onboarding", Relevance: 0.9}},
 		Embedding:                []float64{0, 1},
 		EnrichmentTargetSequence: &seq4,
 	}); err != nil {
@@ -284,7 +285,7 @@ func TestPersonDetailRecommendationsDeprioritizeHighVelocityIssue(t *testing.T) 
 		assignedTo string,
 		status issues.IssueStatus,
 		createdAt time.Time,
-		tagScores []issues.TagRelevance,
+		tagScores []domain.TagRelevance,
 		embedding []float64,
 	) issues.Issue {
 		issue := issues.BuildNewIssue(id, issues.CreateInput{
@@ -309,7 +310,7 @@ func TestPersonDetailRecommendationsDeprioritizeHighVelocityIssue(t *testing.T) 
 			testPerson,
 			issues.StatusOpen,
 			time.Date(2026, 3, 1, 10, 0, 0, 0, time.UTC),
-			[]issues.TagRelevance{{Tag: "auth", Relevance: 0.9}, {Tag: "onboarding", Relevance: 0.6}},
+			[]domain.TagRelevance{{Tag: "auth", Relevance: 0.9}, {Tag: "onboarding", Relevance: 0.6}},
 			[]float64{1, 0},
 		),
 		makeIssue(
@@ -318,7 +319,7 @@ func TestPersonDetailRecommendationsDeprioritizeHighVelocityIssue(t *testing.T) 
 			"",
 			issues.StatusOpen,
 			time.Now().UTC().Add(-24*time.Hour),
-			[]issues.TagRelevance{{Tag: "auth", Relevance: 0.85}, {Tag: "onboarding", Relevance: 0.7}},
+			[]domain.TagRelevance{{Tag: "auth", Relevance: 0.85}, {Tag: "onboarding", Relevance: 0.7}},
 			[]float64{0.98, 0.02},
 		),
 		makeIssue(
@@ -327,7 +328,7 @@ func TestPersonDetailRecommendationsDeprioritizeHighVelocityIssue(t *testing.T) 
 			"",
 			issues.StatusOpen,
 			time.Now().UTC().Add(-24*time.Hour),
-			[]issues.TagRelevance{{Tag: "auth", Relevance: 0.85}, {Tag: "onboarding", Relevance: 0.7}},
+			[]domain.TagRelevance{{Tag: "auth", Relevance: 0.85}, {Tag: "onboarding", Relevance: 0.7}},
 			[]float64{0.98, 0.02},
 		),
 	})
@@ -375,7 +376,7 @@ func TestPersonDetailRecommendationsPreferFreshIssueWhenBaseMatchIsEqual(t *test
 		assignedTo string,
 		status issues.IssueStatus,
 		createdAt time.Time,
-		tagScores []issues.TagRelevance,
+		tagScores []domain.TagRelevance,
 		embedding []float64,
 	) issues.Issue {
 		issue := issues.BuildNewIssue(id, issues.CreateInput{
@@ -400,7 +401,7 @@ func TestPersonDetailRecommendationsPreferFreshIssueWhenBaseMatchIsEqual(t *test
 			testPerson,
 			issues.StatusOpen,
 			now.Add(-10*24*time.Hour),
-			[]issues.TagRelevance{{Tag: "auth", Relevance: 0.9}, {Tag: "onboarding", Relevance: 0.6}},
+			[]domain.TagRelevance{{Tag: "auth", Relevance: 0.9}, {Tag: "onboarding", Relevance: 0.6}},
 			[]float64{1, 0},
 		),
 		makeIssue(
@@ -409,7 +410,7 @@ func TestPersonDetailRecommendationsPreferFreshIssueWhenBaseMatchIsEqual(t *test
 			"",
 			issues.StatusOpen,
 			now.Add(-320*24*time.Hour),
-			[]issues.TagRelevance{{Tag: "auth", Relevance: 0.85}, {Tag: "onboarding", Relevance: 0.7}},
+			[]domain.TagRelevance{{Tag: "auth", Relevance: 0.85}, {Tag: "onboarding", Relevance: 0.7}},
 			[]float64{0.98, 0.02},
 		),
 		makeIssue(
@@ -418,7 +419,7 @@ func TestPersonDetailRecommendationsPreferFreshIssueWhenBaseMatchIsEqual(t *test
 			"",
 			issues.StatusOpen,
 			now.Add(-24*time.Hour),
-			[]issues.TagRelevance{{Tag: "auth", Relevance: 0.85}, {Tag: "onboarding", Relevance: 0.7}},
+			[]domain.TagRelevance{{Tag: "auth", Relevance: 0.85}, {Tag: "onboarding", Relevance: 0.7}},
 			[]float64{0.98, 0.02},
 		),
 	})

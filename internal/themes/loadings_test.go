@@ -4,8 +4,8 @@ import (
 	"reflect"
 	"testing"
 
+	"sortit/internal/domain"
 	"sortit/internal/issuemath"
-	"sortit/internal/issues"
 )
 
 func TestAnchoredAny(t *testing.T) {
@@ -13,14 +13,14 @@ func TestAnchoredAny(t *testing.T) {
 
 	cases := []struct {
 		name   string
-		scores []issues.TagRelevance
+		scores []domain.TagRelevance
 		want   bool
 	}{
 		{"no scores", nil, false},
-		{"unknown tag only", []issues.TagRelevance{{Tag: "gamma", Relevance: 0.9}}, false},
-		{"one known tag", []issues.TagRelevance{{Tag: "alpha", Relevance: 0.5}}, true},
-		{"zero-relevance still anchored", []issues.TagRelevance{{Tag: "beta", Relevance: 0}}, true},
-		{"mixed known+unknown", []issues.TagRelevance{{Tag: "gamma"}, {Tag: "alpha"}}, true},
+		{"unknown tag only", []domain.TagRelevance{{Tag: "gamma", Relevance: 0.9}}, false},
+		{"one known tag", []domain.TagRelevance{{Tag: "alpha", Relevance: 0.5}}, true},
+		{"zero-relevance still anchored", []domain.TagRelevance{{Tag: "beta", Relevance: 0}}, true},
+		{"mixed known+unknown", []domain.TagRelevance{{Tag: "gamma"}, {Tag: "alpha"}}, true},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {

@@ -6,6 +6,7 @@ import (
 	"testing"
 
 	"sortit/internal/centering"
+	"sortit/internal/domain"
 	"sortit/internal/issuemath"
 	"sortit/internal/issues"
 	"sortit/internal/scoring"
@@ -59,12 +60,12 @@ func twoClusterCorpus() ([]issues.Issue, []issues.Tag) {
 		{Name: "beta", Embedding: unit([]float64{0, 1, 0, 0})},
 	}
 	items := []issues.Issue{
-		{ID: "a1", TagScores: []issues.TagRelevance{{Tag: "alpha", Relevance: 0.9}}, Embedding: unit([]float64{0.9, 0.2, 0.1, 0})},
-		{ID: "a2", TagScores: []issues.TagRelevance{{Tag: "alpha", Relevance: 0.8}}, Embedding: unit([]float64{0.95, 0.1, 0.2, 0})},
-		{ID: "a3", TagScores: []issues.TagRelevance{{Tag: "alpha", Relevance: 0.85}}, Embedding: unit([]float64{0.92, 0.15, 0.1, 0})},
-		{ID: "b1", TagScores: []issues.TagRelevance{{Tag: "beta", Relevance: 0.9}}, Embedding: unit([]float64{0.1, 0.9, 0.2, 0})},
-		{ID: "b2", TagScores: []issues.TagRelevance{{Tag: "beta", Relevance: 0.8}}, Embedding: unit([]float64{0.2, 0.95, 0.1, 0})},
-		{ID: "b3", TagScores: []issues.TagRelevance{{Tag: "beta", Relevance: 0.85}}, Embedding: unit([]float64{0.15, 0.92, 0.1, 0})},
+		{ID: "a1", TagScores: []domain.TagRelevance{{Tag: "alpha", Relevance: 0.9}}, Embedding: unit([]float64{0.9, 0.2, 0.1, 0})},
+		{ID: "a2", TagScores: []domain.TagRelevance{{Tag: "alpha", Relevance: 0.8}}, Embedding: unit([]float64{0.95, 0.1, 0.2, 0})},
+		{ID: "a3", TagScores: []domain.TagRelevance{{Tag: "alpha", Relevance: 0.85}}, Embedding: unit([]float64{0.92, 0.15, 0.1, 0})},
+		{ID: "b1", TagScores: []domain.TagRelevance{{Tag: "beta", Relevance: 0.9}}, Embedding: unit([]float64{0.1, 0.9, 0.2, 0})},
+		{ID: "b2", TagScores: []domain.TagRelevance{{Tag: "beta", Relevance: 0.8}}, Embedding: unit([]float64{0.2, 0.95, 0.1, 0})},
+		{ID: "b3", TagScores: []domain.TagRelevance{{Tag: "beta", Relevance: 0.85}}, Embedding: unit([]float64{0.15, 0.92, 0.1, 0})},
 	}
 	return items, tags
 }

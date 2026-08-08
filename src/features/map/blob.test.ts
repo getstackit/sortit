@@ -1,8 +1,4 @@
-import {
-  computeConvexHull,
-  computeBlobPath,
-  hashTagColor,
-} from "@/features/map/model";
+import { computeConvexHull, computeBlobPath } from "@/features/map/model";
 
 describe("computeConvexHull", () => {
   it("returns empty for fewer than 2 points", () => {
@@ -116,30 +112,5 @@ describe("computeBlobPath", () => {
       10
     );
     expect(path).toBe("");
-  });
-});
-
-describe("hashTagColor", () => {
-  it("returns a color string", () => {
-    const color = hashTagColor("feature");
-    expect(color).toMatch(/^#[0-9a-f]{6}$/);
-  });
-
-  it("returns the same color for the same tag", () => {
-    expect(hashTagColor("bug")).toBe(hashTagColor("bug"));
-    expect(hashTagColor("feature")).toBe(hashTagColor("feature"));
-  });
-
-  it("returns deterministic colors for known tags", () => {
-    // Ensure different tags can map to different colors
-    const colors = new Set([
-      hashTagColor("bug"),
-      hashTagColor("feature"),
-      hashTagColor("ui"),
-      hashTagColor("performance"),
-      hashTagColor("search"),
-    ]);
-    // With 5 palette colors and 5 tags, we should get at least 2 distinct colors
-    expect(colors.size).toBeGreaterThanOrEqual(2);
   });
 });

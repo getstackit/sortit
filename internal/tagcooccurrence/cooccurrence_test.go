@@ -3,6 +3,7 @@ package tagcooccurrence
 import (
 	"testing"
 
+	"sortit/internal/domain"
 	"sortit/internal/issues"
 )
 
@@ -15,7 +16,7 @@ func TestComputeEmptyCorpus(t *testing.T) {
 
 func TestComputeIgnoresBelowFloor(t *testing.T) {
 	items := []issues.Issue{
-		{TagScores: []issues.TagRelevance{
+		{TagScores: []domain.TagRelevance{
 			{Tag: "bug", Relevance: 0.9},
 			{Tag: "noise", Relevance: 0.05}, // below floor — should be ignored
 		}},
@@ -34,9 +35,9 @@ func TestComputeIgnoresBelowFloor(t *testing.T) {
 func issuesWithTags(n int, tags ...string) []issues.Issue {
 	out := make([]issues.Issue, 0, n)
 	for range n {
-		scores := make([]issues.TagRelevance, 0, len(tags))
+		scores := make([]domain.TagRelevance, 0, len(tags))
 		for _, tag := range tags {
-			scores = append(scores, issues.TagRelevance{Tag: tag, Relevance: 0.9})
+			scores = append(scores, domain.TagRelevance{Tag: tag, Relevance: 0.9})
 		}
 		out = append(out, issues.Issue{TagScores: scores})
 	}
@@ -48,10 +49,10 @@ func TestComputeSmallCorpusEmitsNoAntiCorrelation(t *testing.T) {
 	// below AntiCorrelationMinPresence — so the guards force the
 	// implicit-negative to zero instead of flagging spurious exclusion.
 	items := []issues.Issue{
-		{TagScores: []issues.TagRelevance{{Tag: "bug", Relevance: 0.9}}},
-		{TagScores: []issues.TagRelevance{{Tag: "bug", Relevance: 0.9}}},
-		{TagScores: []issues.TagRelevance{{Tag: "bug", Relevance: 0.9}}},
-		{TagScores: []issues.TagRelevance{{Tag: "feature", Relevance: 0.9}}},
+		{TagScores: []domain.TagRelevance{{Tag: "bug", Relevance: 0.9}}},
+		{TagScores: []domain.TagRelevance{{Tag: "bug", Relevance: 0.9}}},
+		{TagScores: []domain.TagRelevance{{Tag: "bug", Relevance: 0.9}}},
+		{TagScores: []domain.TagRelevance{{Tag: "feature", Relevance: 0.9}}},
 	}
 	got := Compute(items)
 	bug, ok := got.LookupTag("bug")
@@ -150,8 +151,8 @@ func TestRound2RoundsNegativesAwayFromZero(t *testing.T) {
 
 func TestComputeNormalizesTagNames(t *testing.T) {
 	items := []issues.Issue{
-		{TagScores: []issues.TagRelevance{{Tag: " Bug ", Relevance: 0.9}}},
-		{TagScores: []issues.TagRelevance{{Tag: "bug", Relevance: 0.9}}},
+		{TagScores: []domain.TagRelevance{{Tag: " Bug ", Relevance: 0.9}}},
+		{TagScores: []domain.TagRelevance{{Tag: "bug", Relevance: 0.9}}},
 	}
 	got := Compute(items)
 	if got.TagCount != 1 {

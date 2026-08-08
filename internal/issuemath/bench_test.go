@@ -5,6 +5,7 @@ import (
 	"strconv"
 	"testing"
 
+	"sortit/internal/domain"
 	"sortit/internal/issues"
 	"sortit/internal/scoring"
 	"sortit/internal/vectors"
@@ -43,10 +44,10 @@ func benchCorpus(n, k, d int) (items []issues.Issue, tagNames []string, issueEmb
 		issueEmb[id] = v
 
 		// Score 3 tags per issue, spread across the catalog.
-		scores := make([]issues.TagRelevance, 0, 3)
+		scores := make([]domain.TagRelevance, 0, 3)
 		for s := range 3 {
 			tag := tagNames[(i*3+s)%k]
-			scores = append(scores, issues.TagRelevance{Tag: tag, Relevance: 0.5 + 0.1*float64(s)})
+			scores = append(scores, domain.TagRelevance{Tag: tag, Relevance: 0.5 + 0.1*float64(s)})
 		}
 		items[i] = issues.Issue{ID: id, TagScores: scores}
 	}

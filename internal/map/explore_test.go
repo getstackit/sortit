@@ -4,6 +4,7 @@ import (
 	"testing"
 	"time"
 
+	"sortit/internal/domain"
 	"sortit/internal/issues"
 )
 
@@ -17,7 +18,7 @@ func TestExploreOpportunitiesPreferMatureIssueGroups(t *testing.T) {
 				ID:     "issue-target",
 				Raw:    "Safari export fails after tapping share twice",
 				Status: issues.StatusOpen,
-				TagScores: []issues.TagRelevance{
+				TagScores: []domain.TagRelevance{
 					{Tag: "export", Relevance: 0.9},
 					{Tag: "safari", Relevance: 0.8},
 				},
@@ -28,7 +29,7 @@ func TestExploreOpportunitiesPreferMatureIssueGroups(t *testing.T) {
 				ID:     "issue-mature",
 				Raw:    "Safari export crashes on PDF download",
 				Status: issues.StatusOpen,
-				TagScores: []issues.TagRelevance{
+				TagScores: []domain.TagRelevance{
 					{Tag: "export", Relevance: 0.9},
 				},
 				Embedding:        []float64{1, 0},
@@ -38,7 +39,7 @@ func TestExploreOpportunitiesPreferMatureIssueGroups(t *testing.T) {
 				ID:     "issue-immature",
 				Raw:    "Safari rendering glitch after rotation",
 				Status: issues.StatusOpen,
-				TagScores: []issues.TagRelevance{
+				TagScores: []domain.TagRelevance{
 					{Tag: "safari", Relevance: 0.9},
 				},
 				Embedding:        []float64{0.85, 0.15},
@@ -80,7 +81,7 @@ func TestExploreOpportunitiesBoostHighVelocityClusters(t *testing.T) {
 				ID:     "issue-target",
 				Raw:    "Safari export fails after tapping share twice",
 				Status: issues.StatusOpen,
-				TagScores: []issues.TagRelevance{
+				TagScores: []domain.TagRelevance{
 					{Tag: "export", Relevance: 0.9},
 					{Tag: "safari", Relevance: 0.8},
 				},
@@ -94,7 +95,7 @@ func TestExploreOpportunitiesBoostHighVelocityClusters(t *testing.T) {
 				ID:     "issue-active",
 				Raw:    "Safari export crashes on PDF download",
 				Status: issues.StatusOpen,
-				TagScores: []issues.TagRelevance{
+				TagScores: []domain.TagRelevance{
 					{Tag: "export", Relevance: 0.9},
 				},
 				Embedding: []float64{1, 0},
@@ -107,7 +108,7 @@ func TestExploreOpportunitiesBoostHighVelocityClusters(t *testing.T) {
 				ID:     "issue-dormant",
 				Raw:    "Safari rendering glitch after rotation",
 				Status: issues.StatusOpen,
-				TagScores: []issues.TagRelevance{
+				TagScores: []domain.TagRelevance{
 					{Tag: "safari", Relevance: 0.9},
 				},
 				Embedding: []float64{0.85, 0.15},
@@ -147,7 +148,7 @@ func TestExplorePrefersFresherRelatedIssue(t *testing.T) {
 				Raw:       "Safari export fails after tapping share twice",
 				Status:    issues.StatusOpen,
 				CreatedAt: now.Add(-24 * time.Hour),
-				TagScores: []issues.TagRelevance{
+				TagScores: []domain.TagRelevance{
 					{Tag: "export", Relevance: 0.9},
 					{Tag: "safari", Relevance: 0.8},
 				},
@@ -158,7 +159,7 @@ func TestExplorePrefersFresherRelatedIssue(t *testing.T) {
 				Raw:       "Safari export crashes on PDF download",
 				Status:    issues.StatusOpen,
 				CreatedAt: now.Add(-48 * time.Hour),
-				TagScores: []issues.TagRelevance{
+				TagScores: []domain.TagRelevance{
 					{Tag: "export", Relevance: 0.9},
 				},
 				Embedding: []float64{1, 0},
@@ -168,7 +169,7 @@ func TestExplorePrefersFresherRelatedIssue(t *testing.T) {
 				Raw:       "Safari export crashes on PDF download",
 				Status:    issues.StatusOpen,
 				CreatedAt: now.Add(-300 * 24 * time.Hour),
-				TagScores: []issues.TagRelevance{
+				TagScores: []domain.TagRelevance{
 					{Tag: "export", Relevance: 0.9},
 				},
 				Embedding: []float64{1, 0},
@@ -196,35 +197,35 @@ func TestExploreReportsRawSemanticSimilarityWhenDecompositionIsActive(t *testing
 				ID:        "target",
 				Raw:       "same words",
 				Status:    issues.StatusOpen,
-				TagScores: []issues.TagRelevance{{Tag: "alpha", Relevance: 1}},
+				TagScores: []domain.TagRelevance{{Tag: "alpha", Relevance: 1}},
 				Embedding: unitVec([]float64{1, 0, 0, 0}),
 			},
 			{
 				ID:        "semantic-only",
 				Raw:       "same words",
 				Status:    issues.StatusOpen,
-				TagScores: []issues.TagRelevance{{Tag: "beta", Relevance: 1}},
+				TagScores: []domain.TagRelevance{{Tag: "beta", Relevance: 1}},
 				Embedding: unitVec([]float64{1, 0, 0, 0}),
 			},
 			{
 				ID:        "alpha-a",
 				Raw:       "alpha issue a",
 				Status:    issues.StatusOpen,
-				TagScores: []issues.TagRelevance{{Tag: "alpha", Relevance: 1}},
+				TagScores: []domain.TagRelevance{{Tag: "alpha", Relevance: 1}},
 				Embedding: unitVec([]float64{1, 0, 0, 0}),
 			},
 			{
 				ID:        "alpha-b",
 				Raw:       "alpha issue b",
 				Status:    issues.StatusOpen,
-				TagScores: []issues.TagRelevance{{Tag: "alpha", Relevance: 1}},
+				TagScores: []domain.TagRelevance{{Tag: "alpha", Relevance: 1}},
 				Embedding: unitVec([]float64{1, 0, 0, 0}),
 			},
 			{
 				ID:        "alpha-c",
 				Raw:       "alpha issue c",
 				Status:    issues.StatusOpen,
-				TagScores: []issues.TagRelevance{{Tag: "alpha", Relevance: 1}},
+				TagScores: []domain.TagRelevance{{Tag: "alpha", Relevance: 1}},
 				Embedding: unitVec([]float64{1, 0, 0, 0}),
 			},
 		},

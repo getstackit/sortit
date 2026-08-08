@@ -6,6 +6,7 @@ import (
 	"testing"
 	"time"
 
+	"sortit/internal/domain"
 	"sortit/internal/issuemath"
 	"sortit/internal/issues"
 )
@@ -150,7 +151,7 @@ func computeStability(t *testing.T, base []issues.Issue, tagNames []string, cent
 			src := working[step%len(base)]
 			clone := src
 			clone.ID = fmt.Sprintf("stability-clone-%02d", added)
-			clone.TagScores = append([]issues.TagRelevance(nil), src.TagScores...)
+			clone.TagScores = append([]domain.TagRelevance(nil), src.TagScores...)
 			clone.Embedding = append([]float64(nil), src.Embedding...)
 			working = append(working, clone)
 			added++
@@ -158,7 +159,7 @@ func computeStability(t *testing.T, base []issues.Issue, tagNames []string, cent
 			for off := range working {
 				j := (step + off) % len(working)
 				if len(working[j].TagScores) > 0 {
-					ts := append([]issues.TagRelevance(nil), working[j].TagScores...)
+					ts := append([]domain.TagRelevance(nil), working[j].TagScores...)
 					ts[0].Relevance = clampRelevance(ts[0].Relevance*0.9 + 0.05)
 					working[j].TagScores = ts
 					break

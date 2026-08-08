@@ -5,6 +5,7 @@ import (
 	"testing"
 	"time"
 
+	"sortit/internal/domain"
 	"sortit/internal/issues"
 )
 
@@ -23,7 +24,7 @@ func TestGetIssueHandlerIncludesLifecycleMetricsFromSnapshots(t *testing.T) {
 	if err := store.UpdateIssueFields(context.Background(), issue.ID, issues.IssueFieldUpdate{
 		Raw:  &raw1,
 		Tags: []string{"export", "safari"},
-		TagScores: []issues.TagRelevance{
+		TagScores: []domain.TagRelevance{
 			{Tag: "export", Relevance: 0.9},
 			{Tag: "safari", Relevance: 0.7},
 		},
@@ -38,7 +39,7 @@ func TestGetIssueHandlerIncludesLifecycleMetricsFromSnapshots(t *testing.T) {
 	if err := store.UpdateIssueFields(context.Background(), issue.ID, issues.IssueFieldUpdate{
 		Raw:  &raw2,
 		Tags: []string{"export", "safari"},
-		TagScores: []issues.TagRelevance{
+		TagScores: []domain.TagRelevance{
 			{Tag: "export", Relevance: 0.95},
 			{Tag: "safari", Relevance: 0.8},
 		},

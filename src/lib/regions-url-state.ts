@@ -1,4 +1,4 @@
-import { DEFAULT_REGION_WINDOW, type RegionKind, type RegionWindow } from "@/lib/regions";
+import { DEFAULT_REGION_WINDOW, type RegionWindow } from "@/lib/regions";
 
 const SUPPORTED_WINDOWS: readonly RegionWindow[] = [
   "7d",
@@ -62,10 +62,6 @@ export function regionsURLQuery(state: RegionsURLState): string {
     params.set("sort", state.sort);
   }
   return params.toString();
-}
-
-export function asRegionKind(filter: RegionsKindFilter): RegionKind {
-  return filter;
 }
 
 function pick<T extends string>(

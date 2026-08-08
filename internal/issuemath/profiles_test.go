@@ -3,6 +3,7 @@ package issuemath
 import (
 	"testing"
 
+	"sortit/internal/domain"
 	"sortit/internal/issues"
 )
 
@@ -13,13 +14,13 @@ func TestMeanTagProfileWeightsSpecificTagsMoreHighly(t *testing.T) {
 	}
 	items := []issues.PeopleAnalyticsIssue{
 		{
-			TagScores: []issues.TagRelevance{
+			TagScores: []domain.TagRelevance{
 				{Tag: "specific", Relevance: 0.8},
 				{Tag: "generic", Relevance: 0.8},
 			},
 		},
 		{
-			TagScores: []issues.TagRelevance{
+			TagScores: []domain.TagRelevance{
 				{Tag: "specific", Relevance: 0.6},
 				{Tag: "generic", Relevance: 0.6},
 			},
@@ -57,9 +58,9 @@ func TestMeanEmbeddingNormalizesAveragedVector(t *testing.T) {
 }
 
 func TestTagProfileSimilarity(t *testing.T) {
-	a := []issues.TagRelevance{{Tag: "alpha", Relevance: 1}}
-	b := []issues.TagRelevance{{Tag: "alpha", Relevance: 1}}
-	c := []issues.TagRelevance{{Tag: "beta", Relevance: 1}}
+	a := []domain.TagRelevance{{Tag: "alpha", Relevance: 1}}
+	b := []domain.TagRelevance{{Tag: "alpha", Relevance: 1}}
+	c := []domain.TagRelevance{{Tag: "beta", Relevance: 1}}
 
 	if got := TagProfileSimilarity(a, b); got < 0.99 {
 		t.Fatalf("expected matching profiles similarity near 1, got %v", got)

@@ -13,7 +13,6 @@ import (
 	"sortit/internal/ai"
 	"sortit/internal/domain"
 	"sortit/internal/issuemath"
-	"sortit/internal/issues"
 	"sortit/internal/tags"
 	"sortit/internal/vectors"
 )
@@ -51,7 +50,7 @@ const (
 	negationConfidenceCap = 0.7
 )
 
-func attenuateGenericScores(scores []issues.TagRelevance, tagSpecificity map[string]*float64) []issues.TagRelevance {
+func attenuateGenericScores(scores []domain.TagRelevance, tagSpecificity map[string]*float64) []domain.TagRelevance {
 	if len(scores) == 0 {
 		return scores
 	}
@@ -67,7 +66,7 @@ func attenuateGenericScores(scores []issues.TagRelevance, tagSpecificity map[str
 		return scores
 	}
 
-	out := make([]issues.TagRelevance, len(scores))
+	out := make([]domain.TagRelevance, len(scores))
 	for i, score := range scores {
 		out[i] = score
 		if tagSpecificityValue(score.Tag, tagSpecificity) < genericSpecificityThreshold {
@@ -113,12 +112,12 @@ func (s *IssueEnricher) decorateAndVerifyTagScores(
 	rawText string,
 	issueEmbedding []float64,
 	candidates tags.CandidateTaxonomy,
-	scores []issues.TagRelevance,
+	scores []domain.TagRelevance,
 	aiScores []ai.TagScore,
 	aiNegated []ai.NegatedTag,
 	tagSpecificity map[string]*float64,
 	verify bool,
-) []issues.TagRelevance {
+) []domain.TagRelevance {
 	if len(scores) == 0 {
 		return nil
 	}
@@ -288,7 +287,7 @@ func (s *IssueEnricher) decorateAndVerifyTagScores(
 
 	out = applyAnalyzerNegations(out, aiNegated, rawText, candidateByName, tagSpecificity, tagEmbeddingByName, issueEmbedding)
 
-	slices.SortStableFunc(out, func(a, b issues.TagRelevance) int {
+	slices.SortStableFunc(out, func(a, b domain.TagRelevance) int {
 		if c := cmp.Compare(b.Relevance, a.Relevance); c != 0 {
 			return c
 		}
@@ -306,14 +305,14 @@ func (s *IssueEnricher) decorateAndVerifyTagScores(
 // decoration (candidate sources, specificity, alignment) that other rows do
 // so downstream consumers can reason about them uniformly.
 func applyAnalyzerNegations(
-	out []issues.TagRelevance,
+	out []domain.TagRelevance,
 	aiNegated []ai.NegatedTag,
 	rawText string,
 	candidateByName map[string]tags.CandidateTag,
 	tagSpecificity map[string]*float64,
 	tagEmbeddingByName map[string][]float64,
 	issueEmbedding []float64,
-) []issues.TagRelevance {
+) []domain.TagRelevance {
 	if len(aiNegated) == 0 || rawText == "" {
 		return out
 	}
@@ -357,7 +356,7 @@ func applyAnalyzerNegations(
 			continue
 		}
 
-		synthetic := issues.TagRelevance{
+		synthetic := domain.TagRelevance{
 			Tag:                negation.Tag,
 			Relevance:          0,
 			Negation:           cloneMetricPointer(confidence),
@@ -384,7 +383,7 @@ func applyAnalyzerNegations(
 }
 
 func bestDominatingCandidate(
-	score issues.TagRelevance,
+	score domain.TagRelevance,
 	assignedSpecificity float64,
 	unassigned []verifierCandidate,
 ) (*verifierCandidate, float64) {
@@ -455,11 +454,11 @@ func anchorOnlyCandidate(sources []string) bool {
 	return len(sources) == 1 && sources[0] == string(tags.CandidateSourceAnchor)
 }
 
-func issuesDisplayCopyTagScores(scores []issues.TagRelevance) []issues.TagRelevance {
+func issuesDisplayCopyTagScores(scores []domain.TagRelevance) []domain.TagRelevance {
 	if len(scores) == 0 {
 		return nil
 	}
-	out := make([]issues.TagRelevance, len(scores))
+	out := make([]domain.TagRelevance, len(scores))
 	for i, score := range scores {
 		out[i] = score
 		out[i].CandidateSources = append([]string(nil), score.CandidateSources...)

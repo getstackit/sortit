@@ -4,6 +4,7 @@ import (
 	"context"
 	"testing"
 
+	"sortit/internal/domain"
 	"sortit/internal/issues"
 	issueviews "sortit/internal/issues/views"
 )
@@ -46,12 +47,12 @@ func TestGetPersonProfileUsesPeopleAnalyticsStore(t *testing.T) {
 				{
 					Status:     issues.StatusOpen,
 					AssignedTo: "Casey",
-					TagScores:  []issues.TagRelevance{{Tag: "search", Relevance: 0.9}},
+					TagScores:  []domain.TagRelevance{{Tag: "search", Relevance: 0.9}},
 				},
 				{
 					Status:     issues.StatusOpen,
 					AssignedTo: "Casey",
-					TagScores:  []issues.TagRelevance{{Tag: "backend", Relevance: 0.5}},
+					TagScores:  []domain.TagRelevance{{Tag: "backend", Relevance: 0.5}},
 				},
 			},
 		},
@@ -76,13 +77,13 @@ func TestWorkCorrelationsUsesPeopleAnalyticsStore(t *testing.T) {
 				{
 					Status:     issues.StatusOpen,
 					AssignedTo: "Casey",
-					TagScores:  []issues.TagRelevance{{Tag: "search", Relevance: 1}},
+					TagScores:  []domain.TagRelevance{{Tag: "search", Relevance: 1}},
 					Embedding:  []float64{1, 0},
 				},
 				{
 					Status:     issues.StatusOpen,
 					AssignedTo: "Jordan",
-					TagScores:  []issues.TagRelevance{{Tag: "search", Relevance: 0.8}},
+					TagScores:  []domain.TagRelevance{{Tag: "search", Relevance: 0.8}},
 					Embedding:  []float64{0.9, 0.1},
 				},
 			},

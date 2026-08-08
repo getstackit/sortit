@@ -6,6 +6,7 @@ import (
 	"strings"
 	"time"
 
+	"sortit/internal/domain"
 	"sortit/internal/issues/issuesdb"
 )
 
@@ -30,7 +31,7 @@ func saveIssueSnapshot(ctx context.Context, db issuesdb.DBTX, snapshot IssueSnap
 	if err != nil {
 		return fmt.Errorf("marshal snapshot tags: %w", err)
 	}
-	tagScoresJSON, err := marshalJSONB(snapshot.TagScores, []TagRelevance{})
+	tagScoresJSON, err := marshalJSONB(snapshot.TagScores, []domain.TagRelevance{})
 	if err != nil {
 		return fmt.Errorf("marshal snapshot tag scores: %w", err)
 	}
@@ -97,7 +98,7 @@ func listIssueSnapshots(ctx context.Context, db issuesdb.DBTX, issueID string) (
 		if err != nil {
 			return nil, fmt.Errorf("decode snapshot tags: %w", err)
 		}
-		tagScores, err := unmarshalJSONB[[]TagRelevance](tagScoresJSON)
+		tagScores, err := unmarshalJSONB[[]domain.TagRelevance](tagScoresJSON)
 		if err != nil {
 			return nil, fmt.Errorf("decode snapshot tag scores: %w", err)
 		}

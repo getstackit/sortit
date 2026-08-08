@@ -4,11 +4,12 @@ import (
 	"math"
 	"testing"
 
+	"sortit/internal/domain"
 	"sortit/internal/issues"
 	"sortit/internal/scoring"
 )
 
-func ridgeTestItems(embeddings map[string][]float64, tagsByIssue map[string][]issues.TagRelevance) []issues.Issue {
+func ridgeTestItems(embeddings map[string][]float64, tagsByIssue map[string][]domain.TagRelevance) []issues.Issue {
 	items := make([]issues.Issue, 0, len(embeddings))
 	for id := range embeddings {
 		items = append(items, issues.Issue{ID: id, TagScores: tagsByIssue[id]})
@@ -35,7 +36,7 @@ func TestComputeRidgeDecomposition_ReconstructionAndR2(t *testing.T) {
 		"noisy-A": unitVec([]float64{0.3, 0.2, 0.1, 0.93}), // mostly off-taxonomy axis
 		"noisy-B": unitVec([]float64{0.2, 0.1, 0.2, 0.95}),
 	}
-	tagsByIssue := map[string][]issues.TagRelevance{
+	tagsByIssue := map[string][]domain.TagRelevance{
 		"clean-A": {{Tag: "alpha", Relevance: 0.9}, {Tag: "beta", Relevance: 0.3}},
 		"clean-B": {{Tag: "alpha", Relevance: 0.85}, {Tag: "beta", Relevance: 0.4}},
 		"clean-C": {{Tag: "beta", Relevance: 0.9}, {Tag: "alpha", Relevance: 0.3}},
@@ -91,12 +92,12 @@ func TestComputeRidgeDecomposition_CollinearTagsStayBounded(t *testing.T) {
 	tagNames := []string{"auth", "login", "other"}
 
 	embeddings := map[string][]float64{}
-	tagsByIssue := map[string][]issues.TagRelevance{}
+	tagsByIssue := map[string][]domain.TagRelevance{}
 	for i, id := range []string{"i1", "i2", "i3", "i4", "i5"} {
 		embeddings[id] = unitVec([]float64{0.9, 0.1, 0.1 * float64(i), 0})
 		// Only auth is scored; login is an unscored near-duplicate that could
 		// destabilize the solve if the penalty were absent.
-		tagsByIssue[id] = []issues.TagRelevance{{Tag: "auth", Relevance: 0.8}}
+		tagsByIssue[id] = []domain.TagRelevance{{Tag: "auth", Relevance: 0.8}}
 	}
 
 	d := ComputeRidgeDecomposition(ridgeTestItems(embeddings, tagsByIssue), tagNames, embeddings, tagEmb,
@@ -156,10 +157,10 @@ func TestDecomposeRidgeEmbedding_MatchesCorpusSolve(t *testing.T) {
 	}
 	tagNames := []string{"alpha", "beta"}
 	embeddings := map[string][]float64{}
-	tagsByIssue := map[string][]issues.TagRelevance{}
+	tagsByIssue := map[string][]domain.TagRelevance{}
 	for _, id := range []string{"a", "b", "c", "d", "e"} {
 		embeddings[id] = unitVec([]float64{0.8, 0.4, 0.2, 0})
-		tagsByIssue[id] = []issues.TagRelevance{{Tag: "alpha", Relevance: 0.7}, {Tag: "beta", Relevance: 0.3}}
+		tagsByIssue[id] = []domain.TagRelevance{{Tag: "alpha", Relevance: 0.7}, {Tag: "beta", Relevance: 0.3}}
 	}
 
 	d := ComputeRidgeDecomposition(ridgeTestItems(embeddings, tagsByIssue), tagNames, embeddings, tagEmb,
@@ -205,7 +206,7 @@ func TestRidgeCholeskyFallbackObservable(t *testing.T) {
 		"d": unitVec([]float64{0.20, 0.10, 0.95, 0}),
 		"e": unitVec([]float64{0.10, 0.20, 0.90, 0.3}),
 	}
-	tagsByIssue := map[string][]issues.TagRelevance{
+	tagsByIssue := map[string][]domain.TagRelevance{
 		"a": {{Tag: "alpha", Relevance: 0.9}},
 		"b": {{Tag: "alpha", Relevance: 0.85}},
 		"c": {{Tag: "beta", Relevance: 0.9}},

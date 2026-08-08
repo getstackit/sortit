@@ -573,7 +573,7 @@ func (s *ObservedStore) ListPeopleAnalytics(
 			analytics = append(analytics, PeopleAnalyticsIssue{
 				Status:     item.Status,
 				AssignedTo: item.AssignedTo,
-				TagScores:  append([]TagRelevance(nil), item.TagScores...),
+				TagScores:  append([]domain.TagRelevance(nil), item.TagScores...),
 				Embedding:  append([]float64(nil), item.Embedding...),
 			})
 		}

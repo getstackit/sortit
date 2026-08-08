@@ -165,7 +165,7 @@ func TestRuntimeStoredTagRelevancesPreservesSignedMetadata(t *testing.T) {
 
 func TestSearchQueryTagsPreservesSignedMetadata(t *testing.T) {
 	negation := 0.55
-	got := searchQueryTags([]issues.TagRelevance{
+	got := searchQueryTags([]domain.TagRelevance{
 		{Tag: "billing", Relevance: 0.9},
 		{
 			Tag:                " auth ",
@@ -215,7 +215,7 @@ func TestGenericQueryAndSpecificityUseNormalizedTagNames(t *testing.T) {
 		t.Fatal("expected non-contiguous words not to match generic tag phrase")
 	}
 
-	penalty := issueSpecificityPenalty([]TagRelevance{{Tag: "front end", Relevance: 0.9}}, tagSpecificity)
+	penalty := issueSpecificityPenalty([]domain.TagRelevance{{Tag: "front end", Relevance: 0.9}}, tagSpecificity)
 	if penalty <= specificityPenalty(nil) {
 		t.Fatalf("expected normalized specificity lookup to use low specificity; got penalty %v", penalty)
 	}
@@ -338,7 +338,7 @@ func TestSearchReportsRawSemanticSimilarityWhenDecompositionIsActive(t *testing.
 		storeIssues,
 		storeTags,
 		"same words",
-		[]issues.TagRelevance{{Tag: "alpha", Relevance: 1}},
+		[]domain.TagRelevance{{Tag: "alpha", Relevance: 1}},
 		unitVec([]float64{1, 0, 0, 0}),
 		10,
 	)
@@ -379,7 +379,7 @@ func TestSearchWithRidgeSimilarityRanksSameTagIssuesFirst(t *testing.T) {
 	resp := SearchFromQueryWithTags(
 		storeIssues, storeTags,
 		"alpha problem",
-		[]issues.TagRelevance{{Tag: "alpha", Relevance: 0.9}},
+		[]domain.TagRelevance{{Tag: "alpha", Relevance: 0.9}},
 		unitVec([]float64{0.95, 0.1, 0.1, 0}),
 		3,
 		WithRidgeSimilarity(1.0),
@@ -410,7 +410,7 @@ func TestSearchWithRidgeSimilarityFallsBackOnTinyCorpus(t *testing.T) {
 	resp := SearchFromQueryWithTags(
 		storeIssues, storeTags,
 		"alpha",
-		[]issues.TagRelevance{{Tag: "alpha", Relevance: 0.9}},
+		[]domain.TagRelevance{{Tag: "alpha", Relevance: 0.9}},
 		unitVec([]float64{1, 0, 0, 0}),
 		10,
 		WithRidgeSimilarity(1.0),
@@ -421,7 +421,7 @@ func TestSearchWithRidgeSimilarityFallsBackOnTinyCorpus(t *testing.T) {
 }
 
 func TestCandidateInRegionRespectsMembershipFloor(t *testing.T) {
-	tags := []TagRelevance{
+	tags := []domain.TagRelevance{
 		{Tag: "auth", Relevance: 0.5},
 		{Tag: "billing", Relevance: 0.3},
 	}
@@ -434,7 +434,7 @@ func TestCandidateInRegionRespectsMembershipFloor(t *testing.T) {
 }
 
 func TestCandidateAntiCorrelationPenaltySumsStrongTagWeights(t *testing.T) {
-	tags := []TagRelevance{
+	tags := []domain.TagRelevance{
 		{Tag: "ui", Relevance: 0.8},
 		{Tag: "ops", Relevance: 0.2}, // below strong-tag floor; ignored
 	}

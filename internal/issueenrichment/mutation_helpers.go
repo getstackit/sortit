@@ -3,6 +3,7 @@ package enrichment
 import (
 	"context"
 
+	"sortit/internal/domain"
 	"sortit/internal/issues"
 	"sortit/internal/tags"
 )
@@ -24,6 +25,6 @@ func (s *IssueEnricher) analyzeMutationText(ctx context.Context, canonicalRaw st
 	return analysis, nil
 }
 
-func (s *IssueEnricher) displayTagsForAnalysis(ctx context.Context, tagScores []issues.TagRelevance) []string {
+func (s *IssueEnricher) displayTagsForAnalysis(ctx context.Context, tagScores []domain.TagRelevance) []string {
 	return issues.DisplayTagsWithSpecificity(nil, tagScores, s.tagSpecificityMap(ctx))
 }

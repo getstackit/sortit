@@ -5,7 +5,6 @@ import {
   fetchIssues,
   fetchIssue,
   fetchIssueR2,
-  searchIssues,
   type IssueListStatus,
 } from "@/lib/issues";
 import { uiAPIURL } from "@/lib/api";
@@ -97,26 +96,6 @@ export function useIssues(status: IssueListStatus = "open", enabled = true) {
   return useSWR(
     enabled ? ["issues", status, revision] : null,
     ([, currentStatus]: [string, IssueListStatus, number]) => fetchIssues(currentStatus)
-  );
-}
-
-export function useIssueSearch(
-  query: string,
-  status: IssueListStatus = "open",
-  limit = 8
-) {
-  const trimmed = query.trim();
-  const { data: revision = 0 } = useBackendRevision();
-  return useSWR(
-    trimmed ? ["issues-search", trimmed, status, limit, revision] : null,
-    ([, currentQuery, currentStatus, currentLimit]: [
-      string,
-      string,
-      IssueListStatus,
-      number,
-      number,
-    ]) =>
-      searchIssues(currentQuery, { status: currentStatus, limit: currentLimit })
   );
 }
 

@@ -1,10 +1,14 @@
 package issues
 
-import "testing"
+import (
+	"testing"
+
+	"sortit/internal/domain"
+)
 
 func TestDisplayTagsUsesEffectiveRelevance(t *testing.T) {
 	negated := 0.5
-	tags := DisplayTags(nil, []TagRelevance{
+	tags := DisplayTags(nil, []domain.TagRelevance{
 		{Tag: "backend", Relevance: 0.45, Negation: &negated},
 		{Tag: "signed-relevance", Relevance: 0.4},
 	})
@@ -18,7 +22,7 @@ func TestDisplayTagsWithSpecificityRanksByEffectiveRelevance(t *testing.T) {
 	negated := 0.85
 	backendSpecificity := 1.0
 	signedSpecificity := 0.0
-	tags := DisplayTagsWithSpecificity(nil, []TagRelevance{
+	tags := DisplayTagsWithSpecificity(nil, []domain.TagRelevance{
 		{Tag: "backend", Relevance: 0.9, Negation: &negated},
 		{Tag: "signed-relevance", Relevance: 0.65},
 	}, map[string]*float64{
@@ -33,7 +37,7 @@ func TestDisplayTagsWithSpecificityRanksByEffectiveRelevance(t *testing.T) {
 
 func TestDisplayTagsReturnsEmptyForFullyNegatedScores(t *testing.T) {
 	negated := 0.6
-	tags := DisplayTags(nil, []TagRelevance{
+	tags := DisplayTags(nil, []domain.TagRelevance{
 		{Tag: "backend", Relevance: 0.4, Negation: &negated},
 	})
 

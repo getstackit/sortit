@@ -16,12 +16,6 @@ export type TagRelevance = {
   dominanceGap?: number | null;
 };
 
-export type PersonTagProfile = {
-  person: string;
-  issueCount: number;
-  tagProfile: TagRelevance[];
-};
-
 export type PersonIssueRecommendation = {
   issue: IssueRecord;
   source: "assigned" | "recommended";
@@ -81,22 +75,6 @@ function normalizeRecommendation(
     issue: normalizeIssueRecord(recommendation.issue),
     sharedTags: Array.isArray(recommendation.sharedTags) ? recommendation.sharedTags : [],
   };
-}
-
-export async function fetchPersonProfile(
-  person: string,
-  status: PeopleListStatus = "all",
-  signal?: AbortSignal
-): Promise<PersonTagProfile> {
-  const params = new URLSearchParams();
-  if (status !== "all") {
-    params.set("status", status);
-  }
-  const query = params.toString();
-  const url = uiAPIURL(
-    `/people/${encodeURIComponent(person)}/profile${query ? `?${query}` : ""}`
-  );
-  return getJSON<PersonTagProfile>(url, { cache: "no-store", signal });
 }
 
 export async function fetchPersonDetail(

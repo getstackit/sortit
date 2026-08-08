@@ -7,6 +7,7 @@ import (
 	"strings"
 	"time"
 
+	"sortit/internal/domain"
 	"sortit/internal/issues/issuesdb"
 )
 
@@ -14,7 +15,7 @@ type issueContentState struct {
 	IssueID     string
 	Raw         string
 	Tags        []string
-	TagScores   []TagRelevance
+	TagScores   []domain.TagRelevance
 	Embedding   []float64
 	LastEventID string
 	EventCount  int64
@@ -35,10 +36,10 @@ type issueContentFactRecord struct {
 }
 
 type issueContentPayload struct {
-	Raw       string         `json:"raw"`
-	Tags      []string       `json:"tags"`
-	TagScores []TagRelevance `json:"tagScores"`
-	Embedding []float64      `json:"embedding,omitempty"`
+	Raw       string                `json:"raw"`
+	Tags      []string              `json:"tags"`
+	TagScores []domain.TagRelevance `json:"tagScores"`
+	Embedding []float64             `json:"embedding,omitempty"`
 }
 
 func syncIssueContentOnCreate(ctx context.Context, db issuesdb.DBTX, issue Issue) error {
@@ -118,7 +119,7 @@ func applyIssueContentTagMerge(
 	db issuesdb.DBTX,
 	issueID string,
 	tags []string,
-	tagScores []TagRelevance,
+	tagScores []domain.TagRelevance,
 	createdAt time.Time,
 ) error {
 	state, err := loadIssueContentState(ctx, db, issueID)
@@ -191,7 +192,7 @@ func loadIssueContentState(ctx context.Context, db issuesdb.DBTX, issueID string
 	if err != nil {
 		return issueContentState{}, fmt.Errorf("decode issue content tags for %q: %w", issueID, err)
 	}
-	tagScores, err := unmarshalJSONB[[]TagRelevance](tagScoresJSON)
+	tagScores, err := unmarshalJSONB[[]domain.TagRelevance](tagScoresJSON)
 	if err != nil {
 		return issueContentState{}, fmt.Errorf("decode issue content tag scores for %q: %w", issueID, err)
 	}
@@ -244,7 +245,7 @@ func upsertIssueContentProjection(ctx context.Context, db issuesdb.DBTX, state i
 	if err != nil {
 		return fmt.Errorf("marshal issue content projection tags: %w", err)
 	}
-	tagScoresJSON, err := marshalJSONB(state.TagScores, []TagRelevance{})
+	tagScoresJSON, err := marshalJSONB(state.TagScores, []domain.TagRelevance{})
 	if err != nil {
 		return fmt.Errorf("marshal issue content projection tag scores: %w", err)
 	}
