@@ -14,6 +14,7 @@ import (
 	"unicode"
 
 	"sortit/internal/ai"
+	issueenrichment "sortit/internal/issueenrichment"
 	"sortit/internal/matheval"
 )
 
@@ -184,11 +185,14 @@ func renderComparison(artifact matheval.TagEvalArtifact) string {
 	var out strings.Builder
 	fmt.Fprintln(&out, "# WP-702 tagging-fidelity comparison")
 	fmt.Fprintln(&out)
-	fmt.Fprintf(&out, "Generated: %s  \n", artifact.GeneratedAt)
-	fmt.Fprintf(&out, "Fixture: %s  \n", artifact.Fixture)
-	fmt.Fprintf(&out, "Command: `%s`\n", artifact.Command)
-	fmt.Fprintln(&out)
-	fmt.Fprintln(&out, "Fidelity uses `AnalysisTrace.ModelOutput` after the production relevance floor (0.08), before verifier/post-processing. Ranking substitutes the verifier's final tag scores into the full uncentered ridge path. Ranges are min–max across three serial model runs.")
+	fmt.Fprintf(&out, "Generated: %s\n\n", artifact.GeneratedAt)
+	fmt.Fprintf(&out, "Fixture: %s\n\n", artifact.Fixture)
+	fmt.Fprintf(&out, "Command: `%s`\n\n", artifact.Command)
+	runs := 0
+	if len(artifact.Reports) > 0 {
+		runs = artifact.Reports[0].Runs
+	}
+	fmt.Fprintf(&out, "Fidelity uses `AnalysisTrace.ModelOutput` after the production relevance floor (%.2f), before verifier/post-processing. Ranking substitutes the verifier's final tag scores into the full uncentered ridge path. The ranking baseline uses the fixture's ground-truth tag scores, so live models show a negative Δ; use the between-model comparison rather than treating that sign as a disqualification. Ranges are min–max across %d serial model runs.\n", issueenrichment.IssueTagRelevanceFloor, runs)
 	fmt.Fprintln(&out)
 	fmt.Fprintln(&out, "| Model | Micro F1 | Macro F1 | Correct / incorrect relevance | Negation FP | NDCG@8 Δ | Recall@8 Δ | Tokens in / out per issue | $ / 1k enrichments |")
 	fmt.Fprintln(&out, "|---|---:|---:|---:|---:|---:|---:|---:|---:|")

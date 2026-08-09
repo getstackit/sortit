@@ -21,8 +21,7 @@ import (
 )
 
 const (
-	tagEvalRelevanceFloor = 0.08
-	tagEvalK              = scoring.DefaultResultLimit
+	tagEvalK = scoring.DefaultResultLimit
 )
 
 var tagEvalNow = time.Date(2026, time.August, 8, 0, 0, 0, 0, time.UTC)
@@ -277,7 +276,7 @@ func tagEvalPredictedTags(scores []ai.TagScore) ([]string, []ai.TagScore) {
 	kept := make([]ai.TagScore, 0, len(scores))
 	for _, score := range scores {
 		name := domain.NormalizeTagName(score.Tag)
-		if name == "" || score.Relevance < tagEvalRelevanceFloor {
+		if name == "" || score.Relevance < issueenrichment.IssueTagRelevanceFloor {
 			continue
 		}
 		predicted = append(predicted, name)
@@ -385,7 +384,6 @@ func summarizeTagEvalRuns(runs []TagEvalRun) TagEvalStats {
 		combined.MacroF1 += stats.MacroF1
 		combined.CorrectRelevanceMean += stats.CorrectRelevanceMean
 		combined.IncorrectRelevanceMean += stats.IncorrectRelevanceMean
-		combined.NegationFalsePositiveRate += stats.NegationFalsePositiveRate
 		combined.InputTokensPerIssue += stats.InputTokensPerIssue
 		combined.OutputTokensPerIssue += stats.OutputTokensPerIssue
 		combined.CostPer1KEnrichments += stats.CostPer1KEnrichments
@@ -407,7 +405,7 @@ func summarizeTagEvalRuns(runs []TagEvalRun) TagEvalStats {
 	combined.MacroF1 /= denominator
 	combined.CorrectRelevanceMean /= denominator
 	combined.IncorrectRelevanceMean /= denominator
-	combined.NegationFalsePositiveRate /= denominator
+	combined.NegationFalsePositiveRate = tagEvalRatio(combined.NegationFalsePositives, combined.NegationCount)
 	combined.InputTokensPerIssue /= denominator
 	combined.OutputTokensPerIssue /= denominator
 	combined.CostPer1KEnrichments /= denominator
