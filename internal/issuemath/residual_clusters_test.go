@@ -5,6 +5,7 @@ import (
 	"sort"
 	"testing"
 
+	"sortit/internal/domain"
 	"sortit/internal/issues"
 	"sortit/internal/vectors"
 )
@@ -27,8 +28,8 @@ func residualTestCorpus(t *testing.T) (FactorDecomposition, []string) {
 		"res4": unitVec([]float64{0, 0, 1, 1.5}), // furthest of the cluster
 	}
 	items := []issues.Issue{
-		{ID: "exp1", TagScores: []issues.TagRelevance{{Tag: "alpha", Relevance: 0.9}}},
-		{ID: "exp2", TagScores: []issues.TagRelevance{{Tag: "alpha", Relevance: 0.9}}},
+		{ID: "exp1", TagScores: []domain.TagRelevance{{Tag: "alpha", Relevance: 0.9}}},
+		{ID: "exp2", TagScores: []domain.TagRelevance{{Tag: "alpha", Relevance: 0.9}}},
 		{ID: "res1"},
 		{ID: "res2"},
 		{ID: "res3"},
@@ -120,8 +121,8 @@ func TestTagDataFromIssues(t *testing.T) {
 		{Name: "   "},   // blank — skipped
 	}
 	items := []issues.Issue{
-		{ID: "i1", TagScores: []issues.TagRelevance{{Tag: "gamma"}, {Tag: "beta"}}},
-		{ID: "i2", TagScores: []issues.TagRelevance{{Tag: ""}}},
+		{ID: "i1", TagScores: []domain.TagRelevance{{Tag: "gamma"}, {Tag: "beta"}}},
+		{ID: "i2", TagScores: []domain.TagRelevance{{Tag: ""}}},
 	}
 
 	names, embeddings := TagDataFromIssues(items, storeTags)

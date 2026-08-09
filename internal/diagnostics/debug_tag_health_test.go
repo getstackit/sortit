@@ -4,6 +4,7 @@ import (
 	"context"
 	"testing"
 
+	"sortit/internal/domain"
 	"sortit/internal/issuemath"
 	"sortit/internal/issues"
 	"sortit/internal/tags"
@@ -78,15 +79,15 @@ func TestDebugTagHealthFlagsMisTagsOpenOnly(t *testing.T) {
 	store := issues.NewInMemoryStore([]issues.Issue{
 		// Tagged alpha, embedding points at beta → alpha spurious, beta missing.
 		{ID: "mistagged", Raw: "mis", Status: issues.StatusOpen,
-			TagScores: []issues.TagRelevance{{Tag: "alpha", Relevance: 0.9}},
+			TagScores: []domain.TagRelevance{{Tag: "alpha", Relevance: 0.9}},
 			Embedding: unitVec64([]float64{0, 1, 0, 0})},
 		// Tagged alpha, embedding agrees → low drift, not flagged.
 		{ID: "welltagged", Raw: "well", Status: issues.StatusOpen,
-			TagScores: []issues.TagRelevance{{Tag: "alpha", Relevance: 0.9}},
+			TagScores: []domain.TagRelevance{{Tag: "alpha", Relevance: 0.9}},
 			Embedding: unitVec64([]float64{1, 0, 0, 0})},
 		// Same mis-tag as "mistagged" but closed → must be excluded.
 		{ID: "mistagged-closed", Raw: "closed", Status: issues.StatusClosed,
-			TagScores: []issues.TagRelevance{{Tag: "alpha", Relevance: 0.9}},
+			TagScores: []domain.TagRelevance{{Tag: "alpha", Relevance: 0.9}},
 			Embedding: unitVec64([]float64{0, 1, 0, 0})},
 	})
 	tagStore := &debugTagStore{}
@@ -141,7 +142,7 @@ func TestDebugTagHealthDeterministicOrder(t *testing.T) {
 	for _, id := range ids {
 		seed = append(seed, issues.Issue{
 			ID: id, Raw: id, Status: issues.StatusOpen,
-			TagScores: []issues.TagRelevance{{Tag: "alpha", Relevance: 0.9}},
+			TagScores: []domain.TagRelevance{{Tag: "alpha", Relevance: 0.9}},
 			Embedding: unitVec64([]float64{0, 1, 0, 0}),
 		})
 	}

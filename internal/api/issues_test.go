@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"sortit/internal/ai"
+	"sortit/internal/domain"
 	"sortit/internal/issues"
 	issuecmd "sortit/internal/issues/commands"
 	issuemap "sortit/internal/map"
@@ -667,7 +668,7 @@ func TestIssuesEndpointListSupportsAdditionalFilters(t *testing.T) {
 			Status:     issues.StatusOpen,
 			AssignedTo: "Casey",
 			Tags:       []string{"onboarding"},
-			TagScores:  []issues.TagRelevance{{Tag: "onboarding", Relevance: 0.8}},
+			TagScores:  []domain.TagRelevance{{Tag: "onboarding", Relevance: 0.8}},
 			Embedding:  []float64{0.1, 0.2},
 		},
 		{
@@ -678,7 +679,7 @@ func TestIssuesEndpointListSupportsAdditionalFilters(t *testing.T) {
 			Status:     issues.StatusOpen,
 			AssignedTo: "Jordan",
 			Tags:       []string{"export"},
-			TagScores:  []issues.TagRelevance{{Tag: "export", Relevance: 0.9}},
+			TagScores:  []domain.TagRelevance{{Tag: "export", Relevance: 0.9}},
 			Embedding:  []float64{0.2, 0.3},
 		},
 		{
@@ -689,7 +690,7 @@ func TestIssuesEndpointListSupportsAdditionalFilters(t *testing.T) {
 			Status:     issues.StatusClosed,
 			AssignedTo: "Casey",
 			Tags:       []string{"backend"},
-			TagScores:  []issues.TagRelevance{{Tag: "search", Relevance: 0.7}},
+			TagScores:  []domain.TagRelevance{{Tag: "search", Relevance: 0.7}},
 			Embedding:  []float64{0.3, 0.4},
 		},
 	})
@@ -734,7 +735,7 @@ func TestIssuesEndpointExploresIssue(t *testing.T) {
 			CreatedBy: "Casey",
 			CreatedAt: issues.FixtureIssues()[0].CreatedAt,
 			Status:    issues.StatusOpen,
-			TagScores: []issues.TagRelevance{
+			TagScores: []domain.TagRelevance{
 				{Tag: "export", Relevance: 0.95},
 				{Tag: "safari", Relevance: 0.92},
 				{Tag: "bug", Relevance: 0.9},
@@ -747,7 +748,7 @@ func TestIssuesEndpointExploresIssue(t *testing.T) {
 			CreatedBy: "Casey",
 			CreatedAt: issues.FixtureIssues()[1].CreatedAt,
 			Status:    issues.StatusOpen,
-			TagScores: []issues.TagRelevance{
+			TagScores: []domain.TagRelevance{
 				{Tag: "export", Relevance: 0.91},
 				{Tag: "safari", Relevance: 0.88},
 				{Tag: "bug", Relevance: 0.67},
@@ -760,7 +761,7 @@ func TestIssuesEndpointExploresIssue(t *testing.T) {
 			CreatedBy: "Casey",
 			CreatedAt: issues.FixtureIssues()[2].CreatedAt,
 			Status:    issues.StatusOpen,
-			TagScores: []issues.TagRelevance{
+			TagScores: []domain.TagRelevance{
 				{Tag: "feature", Relevance: 0.95},
 			},
 			Embedding: []float64{0, 1, 0},
@@ -771,7 +772,7 @@ func TestIssuesEndpointExploresIssue(t *testing.T) {
 			CreatedBy: "Casey",
 			CreatedAt: issues.FixtureIssues()[3].CreatedAt,
 			Status:    issues.StatusClosed,
-			TagScores: []issues.TagRelevance{
+			TagScores: []domain.TagRelevance{
 				{Tag: "export", Relevance: 0.96},
 				{Tag: "safari", Relevance: 0.94},
 			},
@@ -849,7 +850,7 @@ func TestIssuesEndpointExploreUsesDBRelationshipSemantics(t *testing.T) {
 			CreatedBy: "Casey",
 			CreatedAt: issues.FixtureIssues()[0].CreatedAt,
 			Status:    issues.StatusOpen,
-			TagScores: []issues.TagRelevance{
+			TagScores: []domain.TagRelevance{
 				{Tag: "export", Relevance: 0.95},
 				{Tag: "safari", Relevance: 0.92},
 			},
@@ -861,7 +862,7 @@ func TestIssuesEndpointExploreUsesDBRelationshipSemantics(t *testing.T) {
 			CreatedBy: "Jordan",
 			CreatedAt: issues.FixtureIssues()[1].CreatedAt,
 			Status:    issues.StatusOpen,
-			TagScores: []issues.TagRelevance{
+			TagScores: []domain.TagRelevance{
 				{Tag: "export", Relevance: 0.9},
 				{Tag: "safari", Relevance: 0.84},
 			},
@@ -873,7 +874,7 @@ func TestIssuesEndpointExploreUsesDBRelationshipSemantics(t *testing.T) {
 			CreatedBy: "Jordan",
 			CreatedAt: issues.FixtureIssues()[2].CreatedAt,
 			Status:    issues.StatusOpen,
-			TagScores: []issues.TagRelevance{
+			TagScores: []domain.TagRelevance{
 				{Tag: "export", Relevance: 0.88},
 				{Tag: "safari", Relevance: 0.81},
 			},
@@ -885,7 +886,7 @@ func TestIssuesEndpointExploreUsesDBRelationshipSemantics(t *testing.T) {
 			CreatedBy: "Riley",
 			CreatedAt: issues.FixtureIssues()[3].CreatedAt,
 			Status:    issues.StatusOpen,
-			TagScores: []issues.TagRelevance{
+			TagScores: []domain.TagRelevance{
 				{Tag: "backend", Relevance: 0.91},
 			},
 			Embedding: []float64{0, 1, 0},
@@ -896,7 +897,7 @@ func TestIssuesEndpointExploreUsesDBRelationshipSemantics(t *testing.T) {
 			CreatedBy: "Taylor",
 			CreatedAt: issues.FixtureIssues()[0].CreatedAt,
 			Status:    issues.StatusOpen,
-			TagScores: []issues.TagRelevance{
+			TagScores: []domain.TagRelevance{
 				{Tag: "feature", Relevance: 0.9},
 			},
 			Embedding: []float64{0, 0.8, 0.2},
@@ -998,7 +999,7 @@ func TestIssuesEndpointSearchesIssues(t *testing.T) {
 			CreatedBy: "Casey",
 			CreatedAt: issues.FixtureIssues()[0].CreatedAt,
 			Status:    issues.StatusOpen,
-			TagScores: []issues.TagRelevance{
+			TagScores: []domain.TagRelevance{
 				{Tag: "frontend", Relevance: 0.95},
 				{Tag: "improvement", Relevance: 0.86},
 			},
@@ -1010,7 +1011,7 @@ func TestIssuesEndpointSearchesIssues(t *testing.T) {
 			CreatedBy: "Casey",
 			CreatedAt: issues.FixtureIssues()[1].CreatedAt,
 			Status:    issues.StatusOpen,
-			TagScores: []issues.TagRelevance{
+			TagScores: []domain.TagRelevance{
 				{Tag: "frontend", Relevance: 0.74},
 				{Tag: "improvement", Relevance: 0.71},
 			},
@@ -1022,7 +1023,7 @@ func TestIssuesEndpointSearchesIssues(t *testing.T) {
 			CreatedBy: "Casey",
 			CreatedAt: issues.FixtureIssues()[2].CreatedAt,
 			Status:    issues.StatusOpen,
-			TagScores: []issues.TagRelevance{
+			TagScores: []domain.TagRelevance{
 				{Tag: "backend", Relevance: 0.93},
 			},
 			Embedding: []float64{0, 1, 0},
@@ -1033,7 +1034,7 @@ func TestIssuesEndpointSearchesIssues(t *testing.T) {
 			CreatedBy: "Casey",
 			CreatedAt: issues.FixtureIssues()[3].CreatedAt,
 			Status:    issues.StatusClosed,
-			TagScores: []issues.TagRelevance{
+			TagScores: []domain.TagRelevance{
 				{Tag: "frontend", Relevance: 0.97},
 			},
 			Embedding: []float64{1, 0, 0},
@@ -1132,7 +1133,7 @@ func TestIssuesEndpointSearchSupportsMCPParityFilters(t *testing.T) {
 			CreatedAt:  issues.FixtureIssues()[4].CreatedAt,
 			Status:     issues.StatusOpen,
 			AssignedTo: "Casey",
-			TagScores: []issues.TagRelevance{
+			TagScores: []domain.TagRelevance{
 				{Tag: "frontend", Relevance: 0.92},
 			},
 			Embedding: []float64{1, 0, 0},
@@ -1144,7 +1145,7 @@ func TestIssuesEndpointSearchSupportsMCPParityFilters(t *testing.T) {
 			CreatedAt:  issues.FixtureIssues()[0].CreatedAt,
 			Status:     issues.StatusOpen,
 			AssignedTo: "Casey",
-			TagScores: []issues.TagRelevance{
+			TagScores: []domain.TagRelevance{
 				{Tag: "frontend", Relevance: 0.95},
 			},
 			Embedding: []float64{1, 0, 0},
@@ -1156,7 +1157,7 @@ func TestIssuesEndpointSearchSupportsMCPParityFilters(t *testing.T) {
 			CreatedAt:  issues.FixtureIssues()[1].CreatedAt,
 			Status:     issues.StatusOpen,
 			AssignedTo: "Riley",
-			TagScores: []issues.TagRelevance{
+			TagScores: []domain.TagRelevance{
 				{Tag: "backend", Relevance: 0.98},
 			},
 			Embedding: []float64{0, 1, 0},

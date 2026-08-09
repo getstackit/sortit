@@ -7,6 +7,7 @@ import (
 	"testing"
 	"time"
 
+	"sortit/internal/domain"
 	"sortit/internal/issues"
 	"sortit/internal/matheval"
 	"sortit/internal/ridgedecomp"
@@ -63,7 +64,7 @@ func sweepMathevalCorpus(t *testing.T, k int) (recon float64, iters, churn int) 
 			src := store.items[(step*7)%len(store.items)]
 			clone := src
 			clone.ID = fmt.Sprintf("sweep-add-%03d", step)
-			clone.TagScores = append([]issues.TagRelevance(nil), src.TagScores...)
+			clone.TagScores = append([]domain.TagRelevance(nil), src.TagScores...)
 			store.items = append(store.items, clone)
 		case 1: // nudge one issue's first tag score
 			i := (step * 5) % len(store.items)

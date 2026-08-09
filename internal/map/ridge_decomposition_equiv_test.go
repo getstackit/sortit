@@ -56,7 +56,7 @@ func TestRidgeDecompositionEquivalentToInPlaceSearch(t *testing.T) {
 	means := fullCorpusMeans(storeIssues, storeTags)
 	const lambda = 1.0
 
-	queryTags := []issues.TagRelevance{{Tag: "alpha", Relevance: 0.9}}
+	queryTags := []domain.TagRelevance{{Tag: "alpha", Relevance: 0.9}}
 	queryEmbed := unitVec([]float64{0.95, 0.1, 0.1, 0})
 
 	inPlace := SearchFromQueryWithTags(

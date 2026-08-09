@@ -275,22 +275,7 @@ func (s *Server) registerDedicatedAPIRoutes(r chi.Router) {
 
 	r.Group(func(r chi.Router) {
 		r.Use(authRequiredMiddleware(s.authService))
-		s.registerAuthRoutes(r)
-		s.registerIssueRoutes(r)
-		s.registerMemoryRoutes(r)
-		s.registerCurationRoutes(r)
-		s.registerTagRoutes(r)
-		r.Get("/people/correlations", s.handleWorkCorrelations)
-		r.Get("/people/{person}", s.handlePersonDetail)
-		r.Get("/people/{person}/profile", s.handlePersonProfileRoute)
-		r.Get("/regions", s.handleRegionsList)
-		r.Get("/regions/orphans", s.handleRegionOrphans)
-		r.Get("/regions/custom", s.handleCustomRegionList)
-		r.Post("/regions/custom", s.handleCustomRegionCreate)
-		r.Put("/regions/custom/{id}", s.handleCustomRegionUpdate)
-		r.Delete("/regions/custom/{id}", s.handleCustomRegionDelete)
-		r.Get("/regions/custom/{id}/definition", s.handleCustomRegionGet)
-		r.Get("/regions/{kind}/{id}", s.handleRegionGet)
+		s.registerCommonAuthenticatedRoutes(r)
 		r.Route("/debug", func(r chi.Router) {
 			r.Use(middleware.Timeout(debugRequestTimeout))
 			r.Get("/eval-tags", s.handleDebugEvalTags)
@@ -314,30 +299,15 @@ func (s *Server) registerUIRoutes(r chi.Router) {
 
 	r.Group(func(r chi.Router) {
 		r.Use(authRequiredMiddleware(s.authService))
-		s.registerAuthRoutes(r)
+		s.registerCommonAuthenticatedRoutes(r)
 		r.Post("/auth/cli/login/{loginID}/complete", s.handleAuthCLILoginComplete)
-		s.registerIssueRoutes(r)
-		s.registerMemoryRoutes(r)
-		s.registerCurationRoutes(r)
 		r.Get("/activity", s.handleActivity)
 		r.Post("/issues/compare", s.handleIssueCompare)
 		r.Get("/search", s.handleUnifiedSearch)
-		s.registerTagRoutes(r)
 		r.Get("/revision", s.handleRevision)
 		r.Get("/revision/stream", s.handleRevisionStream)
 		r.Get("/map", s.handleMap)
 		r.Get("/map/edges", s.handleMapEdges)
-		r.Get("/people/correlations", s.handleWorkCorrelations)
-		r.Get("/people/{person}", s.handlePersonDetail)
-		r.Get("/people/{person}/profile", s.handlePersonProfileRoute)
-		r.Get("/regions", s.handleRegionsList)
-		r.Get("/regions/orphans", s.handleRegionOrphans)
-		r.Get("/regions/custom", s.handleCustomRegionList)
-		r.Post("/regions/custom", s.handleCustomRegionCreate)
-		r.Put("/regions/custom/{id}", s.handleCustomRegionUpdate)
-		r.Delete("/regions/custom/{id}", s.handleCustomRegionDelete)
-		r.Get("/regions/custom/{id}/definition", s.handleCustomRegionGet)
-		r.Get("/regions/{kind}/{id}", s.handleRegionGet)
 		r.Route("/debug", func(r chi.Router) {
 			r.Use(middleware.Timeout(debugRequestTimeout))
 			r.Post("/issues/analyze", s.handleDebugIssueAnalyze)
@@ -355,6 +325,28 @@ func (s *Server) registerUIRoutes(r chi.Router) {
 			r.Get("/issues/{id}/themes", s.handleDebugIssueThemes)
 		})
 	})
+}
+
+// registerCommonAuthenticatedRoutes keeps the browser and dedicated API
+// surfaces aligned for routes that share the same authentication and behavior.
+// Each surface registers only its additional capabilities alongside this set.
+func (s *Server) registerCommonAuthenticatedRoutes(r chi.Router) {
+	s.registerAuthRoutes(r)
+	s.registerIssueRoutes(r)
+	s.registerMemoryRoutes(r)
+	s.registerCurationRoutes(r)
+	s.registerTagRoutes(r)
+	r.Get("/people/correlations", s.handleWorkCorrelations)
+	r.Get("/people/{person}", s.handlePersonDetail)
+	r.Get("/people/{person}/profile", s.handlePersonProfileRoute)
+	r.Get("/regions", s.handleRegionsList)
+	r.Get("/regions/orphans", s.handleRegionOrphans)
+	r.Get("/regions/custom", s.handleCustomRegionList)
+	r.Post("/regions/custom", s.handleCustomRegionCreate)
+	r.Put("/regions/custom/{id}", s.handleCustomRegionUpdate)
+	r.Delete("/regions/custom/{id}", s.handleCustomRegionDelete)
+	r.Get("/regions/custom/{id}/definition", s.handleCustomRegionGet)
+	r.Get("/regions/{kind}/{id}", s.handleRegionGet)
 }
 
 func (s *Server) registerIssueRoutes(r chi.Router) {

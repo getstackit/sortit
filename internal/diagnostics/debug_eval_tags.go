@@ -12,7 +12,6 @@ import (
 	"sortit/internal/ai"
 	"sortit/internal/domain"
 	issueenrichment "sortit/internal/issueenrichment"
-	"sortit/internal/issues"
 	"sortit/internal/tags"
 )
 
@@ -200,7 +199,7 @@ func (h DebugEvalTagsHandler) evaluateCase(ctx context.Context, item DebugTagEva
 	return predictedEvalTagRelevance(analysis.TagScores), downrankedCount, flaggedCount, negatedCount, nil
 }
 
-func countVerificationVerdicts(scores []issues.TagRelevance) (int, int, int) {
+func countVerificationVerdicts(scores []domain.TagRelevance) (int, int, int) {
 	downranked := 0
 	flagged := 0
 	negated := 0
@@ -347,7 +346,7 @@ func predictedEvalTags(scores []ai.TagScore) []string {
 	return names
 }
 
-func predictedEvalTagRelevance(scores []issues.TagRelevance) []string {
+func predictedEvalTagRelevance(scores []domain.TagRelevance) []string {
 	names := make([]string, 0, len(scores))
 	for _, score := range scores {
 		names = appendNormalizedEvalTag(names, score.Tag, score.EffectiveRelevance())

@@ -9,6 +9,7 @@ import (
 	"testing"
 	"time"
 
+	"sortit/internal/domain"
 	"sortit/internal/testpostgres"
 )
 
@@ -27,7 +28,7 @@ func TestPostgresStoreCreateListAndGet(t *testing.T) {
 		Raw:       "  add postgres storage  ",
 		CreatedBy: "  Casey ",
 		Tags:      []string{"backend", " backend ", ""},
-		TagScores: []TagRelevance{{Tag: "backend", Relevance: 0.9, Suggested: true, Description: "server-side setup flow"}},
+		TagScores: []domain.TagRelevance{{Tag: "backend", Relevance: 0.9, Suggested: true, Description: "server-side setup flow"}},
 		Embedding: []float64{0.25, 0.5},
 	})
 	if err := store.SaveIssue(context.Background(), issue); err != nil {
@@ -103,7 +104,7 @@ func TestPostgresStoreRefineAppendsDiscussionAndUpdatesCanonicalIssue(t *testing
 	issue := BuildNewIssue(id, CreateInput{
 		Raw:       "export fails on ipad",
 		CreatedBy: "Casey",
-		TagScores: []TagRelevance{{Tag: "export", Relevance: 0.8}},
+		TagScores: []domain.TagRelevance{{Tag: "export", Relevance: 0.8}},
 		Embedding: []float64{0.25, 0.5},
 	})
 	if err := store.SaveIssue(context.Background(), issue); err != nil {
@@ -130,14 +131,14 @@ func TestPostgresStoreRefineAppendsDiscussionAndUpdatesCanonicalIssue(t *testing
 
 	// Update canonical fields
 	canonicalRaw := "Export fails in Safari on iPad after tapping share twice."
-	newTags := DisplayTags(nil, []TagRelevance{
+	newTags := DisplayTags(nil, []domain.TagRelevance{
 		{Tag: "export", Relevance: 0.95},
 		{Tag: "safari", Relevance: 0.73},
 	})
 	if err := store.UpdateIssueFields(context.Background(), issue.ID, IssueFieldUpdate{
 		Raw:  &canonicalRaw,
 		Tags: newTags,
-		TagScores: []TagRelevance{
+		TagScores: []domain.TagRelevance{
 			{Tag: "export", Relevance: 0.95},
 			{Tag: "safari", Relevance: 0.73},
 		},
@@ -186,7 +187,7 @@ func TestPostgresStorePersistsIssueSnapshotsOnEnrichmentUpdate(t *testing.T) {
 	if err := store.UpdateIssueFields(ctx, issue.ID, IssueFieldUpdate{
 		Raw:  &raw1,
 		Tags: []string{"export", "safari"},
-		TagScores: []TagRelevance{
+		TagScores: []domain.TagRelevance{
 			{Tag: "export", Relevance: 0.9},
 			{Tag: "safari", Relevance: 0.7, Suggested: true, Description: "ipad safari export issue"},
 		},
@@ -201,7 +202,7 @@ func TestPostgresStorePersistsIssueSnapshotsOnEnrichmentUpdate(t *testing.T) {
 	if err := store.UpdateIssueFields(ctx, issue.ID, IssueFieldUpdate{
 		Raw:  &raw2,
 		Tags: []string{"export", "safari"},
-		TagScores: []TagRelevance{
+		TagScores: []domain.TagRelevance{
 			{Tag: "export", Relevance: 0.95},
 			{Tag: "safari", Relevance: 0.8},
 		},
@@ -444,7 +445,7 @@ func TestPostgresStoreContentProjectionReadCutover(t *testing.T) {
 		Raw:       "legacy content should not win",
 		CreatedBy: "Casey",
 		Tags:      []string{"bug"},
-		TagScores: []TagRelevance{{Tag: "bug", Relevance: 0.4}},
+		TagScores: []domain.TagRelevance{{Tag: "bug", Relevance: 0.4}},
 		Embedding: []float64{0.1, 0.9},
 	})
 	if err := store.SaveIssue(ctx, issue); err != nil {
@@ -624,7 +625,7 @@ func TestPostgresStoreContentWritesAppendFactsAndProjection(t *testing.T) {
 		Raw:       "original content",
 		CreatedBy: "Casey",
 		Tags:      []string{"bug"},
-		TagScores: []TagRelevance{{Tag: "bug", Relevance: 0.4}},
+		TagScores: []domain.TagRelevance{{Tag: "bug", Relevance: 0.4}},
 		Embedding: []float64{0.1, 0.9},
 	})
 	if err := store.SaveIssue(ctx, issue); err != nil {
@@ -635,7 +636,7 @@ func TestPostgresStoreContentWritesAppendFactsAndProjection(t *testing.T) {
 	if err := store.UpdateIssueFields(ctx, issue.ID, IssueFieldUpdate{
 		Raw:       &raw,
 		Tags:      []string{"bug", "ux"},
-		TagScores: []TagRelevance{{Tag: "bug", Relevance: 0.7}, {Tag: "ux", Relevance: 0.6}},
+		TagScores: []domain.TagRelevance{{Tag: "bug", Relevance: 0.7}, {Tag: "ux", Relevance: 0.6}},
 		Embedding: []float64{0.3, 0.7},
 	}); err != nil {
 		t.Fatalf("update issue content fields: %v", err)
@@ -698,7 +699,7 @@ func TestPostgresStoreSnapshotsAreInsertOnlyPerSequence(t *testing.T) {
 	if err := store.UpdateIssueFields(ctx, issue.ID, IssueFieldUpdate{
 		Raw:                      &raw1,
 		Tags:                     []string{"export"},
-		TagScores:                []TagRelevance{{Tag: "export", Relevance: 0.9}},
+		TagScores:                []domain.TagRelevance{{Tag: "export", Relevance: 0.9}},
 		Embedding:                []float64{1, 0},
 		EnrichmentTargetSequence: &seq1,
 	}); err != nil {
@@ -709,7 +710,7 @@ func TestPostgresStoreSnapshotsAreInsertOnlyPerSequence(t *testing.T) {
 	if err := store.UpdateIssueFields(ctx, issue.ID, IssueFieldUpdate{
 		Raw:                      &raw2,
 		Tags:                     []string{"export", "safari"},
-		TagScores:                []TagRelevance{{Tag: "safari", Relevance: 0.8}},
+		TagScores:                []domain.TagRelevance{{Tag: "safari", Relevance: 0.8}},
 		Embedding:                []float64{0, 1},
 		EnrichmentTargetSequence: &seq1,
 	}); err != nil {
@@ -812,7 +813,7 @@ func TestPostgresStoreListFiltered(t *testing.T) {
 		Raw:       "Alpha onboarding issue",
 		CreatedBy: "Casey",
 		Tags:      []string{"onboarding"},
-		TagScores: []TagRelevance{{Tag: "onboarding", Relevance: 0.9}},
+		TagScores: []domain.TagRelevance{{Tag: "onboarding", Relevance: 0.9}},
 		Embedding: []float64{0.1, 0.2},
 	})
 	alpha.AssignedTo = "Casey"
@@ -824,7 +825,7 @@ func TestPostgresStoreListFiltered(t *testing.T) {
 		Raw:       "Beta export issue",
 		CreatedBy: "Jordan",
 		Tags:      []string{"export"},
-		TagScores: []TagRelevance{{Tag: "export", Relevance: 0.85}},
+		TagScores: []domain.TagRelevance{{Tag: "export", Relevance: 0.85}},
 		Embedding: []float64{0.3, 0.4},
 	})
 	beta.AssignedTo = "Jordan"
@@ -847,7 +848,7 @@ func TestPostgresStoreListFiltered(t *testing.T) {
 		Raw:       "Gamma backend issue",
 		CreatedBy: "Casey",
 		Tags:      []string{"backend"},
-		TagScores: []TagRelevance{{Tag: "search", Relevance: 0.5}},
+		TagScores: []domain.TagRelevance{{Tag: "search", Relevance: 0.5}},
 		Embedding: []float64{0.5, 0.6},
 	})
 	gamma.AssignedTo = "Casey"
@@ -983,7 +984,7 @@ func TestPostgresStoreSearchIssuesByEmbeddingOrdersAndFilters(t *testing.T) {
 		Raw:       "Export fails on Safari",
 		CreatedBy: "Casey",
 		Tags:      []string{"export"},
-		TagScores: []TagRelevance{{Tag: "export", Relevance: 0.95}},
+		TagScores: []domain.TagRelevance{{Tag: "export", Relevance: 0.95}},
 		Embedding: sparseUnitVector(24, 0),
 	})
 	alpha.AssignedTo = "Casey"
@@ -995,7 +996,7 @@ func TestPostgresStoreSearchIssuesByEmbeddingOrdersAndFilters(t *testing.T) {
 		Raw:       "Export has an edge-case formatting bug",
 		CreatedBy: "Casey",
 		Tags:      []string{"export"},
-		TagScores: []TagRelevance{{Tag: "export", Relevance: 0.8}},
+		TagScores: []domain.TagRelevance{{Tag: "export", Relevance: 0.8}},
 		Embedding: sparseUnitVector(24, 1),
 	})
 	beta.AssignedTo = "Casey"
@@ -1007,7 +1008,7 @@ func TestPostgresStoreSearchIssuesByEmbeddingOrdersAndFilters(t *testing.T) {
 		Raw:       "Closed export issue",
 		CreatedBy: "Casey",
 		Tags:      []string{"export"},
-		TagScores: []TagRelevance{{Tag: "export", Relevance: 0.9}},
+		TagScores: []domain.TagRelevance{{Tag: "export", Relevance: 0.9}},
 		Embedding: sparseUnitVector(24, 0),
 	})
 	closed.AssignedTo = "Casey"
@@ -1029,7 +1030,7 @@ func TestPostgresStoreSearchIssuesByEmbeddingOrdersAndFilters(t *testing.T) {
 		Raw:       "Jordan export bug",
 		CreatedBy: "Jordan",
 		Tags:      []string{"export"},
-		TagScores: []TagRelevance{{Tag: "export", Relevance: 0.88}},
+		TagScores: []domain.TagRelevance{{Tag: "export", Relevance: 0.88}},
 		Embedding: sparseUnitVector(24, 0),
 	})
 	otherAssignee.AssignedTo = "Jordan"
@@ -1067,7 +1068,7 @@ func TestPostgresStoreSearchIssuesSupportsCreatedAtFallback(t *testing.T) {
 		Raw:       "Search filter mismatch on old issue",
 		CreatedBy: "Casey",
 		Tags:      []string{"search"},
-		TagScores: []TagRelevance{{Tag: "search", Relevance: 0.7}},
+		TagScores: []domain.TagRelevance{{Tag: "search", Relevance: 0.7}},
 		Embedding: sparseUnitVector(24, 2),
 	})
 	older.CreatedAt = time.Unix(10, 0).UTC()
@@ -1080,7 +1081,7 @@ func TestPostgresStoreSearchIssuesSupportsCreatedAtFallback(t *testing.T) {
 		Raw:       "Newer search ranking issue",
 		CreatedBy: "Casey",
 		Tags:      []string{"search"},
-		TagScores: []TagRelevance{{Tag: "search", Relevance: 0.9}},
+		TagScores: []domain.TagRelevance{{Tag: "search", Relevance: 0.9}},
 		Embedding: sparseUnitVector(24, 3),
 	})
 	newer.CreatedAt = time.Unix(20, 0).UTC()
@@ -1093,7 +1094,7 @@ func TestPostgresStoreSearchIssuesSupportsCreatedAtFallback(t *testing.T) {
 		Raw:       "Newest search issue but excluded",
 		CreatedBy: "Casey",
 		Tags:      []string{"search"},
-		TagScores: []TagRelevance{{Tag: "search", Relevance: 0.95}},
+		TagScores: []domain.TagRelevance{{Tag: "search", Relevance: 0.95}},
 		Embedding: sparseUnitVector(24, 4),
 	})
 	excluded.CreatedAt = time.Unix(30, 0).UTC()
@@ -1130,7 +1131,7 @@ func TestPostgresStoreSearchIssuesPrefersParadeDBTextMatches(t *testing.T) {
 		Raw:       "Authority canonicality scoring needs clearer semantics",
 		CreatedBy: "Casey",
 		Tags:      []string{"search"},
-		TagScores: []TagRelevance{{Tag: "search", Relevance: 0.9}},
+		TagScores: []domain.TagRelevance{{Tag: "search", Relevance: 0.9}},
 		Embedding: sparseUnitVector(24, 5),
 	})
 	if err := store.SaveIssue(ctx, textHit); err != nil {
@@ -1141,7 +1142,7 @@ func TestPostgresStoreSearchIssuesPrefersParadeDBTextMatches(t *testing.T) {
 		Raw:       "Graph leverage ranking needs more explanation",
 		CreatedBy: "Jordan",
 		Tags:      []string{"search"},
-		TagScores: []TagRelevance{{Tag: "search", Relevance: 0.9}},
+		TagScores: []domain.TagRelevance{{Tag: "search", Relevance: 0.9}},
 		Embedding: sparseUnitVector(24, 5),
 	})
 	if err := store.SaveIssue(ctx, textMiss); err != nil {
@@ -1174,7 +1175,7 @@ func TestPostgresStoreSearchIssuesFallsBackToEmbeddingWhenTextMisses(t *testing.
 		Raw:       "Safari export regression in PDF flow",
 		CreatedBy: "Casey",
 		Tags:      []string{"export"},
-		TagScores: []TagRelevance{{Tag: "export", Relevance: 0.95}},
+		TagScores: []domain.TagRelevance{{Tag: "export", Relevance: 0.95}},
 		Embedding: sparseUnitVector(24, 6),
 	})
 	if err := store.SaveIssue(ctx, alpha); err != nil {
@@ -1185,7 +1186,7 @@ func TestPostgresStoreSearchIssuesFallsBackToEmbeddingWhenTextMisses(t *testing.
 		Raw:       "Analytics backfill is too slow",
 		CreatedBy: "Jordan",
 		Tags:      []string{"backend"},
-		TagScores: []TagRelevance{{Tag: "backend", Relevance: 0.95}},
+		TagScores: []domain.TagRelevance{{Tag: "backend", Relevance: 0.95}},
 		Embedding: sparseUnitVector(24, 7),
 	})
 	if err := store.SaveIssue(ctx, beta); err != nil {
@@ -1218,7 +1219,7 @@ func TestPostgresStoreMaintainsPgSearchWriteColumns(t *testing.T) {
 		Raw:       "Export fails on iPad",
 		CreatedBy: "Casey",
 		Tags:      []string{"export"},
-		TagScores: []TagRelevance{{Tag: "export", Relevance: 0.95}},
+		TagScores: []domain.TagRelevance{{Tag: "export", Relevance: 0.95}},
 		Embedding: []float64{0.2, 0.8},
 	})
 	if err := store.SaveIssue(ctx, issue); err != nil {
@@ -1251,7 +1252,7 @@ func TestPostgresStoreMaintainsPgSearchWriteColumns(t *testing.T) {
 	if err := store.UpdateIssueFields(ctx, issue.ID, IssueFieldUpdate{
 		Raw:  &raw,
 		Tags: []string{"export", "safari"},
-		TagScores: []TagRelevance{
+		TagScores: []domain.TagRelevance{
 			{Tag: "export", Relevance: 0.95},
 			{Tag: "safari", Relevance: 0.8},
 		},
@@ -1343,13 +1344,13 @@ func TestPostgresStoreLoadMapProjectionDataReturnsLinkedIssuesAndTags(t *testing
 	parent := BuildNewIssue(NewIssueID(), CreateInput{
 		Raw:       "Search ranking quality regressed",
 		CreatedBy: "Casey",
-		TagScores: []TagRelevance{{Tag: "search", Relevance: 0.9}},
+		TagScores: []domain.TagRelevance{{Tag: "search", Relevance: 0.9}},
 		Embedding: []float64{1, 0},
 	})
 	child := BuildNewIssue(NewIssueID(), CreateInput{
 		Raw:       "Map projection should slim payloads",
 		CreatedBy: "Jordan",
-		TagScores: []TagRelevance{{Tag: "backend", Relevance: 0.8}},
+		TagScores: []domain.TagRelevance{{Tag: "backend", Relevance: 0.8}},
 		Embedding: []float64{0, 1},
 	})
 	if err := store.SaveIssue(ctx, parent); err != nil {
@@ -1474,7 +1475,7 @@ func TestPostgresStoreListIssueMetadata(t *testing.T) {
 	issue := BuildNewIssue(NewIssueID(), CreateInput{
 		Raw:       "Projection overlay metadata only",
 		CreatedBy: "Casey",
-		TagScores: []TagRelevance{{Tag: "backend", Relevance: 0.9}},
+		TagScores: []domain.TagRelevance{{Tag: "backend", Relevance: 0.9}},
 		Embedding: []float64{0.2, 0.8},
 	})
 	issue.AssignedTo = "Jordan"
@@ -1516,7 +1517,7 @@ func TestPostgresStoreListPeopleAnalytics(t *testing.T) {
 	openIssue := BuildNewIssue(NewIssueID(), CreateInput{
 		Raw:       "Open issue for Avery",
 		CreatedBy: "Casey",
-		TagScores: []TagRelevance{{Tag: "search", Relevance: 0.9}},
+		TagScores: []domain.TagRelevance{{Tag: "search", Relevance: 0.9}},
 		Embedding: []float64{0.8, 0.2},
 	})
 	openIssue.AssignedTo = "Avery"
@@ -1524,7 +1525,7 @@ func TestPostgresStoreListPeopleAnalytics(t *testing.T) {
 	closedIssue := BuildNewIssue(NewIssueID(), CreateInput{
 		Raw:       "Closed issue for Jordan",
 		CreatedBy: "Jordan",
-		TagScores: []TagRelevance{{Tag: "backend", Relevance: 0.7}},
+		TagScores: []domain.TagRelevance{{Tag: "backend", Relevance: 0.7}},
 		Embedding: []float64{0.1, 0.9},
 	})
 	closedIssue.AssignedTo = "Jordan"
@@ -1616,7 +1617,7 @@ func TestPostgresStorePersistsIssueRelationshipsAndOperationHistory(t *testing.T
 	parent := BuildNewIssue(parentID, CreateInput{
 		Raw:       "Large onboarding redesign",
 		CreatedBy: "Casey",
-		TagScores: []TagRelevance{{Tag: "feature", Relevance: 0.9}},
+		TagScores: []domain.TagRelevance{{Tag: "feature", Relevance: 0.9}},
 		Embedding: []float64{0.1, 0.2},
 	})
 	if err := store.SaveIssue(ctx, parent); err != nil {
@@ -1628,7 +1629,7 @@ func TestPostgresStorePersistsIssueRelationshipsAndOperationHistory(t *testing.T
 	child1 := BuildNewIssue(child1ID, CreateInput{
 		Raw:       "Add onboarding checklist",
 		CreatedBy: "Casey",
-		TagScores: []TagRelevance{{Tag: "feature", Relevance: 0.8}},
+		TagScores: []domain.TagRelevance{{Tag: "feature", Relevance: 0.8}},
 	})
 	if err := store.SaveIssue(ctx, child1); err != nil {
 		t.Fatalf("save child1: %v", err)
@@ -1638,7 +1639,7 @@ func TestPostgresStorePersistsIssueRelationshipsAndOperationHistory(t *testing.T
 	child2 := BuildNewIssue(child2ID, CreateInput{
 		Raw:       "Improve invite acceptance copy",
 		CreatedBy: "Casey",
-		TagScores: []TagRelevance{{Tag: "ux", Relevance: 0.7}},
+		TagScores: []domain.TagRelevance{{Tag: "ux", Relevance: 0.7}},
 	})
 	if err := store.SaveIssue(ctx, child2); err != nil {
 		t.Fatalf("save child2: %v", err)
@@ -1717,7 +1718,7 @@ func TestPostgresStorePersistsIssueRelationshipsAndOperationHistory(t *testing.T
 	combined := BuildNewIssue(combinedID, CreateInput{
 		Raw:       "Deliver a tighter onboarding flow with checklist and invite improvements.",
 		CreatedBy: "Taylor",
-		TagScores: []TagRelevance{{Tag: "feature", Relevance: 0.95}},
+		TagScores: []domain.TagRelevance{{Tag: "feature", Relevance: 0.95}},
 		Embedding: []float64{0.3, 0.7},
 	})
 	if err := store.SaveIssue(ctx, combined); err != nil {
@@ -2062,7 +2063,7 @@ func TestPostgresStoreMergeTagsUsesAppendOnlyProjection(t *testing.T) {
 		Raw:       "alias tag should merge",
 		CreatedBy: "Casey",
 		Tags:      []string{"defect"},
-		TagScores: []TagRelevance{{Tag: "defect", Relevance: 0.9, Suggested: true, Description: "legacy defect wording"}},
+		TagScores: []domain.TagRelevance{{Tag: "defect", Relevance: 0.9, Suggested: true, Description: "legacy defect wording"}},
 	})
 	if err := store.SaveIssue(ctx, issue); err != nil {
 		t.Fatalf("save issue: %v", err)

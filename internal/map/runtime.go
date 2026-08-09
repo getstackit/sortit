@@ -292,12 +292,12 @@ func runtimeProjectionInputs(
 	return centerRuntimeCorpus(prepared, tagNames, embeddings, tagEmbeddings, nil)
 }
 
-func copyProjectionTagScores(input []issues.TagRelevance) []issues.TagRelevance {
+func copyProjectionTagScores(input []domain.TagRelevance) []domain.TagRelevance {
 	if len(input) == 0 {
 		return nil
 	}
 
-	items := make([]issues.TagRelevance, len(input))
+	items := make([]domain.TagRelevance, len(input))
 	copy(items, input)
 	return items
 }
@@ -396,9 +396,9 @@ func runtimeTagEmbeddings(tags []string, storeTags []issues.Tag) map[string][]fl
 	return embeddings
 }
 
-func runtimeStoredTagRelevances(issue issues.Issue) []TagRelevance {
+func runtimeStoredTagRelevances(issue issues.Issue) []domain.TagRelevance {
 	if len(issue.TagScores) > 0 {
-		relevances := make([]TagRelevance, 0, len(issue.TagScores))
+		relevances := make([]domain.TagRelevance, 0, len(issue.TagScores))
 		seen := make(map[string]struct{}, len(issue.TagScores))
 		for _, tag := range issue.TagScores {
 			name := strings.TrimSpace(tag.Tag)
@@ -412,7 +412,7 @@ func runtimeStoredTagRelevances(issue issues.Issue) []TagRelevance {
 			relevances = append(relevances, copyRuntimeTagRelevance(tag, name))
 		}
 
-		slices.SortStableFunc(relevances, func(a, b TagRelevance) int {
+		slices.SortStableFunc(relevances, func(a, b domain.TagRelevance) int {
 			if c := cmp.Compare(b.Relevance, a.Relevance); c != 0 {
 				return c
 			}
@@ -424,7 +424,7 @@ func runtimeStoredTagRelevances(issue issues.Issue) []TagRelevance {
 	return runtimeTagRelevances(issue.Tags)
 }
 
-func copyRuntimeTagRelevance(tag TagRelevance, name string) TagRelevance {
+func copyRuntimeTagRelevance(tag domain.TagRelevance, name string) domain.TagRelevance {
 	out := tag
 	out.Tag = name
 	out.CandidateSources = append([]string(nil), tag.CandidateSources...)
@@ -445,12 +445,12 @@ func copyFloat64Ptr(value *float64) *float64 {
 	return &copied
 }
 
-func runtimeTagRelevances(tags []string) []TagRelevance {
+func runtimeTagRelevances(tags []string) []domain.TagRelevance {
 	if len(tags) == 0 {
 		return nil
 	}
 
-	relevances := make([]TagRelevance, 0, len(tags))
+	relevances := make([]domain.TagRelevance, 0, len(tags))
 	seen := make(map[string]struct{}, len(tags))
 	for _, tag := range tags {
 		tag = strings.TrimSpace(tag)
@@ -461,13 +461,13 @@ func runtimeTagRelevances(tags []string) []TagRelevance {
 			continue
 		}
 		seen[tag] = struct{}{}
-		relevances = append(relevances, TagRelevance{
+		relevances = append(relevances, domain.TagRelevance{
 			Tag:       tag,
 			Relevance: 1,
 		})
 	}
 
-	slices.SortStableFunc(relevances, func(a, b TagRelevance) int {
+	slices.SortStableFunc(relevances, func(a, b domain.TagRelevance) int {
 		return cmp.Compare(a.Tag, b.Tag)
 	})
 	return relevances

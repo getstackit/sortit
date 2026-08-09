@@ -1,6 +1,10 @@
 package issues
 
-import "testing"
+import (
+	"testing"
+
+	"sortit/internal/domain"
+)
 
 func TestComputeIssueLifecycleMetricsNilForInsufficientSnapshots(t *testing.T) {
 	if metrics := ComputeIssueLifecycleMetrics(nil); metrics != nil {
@@ -13,14 +17,14 @@ func TestComputeIssueLifecycleMetricsNilForInsufficientSnapshots(t *testing.T) {
 
 func TestComputeIssueLifecycleMetricsPrefersConvergedIssue(t *testing.T) {
 	converged := ComputeIssueLifecycleMetrics([]IssueSnapshot{
-		{Sequence: 1, Embedding: []float64{1, 0, 0}, TagScores: []TagRelevance{{Tag: "search", Relevance: 0.9}}},
-		{Sequence: 2, Embedding: []float64{0.95, 0.05, 0}, TagScores: []TagRelevance{{Tag: "search", Relevance: 0.85}}},
-		{Sequence: 3, Embedding: []float64{0.94, 0.06, 0}, TagScores: []TagRelevance{{Tag: "search", Relevance: 0.86}}},
+		{Sequence: 1, Embedding: []float64{1, 0, 0}, TagScores: []domain.TagRelevance{{Tag: "search", Relevance: 0.9}}},
+		{Sequence: 2, Embedding: []float64{0.95, 0.05, 0}, TagScores: []domain.TagRelevance{{Tag: "search", Relevance: 0.85}}},
+		{Sequence: 3, Embedding: []float64{0.94, 0.06, 0}, TagScores: []domain.TagRelevance{{Tag: "search", Relevance: 0.86}}},
 	})
 	churny := ComputeIssueLifecycleMetrics([]IssueSnapshot{
-		{Sequence: 1, Embedding: []float64{1, 0, 0}, TagScores: []TagRelevance{{Tag: "search", Relevance: 0.9}}},
-		{Sequence: 2, Embedding: []float64{0, 1, 0}, TagScores: []TagRelevance{{Tag: "export", Relevance: 0.9}}},
-		{Sequence: 3, Embedding: []float64{0.5, 0.5, 0}, TagScores: []TagRelevance{{Tag: "search", Relevance: 0.5}, {Tag: "export", Relevance: 0.5}}},
+		{Sequence: 1, Embedding: []float64{1, 0, 0}, TagScores: []domain.TagRelevance{{Tag: "search", Relevance: 0.9}}},
+		{Sequence: 2, Embedding: []float64{0, 1, 0}, TagScores: []domain.TagRelevance{{Tag: "export", Relevance: 0.9}}},
+		{Sequence: 3, Embedding: []float64{0.5, 0.5, 0}, TagScores: []domain.TagRelevance{{Tag: "search", Relevance: 0.5}, {Tag: "export", Relevance: 0.5}}},
 	})
 
 	if converged == nil || churny == nil {

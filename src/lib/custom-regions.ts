@@ -1,5 +1,5 @@
 import { uiAPIURL } from "@/lib/api";
-import { deleteJSON, getJSON, postJSON, putJSON } from "@/lib/http";
+import { deleteJSON, getJSON, postJSON } from "@/lib/http";
 
 export type TagPredicate = {
   tag: string;
@@ -30,14 +30,6 @@ export type CustomRegionInput = {
   definition: CustomRegionPredicate;
 };
 
-export async function listCustomRegions(signal?: AbortSignal): Promise<CustomRegion[]> {
-  const payload = await getJSON<{ regions: CustomRegion[] }>(
-    uiAPIURL("/regions/custom"),
-    { cache: "no-store", signal },
-  );
-  return payload.regions ?? [];
-}
-
 export async function getCustomRegion(id: string, signal?: AbortSignal): Promise<CustomRegion> {
   return getJSON<CustomRegion>(
     uiAPIURL(`/regions/custom/${encodeURIComponent(id)}/definition`),
@@ -48,13 +40,6 @@ export async function getCustomRegion(id: string, signal?: AbortSignal): Promise
 export async function createCustomRegion(input: CustomRegionInput): Promise<CustomRegion> {
   return postJSON<CustomRegion, CustomRegionInput>(
     uiAPIURL("/regions/custom"),
-    input,
-  );
-}
-
-export async function updateCustomRegion(id: string, input: CustomRegionInput): Promise<CustomRegion> {
-  return putJSON<CustomRegion, CustomRegionInput>(
-    uiAPIURL(`/regions/custom/${encodeURIComponent(id)}`),
     input,
   );
 }

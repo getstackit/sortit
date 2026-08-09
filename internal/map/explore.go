@@ -10,6 +10,7 @@ import (
 
 	"gonum.org/v1/gonum/mat"
 
+	"sortit/internal/domain"
 	"sortit/internal/issueanalytics"
 	"sortit/internal/issuemath"
 	"sortit/internal/issues"
@@ -22,21 +23,21 @@ import (
 const ReasonSemanticSimilar = "Semantically similar language suggests a shared root cause"
 
 type ExploreIssue struct {
-	ID     string             `json:"id"`
-	Raw    string             `json:"raw"`
-	Status issues.IssueStatus `json:"status"`
-	Tags   []TagRelevance     `json:"tags"`
+	ID     string                `json:"id"`
+	Raw    string                `json:"raw"`
+	Status issues.IssueStatus    `json:"status"`
+	Tags   []domain.TagRelevance `json:"tags"`
 }
 
 type RelatedIssue struct {
-	ID                 string             `json:"id"`
-	Raw                string             `json:"raw"`
-	Status             issues.IssueStatus `json:"status"`
-	Tags               []TagRelevance     `json:"tags"`
-	SemanticSimilarity float64            `json:"semanticSimilarity"`
-	FactorSimilarity   float64            `json:"factorSimilarity"`
-	CombinedSimilarity float64            `json:"combinedSimilarity"`
-	Reason             string             `json:"reason"`
+	ID                 string                `json:"id"`
+	Raw                string                `json:"raw"`
+	Status             issues.IssueStatus    `json:"status"`
+	Tags               []domain.TagRelevance `json:"tags"`
+	SemanticSimilarity float64               `json:"semanticSimilarity"`
+	FactorSimilarity   float64               `json:"factorSimilarity"`
+	CombinedSimilarity float64               `json:"combinedSimilarity"`
+	Reason             string                `json:"reason"`
 }
 
 type OpportunityIssue struct {
@@ -302,7 +303,7 @@ func runtimeFactorVectors(items []issues.Issue, tags []string, tagEmbeddings map
 	return vecs
 }
 
-func sharedRelevantTags(a, b []TagRelevance, limit int) []string {
+func sharedRelevantTags(a, b []domain.TagRelevance, limit int) []string {
 	if limit <= 0 || len(a) == 0 || len(b) == 0 {
 		return nil
 	}

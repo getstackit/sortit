@@ -11,13 +11,10 @@ import (
 	"sortit/internal/tags"
 )
 
-// TagRelevance is an alias for domain.TagRelevance.
-type TagRelevance = domain.TagRelevance
-
 type PersonTagProfile struct {
-	Person     string         `json:"person"`
-	IssueCount int            `json:"issueCount"`
-	TagProfile []TagRelevance `json:"tagProfile"`
+	Person     string                `json:"person"`
+	IssueCount int                   `json:"issueCount"`
+	TagProfile []domain.TagRelevance `json:"tagProfile"`
 }
 
 type GetPersonProfileHandler struct {

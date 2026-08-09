@@ -291,7 +291,7 @@ func memoryRecordFrom(memory domain.Memory) (memoryRecord, error) {
 	if err != nil {
 		return memoryRecord{}, fmt.Errorf("marshal memory anchor tags: %w", err)
 	}
-	tagScoresJSON, err := marshalJSONB(memory.TagScores, []TagRelevance{})
+	tagScoresJSON, err := marshalJSONB(memory.TagScores, []domain.TagRelevance{})
 	if err != nil {
 		return memoryRecord{}, fmt.Errorf("marshal memory tag scores: %w", err)
 	}
@@ -375,7 +375,7 @@ func scanMemoryRow(row memoryRow, withSimilarity bool) (domain.Memory, float64, 
 	if err != nil {
 		return domain.Memory{}, 0, fmt.Errorf("decode memory anchor tags for %q: %w", id, err)
 	}
-	tagScores, err := unmarshalJSONB[[]TagRelevance](tagScoresJSON)
+	tagScores, err := unmarshalJSONB[[]domain.TagRelevance](tagScoresJSON)
 	if err != nil {
 		return domain.Memory{}, 0, fmt.Errorf("decode memory tag scores for %q: %w", id, err)
 	}

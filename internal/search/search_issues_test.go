@@ -4,6 +4,7 @@ import (
 	"context"
 	"testing"
 
+	"sortit/internal/domain"
 	"sortit/internal/issues"
 	"sortit/internal/tagcooccurrence"
 )
@@ -19,9 +20,9 @@ func (s stubIssueLister) List(context.Context) ([]issues.Issue, error) {
 func issuesWithTags(n int, tags ...string) []issues.Issue {
 	out := make([]issues.Issue, 0, n)
 	for range n {
-		scores := make([]issues.TagRelevance, 0, len(tags))
+		scores := make([]domain.TagRelevance, 0, len(tags))
 		for _, tag := range tags {
-			scores = append(scores, issues.TagRelevance{Tag: tag, Relevance: 0.9})
+			scores = append(scores, domain.TagRelevance{Tag: tag, Relevance: 0.9})
 		}
 		out = append(out, issues.Issue{TagScores: scores})
 	}

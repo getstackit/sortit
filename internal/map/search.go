@@ -18,7 +18,7 @@ import (
 // SearchOptions holds optional search parameters.
 type SearchOptions struct {
 	Query      string
-	QueryTags  []issues.TagRelevance
+	QueryTags  []domain.TagRelevance
 	QueryEmbed []float64
 	Limit      int
 	Offset     int
@@ -183,8 +183,8 @@ type scoredResult struct {
 }
 
 type SearchQuery struct {
-	Raw  string         `json:"raw"`
-	Tags []TagRelevance `json:"tags"`
+	Raw  string                `json:"raw"`
+	Tags []domain.TagRelevance `json:"tags"`
 }
 
 type SearchResponse struct {
@@ -196,7 +196,7 @@ func SearchFromQueryWithTags(
 	storeIssues []issues.Issue,
 	storeTags []issues.Tag,
 	queryRaw string,
-	queryTags []issues.TagRelevance,
+	queryTags []domain.TagRelevance,
 	queryEmbedding []float64,
 	limit int,
 	opts ...SearchOption,
@@ -507,7 +507,7 @@ func queryMatchesTagNames(queryLower string, tagNames []string) bool {
 
 // issueSpecificityPenalty penalizes issues whose top tags are all generic
 // (low specificity), so that issues with specific tags rank above generic ones.
-func issueSpecificityPenalty(tags []TagRelevance, tagSpecificity map[string]*float64) float64 {
+func issueSpecificityPenalty(tags []domain.TagRelevance, tagSpecificity map[string]*float64) float64 {
 	if len(tags) == 0 {
 		return 0
 	}
@@ -546,7 +546,7 @@ func queryMatchesGenericTag(queryLower string, tagSpecificity map[string]*float6
 // carry specific tags (specificity >= 0.5) alongside generic ones. When a user
 // searches by a generic tag, issues with co-occurring specific tags should
 // rank above issues with only generic tags.
-func specificCooccurrenceBoost(tags []TagRelevance, tagSpecificity map[string]*float64) float64 {
+func specificCooccurrenceBoost(tags []domain.TagRelevance, tagSpecificity map[string]*float64) float64 {
 	boost := 0.0
 	for _, tag := range tags {
 		if tag.Relevance <= scoring.CooccurrenceRelevanceMin {
@@ -645,12 +645,12 @@ func SearchTags(storeTags []issues.Tag, queryEmbedding []float64, limit int) []R
 	return related
 }
 
-func searchQueryTags(tags []issues.TagRelevance) []TagRelevance {
+func searchQueryTags(tags []domain.TagRelevance) []domain.TagRelevance {
 	if len(tags) == 0 {
 		return nil
 	}
 
-	queryTags := make([]TagRelevance, 0, len(tags))
+	queryTags := make([]domain.TagRelevance, 0, len(tags))
 	seen := make(map[string]struct{}, len(tags))
 	for _, tag := range tags {
 		name := strings.TrimSpace(tag.Tag)
@@ -664,7 +664,7 @@ func searchQueryTags(tags []issues.TagRelevance) []TagRelevance {
 		queryTags = append(queryTags, copyRuntimeTagRelevance(tag, name))
 	}
 
-	slices.SortFunc(queryTags, func(a, b TagRelevance) int {
+	slices.SortFunc(queryTags, func(a, b domain.TagRelevance) int {
 		if diff := cmp.Compare(b.Relevance, a.Relevance); diff != 0 {
 			return diff
 		}
@@ -676,7 +676,7 @@ func searchQueryTags(tags []issues.TagRelevance) []TagRelevance {
 
 // candidateInRegion reports whether the candidate's tag scores include
 // the target tag at or above scoring.RegionMembershipFloor.
-func candidateInRegion(candidateTags []TagRelevance, target string) bool {
+func candidateInRegion(candidateTags []domain.TagRelevance, target string) bool {
 	target = domain.NormalizeTagName(target)
 	if target == "" {
 		return false
@@ -694,7 +694,7 @@ func candidateInRegion(candidateTags []TagRelevance, target string) bool {
 // the combined score when a candidate's strong tags structurally
 // dis-occur with the query's target region.
 func candidateAntiCorrelationPenalty(
-	candidateTags []TagRelevance,
+	candidateTags []domain.TagRelevance,
 	antiCorrelators map[string]float64,
 ) float64 {
 	penalty := 0.0

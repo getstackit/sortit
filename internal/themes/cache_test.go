@@ -9,6 +9,7 @@ import (
 	"sync/atomic"
 	"testing"
 
+	"sortit/internal/domain"
 	"sortit/internal/issues"
 	"sortit/internal/ridgedecomp"
 	"sortit/internal/ridgelambda"
@@ -75,7 +76,7 @@ func clusteredIssues(n int) []issues.Issue {
 		items = append(items, issues.Issue{
 			ID:        fmt.Sprintf("issue-%03d", i),
 			Status:    issues.StatusOpen,
-			TagScores: []issues.TagRelevance{{Tag: tag, Relevance: 0.8 + jitter}},
+			TagScores: []domain.TagRelevance{{Tag: tag, Relevance: 0.8 + jitter}},
 			Embedding: emb,
 		})
 	}
@@ -173,7 +174,7 @@ func TestParticipationRule(t *testing.T) {
 	items = append(items, issues.Issue{
 		ID:        "no-embed",
 		Status:    issues.StatusOpen,
-		TagScores: []issues.TagRelevance{{Tag: "alpha", Relevance: 0.9}},
+		TagScores: []domain.TagRelevance{{Tag: "alpha", Relevance: 0.9}},
 	})
 
 	rev := &stubRevisions{}

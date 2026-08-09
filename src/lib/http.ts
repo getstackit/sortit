@@ -86,14 +86,6 @@ export function postJSON<TResponse, TBody>(
   });
 }
 
-export function putJSON<TResponse, TBody>(
-  input: RequestInfo | URL,
-  body: TBody,
-  init?: RequestInit
-) {
-  return postJSON<TResponse, TBody>(input, body, { ...init, method: "PUT" });
-}
-
 export async function deleteJSON(
   input: RequestInfo | URL,
   init?: RequestInit

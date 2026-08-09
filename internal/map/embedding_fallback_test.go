@@ -3,6 +3,7 @@ package issuemap
 import (
 	"testing"
 
+	"sortit/internal/domain"
 	"sortit/internal/issues"
 )
 
@@ -22,12 +23,12 @@ func TestEmbeddingFallbackCountsMissingIssueEmbedding(t *testing.T) {
 			ID:        "has-embedding",
 			Raw:       "issue with a persisted embedding",
 			Embedding: persistedEmbedding(0),
-			TagScores: []issues.TagRelevance{{Tag: "bug", Relevance: 0.9}},
+			TagScores: []domain.TagRelevance{{Tag: "bug", Relevance: 0.9}},
 		},
 		{
 			ID:        "missing-embedding",
 			Raw:       "issue without a persisted embedding",
-			TagScores: []issues.TagRelevance{{Tag: "bug", Relevance: 0.8}},
+			TagScores: []domain.TagRelevance{{Tag: "bug", Relevance: 0.8}},
 		},
 	}
 	storeTags := []issues.Tag{{Name: "bug", Embedding: persistedEmbedding(1)}}
@@ -51,7 +52,7 @@ func TestEmbeddingFallbackCountsMissingTagEmbedding(t *testing.T) {
 			ID:        "issue-1",
 			Raw:       "issue with a persisted embedding",
 			Embedding: persistedEmbedding(0),
-			TagScores: []issues.TagRelevance{{Tag: "crash", Relevance: 0.9}},
+			TagScores: []domain.TagRelevance{{Tag: "crash", Relevance: 0.9}},
 		},
 	}
 	storeTags := []issues.Tag{{Name: "crash"}} // no stored embedding
@@ -75,13 +76,13 @@ func TestEmbeddingFallbackZeroWhenAllEmbeddingsPresent(t *testing.T) {
 			ID:        "issue-1",
 			Raw:       "first fully-embedded issue",
 			Embedding: persistedEmbedding(0),
-			TagScores: []issues.TagRelevance{{Tag: "bug", Relevance: 0.9}},
+			TagScores: []domain.TagRelevance{{Tag: "bug", Relevance: 0.9}},
 		},
 		{
 			ID:        "issue-2",
 			Raw:       "second fully-embedded issue",
 			Embedding: persistedEmbedding(1),
-			TagScores: []issues.TagRelevance{{Tag: "frontend", Relevance: 0.7}},
+			TagScores: []domain.TagRelevance{{Tag: "frontend", Relevance: 0.7}},
 		},
 	}
 	storeTags := []issues.Tag{

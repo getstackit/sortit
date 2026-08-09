@@ -3,6 +3,7 @@ package issueanalytics
 import (
 	"testing"
 
+	"sortit/internal/domain"
 	"sortit/internal/issues"
 )
 
@@ -15,8 +16,8 @@ func TestDeriveIssueLifecycleMetricsAddsMaturityAndCounts(t *testing.T) {
 			{Sequence: 3, Kind: "progress", Raw: "Added logging around export"},
 		},
 		[]issues.IssueSnapshot{
-			{Sequence: 1, Embedding: []float64{1, 0, 0}, TagScores: []issues.TagRelevance{{Tag: "export", Relevance: 0.8}}},
-			{Sequence: 2, Embedding: []float64{0.98, 0.02, 0}, TagScores: []issues.TagRelevance{{Tag: "export", Relevance: 0.82}}},
+			{Sequence: 1, Embedding: []float64{1, 0, 0}, TagScores: []domain.TagRelevance{{Tag: "export", Relevance: 0.8}}},
+			{Sequence: 2, Embedding: []float64{0.98, 0.02, 0}, TagScores: []domain.TagRelevance{{Tag: "export", Relevance: 0.82}}},
 		},
 	)
 
@@ -44,9 +45,9 @@ func TestIssueMaturityPrefersStableCuratedIssues(t *testing.T) {
 			{Sequence: 4, Kind: "progress", Raw: "Added logging"},
 		},
 		[]issues.IssueSnapshot{
-			{Sequence: 1, Embedding: []float64{1, 0, 0}, TagScores: []issues.TagRelevance{{Tag: "export", Relevance: 0.8}}},
-			{Sequence: 2, Embedding: []float64{0.98, 0.02, 0}, TagScores: []issues.TagRelevance{{Tag: "export", Relevance: 0.82}}},
-			{Sequence: 3, Embedding: []float64{0.97, 0.03, 0}, TagScores: []issues.TagRelevance{{Tag: "export", Relevance: 0.83}}},
+			{Sequence: 1, Embedding: []float64{1, 0, 0}, TagScores: []domain.TagRelevance{{Tag: "export", Relevance: 0.8}}},
+			{Sequence: 2, Embedding: []float64{0.98, 0.02, 0}, TagScores: []domain.TagRelevance{{Tag: "export", Relevance: 0.82}}},
+			{Sequence: 3, Embedding: []float64{0.97, 0.03, 0}, TagScores: []domain.TagRelevance{{Tag: "export", Relevance: 0.83}}},
 		},
 	)
 
@@ -59,9 +60,9 @@ func TestIssueMaturityPrefersStableCuratedIssues(t *testing.T) {
 			{Sequence: 4, Kind: "progress", Raw: "Investigated callback flow"},
 		},
 		[]issues.IssueSnapshot{
-			{Sequence: 1, Embedding: []float64{1, 0, 0}, TagScores: []issues.TagRelevance{{Tag: "export", Relevance: 0.8}}},
-			{Sequence: 2, Embedding: []float64{0, 1, 0}, TagScores: []issues.TagRelevance{{Tag: "auth", Relevance: 0.9}}},
-			{Sequence: 3, Embedding: []float64{0.5, 0.5, 0}, TagScores: []issues.TagRelevance{{Tag: "export", Relevance: 0.5}, {Tag: "auth", Relevance: 0.5}}},
+			{Sequence: 1, Embedding: []float64{1, 0, 0}, TagScores: []domain.TagRelevance{{Tag: "export", Relevance: 0.8}}},
+			{Sequence: 2, Embedding: []float64{0, 1, 0}, TagScores: []domain.TagRelevance{{Tag: "auth", Relevance: 0.9}}},
+			{Sequence: 3, Embedding: []float64{0.5, 0.5, 0}, TagScores: []domain.TagRelevance{{Tag: "export", Relevance: 0.5}, {Tag: "auth", Relevance: 0.5}}},
 		},
 	)
 

@@ -5,6 +5,7 @@ import (
 	"math"
 	"testing"
 
+	"sortit/internal/domain"
 	"sortit/internal/issues"
 	"sortit/internal/scoring"
 	"sortit/internal/tags"
@@ -21,7 +22,7 @@ func TestDebugRidgeScoreAppliesPerTagLambdas(t *testing.T) {
 		ID:        "issue-ridge",
 		Raw:       "ridge",
 		Embedding: []float64{invSqrt2, invSqrt2, 0},
-		TagScores: []issues.TagRelevance{
+		TagScores: []domain.TagRelevance{
 			{Tag: "alpha", Relevance: 0.8},
 			{Tag: "gamma", Relevance: 0, Negation: &negation},
 		},

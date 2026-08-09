@@ -180,14 +180,14 @@ func mergeTagList(tags []string, canonical string, aliases map[string]struct{}) 
 	return out
 }
 
-func mergeTagScores(scores []TagRelevance, canonical string, aliases map[string]struct{}) []TagRelevance {
+func mergeTagScores(scores []domain.TagRelevance, canonical string, aliases map[string]struct{}) []domain.TagRelevance {
 	if len(scores) == 0 {
 		return scores
 	}
 
-	canonicalScore := TagRelevance{Tag: canonical}
+	canonicalScore := domain.TagRelevance{Tag: canonical}
 	hasCanonical := false
-	out := make([]TagRelevance, 0, len(scores))
+	out := make([]domain.TagRelevance, 0, len(scores))
 	for _, score := range scores {
 		norm := sanitizeTagName(score.Tag)
 		if _, isAlias := aliases[norm]; isAlias {
@@ -208,12 +208,12 @@ func mergeTagScores(scores []TagRelevance, canonical string, aliases map[string]
 		out = append(out, score)
 	}
 	if hasCanonical || canonicalScore.Relevance > 0 {
-		out = append([]TagRelevance{canonicalScore}, out...)
+		out = append([]domain.TagRelevance{canonicalScore}, out...)
 	}
 	return out
 }
 
-func equalTagScores(left, right []TagRelevance) bool {
+func equalTagScores(left, right []domain.TagRelevance) bool {
 	if len(left) != len(right) {
 		return false
 	}
@@ -225,7 +225,7 @@ func equalTagScores(left, right []TagRelevance) bool {
 	return true
 }
 
-func equalTagScore(left, right TagRelevance) bool {
+func equalTagScore(left, right domain.TagRelevance) bool {
 	return left.Tag == right.Tag &&
 		left.Relevance == right.Relevance &&
 		left.Suggested == right.Suggested &&

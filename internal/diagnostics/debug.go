@@ -10,6 +10,7 @@ import (
 	"strings"
 
 	"sortit/internal/ai"
+	"sortit/internal/domain"
 	issueenrichment "sortit/internal/issueenrichment"
 	"sortit/internal/issuemath"
 	"sortit/internal/issues"
@@ -34,7 +35,7 @@ type DebugIssueSimilarity struct {
 }
 
 type DebugAnalyzeIssueResult struct {
-	Tags                   []issues.TagRelevance
+	Tags                   []domain.TagRelevance
 	CandidateSet           tags.CandidateTaxonomy
 	Embedding              ai.EmbeddingInfo
 	Tagger                 ai.ModelInfo
@@ -201,7 +202,7 @@ type DebugReviewIssue struct {
 	Raw       string                `json:"raw"`
 	Status    issues.IssueStatus    `json:"status"`
 	R2        float64               `json:"r2"`
-	TagScores []issues.TagRelevance `json:"tagScores"`
+	TagScores []domain.TagRelevance `json:"tagScores"`
 	Diagnosis []string              `json:"diagnosis"`
 }
 
@@ -210,7 +211,7 @@ type DebugReviewLowAlignment struct {
 	IssueRaw    string              `json:"issueRaw"`
 	IssueStatus issues.IssueStatus  `json:"issueStatus"`
 	IssueR2     float64             `json:"issueR2"`
-	TagScore    issues.TagRelevance `json:"tagScore"`
+	TagScore    domain.TagRelevance `json:"tagScore"`
 	Alignment   float64             `json:"alignment"`
 }
 
@@ -219,7 +220,7 @@ type DebugReviewResidualMiss struct {
 	IssueRaw      string                  `json:"issueRaw"`
 	IssueStatus   issues.IssueStatus      `json:"issueStatus"`
 	IssueR2       float64                 `json:"issueR2"`
-	TagScores     []issues.TagRelevance   `json:"tagScores"`
+	TagScores     []domain.TagRelevance   `json:"tagScores"`
 	CandidateTags []DebugResidualTagMatch `json:"candidateTags"`
 }
 
@@ -857,11 +858,11 @@ func buildDebugIssueSignals(
 	return issueTags, nearestResidualTags, residualNeighbors
 }
 
-func copyDebugTagScores(scores []issues.TagRelevance) []issues.TagRelevance {
+func copyDebugTagScores(scores []domain.TagRelevance) []domain.TagRelevance {
 	if len(scores) == 0 {
 		return nil
 	}
-	out := make([]issues.TagRelevance, len(scores))
+	out := make([]domain.TagRelevance, len(scores))
 	copy(out, scores)
 	return out
 }

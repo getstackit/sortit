@@ -10,6 +10,7 @@ import (
 	"strings"
 	"time"
 
+	"sortit/internal/domain"
 	"sortit/internal/issues/issuesdb"
 )
 
@@ -190,7 +191,7 @@ func (s *PostgresStore) MergeTags(ctx context.Context, canonical string, aliases
 	type issueUpdate struct {
 		id        string
 		tags      []string
-		tagScores []TagRelevance
+		tagScores []domain.TagRelevance
 	}
 	var updates []issueUpdate
 
@@ -208,7 +209,7 @@ func (s *PostgresStore) MergeTags(ctx context.Context, canonical string, aliases
 		if err != nil {
 			return fmt.Errorf("decode tags for issue %q: %w", id, err)
 		}
-		tagScores, err := unmarshalJSONB[[]TagRelevance](tagScoresJSON)
+		tagScores, err := unmarshalJSONB[[]domain.TagRelevance](tagScoresJSON)
 		if err != nil {
 			return fmt.Errorf("decode tag scores for issue %q: %w", id, err)
 		}

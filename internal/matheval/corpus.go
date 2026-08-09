@@ -21,6 +21,7 @@ import (
 	"slices"
 	"time"
 
+	"sortit/internal/domain"
 	"sortit/internal/issues"
 )
 
@@ -211,13 +212,13 @@ func (c Corpus) QueryByID(id string) (CorpusQuery, bool) {
 	return CorpusQuery{}, false
 }
 
-func toTagRelevances(scores []TagScore) []issues.TagRelevance {
+func toTagRelevances(scores []TagScore) []domain.TagRelevance {
 	if len(scores) == 0 {
 		return nil
 	}
-	out := make([]issues.TagRelevance, len(scores))
+	out := make([]domain.TagRelevance, len(scores))
 	for i, ts := range scores {
-		out[i] = issues.TagRelevance{Tag: ts.Tag, Relevance: ts.Relevance}
+		out[i] = domain.TagRelevance{Tag: ts.Tag, Relevance: ts.Relevance}
 	}
 	return out
 }
