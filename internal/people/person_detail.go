@@ -8,6 +8,7 @@ import (
 	"strings"
 	"time"
 
+	"sortit/internal/domain"
 	"sortit/internal/issueanalytics"
 	"sortit/internal/issuemath"
 	"sortit/internal/issues"
@@ -34,7 +35,7 @@ type PersonDetail struct {
 	IssueCount        int                         `json:"issueCount"`
 	OpenIssueCount    int                         `json:"openIssueCount"`
 	ClosedIssueCount  int                         `json:"closedIssueCount"`
-	TagProfile        []TagRelevance              `json:"tagProfile"`
+	TagProfile        []domain.TagRelevance       `json:"tagProfile"`
 	AssignedIssues    []issues.Issue              `json:"assignedIssues"`
 	NextIssue         *PersonIssueRecommendation  `json:"nextIssue,omitempty"`
 	RecommendedIssues []PersonIssueRecommendation `json:"recommendedIssues"`
@@ -130,7 +131,7 @@ func (h GetPersonDetailHandler) listAssignedIssues(ctx context.Context, person s
 func (h GetPersonDetailHandler) recommendOpenIssues(
 	ctx context.Context,
 	person string,
-	profile []TagRelevance,
+	profile []domain.TagRelevance,
 	personEmbedding []float64,
 	storeTags []issues.Tag,
 ) ([]PersonIssueRecommendation, error) {
@@ -216,7 +217,7 @@ func (h GetPersonDetailHandler) recommendOpenIssues(
 	// blendPerson scores one candidate against the person, using whichever
 	// similarity model is active and falling back to plain tag-profile +
 	// embedding similarity when the candidate wasn't decomposed.
-	blendPerson := func(issueID string, issueTags []TagRelevance) (factor, semantic, combined float64) {
+	blendPerson := func(issueID string, issueTags []domain.TagRelevance) (factor, semantic, combined float64) {
 		if useRidge {
 			if rv, ok := ridgeDecomp.VectorsFor(issueID); ok {
 				return issuemath.RidgeBlend(ridgeDecomp, personRidge, rv, issuemath.RidgeTagSpace)
@@ -295,16 +296,16 @@ func issuesLifecycleVelocity(metrics *issues.IssueLifecycleMetrics) float64 {
 	return 0
 }
 
-func issueTagProfile(item issues.Issue) []TagRelevance {
+func issueTagProfile(item issues.Issue) []domain.TagRelevance {
 	if len(item.TagScores) > 0 {
-		return append([]TagRelevance(nil), item.TagScores...)
+		return append([]domain.TagRelevance(nil), item.TagScores...)
 	}
 
 	if len(item.Tags) == 0 {
-		return []TagRelevance{}
+		return []domain.TagRelevance{}
 	}
 
-	profile := make([]TagRelevance, 0, len(item.Tags))
+	profile := make([]domain.TagRelevance, 0, len(item.Tags))
 	seen := make(map[string]struct{}, len(item.Tags))
 	for _, tag := range item.Tags {
 		tag = strings.TrimSpace(tag)
@@ -315,7 +316,7 @@ func issueTagProfile(item issues.Issue) []TagRelevance {
 			continue
 		}
 		seen[tag] = struct{}{}
-		profile = append(profile, TagRelevance{Tag: tag, Relevance: 1})
+		profile = append(profile, domain.TagRelevance{Tag: tag, Relevance: 1})
 	}
 	return profile
 }
@@ -379,7 +380,7 @@ func sortRecommendations(items []PersonIssueRecommendation) {
 	})
 }
 
-func topSharedTags(profile, issueTags []TagRelevance, limit int) []string {
+func topSharedTags(profile, issueTags []domain.TagRelevance, limit int) []string {
 	shared := sharedTags(profile, issueTags)
 	if len(shared) > limit {
 		shared = shared[:limit]

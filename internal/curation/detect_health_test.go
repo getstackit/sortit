@@ -5,6 +5,7 @@ import (
 	"testing"
 
 	"sortit/internal/diagnostics"
+	"sortit/internal/domain"
 	"sortit/internal/issues"
 )
 
@@ -103,7 +104,7 @@ func TestDetectHealthIssuesMergesFailedAndLowR2(t *testing.T) {
 		},
 		ReviewQueue: diagnostics.DebugReviewQueue{
 			LowAlignmentTags: []diagnostics.DebugReviewLowAlignment{
-				{IssueID: "x", TagScore: issues.TagRelevance{Tag: "safari"}, Alignment: 0.2},
+				{IssueID: "x", TagScore: domain.TagRelevance{Tag: "safari"}, Alignment: 0.2},
 			},
 		},
 	}}

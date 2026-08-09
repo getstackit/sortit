@@ -3,6 +3,7 @@ package ai
 import (
 	"context"
 	"strings"
+	"sync"
 )
 
 type Tag struct {
@@ -41,6 +42,48 @@ type NegatedTag struct {
 type ScoreResult struct {
 	Tags    []TagScore
 	Negated []NegatedTag
+}
+
+// TokenUsage is the billable token count returned by one model request. It is
+// deliberately separate from EmbeddingInfo's estimated count: providers can
+// report exact usage for completion requests.
+type TokenUsage struct {
+	InputTokens  int `json:"inputTokens"`
+	OutputTokens int `json:"outputTokens"`
+}
+
+// Add combines two usage observations.
+func (u TokenUsage) Add(other TokenUsage) TokenUsage {
+	return TokenUsage{
+		InputTokens:  u.InputTokens + other.InputTokens,
+		OutputTokens: u.OutputTokens + other.OutputTokens,
+	}
+}
+
+// TokenUsageCounter is a concurrency-safe accumulator for a sequence of
+// model requests. Evaluators use snapshots before and after one enrichment to
+// attribute provider-reported usage to that issue.
+type TokenUsageCounter struct {
+	mu    sync.Mutex
+	usage TokenUsage
+}
+
+func (c *TokenUsageCounter) Add(usage TokenUsage) {
+	if c == nil {
+		return
+	}
+	c.mu.Lock()
+	c.usage = c.usage.Add(usage)
+	c.mu.Unlock()
+}
+
+func (c *TokenUsageCounter) Snapshot() TokenUsage {
+	if c == nil {
+		return TokenUsage{}
+	}
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return c.usage
 }
 
 type ModelInfo struct {

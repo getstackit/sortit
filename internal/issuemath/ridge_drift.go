@@ -53,7 +53,7 @@ type TagDrift struct {
 	// the tag has too few observations or near-degenerate corpus variance to
 	// standardize honestly (see driftZDeltaMinObservations / driftZDeltaStdEpsilon)
 	// — callers then fall back to the raw Delta rule. Optional-numeric shape
-	// mirrors issues.TagRelevance.Negation.
+	// mirrors domain.TagRelevance.Negation.
 	ZDelta *float64
 }
 

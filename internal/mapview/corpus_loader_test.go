@@ -7,6 +7,7 @@ import (
 	"math"
 	"testing"
 
+	"sortit/internal/domain"
 	"sortit/internal/issues"
 	issuemap "sortit/internal/map"
 	"sortit/internal/tags"
@@ -38,7 +39,7 @@ func (s *stubMapProjectionStore) List(_ context.Context) ([]issues.Issue, error)
 			Raw:       item.Raw,
 			Tags:      append([]string(nil), item.Tags...),
 			Status:    item.Status,
-			TagScores: append([]issues.TagRelevance(nil), item.TagScores...),
+			TagScores: append([]domain.TagRelevance(nil), item.TagScores...),
 			Embedding: append([]float64(nil), item.Embedding...),
 			Links:     append([]issues.IssueLink(nil), item.Links...),
 		})
@@ -59,7 +60,7 @@ func (s *stubMapProjectionStore) GetIssueDetail(_ context.Context, id string) (i
 				Raw:       item.Raw,
 				Tags:      append([]string(nil), item.Tags...),
 				Status:    item.Status,
-				TagScores: append([]issues.TagRelevance(nil), item.TagScores...),
+				TagScores: append([]domain.TagRelevance(nil), item.TagScores...),
 				Embedding: append([]float64(nil), item.Embedding...),
 				Links:     append([]issues.IssueLink(nil), item.Links...),
 			}, nil

@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"sortit/internal/ai"
+	"sortit/internal/domain"
 	issueenrichment "sortit/internal/issueenrichment"
 	"sortit/internal/issues"
 	"sortit/internal/tags"
@@ -40,12 +41,12 @@ func (s *debugTagStore) UpdateTagSpecificity(context.Context, string, *float64, 
 func TestDebugFactorWeightsReportsFallbackState(t *testing.T) {
 	ctx := context.Background()
 	store := issues.NewInMemoryStore([]issues.Issue{
-		{ID: "issue-a", Raw: "a", TagScores: []issues.TagRelevance{{Tag: "alpha", Relevance: 1}}, Embedding: unitVec64([]float64{1, 0, 0, 0})},
-		{ID: "issue-b", Raw: "b", TagScores: []issues.TagRelevance{{Tag: "alpha", Relevance: 1}}, Embedding: unitVec64([]float64{1, 0, 0, 0})},
-		{ID: "issue-c", Raw: "c", TagScores: []issues.TagRelevance{{Tag: "alpha", Relevance: 1}}, Embedding: unitVec64([]float64{1, 0, 0, 0})},
-		{ID: "issue-d", Raw: "d", TagScores: []issues.TagRelevance{{Tag: "alpha", Relevance: 1}}, Embedding: unitVec64([]float64{1, 0, 0, 0})},
-		{ID: "issue-e", Raw: "e", TagScores: []issues.TagRelevance{{Tag: "alpha", Relevance: 1}}},
-		{ID: "issue-f", Raw: "f", TagScores: []issues.TagRelevance{{Tag: "alpha", Relevance: 1}}},
+		{ID: "issue-a", Raw: "a", TagScores: []domain.TagRelevance{{Tag: "alpha", Relevance: 1}}, Embedding: unitVec64([]float64{1, 0, 0, 0})},
+		{ID: "issue-b", Raw: "b", TagScores: []domain.TagRelevance{{Tag: "alpha", Relevance: 1}}, Embedding: unitVec64([]float64{1, 0, 0, 0})},
+		{ID: "issue-c", Raw: "c", TagScores: []domain.TagRelevance{{Tag: "alpha", Relevance: 1}}, Embedding: unitVec64([]float64{1, 0, 0, 0})},
+		{ID: "issue-d", Raw: "d", TagScores: []domain.TagRelevance{{Tag: "alpha", Relevance: 1}}, Embedding: unitVec64([]float64{1, 0, 0, 0})},
+		{ID: "issue-e", Raw: "e", TagScores: []domain.TagRelevance{{Tag: "alpha", Relevance: 1}}},
+		{ID: "issue-f", Raw: "f", TagScores: []domain.TagRelevance{{Tag: "alpha", Relevance: 1}}},
 	})
 	tagStore := &debugTagStore{}
 	catalog := tags.NewCatalogService(tagStore, nil, nil)
@@ -72,12 +73,12 @@ func TestDebugFactorWeightsLowR2ExcludesClosedIssues(t *testing.T) {
 	store := issues.NewInMemoryStore([]issues.Issue{
 		// Embeddings sum to zero so runtime corpus-mean centering is a no-op
 		// and the test geometry holds exactly.
-		{ID: "issue-a", Raw: "a", Status: issues.StatusOpen, TagScores: []issues.TagRelevance{{Tag: "alpha", Relevance: 1}}, Embedding: unitVec64([]float64{1, 0, 0, 0})},
-		{ID: "issue-b", Raw: "b", Status: issues.StatusOpen, TagScores: []issues.TagRelevance{{Tag: "alpha", Relevance: 1}}, Embedding: unitVec64([]float64{-1, 0, 0, 0})},
-		{ID: "issue-c", Raw: "c", Status: issues.StatusOpen, TagScores: []issues.TagRelevance{{Tag: "alpha", Relevance: 1}}, Embedding: unitVec64([]float64{1, 0, 0, 0})},
-		{ID: "issue-d", Raw: "d", Status: issues.StatusOpen, TagScores: []issues.TagRelevance{{Tag: "alpha", Relevance: 1}}, Embedding: unitVec64([]float64{-1, 0, 0, 0})},
-		{ID: "issue-open-low", Raw: "open low", Status: issues.StatusOpen, TagScores: []issues.TagRelevance{{Tag: "alpha", Relevance: 1}}, Embedding: unitVec64([]float64{0, 1, 0, 0})},
-		{ID: "issue-closed-low", Raw: "closed low", Status: issues.StatusClosed, TagScores: []issues.TagRelevance{{Tag: "alpha", Relevance: 1}}, Embedding: unitVec64([]float64{0, -1, 0, 0})},
+		{ID: "issue-a", Raw: "a", Status: issues.StatusOpen, TagScores: []domain.TagRelevance{{Tag: "alpha", Relevance: 1}}, Embedding: unitVec64([]float64{1, 0, 0, 0})},
+		{ID: "issue-b", Raw: "b", Status: issues.StatusOpen, TagScores: []domain.TagRelevance{{Tag: "alpha", Relevance: 1}}, Embedding: unitVec64([]float64{-1, 0, 0, 0})},
+		{ID: "issue-c", Raw: "c", Status: issues.StatusOpen, TagScores: []domain.TagRelevance{{Tag: "alpha", Relevance: 1}}, Embedding: unitVec64([]float64{1, 0, 0, 0})},
+		{ID: "issue-d", Raw: "d", Status: issues.StatusOpen, TagScores: []domain.TagRelevance{{Tag: "alpha", Relevance: 1}}, Embedding: unitVec64([]float64{-1, 0, 0, 0})},
+		{ID: "issue-open-low", Raw: "open low", Status: issues.StatusOpen, TagScores: []domain.TagRelevance{{Tag: "alpha", Relevance: 1}}, Embedding: unitVec64([]float64{0, 1, 0, 0})},
+		{ID: "issue-closed-low", Raw: "closed low", Status: issues.StatusClosed, TagScores: []domain.TagRelevance{{Tag: "alpha", Relevance: 1}}, Embedding: unitVec64([]float64{0, -1, 0, 0})},
 	})
 	tagStore := &debugTagStore{}
 	catalog := tags.NewCatalogService(tagStore, nil, nil)
@@ -120,18 +121,18 @@ func TestDebugFactorWeightsLowR2DeterministicOrder(t *testing.T) {
 	// is deliberately shuffled; the result must come out sorted by (R², ID) and
 	// be identical across calls.
 	store := issues.NewInMemoryStore([]issues.Issue{
-		{ID: "issue-5", Raw: "5", Status: issues.StatusOpen, TagScores: []issues.TagRelevance{{Tag: "alpha", Relevance: 1}}, Embedding: unitVec64([]float64{0, 1, 0, 0})},
-		{ID: "issue-1", Raw: "1", Status: issues.StatusOpen, TagScores: []issues.TagRelevance{{Tag: "alpha", Relevance: 1}}, Embedding: unitVec64([]float64{0, 1, 0, 0})},
-		{ID: "issue-3", Raw: "3", Status: issues.StatusOpen, TagScores: []issues.TagRelevance{{Tag: "alpha", Relevance: 1}}, Embedding: unitVec64([]float64{0, 1, 0, 0})},
-		{ID: "issue-6", Raw: "6", Status: issues.StatusOpen, TagScores: []issues.TagRelevance{{Tag: "alpha", Relevance: 1}}, Embedding: unitVec64([]float64{0, 1, 0, 0})},
-		{ID: "issue-2", Raw: "2", Status: issues.StatusOpen, TagScores: []issues.TagRelevance{{Tag: "alpha", Relevance: 1}}, Embedding: unitVec64([]float64{0, 1, 0, 0})},
-		{ID: "issue-4", Raw: "4", Status: issues.StatusOpen, TagScores: []issues.TagRelevance{{Tag: "alpha", Relevance: 1}}, Embedding: unitVec64([]float64{0, 1, 0, 0})},
-		{ID: "ballast-1", Raw: "b", Status: issues.StatusClosed, TagScores: []issues.TagRelevance{{Tag: "alpha", Relevance: 1}}, Embedding: unitVec64([]float64{0, -1, 0, 0})},
-		{ID: "ballast-2", Raw: "b", Status: issues.StatusClosed, TagScores: []issues.TagRelevance{{Tag: "alpha", Relevance: 1}}, Embedding: unitVec64([]float64{0, -1, 0, 0})},
-		{ID: "ballast-3", Raw: "b", Status: issues.StatusClosed, TagScores: []issues.TagRelevance{{Tag: "alpha", Relevance: 1}}, Embedding: unitVec64([]float64{0, -1, 0, 0})},
-		{ID: "ballast-4", Raw: "b", Status: issues.StatusClosed, TagScores: []issues.TagRelevance{{Tag: "alpha", Relevance: 1}}, Embedding: unitVec64([]float64{0, -1, 0, 0})},
-		{ID: "ballast-5", Raw: "b", Status: issues.StatusClosed, TagScores: []issues.TagRelevance{{Tag: "alpha", Relevance: 1}}, Embedding: unitVec64([]float64{0, -1, 0, 0})},
-		{ID: "ballast-6", Raw: "b", Status: issues.StatusClosed, TagScores: []issues.TagRelevance{{Tag: "alpha", Relevance: 1}}, Embedding: unitVec64([]float64{0, -1, 0, 0})},
+		{ID: "issue-5", Raw: "5", Status: issues.StatusOpen, TagScores: []domain.TagRelevance{{Tag: "alpha", Relevance: 1}}, Embedding: unitVec64([]float64{0, 1, 0, 0})},
+		{ID: "issue-1", Raw: "1", Status: issues.StatusOpen, TagScores: []domain.TagRelevance{{Tag: "alpha", Relevance: 1}}, Embedding: unitVec64([]float64{0, 1, 0, 0})},
+		{ID: "issue-3", Raw: "3", Status: issues.StatusOpen, TagScores: []domain.TagRelevance{{Tag: "alpha", Relevance: 1}}, Embedding: unitVec64([]float64{0, 1, 0, 0})},
+		{ID: "issue-6", Raw: "6", Status: issues.StatusOpen, TagScores: []domain.TagRelevance{{Tag: "alpha", Relevance: 1}}, Embedding: unitVec64([]float64{0, 1, 0, 0})},
+		{ID: "issue-2", Raw: "2", Status: issues.StatusOpen, TagScores: []domain.TagRelevance{{Tag: "alpha", Relevance: 1}}, Embedding: unitVec64([]float64{0, 1, 0, 0})},
+		{ID: "issue-4", Raw: "4", Status: issues.StatusOpen, TagScores: []domain.TagRelevance{{Tag: "alpha", Relevance: 1}}, Embedding: unitVec64([]float64{0, 1, 0, 0})},
+		{ID: "ballast-1", Raw: "b", Status: issues.StatusClosed, TagScores: []domain.TagRelevance{{Tag: "alpha", Relevance: 1}}, Embedding: unitVec64([]float64{0, -1, 0, 0})},
+		{ID: "ballast-2", Raw: "b", Status: issues.StatusClosed, TagScores: []domain.TagRelevance{{Tag: "alpha", Relevance: 1}}, Embedding: unitVec64([]float64{0, -1, 0, 0})},
+		{ID: "ballast-3", Raw: "b", Status: issues.StatusClosed, TagScores: []domain.TagRelevance{{Tag: "alpha", Relevance: 1}}, Embedding: unitVec64([]float64{0, -1, 0, 0})},
+		{ID: "ballast-4", Raw: "b", Status: issues.StatusClosed, TagScores: []domain.TagRelevance{{Tag: "alpha", Relevance: 1}}, Embedding: unitVec64([]float64{0, -1, 0, 0})},
+		{ID: "ballast-5", Raw: "b", Status: issues.StatusClosed, TagScores: []domain.TagRelevance{{Tag: "alpha", Relevance: 1}}, Embedding: unitVec64([]float64{0, -1, 0, 0})},
+		{ID: "ballast-6", Raw: "b", Status: issues.StatusClosed, TagScores: []domain.TagRelevance{{Tag: "alpha", Relevance: 1}}, Embedding: unitVec64([]float64{0, -1, 0, 0})},
 	})
 	tagStore := &debugTagStore{}
 	catalog := tags.NewCatalogService(tagStore, nil, nil)
@@ -185,21 +186,21 @@ func TestDebugFactorWeightsBuildsActionableReviewQueue(t *testing.T) {
 		// Closed ballast issues balance the open fixtures so the corpus mean
 		// is zero and runtime centering is a no-op (the review queue only
 		// considers open issues, so the ballast stays out of assertions).
-		{ID: "issue-a", Raw: "a", Status: issues.StatusOpen, TagScores: []issues.TagRelevance{{Tag: "alpha", Relevance: 1}}, Embedding: unitVec64([]float64{1, 0, 0, 0})},
-		{ID: "issue-b", Raw: "b", Status: issues.StatusOpen, TagScores: []issues.TagRelevance{{Tag: "alpha", Relevance: 1}}, Embedding: unitVec64([]float64{1, 0, 0, 0})},
-		{ID: "issue-c", Raw: "c", Status: issues.StatusOpen, TagScores: []issues.TagRelevance{{Tag: "alpha", Relevance: 1}}, Embedding: unitVec64([]float64{1, 0, 0, 0})},
-		{ID: "issue-d", Raw: "d", Status: issues.StatusOpen, TagScores: []issues.TagRelevance{{Tag: "alpha", Relevance: 1}}, Embedding: unitVec64([]float64{1, 0, 0, 0})},
-		{ID: "issue-ballast-a", Raw: "ballast", Status: issues.StatusClosed, TagScores: []issues.TagRelevance{{Tag: "alpha", Relevance: 1}}, Embedding: unitVec64([]float64{-1, 0, 0, 0})},
-		{ID: "issue-ballast-b", Raw: "ballast", Status: issues.StatusClosed, TagScores: []issues.TagRelevance{{Tag: "alpha", Relevance: 1}}, Embedding: unitVec64([]float64{-1, 0, 0, 0})},
-		{ID: "issue-ballast-c", Raw: "ballast", Status: issues.StatusClosed, TagScores: []issues.TagRelevance{{Tag: "alpha", Relevance: 1}}, Embedding: unitVec64([]float64{-1, 0, 0, 0})},
-		{ID: "issue-ballast-d", Raw: "ballast", Status: issues.StatusClosed, TagScores: []issues.TagRelevance{{Tag: "alpha", Relevance: 1}}, Embedding: unitVec64([]float64{-1, 0, 0, 0})},
-		{ID: "issue-ballast-e", Raw: "ballast", Status: issues.StatusClosed, TagScores: []issues.TagRelevance{{Tag: "alpha", Relevance: 1}}, Embedding: unitVec64([]float64{0, -1, 0, 0})},
-		{ID: "issue-ballast-f", Raw: "ballast", Status: issues.StatusClosed, TagScores: []issues.TagRelevance{{Tag: "alpha", Relevance: 1}}, Embedding: unitVec64([]float64{0, -1, 0, 0})},
+		{ID: "issue-a", Raw: "a", Status: issues.StatusOpen, TagScores: []domain.TagRelevance{{Tag: "alpha", Relevance: 1}}, Embedding: unitVec64([]float64{1, 0, 0, 0})},
+		{ID: "issue-b", Raw: "b", Status: issues.StatusOpen, TagScores: []domain.TagRelevance{{Tag: "alpha", Relevance: 1}}, Embedding: unitVec64([]float64{1, 0, 0, 0})},
+		{ID: "issue-c", Raw: "c", Status: issues.StatusOpen, TagScores: []domain.TagRelevance{{Tag: "alpha", Relevance: 1}}, Embedding: unitVec64([]float64{1, 0, 0, 0})},
+		{ID: "issue-d", Raw: "d", Status: issues.StatusOpen, TagScores: []domain.TagRelevance{{Tag: "alpha", Relevance: 1}}, Embedding: unitVec64([]float64{1, 0, 0, 0})},
+		{ID: "issue-ballast-a", Raw: "ballast", Status: issues.StatusClosed, TagScores: []domain.TagRelevance{{Tag: "alpha", Relevance: 1}}, Embedding: unitVec64([]float64{-1, 0, 0, 0})},
+		{ID: "issue-ballast-b", Raw: "ballast", Status: issues.StatusClosed, TagScores: []domain.TagRelevance{{Tag: "alpha", Relevance: 1}}, Embedding: unitVec64([]float64{-1, 0, 0, 0})},
+		{ID: "issue-ballast-c", Raw: "ballast", Status: issues.StatusClosed, TagScores: []domain.TagRelevance{{Tag: "alpha", Relevance: 1}}, Embedding: unitVec64([]float64{-1, 0, 0, 0})},
+		{ID: "issue-ballast-d", Raw: "ballast", Status: issues.StatusClosed, TagScores: []domain.TagRelevance{{Tag: "alpha", Relevance: 1}}, Embedding: unitVec64([]float64{-1, 0, 0, 0})},
+		{ID: "issue-ballast-e", Raw: "ballast", Status: issues.StatusClosed, TagScores: []domain.TagRelevance{{Tag: "alpha", Relevance: 1}}, Embedding: unitVec64([]float64{0, -1, 0, 0})},
+		{ID: "issue-ballast-f", Raw: "ballast", Status: issues.StatusClosed, TagScores: []domain.TagRelevance{{Tag: "alpha", Relevance: 1}}, Embedding: unitVec64([]float64{0, -1, 0, 0})},
 		{
 			ID:     openReviewIssueID,
 			Raw:    "beta concept hidden behind alpha tag",
 			Status: issues.StatusOpen,
-			TagScores: []issues.TagRelevance{
+			TagScores: []domain.TagRelevance{
 				{Tag: "alpha", Relevance: 0.91, Suggested: true, Description: "legacy broad alpha bucket"},
 			},
 			Embedding: unitVec64([]float64{0, 1, 0, 0}),
@@ -208,7 +209,7 @@ func TestDebugFactorWeightsBuildsActionableReviewQueue(t *testing.T) {
 			ID:        "issue-closed-review",
 			Raw:       "closed review case",
 			Status:    issues.StatusClosed,
-			TagScores: []issues.TagRelevance{{Tag: "alpha", Relevance: 0.9}},
+			TagScores: []domain.TagRelevance{{Tag: "alpha", Relevance: 0.9}},
 			Embedding: unitVec64([]float64{0, 1, 0, 0}),
 		},
 	})
@@ -279,12 +280,12 @@ func TestDebugIssueR2ReportsRawNorms(t *testing.T) {
 	store := issues.NewInMemoryStore([]issues.Issue{
 		// Embeddings sum to zero so runtime corpus-mean centering is a no-op
 		// and the raw-norm expectations hold exactly.
-		{ID: "pure-a", Raw: "test", TagScores: []issues.TagRelevance{{Tag: "alpha", Relevance: 1}}, Embedding: unitVec64([]float64{0, 0, 0, 1})},
-		{ID: "pure-b", Raw: "test", TagScores: []issues.TagRelevance{{Tag: "alpha", Relevance: 1}}, Embedding: unitVec64([]float64{0, 0, 0, -1})},
-		{ID: "mixed-a", Raw: "test", TagScores: []issues.TagRelevance{{Tag: "alpha", Relevance: 1}}, Embedding: unitVec64([]float64{1, 0, 1, 0})},
-		{ID: "mixed-b", Raw: "test", TagScores: []issues.TagRelevance{{Tag: "alpha", Relevance: 1}}, Embedding: unitVec64([]float64{-1, 0, -1, 0})},
-		{ID: "mixed-c", Raw: "test", TagScores: []issues.TagRelevance{{Tag: "alpha", Relevance: 1}}, Embedding: unitVec64([]float64{1, 0, -1, 0})},
-		{ID: "mixed-d", Raw: "test", TagScores: []issues.TagRelevance{{Tag: "alpha", Relevance: 1}}, Embedding: unitVec64([]float64{-1, 0, 1, 0})},
+		{ID: "pure-a", Raw: "test", TagScores: []domain.TagRelevance{{Tag: "alpha", Relevance: 1}}, Embedding: unitVec64([]float64{0, 0, 0, 1})},
+		{ID: "pure-b", Raw: "test", TagScores: []domain.TagRelevance{{Tag: "alpha", Relevance: 1}}, Embedding: unitVec64([]float64{0, 0, 0, -1})},
+		{ID: "mixed-a", Raw: "test", TagScores: []domain.TagRelevance{{Tag: "alpha", Relevance: 1}}, Embedding: unitVec64([]float64{1, 0, 1, 0})},
+		{ID: "mixed-b", Raw: "test", TagScores: []domain.TagRelevance{{Tag: "alpha", Relevance: 1}}, Embedding: unitVec64([]float64{-1, 0, -1, 0})},
+		{ID: "mixed-c", Raw: "test", TagScores: []domain.TagRelevance{{Tag: "alpha", Relevance: 1}}, Embedding: unitVec64([]float64{1, 0, -1, 0})},
+		{ID: "mixed-d", Raw: "test", TagScores: []domain.TagRelevance{{Tag: "alpha", Relevance: 1}}, Embedding: unitVec64([]float64{-1, 0, 1, 0})},
 	})
 	tagStore := &debugTagStore{}
 	catalog := tags.NewCatalogService(tagStore, nil, nil)
@@ -424,7 +425,7 @@ func TestDebugEvalTagsReportsAggregateMetrics(t *testing.T) {
 
 func TestPredictedEvalTagRelevanceUsesEffectiveRelevance(t *testing.T) {
 	negated := 0.5
-	tags := predictedEvalTagRelevance([]issues.TagRelevance{
+	tags := predictedEvalTagRelevance([]domain.TagRelevance{
 		{Tag: "backend", Relevance: 0.45, Negation: &negated},
 		{Tag: "signed-relevance", Relevance: 0.4},
 	})

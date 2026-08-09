@@ -6,6 +6,7 @@ import (
 	"gonum.org/v1/gonum/floats"
 	"gonum.org/v1/gonum/mat"
 
+	"sortit/internal/domain"
 	"sortit/internal/issues"
 	"sortit/internal/scoring"
 	"sortit/internal/vectors"
@@ -303,7 +304,7 @@ func ComputeFactorDecomposition(
 // non-negative projection rule as ComputeFactorDecomposition.
 func DecomposeEmbedding(
 	embedding []float64,
-	tagScores []issues.TagRelevance,
+	tagScores []domain.TagRelevance,
 	tagNames []string,
 	tagEmbeddings map[string][]float64,
 	tagCov *mat.Dense,
@@ -408,7 +409,7 @@ func BlendFromDecomposition(decomp FactorDecomposition, a, b DecomposedEmbedding
 // synthesizeFactorEmbedding builds the factor-predicted embedding for an issue
 // by weighting tag embeddings through the tag covariance matrix.
 func synthesizeFactorEmbedding(
-	tagScores []issues.TagRelevance,
+	tagScores []domain.TagRelevance,
 	tagIndex map[string]int,
 	tagCov *mat.Dense,
 	tagEmbeddings map[string][]float64,

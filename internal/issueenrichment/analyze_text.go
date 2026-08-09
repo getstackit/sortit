@@ -269,7 +269,7 @@ func (s *IssueEnricher) AnalyzeText(ctx context.Context, raw string, opts Analyz
 	}, nil
 }
 
-func buildAnalysisTrace(raw string, candidates tags.CandidateTaxonomy, context analysisContext, analyzed ai.AnalyzedIssue, floorFiltered int, beforeAttenuation, scores []issues.TagRelevance, verify bool) AnalysisTrace {
+func buildAnalysisTrace(raw string, candidates tags.CandidateTaxonomy, context analysisContext, analyzed ai.AnalyzedIssue, floorFiltered int, beforeAttenuation, scores []domain.TagRelevance, verify bool) AnalysisTrace {
 	sourceCounts := make(map[string]int)
 	hintCount := 0
 	for _, candidate := range candidates.Tags {
@@ -323,12 +323,12 @@ func buildAnalysisTrace(raw string, candidates tags.CandidateTaxonomy, context a
 	}
 }
 
-func IssueTagScoresFromAnalysis(scores []ai.TagScore) []issues.TagRelevance {
+func IssueTagScoresFromAnalysis(scores []ai.TagScore) []domain.TagRelevance {
 	if len(scores) == 0 {
 		return nil
 	}
 
-	tagScores := make([]issues.TagRelevance, 0, len(scores))
+	tagScores := make([]domain.TagRelevance, 0, len(scores))
 	for _, score := range scores {
 		if score.Tag == "" {
 			continue
@@ -336,7 +336,7 @@ func IssueTagScoresFromAnalysis(scores []ai.TagScore) []issues.TagRelevance {
 		if score.Relevance < issueTagRelevanceFloor {
 			continue
 		}
-		tagScores = append(tagScores, issues.TagRelevance{
+		tagScores = append(tagScores, domain.TagRelevance{
 			Tag:         score.Tag,
 			Relevance:   score.Relevance,
 			Suggested:   score.Suggested,

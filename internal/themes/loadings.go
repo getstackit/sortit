@@ -3,6 +3,7 @@ package themes
 import (
 	"sort"
 
+	"sortit/internal/domain"
 	"sortit/internal/issuemath"
 	"sortit/internal/issues"
 	"sortit/internal/issuethemes"
@@ -128,7 +129,7 @@ func ClassifyParticipation(decomp *issuemath.CorpusRidgeDecomposition, issue iss
 // tag — the same "anchoredAny" notion as ComputeCorpusDrift. Presence in the
 // tag index is the test, matching signedAnchor's `scored` mask (a zero-relevance
 // score still counts as an opinion).
-func anchoredAny(tagScores []issues.TagRelevance, tagIndex map[string]int) bool {
+func anchoredAny(tagScores []domain.TagRelevance, tagIndex map[string]int) bool {
 	for _, ts := range tagScores {
 		if _, ok := tagIndex[ts.Tag]; ok {
 			return true

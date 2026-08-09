@@ -5,13 +5,14 @@ import (
 	"math"
 	"slices"
 
+	"sortit/internal/domain"
 	"sortit/internal/issues"
 	"sortit/internal/scoring"
 )
 
-func MeanTagProfile(matched []issues.PeopleAnalyticsIssue, tagSpecificity map[string]*float64) []issues.TagRelevance {
+func MeanTagProfile(matched []issues.PeopleAnalyticsIssue, tagSpecificity map[string]*float64) []domain.TagRelevance {
 	if len(matched) == 0 {
-		return []issues.TagRelevance{}
+		return []domain.TagRelevance{}
 	}
 
 	sums := make(map[string]float64)
@@ -22,15 +23,15 @@ func MeanTagProfile(matched []issues.PeopleAnalyticsIssue, tagSpecificity map[st
 		}
 	}
 
-	profile := make([]issues.TagRelevance, 0, len(sums))
+	profile := make([]domain.TagRelevance, 0, len(sums))
 	for tag, sum := range sums {
-		profile = append(profile, issues.TagRelevance{
+		profile = append(profile, domain.TagRelevance{
 			Tag:       tag,
 			Relevance: roundTo2(sum / float64(len(matched))),
 		})
 	}
 
-	slices.SortStableFunc(profile, func(a, b issues.TagRelevance) int {
+	slices.SortStableFunc(profile, func(a, b domain.TagRelevance) int {
 		if c := cmp.Compare(b.Relevance, a.Relevance); c != 0 {
 			return c
 		}
@@ -88,7 +89,7 @@ func MeanEmbedding(matched []issues.PeopleAnalyticsIssue) []float64 {
 	return mean
 }
 
-func TagProfileSimilarity(a, b []issues.TagRelevance) float64 {
+func TagProfileSimilarity(a, b []domain.TagRelevance) float64 {
 	if len(a) == 0 || len(b) == 0 {
 		return 0
 	}

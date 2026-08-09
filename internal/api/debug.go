@@ -11,6 +11,7 @@ import (
 
 	"sortit/internal/ai"
 	"sortit/internal/diagnostics"
+	"sortit/internal/domain"
 	issueenrichment "sortit/internal/issueenrichment"
 	"sortit/internal/issues"
 	"sortit/internal/tags"
@@ -31,7 +32,7 @@ type debugIssueSimilarity struct {
 }
 
 type debugIssueAnalyzeResponse struct {
-	Tags                   []issues.TagRelevance         `json:"tags"`
+	Tags                   []domain.TagRelevance         `json:"tags"`
 	CandidateSet           tags.CandidateTaxonomy        `json:"candidateSet"`
 	Embedding              ai.EmbeddingInfo              `json:"embedding"`
 	Tagger                 ai.ModelInfo                  `json:"tagger"`

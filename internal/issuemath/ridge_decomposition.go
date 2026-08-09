@@ -9,6 +9,7 @@ import (
 	"gonum.org/v1/gonum/floats"
 	"gonum.org/v1/gonum/mat"
 
+	"sortit/internal/domain"
 	"sortit/internal/issues"
 	"sortit/internal/scoring"
 	"sortit/internal/vectors"
@@ -181,7 +182,7 @@ func (c CorpusRidgeDecomposition) Decomposed() bool { return c.Decomposition.Dec
 // bundle's space via CenterVector(raw, Means.Issue) — into the cached
 // tag-space basis, so its loading/residual are comparable with the cached
 // per-issue vectors via RidgeBlend.
-func (c CorpusRidgeDecomposition) DecomposeQuery(embedding []float64, tagScores []issues.TagRelevance) RidgeVectors {
+func (c CorpusRidgeDecomposition) DecomposeQuery(embedding []float64, tagScores []domain.TagRelevance) RidgeVectors {
 	return DecomposeRidgeEmbedding(embedding, tagScores, c.TagNames, c.TagEmbeddings, c.LambdaScored, c.LambdaUnscored)
 }
 
@@ -260,7 +261,7 @@ func ComputeRidgeDecomposition(
 // query or person profile) with the same solve as the corpus path.
 func DecomposeRidgeEmbedding(
 	embedding []float64,
-	tagScores []issues.TagRelevance,
+	tagScores []domain.TagRelevance,
 	tagNames []string,
 	tagEmbeddings map[string][]float64,
 	lambdaScored, lambdaUnscored float64,
@@ -440,7 +441,7 @@ func (s *ridgeSolver) solve(e, anchor, lambdas []float64) []float64 {
 func ridgeVectorsFor(
 	solver *ridgeSolver,
 	e []float64,
-	tagScores []issues.TagRelevance,
+	tagScores []domain.TagRelevance,
 	tagIndex map[string]int,
 	embDim int,
 	lambdaScored, lambdaUnscored, totalVar float64,
@@ -513,7 +514,7 @@ func residualOnlyRidgeVectors(e []float64, totalNorm float64) RidgeVectors {
 // the analyzer expressed an opinion on. Tag matching is by raw name,
 // matching the rank-1 synthesizeFactorEmbedding path.
 func signedAnchor(
-	tagScores []issues.TagRelevance,
+	tagScores []domain.TagRelevance,
 	tagIndex map[string]int,
 	numTags int,
 ) (anchor []float64, scored []bool) {
@@ -538,7 +539,7 @@ func signedAnchor(
 // vector. Tags the analyzer scored (or negated) get lambdaScored; the rest
 // get lambdaUnscored.
 func ridgeAnchorAndLambdas(
-	tagScores []issues.TagRelevance,
+	tagScores []domain.TagRelevance,
 	tagIndex map[string]int,
 	numTags int,
 	lambdaScored, lambdaUnscored float64,

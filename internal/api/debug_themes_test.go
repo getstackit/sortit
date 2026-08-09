@@ -9,6 +9,7 @@ import (
 	"testing"
 
 	"sortit/internal/diagnostics"
+	"sortit/internal/domain"
 	"sortit/internal/issues"
 	"sortit/internal/themes"
 )
@@ -32,7 +33,7 @@ func themesFixtureIssues(n int) []issues.Issue {
 			Status:    issues.StatusOpen,
 			CreatedBy: "Casey",
 			CreatedAt: base[i%len(base)].CreatedAt,
-			TagScores: []issues.TagRelevance{{Tag: tag, Relevance: 0.9}},
+			TagScores: []domain.TagRelevance{{Tag: tag, Relevance: 0.9}},
 			Embedding: emb,
 		})
 	}

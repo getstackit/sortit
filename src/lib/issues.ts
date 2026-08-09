@@ -108,11 +108,6 @@ export type IssueLifecycleMetricsRecord = {
   recentActivityCount?: number;
 };
 
-export type IssueSearchQuery = {
-  raw: string;
-  tags: IssueTagScore[];
-};
-
 export type SearchIssueRecord = {
   id: string;
   raw: string;
@@ -122,11 +117,6 @@ export type SearchIssueRecord = {
   factorSimilarity: number;
   combinedSimilarity: number;
   reason: string;
-};
-
-export type IssueSearchResponse = {
-  query: IssueSearchQuery;
-  relatedIssues: SearchIssueRecord[];
 };
 
 const ISSUE_ULID_PATTERN = /^[0-9A-HJKMNP-TV-Z]{26}$/i;
@@ -188,11 +178,6 @@ type AssignIssueInput = {
   assignedTo: string;
 };
 
-type SearchIssuesOptions = {
-  status?: IssueListStatus;
-  limit?: number;
-};
-
 function normalizeIssueRecord(record: IssueRecord): IssueRecord {
   return {
     ...record,
@@ -238,27 +223,6 @@ export async function fetchRevision(signal?: AbortSignal): Promise<number> {
     signal,
   });
   return payload.revision;
-}
-
-export async function searchIssues(
-  query: string,
-  options: SearchIssuesOptions = {},
-  signal?: AbortSignal
-): Promise<IssueSearchResponse> {
-  const params = new URLSearchParams();
-  params.set("q", query);
-  params.set("status", options.status ?? "open");
-  if (options.limit) {
-    params.set("limit", String(options.limit));
-  }
-
-  return getJSON<IssueSearchResponse>(
-    uiAPIURL(`/issues/search?${params.toString()}`),
-    {
-      cache: "no-store",
-      signal,
-    }
-  );
 }
 
 export function parseIssueID(value: string): string | null {

@@ -5,6 +5,7 @@ import (
 	"math"
 	"slices"
 
+	"sortit/internal/domain"
 	"sortit/internal/vectors"
 )
 
@@ -74,7 +75,7 @@ func issueSnapshotDelta(left, right IssueSnapshot) (float64, bool) {
 	return clamp01(total / weights), true
 }
 
-func issueTagProfileDelta(left, right []TagRelevance) (float64, bool) {
+func issueTagProfileDelta(left, right []domain.TagRelevance) (float64, bool) {
 	if len(left) == 0 && len(right) == 0 {
 		return 0, false
 	}

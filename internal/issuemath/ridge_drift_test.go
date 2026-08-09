@@ -5,6 +5,7 @@ import (
 	"math"
 	"testing"
 
+	"sortit/internal/domain"
 	"sortit/internal/issues"
 )
 
@@ -23,15 +24,15 @@ func TestComputeCorpusDrift_MisTagAttribution(t *testing.T) {
 		// Tagged "alpha" but the embedding points at "beta": alpha is
 		// over-claimed (spurious), beta is missing.
 		{ID: "mistagged", Raw: "m", Status: issues.StatusOpen,
-			TagScores: []issues.TagRelevance{{Tag: "alpha", Relevance: 0.9}}},
+			TagScores: []domain.TagRelevance{{Tag: "alpha", Relevance: 0.9}}},
 		// Tagged "alpha" and the embedding agrees: low drift.
 		{ID: "welltagged", Raw: "w", Status: issues.StatusOpen,
-			TagScores: []issues.TagRelevance{{Tag: "alpha", Relevance: 0.9}}},
+			TagScores: []domain.TagRelevance{{Tag: "alpha", Relevance: 0.9}}},
 		// No tags in the catalog → no anchor to disagree with → excluded.
 		{ID: "untagged", Raw: "u", Status: issues.StatusOpen},
 		// No embedding → excluded.
 		{ID: "noembed", Raw: "n", Status: issues.StatusOpen,
-			TagScores: []issues.TagRelevance{{Tag: "alpha", Relevance: 0.9}}},
+			TagScores: []domain.TagRelevance{{Tag: "alpha", Relevance: 0.9}}},
 	}
 	issueEmb := map[string][]float64{
 		"mistagged":  unitVec([]float64{0, 1, 0, 0}),
@@ -93,7 +94,7 @@ func TestComputeCorpusDrift_MisTagAttribution(t *testing.T) {
 
 func TestComputeCorpusDrift_EmptyInputs(t *testing.T) {
 	tagEmb := map[string][]float64{"alpha": unitVec([]float64{1, 0, 0, 0})}
-	items := []issues.Issue{{ID: "a", TagScores: []issues.TagRelevance{{Tag: "alpha", Relevance: 1}}}}
+	items := []issues.Issue{{ID: "a", TagScores: []domain.TagRelevance{{Tag: "alpha", Relevance: 1}}}}
 
 	if got := ComputeCorpusDrift(nil, []string{"alpha"}, map[string][]float64{}, tagEmb, 0.5, 0.05); got != nil {
 		t.Errorf("no items: want nil, got %+v", got)
@@ -127,7 +128,7 @@ func TestComputeCorpusDrift_ZDeltaFlipsRawOrder(t *testing.T) {
 	add := func(id string, a, b float64) {
 		items = append(items, issues.Issue{
 			ID: id, Raw: id, Status: issues.StatusOpen,
-			TagScores: []issues.TagRelevance{{Tag: "scored", Relevance: 0.9}},
+			TagScores: []domain.TagRelevance{{Tag: "scored", Relevance: 0.9}},
 		})
 		issueEmb[id] = []float64{a, b, 0, 0}
 	}
@@ -198,7 +199,7 @@ func TestComputeCorpusDrift_ZDeltaSmallSample(t *testing.T) {
 		id := fmt.Sprintf("i-%d", i)
 		items = append(items, issues.Issue{
 			ID: id, Status: issues.StatusOpen,
-			TagScores: []issues.TagRelevance{{Tag: "scored", Relevance: 0.9}},
+			TagScores: []domain.TagRelevance{{Tag: "scored", Relevance: 0.9}},
 		})
 		issueEmb[id] = []float64{0.3, 0.5 + 0.1*float64(i), 0, 0}
 	}
@@ -230,7 +231,7 @@ func TestComputeCorpusDrift_ZDeltaZeroVariance(t *testing.T) {
 		id := fmt.Sprintf("i-%02d", i)
 		items = append(items, issues.Issue{
 			ID: id, Status: issues.StatusOpen,
-			TagScores: []issues.TagRelevance{{Tag: "scored", Relevance: 0.9}},
+			TagScores: []domain.TagRelevance{{Tag: "scored", Relevance: 0.9}},
 		})
 		issueEmb[id] = []float64{0.3, 0.5, 0, 0}
 	}

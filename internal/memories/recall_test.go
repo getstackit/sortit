@@ -76,7 +76,7 @@ func TestRecallSurfacesSubjectConcepts(t *testing.T) {
 		embed: []float64{1, 0},
 		result: issueenrichment.AnalyzeTextResult{
 			Analyzed:  ai.AnalyzedIssue{Embedding: ai.EmbeddingResult{Vector: []float32{1, 0}}},
-			TagScores: []issues.TagRelevance{{Tag: "ridge", Relevance: 0.9}},
+			TagScores: []domain.TagRelevance{{Tag: "ridge", Relevance: 0.9}},
 		},
 	}
 	svc := NewService(store, enricher, nil)

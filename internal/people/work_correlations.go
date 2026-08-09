@@ -7,6 +7,7 @@ import (
 	"slices"
 	"strings"
 
+	"sortit/internal/domain"
 	"sortit/internal/issuemath"
 	"sortit/internal/issues"
 	issueviews "sortit/internal/issues/views"
@@ -16,16 +17,16 @@ import (
 )
 
 type PersonCorrelation struct {
-	PersonA           string         `json:"personA"`
-	PersonB           string         `json:"personB"`
-	CombinedScore     float64        `json:"combinedScore"`
-	SemanticScore     float64        `json:"semanticScore"`
-	FactorScore       float64        `json:"factorScore"`
-	SharedTags        []string       `json:"sharedTags"`
-	PersonAIssueCount int            `json:"personAIssueCount"`
-	PersonBIssueCount int            `json:"personBIssueCount"`
-	PersonAProfile    []TagRelevance `json:"personAProfile"`
-	PersonBProfile    []TagRelevance `json:"personBProfile"`
+	PersonA           string                `json:"personA"`
+	PersonB           string                `json:"personB"`
+	CombinedScore     float64               `json:"combinedScore"`
+	SemanticScore     float64               `json:"semanticScore"`
+	FactorScore       float64               `json:"factorScore"`
+	SharedTags        []string              `json:"sharedTags"`
+	PersonAIssueCount int                   `json:"personAIssueCount"`
+	PersonBIssueCount int                   `json:"personBIssueCount"`
+	PersonAProfile    []domain.TagRelevance `json:"personAProfile"`
+	PersonBProfile    []domain.TagRelevance `json:"personBProfile"`
 }
 
 type WorkCorrelationsResult struct {
@@ -94,7 +95,7 @@ func buildWorkCorrelations(allIssues []issues.PeopleAnalyticsIssue, filter issue
 	type personData struct {
 		name       string
 		issues     []issues.PeopleAnalyticsIssue
-		tagProfile []TagRelevance
+		tagProfile []domain.TagRelevance
 		embedding  []float64
 	}
 
@@ -144,7 +145,7 @@ func buildWorkCorrelations(allIssues []issues.PeopleAnalyticsIssue, filter issue
 	return WorkCorrelationsResult{Correlations: correlations}
 }
 
-func sharedTags(a, b []TagRelevance) []string {
+func sharedTags(a, b []domain.TagRelevance) []string {
 	bSet := make(map[string]struct{}, len(b))
 	for _, tr := range b {
 		bSet[tr.Tag] = struct{}{}
@@ -177,7 +178,7 @@ func peopleAnalyticsIssuesFromIssues(items []issues.Issue) []issues.PeopleAnalyt
 		out = append(out, issues.PeopleAnalyticsIssue{
 			Status:     item.Status,
 			AssignedTo: item.AssignedTo,
-			TagScores:  append([]issues.TagRelevance(nil), item.TagScores...),
+			TagScores:  append([]domain.TagRelevance(nil), item.TagScores...),
 			Embedding:  append([]float64(nil), item.Embedding...),
 		})
 	}

@@ -20,6 +20,7 @@ import (
 	"github.com/jackc/pgx/v5/pgconn"
 	_ "github.com/jackc/pgx/v5/stdlib"
 
+	"sortit/internal/domain"
 	"sortit/internal/issues/issuesdb"
 )
 
@@ -272,7 +273,7 @@ func (s *PostgresStore) ListPeopleAnalytics(ctx context.Context, opts ListOption
 		if err := rows.Scan(&status, &assignedTo, &tagScoresJSON, &embeddingText); err != nil {
 			return nil, fmt.Errorf("scan people analytics issue: %w", err)
 		}
-		tagScores, err := unmarshalJSONB[[]TagRelevance](tagScoresJSON)
+		tagScores, err := unmarshalJSONB[[]domain.TagRelevance](tagScoresJSON)
 		if err != nil {
 			return nil, fmt.Errorf("decode people analytics tag scores: %w", err)
 		}
@@ -283,7 +284,7 @@ func (s *PostgresStore) ListPeopleAnalytics(ctx context.Context, opts ListOption
 		items = append(items, PeopleAnalyticsIssue{
 			Status:     normalizeIssueStatus(IssueStatus(status)),
 			AssignedTo: strings.TrimSpace(assignedTo),
-			TagScores:  append([]TagRelevance(nil), tagScores...),
+			TagScores:  append([]domain.TagRelevance(nil), tagScores...),
 			Embedding:  append([]float64(nil), embedding...),
 		})
 	}
@@ -660,7 +661,7 @@ func (s *PostgresStore) LoadMapProjectionData(ctx context.Context) ([]MapProject
 		if err != nil {
 			return nil, nil, fmt.Errorf("decode tags for %q: %w", id, err)
 		}
-		tagScores, err := unmarshalJSONB[[]TagRelevance](tagScoresJSON)
+		tagScores, err := unmarshalJSONB[[]domain.TagRelevance](tagScoresJSON)
 		if err != nil {
 			return nil, nil, fmt.Errorf("decode tag scores for %q: %w", id, err)
 		}
@@ -1223,7 +1224,7 @@ func recordFromIssue(issue Issue) (issueRecord, error) {
 	if err != nil {
 		return issueRecord{}, fmt.Errorf("marshal issue tags: %w", err)
 	}
-	tagScoresJSON, err := marshalJSONB(issue.TagScores, []TagRelevance{})
+	tagScoresJSON, err := marshalJSONB(issue.TagScores, []domain.TagRelevance{})
 	if err != nil {
 		return issueRecord{}, fmt.Errorf("marshal issue tag scores: %w", err)
 	}
@@ -1254,7 +1255,7 @@ func issueFromQuery(row issueQueryRow) (Issue, error) {
 	if err != nil {
 		return Issue{}, fmt.Errorf("decode tags for %q: %w", row.ID, err)
 	}
-	tagScores, err := unmarshalJSONB[[]TagRelevance](row.TagScoresJson)
+	tagScores, err := unmarshalJSONB[[]domain.TagRelevance](row.TagScoresJson)
 	if err != nil {
 		return Issue{}, fmt.Errorf("decode tag scores for %q: %w", row.ID, err)
 	}

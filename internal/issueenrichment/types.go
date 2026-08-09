@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"sortit/internal/ai"
+	"sortit/internal/domain"
 	"sortit/internal/issuemath"
 	"sortit/internal/issues"
 	"sortit/internal/tags"
@@ -40,7 +41,7 @@ type AnalyzeTextOptions struct {
 type AnalyzeTextResult struct {
 	Analyzed     ai.AnalyzedIssue
 	CandidateSet tags.CandidateTaxonomy
-	TagScores    []issues.TagRelevance
+	TagScores    []domain.TagRelevance
 	// Trace records the decisions made at every boundary of text enrichment.
 	// It intentionally contains counts and derived metadata rather than prompt
 	// bodies or retrieved-memory text, so it is safe to expose through the

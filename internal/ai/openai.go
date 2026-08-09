@@ -40,8 +40,9 @@ type openAIClient struct {
 }
 
 type OpenAITagger struct {
-	client *openAIClient
-	model  string
+	client        *openAIClient
+	model         string
+	usageObserver func(TokenUsage)
 }
 
 type OpenAICanonicalizer struct {
@@ -88,6 +89,10 @@ type openAIChatCompletionResponse struct {
 			Content string `json:"content"`
 		} `json:"message"`
 	} `json:"choices"`
+	Usage struct {
+		PromptTokens     int `json:"prompt_tokens"`
+		CompletionTokens int `json:"completion_tokens"`
+	} `json:"usage"`
 }
 
 type openAITagScoresResponse struct {
@@ -201,12 +206,27 @@ func (t *OpenAITagger) Score(ctx context.Context, text string, tags []Tag, examp
 	if len(response.Choices) == 0 {
 		return ScoreResult{}, errors.New("openai returned no completion choices")
 	}
+	if t.usageObserver != nil {
+		t.usageObserver(TokenUsage{
+			InputTokens:  response.Usage.PromptTokens,
+			OutputTokens: response.Usage.CompletionTokens,
+		})
+	}
 
 	var payload openAITagScoresResponse
 	if err := json.Unmarshal([]byte(response.Choices[0].Message.Content), &payload); err != nil {
 		return ScoreResult{}, fmt.Errorf("decode tag response: %w", err)
 	}
 	return ScoreResult{Tags: payload.Tags, Negated: payload.NegatedTags}, nil
+}
+
+// SetTokenUsageObserver receives the provider-reported usage after each
+// successful tagging request. It is optional so normal production call paths
+// remain unchanged; offline evaluators attach a counter for cost reporting.
+func (t *OpenAITagger) SetTokenUsageObserver(observer func(TokenUsage)) {
+	if t != nil {
+		t.usageObserver = observer
+	}
 }
 
 func (t *OpenAITagger) Provider() string {

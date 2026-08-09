@@ -1,11 +1,36 @@
 package ai
 
 import (
+	"context"
 	"encoding/json"
 	"net/http"
+	"net/http/httptest"
 	"strings"
 	"testing"
 )
+
+func TestOpenAITaggerReportsProviderTokenUsage(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/chat/completions" {
+			t.Fatalf("path = %q", r.URL.Path)
+		}
+		_, _ = w.Write([]byte(`{"choices":[{"message":{"content":"{\"tags\":[{\"tag\":\"bug\",\"relevance\":0.9}]}"}}],"usage":{"prompt_tokens":123,"completion_tokens":45}}`))
+	}))
+	defer server.Close()
+
+	tagger, err := NewOpenAITagger(OpenAIConfig{APIKey: "test-key", BaseURL: server.URL, HTTPClient: server.Client()})
+	if err != nil {
+		t.Fatalf("new tagger: %v", err)
+	}
+	var got TokenUsage
+	tagger.SetTokenUsageObserver(func(usage TokenUsage) { got = usage })
+	if _, err := tagger.Score(context.Background(), "text", []Tag{{Name: "bug"}}, nil, nil, ConceptFrame{}); err != nil {
+		t.Fatalf("score: %v", err)
+	}
+	if got != (TokenUsage{InputTokens: 123, OutputTokens: 45}) {
+		t.Fatalf("usage = %+v", got)
+	}
+}
 
 func TestBuildOpenAITaggingPromptIncludesGuidanceAndDescriptions(t *testing.T) {
 	prompt := buildOpenAITaggingPrompt("Safari export hangs on iPad", []Tag{

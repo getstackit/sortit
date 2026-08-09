@@ -48,7 +48,7 @@ type Issue struct {
 	Discussion               []IssuePost            `json:"discussion,omitempty"`
 	Links                    []IssueLink            `json:"links,omitempty"`
 	Operations               []IssueOperation       `json:"operations,omitempty"`
-	TagScores                []TagRelevance         `json:"tagScores"`
+	TagScores                []domain.TagRelevance  `json:"tagScores"`
 	EnrichmentStatus         IssueEnrichmentStatus  `json:"enrichmentStatus"`
 	EnrichmentError          string                 `json:"enrichmentError,omitempty"`
 	EnrichmentTargetSequence int                    `json:"enrichmentTargetSequence"`
@@ -70,14 +70,14 @@ type IssueLifecycleMetrics struct {
 // MapProjectionIssue contains only the fields needed to rebuild the map
 // projection and its relationship-driven visibility semantics.
 type MapProjectionIssue struct {
-	ID         string         `json:"id"`
-	Raw        string         `json:"raw"`
-	Tags       []string       `json:"tags"`
-	Status     IssueStatus    `json:"status"`
-	AssignedTo string         `json:"assignedTo,omitempty"`
-	TagScores  []TagRelevance `json:"tagScores"`
-	Embedding  []float64      `json:"-"`
-	Links      []IssueLink    `json:"links,omitempty"`
+	ID         string                `json:"id"`
+	Raw        string                `json:"raw"`
+	Tags       []string              `json:"tags"`
+	Status     IssueStatus           `json:"status"`
+	AssignedTo string                `json:"assignedTo,omitempty"`
+	TagScores  []domain.TagRelevance `json:"tagScores"`
+	Embedding  []float64             `json:"-"`
+	Links      []IssueLink           `json:"links,omitempty"`
 }
 
 func (i Issue) ReportEvent() Event {
@@ -102,13 +102,13 @@ type IssuePost struct {
 }
 
 type IssueSnapshot struct {
-	IssueID   string         `json:"issueId,omitempty"`
-	Sequence  int            `json:"sequence"`
-	Raw       string         `json:"raw"`
-	Tags      []string       `json:"tags,omitempty"`
-	TagScores []TagRelevance `json:"tagScores,omitempty"`
-	CreatedAt time.Time      `json:"createdAt"`
-	Embedding []float64      `json:"-"`
+	IssueID   string                `json:"issueId,omitempty"`
+	Sequence  int                   `json:"sequence"`
+	Raw       string                `json:"raw"`
+	Tags      []string              `json:"tags,omitempty"`
+	TagScores []domain.TagRelevance `json:"tagScores,omitempty"`
+	CreatedAt time.Time             `json:"createdAt"`
+	Embedding []float64             `json:"-"`
 }
 
 type Tag struct {
@@ -123,10 +123,6 @@ type Tag struct {
 	SpecificityEmbedding  *float64   `json:"specificityEmbedding,omitempty"`
 	SpecificityComputedAt *time.Time `json:"specificityComputedAt,omitempty"`
 }
-
-// TagRelevance is an alias for domain.TagRelevance.
-// All packages should migrate to using domain.TagRelevance directly.
-type TagRelevance = domain.TagRelevance
 
 type IssueLinkType string
 
@@ -184,7 +180,7 @@ type IssueOperation struct {
 type SplitChildInput struct {
 	Raw       string
 	Tags      []string
-	TagScores []TagRelevance
+	TagScores []domain.TagRelevance
 	Embedding []float64
 }
 
@@ -202,7 +198,7 @@ type CombineInput struct {
 	Tags      []string
 	CreatedBy string
 	Note      string
-	TagScores []TagRelevance
+	TagScores []domain.TagRelevance
 	Embedding []float64
 }
 
@@ -224,7 +220,7 @@ type CreateInput struct {
 	Raw       string
 	Tags      []string
 	CreatedBy string
-	TagScores []TagRelevance
+	TagScores []domain.TagRelevance
 	Embedding []float64
 }
 
@@ -233,7 +229,7 @@ type RefineInput struct {
 	CanonicalRaw string
 	Tags         []string
 	CreatedBy    string
-	TagScores    []TagRelevance
+	TagScores    []domain.TagRelevance
 	Embedding    []float64
 }
 
@@ -277,7 +273,7 @@ type IssueEmbeddingSimilarity struct {
 type PeopleAnalyticsIssue struct {
 	Status     IssueStatus
 	AssignedTo string
-	TagScores  []TagRelevance
+	TagScores  []domain.TagRelevance
 	Embedding  []float64
 }
 
@@ -408,7 +404,7 @@ type SemanticSearchStore interface {
 type IssueFieldUpdate struct {
 	Raw                      *string
 	Tags                     []string
-	TagScores                []TagRelevance
+	TagScores                []domain.TagRelevance
 	Embedding                []float64
 	LifecycleCreatedAt       *time.Time
 	LifecycleCreatedBy       *string
@@ -739,11 +735,11 @@ func sanitizeTags(tags []string) []string {
 	return out
 }
 
-func displayTags(explicitTags []string, scores []TagRelevance) []string {
+func displayTags(explicitTags []string, scores []domain.TagRelevance) []string {
 	return displayTagsWithSpecificity(explicitTags, scores, nil)
 }
 
-func displayTagsWithSpecificity(explicitTags []string, scores []TagRelevance, tagSpecificity map[string]*float64) []string {
+func displayTagsWithSpecificity(explicitTags []string, scores []domain.TagRelevance, tagSpecificity map[string]*float64) []string {
 	if tags := sanitizeTags(explicitTags); len(tags) > 0 {
 		return tags
 	}
@@ -752,7 +748,7 @@ func displayTagsWithSpecificity(explicitTags []string, scores []TagRelevance, ta
 	}
 
 	normalized := copyTagScores(scores)
-	slices.SortStableFunc(normalized, func(a, b TagRelevance) int {
+	slices.SortStableFunc(normalized, func(a, b domain.TagRelevance) int {
 		aScore := displayScore(a.EffectiveRelevance(), tagSpecificity, a.Tag)
 		bScore := displayScore(b.EffectiveRelevance(), tagSpecificity, b.Tag)
 		if aScore > bScore {
@@ -1040,11 +1036,11 @@ func sanitizeTagName(name string) string {
 	return domain.NormalizeTagName(name)
 }
 
-func copyTagScores(input []TagRelevance) []TagRelevance {
+func copyTagScores(input []domain.TagRelevance) []domain.TagRelevance {
 	if len(input) == 0 {
 		return nil
 	}
-	out := make([]TagRelevance, len(input))
+	out := make([]domain.TagRelevance, len(input))
 	for i, score := range input {
 		out[i] = score
 		out[i].CandidateSources = append([]string(nil), score.CandidateSources...)

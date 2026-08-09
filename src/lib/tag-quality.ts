@@ -1,13 +1,6 @@
 import type { IssueRecord } from "@/lib/issues";
 import type { TagRecord } from "@/lib/tags";
 
-export type SpecificTagSuggestion = {
-  name: string;
-  description: string;
-  relevance: number;
-  count: number;
-};
-
 export type SpecificityLadderEntry = {
   name: string;
   description: string;
@@ -148,24 +141,6 @@ export function buildSpecificityLadder(
     .slice(0, limit);
 
   return { moreSpecific, moreGeneric };
-}
-
-export function buildSpecificTagSuggestions(
-  tagName: string,
-  tags: TagRecord[],
-  limit = 4
-): SpecificityLadderEntry[] {
-  const normalizedName = normalizeTagName(tagName);
-  const selectedTag = tags.find(
-    (tag) => normalizeTagName(tag.name) === normalizedName
-  );
-
-  if (!selectedTag || tagSpecificity(selectedTag) >= 0.4) {
-    return [];
-  }
-
-  const ladder = buildSpecificityLadder(tagName, tags, limit);
-  return ladder.moreSpecific;
 }
 
 export function buildMergeCandidates(

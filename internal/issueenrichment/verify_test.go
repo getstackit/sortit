@@ -110,7 +110,7 @@ func newEvidenceEnricher(t *testing.T, tagger ai.Tagger, storeTags []issues.Tag)
 	return enricher
 }
 
-func findScore(t *testing.T, scores []issues.TagRelevance, name string) issues.TagRelevance {
+func findScore(t *testing.T, scores []domain.TagRelevance, name string) domain.TagRelevance {
 	t.Helper()
 	for _, score := range scores {
 		if score.Tag == name {
@@ -118,7 +118,7 @@ func findScore(t *testing.T, scores []issues.TagRelevance, name string) issues.T
 		}
 	}
 	t.Fatalf("tag %q not found in %#v", name, scores)
-	return issues.TagRelevance{}
+	return domain.TagRelevance{}
 }
 
 func TestAnalyzeTextKeepsTagWithMatchedEvidenceRanges(t *testing.T) {

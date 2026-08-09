@@ -4,6 +4,7 @@ import (
 	"math"
 	"testing"
 
+	"sortit/internal/domain"
 	"sortit/internal/issues"
 	"sortit/internal/scoring"
 	"sortit/internal/vectors"
@@ -28,7 +29,7 @@ func TestComputeFactorDecomposition_PureFactorIssues(t *testing.T) {
 		items[i] = issues.Issue{
 			ID:  id,
 			Raw: "test issue " + id,
-			TagScores: []issues.TagRelevance{
+			TagScores: []domain.TagRelevance{
 				{Tag: "alpha", Relevance: w},
 				{Tag: "beta", Relevance: 1 - w},
 			},
@@ -109,7 +110,7 @@ func TestComputeFactorDecomposition_MixedVariance(t *testing.T) {
 		items[i] = issues.Issue{
 			ID:  id,
 			Raw: "test issue " + id,
-			TagScores: []issues.TagRelevance{
+			TagScores: []domain.TagRelevance{
 				{Tag: "alpha", Relevance: w},
 				{Tag: "beta", Relevance: 1 - w},
 			},
@@ -135,7 +136,7 @@ func TestComputeFactorDecomposition_TooFewIssues(t *testing.T) {
 	tagNames := []string{"alpha"}
 
 	items := []issues.Issue{
-		{ID: "a", Raw: "test", TagScores: []issues.TagRelevance{{Tag: "alpha", Relevance: 1}}},
+		{ID: "a", Raw: "test", TagScores: []domain.TagRelevance{{Tag: "alpha", Relevance: 1}}},
 	}
 	embeds := map[string][]float64{"a": unitVec([]float64{1, 0, 0, 0})}
 
@@ -182,7 +183,7 @@ func TestComputeFactorDecomposition_EmptyEmbeddings(t *testing.T) {
 		items[i] = issues.Issue{
 			ID:        id,
 			Raw:       "test",
-			TagScores: []issues.TagRelevance{{Tag: "alpha", Relevance: 0.9}},
+			TagScores: []domain.TagRelevance{{Tag: "alpha", Relevance: 0.9}},
 		}
 		// No embeddings provided.
 	}
@@ -211,7 +212,7 @@ func TestComputeFactorDecomposition_PartialValidBelowThresholdFallsBack(t *testi
 		items[i] = issues.Issue{
 			ID:        id,
 			Raw:       "test",
-			TagScores: []issues.TagRelevance{{Tag: "alpha", Relevance: 1}},
+			TagScores: []domain.TagRelevance{{Tag: "alpha", Relevance: 1}},
 		}
 		if i < 4 {
 			embeds[id] = unitVec([]float64{1, 0, 0, 0})
@@ -243,7 +244,7 @@ func TestDecomposeEmbedding_Consistency(t *testing.T) {
 	tagCov := buildTagCovariance(tagNames, tagEmb)
 
 	emb := unitVec([]float64{0.7, 0.3, 0.5, 0.1})
-	tags := []issues.TagRelevance{
+	tags := []domain.TagRelevance{
 		{Tag: "alpha", Relevance: 0.8},
 		{Tag: "beta", Relevance: 0.3},
 	}
@@ -410,10 +411,10 @@ func TestComputeFactorDecomposition_AntiAlignedEmbedding(t *testing.T) {
 	// Five aligned issues to satisfy MinDecompositionIssues, one anti-aligned.
 	for i := range 5 {
 		id := "aligned-" + string(rune('A'+i))
-		items = append(items, issues.Issue{ID: id, TagScores: []issues.TagRelevance{{Tag: "alpha", Relevance: 0.9}}})
+		items = append(items, issues.Issue{ID: id, TagScores: []domain.TagRelevance{{Tag: "alpha", Relevance: 0.9}}})
 		embeds[id] = unitVec([]float64{1, 0.2, 0.1, 0})
 	}
-	items = append(items, issues.Issue{ID: "anti", TagScores: []issues.TagRelevance{{Tag: "alpha", Relevance: 0.9}}})
+	items = append(items, issues.Issue{ID: "anti", TagScores: []domain.TagRelevance{{Tag: "alpha", Relevance: 0.9}}})
 	embeds["anti"] = unitVec([]float64{-1, 0, 0.1, 0})
 
 	decomp := ComputeFactorDecomposition(items, tagNames, embeds, tagEmb)
@@ -455,7 +456,7 @@ func TestComputeFactorDecomposition_DimensionMismatch(t *testing.T) {
 		items[i] = issues.Issue{
 			ID:        id,
 			Raw:       "test",
-			TagScores: []issues.TagRelevance{{Tag: "alpha", Relevance: 0.9}},
+			TagScores: []domain.TagRelevance{{Tag: "alpha", Relevance: 0.9}},
 		}
 		embeds[id] = unitVec([]float64{1, 0, 0}) // dim 3, mismatches tag dim 4
 	}
@@ -478,11 +479,11 @@ func TestComputeFactorDecomposition_PreservesRawNorms(t *testing.T) {
 	tagNames := []string{"alpha"}
 
 	items := []issues.Issue{
-		{ID: "pure-a", Raw: "test", TagScores: []issues.TagRelevance{{Tag: "alpha", Relevance: 1}}},
-		{ID: "mixed-a", Raw: "test", TagScores: []issues.TagRelevance{{Tag: "alpha", Relevance: 1}}},
-		{ID: "mixed-b", Raw: "test", TagScores: []issues.TagRelevance{{Tag: "alpha", Relevance: 1}}},
-		{ID: "mixed-c", Raw: "test", TagScores: []issues.TagRelevance{{Tag: "alpha", Relevance: 1}}},
-		{ID: "mixed-d", Raw: "test", TagScores: []issues.TagRelevance{{Tag: "alpha", Relevance: 1}}},
+		{ID: "pure-a", Raw: "test", TagScores: []domain.TagRelevance{{Tag: "alpha", Relevance: 1}}},
+		{ID: "mixed-a", Raw: "test", TagScores: []domain.TagRelevance{{Tag: "alpha", Relevance: 1}}},
+		{ID: "mixed-b", Raw: "test", TagScores: []domain.TagRelevance{{Tag: "alpha", Relevance: 1}}},
+		{ID: "mixed-c", Raw: "test", TagScores: []domain.TagRelevance{{Tag: "alpha", Relevance: 1}}},
+		{ID: "mixed-d", Raw: "test", TagScores: []domain.TagRelevance{{Tag: "alpha", Relevance: 1}}},
 	}
 	embeds := map[string][]float64{
 		"pure-a":  unitVec([]float64{1, 0, 0, 0}),

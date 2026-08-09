@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"sortit/internal/ai"
+	"sortit/internal/domain"
 	"sortit/internal/issues"
 	"sortit/internal/search"
 )
@@ -23,7 +24,7 @@ func TestUnifiedSearchEndpointReturnsIssuesAndRelatedTags(t *testing.T) {
 			CreatedBy: "Casey",
 			CreatedAt: issues.FixtureIssues()[0].CreatedAt,
 			Status:    issues.StatusOpen,
-			TagScores: []issues.TagRelevance{
+			TagScores: []domain.TagRelevance{
 				{Tag: "export", Relevance: 0.95},
 				{Tag: "safari", Relevance: 0.92},
 				{Tag: "bug", Relevance: 0.9},
@@ -36,7 +37,7 @@ func TestUnifiedSearchEndpointReturnsIssuesAndRelatedTags(t *testing.T) {
 			CreatedBy: "Jordan",
 			CreatedAt: issues.FixtureIssues()[1].CreatedAt,
 			Status:    issues.StatusOpen,
-			TagScores: []issues.TagRelevance{
+			TagScores: []domain.TagRelevance{
 				{Tag: "export", Relevance: 0.9},
 				{Tag: "safari", Relevance: 0.84},
 			},
@@ -48,7 +49,7 @@ func TestUnifiedSearchEndpointReturnsIssuesAndRelatedTags(t *testing.T) {
 			CreatedBy: "Casey",
 			CreatedAt: issues.FixtureIssues()[2].CreatedAt,
 			Status:    issues.StatusOpen,
-			TagScores: []issues.TagRelevance{
+			TagScores: []domain.TagRelevance{
 				{Tag: "backend", Relevance: 0.95},
 			},
 			Embedding: []float64{0, 1, 0},
@@ -125,7 +126,7 @@ func TestUnifiedSearchPrefersHigherContentConfidenceInNearTie(t *testing.T) {
 			CreatedBy: "Casey",
 			CreatedAt: issues.FixtureIssues()[0].CreatedAt,
 			Status:    issues.StatusOpen,
-			TagScores: []issues.TagRelevance{
+			TagScores: []domain.TagRelevance{
 				{Tag: "export", Relevance: 0.9},
 			},
 			Embedding: []float64{1, 0, 0},
@@ -136,7 +137,7 @@ func TestUnifiedSearchPrefersHigherContentConfidenceInNearTie(t *testing.T) {
 			CreatedBy: "Jordan",
 			CreatedAt: issues.FixtureIssues()[1].CreatedAt,
 			Status:    issues.StatusOpen,
-			TagScores: []issues.TagRelevance{
+			TagScores: []domain.TagRelevance{
 				{Tag: "export", Relevance: 0.9},
 			},
 			Embedding: []float64{1, 0, 0},
@@ -201,7 +202,7 @@ func TestUnifiedSearchBoostsRecentVelocity(t *testing.T) {
 			CreatedBy: "Casey",
 			CreatedAt: issues.FixtureIssues()[0].CreatedAt,
 			Status:    issues.StatusOpen,
-			TagScores: []issues.TagRelevance{{Tag: "export", Relevance: 0.9}},
+			TagScores: []domain.TagRelevance{{Tag: "export", Relevance: 0.9}},
 			Embedding: []float64{1, 0, 0},
 		},
 		{
@@ -210,7 +211,7 @@ func TestUnifiedSearchBoostsRecentVelocity(t *testing.T) {
 			CreatedBy: "Jordan",
 			CreatedAt: issues.FixtureIssues()[1].CreatedAt,
 			Status:    issues.StatusOpen,
-			TagScores: []issues.TagRelevance{{Tag: "export", Relevance: 0.9}},
+			TagScores: []domain.TagRelevance{{Tag: "export", Relevance: 0.9}},
 			Embedding: []float64{1, 0, 0},
 		},
 	}); err != nil {
@@ -285,7 +286,7 @@ func TestUnifiedSearchPrefersFreshIssueWhenBaseMatchIsEqual(t *testing.T) {
 			CreatedBy: "Casey",
 			CreatedAt: now.Add(-300 * 24 * time.Hour),
 			Status:    issues.StatusOpen,
-			TagScores: []issues.TagRelevance{{Tag: "export", Relevance: 0.9}},
+			TagScores: []domain.TagRelevance{{Tag: "export", Relevance: 0.9}},
 			Embedding: []float64{1, 0, 0},
 		},
 		{
@@ -294,7 +295,7 @@ func TestUnifiedSearchPrefersFreshIssueWhenBaseMatchIsEqual(t *testing.T) {
 			CreatedBy: "Jordan",
 			CreatedAt: now.Add(-24 * time.Hour),
 			Status:    issues.StatusOpen,
-			TagScores: []issues.TagRelevance{{Tag: "export", Relevance: 0.9}},
+			TagScores: []domain.TagRelevance{{Tag: "export", Relevance: 0.9}},
 			Embedding: []float64{1, 0, 0},
 		},
 	}); err != nil {

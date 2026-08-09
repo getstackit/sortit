@@ -6,6 +6,7 @@ import (
 	"reflect"
 	"testing"
 
+	"sortit/internal/domain"
 	"sortit/internal/issues"
 	"sortit/internal/ridgedecomp"
 	"sortit/internal/ridgelambda"
@@ -497,7 +498,7 @@ func groupIssue(grp, k, groups int) issues.Issue {
 	return issues.Issue{
 		ID:        fmt.Sprintf("g%02d-i%03d", grp, k),
 		Status:    issues.StatusOpen,
-		TagScores: []issues.TagRelevance{{Tag: fmt.Sprintf("grp-%d", grp), Relevance: 0.8 + jitter}},
+		TagScores: []domain.TagRelevance{{Tag: fmt.Sprintf("grp-%d", grp), Relevance: 0.8 + jitter}},
 		Embedding: axisEmbedding(grp, groups, jitter),
 	}
 }

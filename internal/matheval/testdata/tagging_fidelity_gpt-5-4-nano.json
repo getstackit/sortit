@@ -1,0 +1,4275 @@
+{
+  "generatedAt": "2026-08-08",
+  "command": "go run ./internal/matheval/cmd/tageval -live -models gpt-5.4-nano -runs 1 -date 2026-08-08 -out-dir internal/matheval/testdata",
+  "fixture": "matheval real corpus (48 issues, 16 tags; committed text-embedding-3-small vectors)",
+  "reports": [
+    {
+      "model": "gpt-5.4-nano",
+      "runs": 1,
+      "price": {
+        "inputPerMillionUsd": 0.2,
+        "outputPerMillionUsd": 1.25
+      },
+      "baselineRanking": {
+        "ndcgAt8": 0.939891,
+        "recallAt8": 0.919494
+      },
+      "summary": {
+        "issues": 48,
+        "microPrecision": 0.702703,
+        "microRecall": 0.78,
+        "microF1": 0.739336,
+        "macroPrecision": 0.684028,
+        "macroRecall": 0.729167,
+        "macroF1": 0.695833,
+        "correctRelevanceMean": 0.709744,
+        "incorrectRelevanceMean": 0.466364,
+        "correctAssignmentCount": 78,
+        "incorrectAssignmentCount": 33,
+        "negationFalsePositives": 0,
+        "negationCount": 0,
+        "negationFalsePositiveRate": 0,
+        "inputTokensPerIssue": 1205.4375,
+        "outputTokensPerIssue": 107.333333,
+        "costPer1KEnrichmentsUsd": 0.375254,
+        "spread": {
+          "microF1Min": 0.739336,
+          "microF1Max": 0.739336,
+          "macroF1Min": 0.695833,
+          "macroF1Max": 0.695833,
+          "ndcgAt8Min": 0.813779,
+          "ndcgAt8Max": 0.813779,
+          "recallAt8Min": 0.716071,
+          "recallAt8Max": 0.716071
+        }
+      },
+      "runData": [
+        {
+          "run": 1,
+          "stats": {
+            "issues": 48,
+            "microPrecision": 0.702703,
+            "microRecall": 0.78,
+            "microF1": 0.739336,
+            "macroPrecision": 0.684028,
+            "macroRecall": 0.729167,
+            "macroF1": 0.695833,
+            "correctRelevanceMean": 0.709744,
+            "incorrectRelevanceMean": 0.466364,
+            "correctAssignmentCount": 78,
+            "incorrectAssignmentCount": 33,
+            "negationFalsePositives": 0,
+            "negationCount": 0,
+            "negationFalsePositiveRate": 0,
+            "inputTokensPerIssue": 1205.4375,
+            "outputTokensPerIssue": 107.333333,
+            "costPer1KEnrichmentsUsd": 0.375254,
+            "spread": {
+              "microF1Min": 0,
+              "microF1Max": 0,
+              "macroF1Min": 0,
+              "macroF1Max": 0,
+              "ndcgAt8Min": 0,
+              "ndcgAt8Max": 0,
+              "recallAt8Min": 0,
+              "recallAt8Max": 0
+            }
+          },
+          "issues": [
+            {
+              "id": "auth-01",
+              "expectedTags": [
+                "auth",
+                "ui"
+              ],
+              "predictedTags": [
+                "auth",
+                "ui"
+              ],
+              "precision": 1,
+              "recall": 1,
+              "f1": 1,
+              "modelOutput": [
+                {
+                  "tag": "auth",
+                  "relevance": 0.9,
+                  "evidence": [
+                    "Session expires mid-form"
+                  ]
+                },
+                {
+                  "tag": "ui",
+                  "relevance": 0.35,
+                  "evidence": [
+                    "mid-form",
+                    "silently discards user input"
+                  ]
+                }
+              ],
+              "modelNegations": null,
+              "verifiedTagScores": [
+                {
+                  "tag": "auth",
+                  "relevance": 0.9,
+                  "candidateSources": [
+                    "retrieval"
+                  ],
+                  "alignment": 0.448,
+                  "specificity": 0.7,
+                  "verificationVerdict": "keep",
+                  "verificationReason": "grounded by source-text evidence",
+                  "evidence": [
+                    {
+                      "start": 0,
+                      "end": 24,
+                      "text": "Session expires mid-form",
+                      "source": "source_text",
+                      "kind": "direct_quote"
+                    }
+                  ]
+                },
+                {
+                  "tag": "ui",
+                  "relevance": 0.35,
+                  "candidateSources": [
+                    "retrieval",
+                    "anchor"
+                  ],
+                  "alignment": 0.255,
+                  "specificity": 0.3,
+                  "verificationVerdict": "keep",
+                  "verificationReason": "grounded by source-text evidence",
+                  "evidence": [
+                    {
+                      "start": 16,
+                      "end": 24,
+                      "text": "mid-form",
+                      "source": "source_text",
+                      "kind": "direct_quote"
+                    },
+                    {
+                      "start": 29,
+                      "end": 57,
+                      "text": "silently discards user input",
+                      "source": "source_text",
+                      "kind": "direct_quote"
+                    }
+                  ]
+                }
+              ],
+              "tokenUsage": {
+                "inputTokens": 1226,
+                "outputTokens": 101
+              }
+            },
+            {
+              "id": "auth-02",
+              "expectedTags": [
+                "auth",
+                "backend",
+                "login"
+              ],
+              "predictedTags": [
+                "auth",
+                "backend",
+                "email",
+                "login"
+              ],
+              "precision": 0.75,
+              "recall": 1,
+              "f1": 0.8571428571428571,
+              "modelOutput": [
+                {
+                  "tag": "auth",
+                  "relevance": 0.82,
+                  "evidence": [
+                    "OAuth login with Google"
+                  ]
+                },
+                {
+                  "tag": "backend",
+                  "relevance": 0.74,
+                  "evidence": [
+                    "returns 500"
+                  ]
+                },
+                {
+                  "tag": "email",
+                  "relevance": 0.62,
+                  "evidence": [
+                    "when email contains a plus sign"
+                  ]
+                },
+                {
+                  "tag": "login",
+                  "relevance": 0.86,
+                  "evidence": [
+                    "OAuth login with Google returns 500"
+                  ]
+                }
+              ],
+              "modelNegations": null,
+              "verifiedTagScores": [
+                {
+                  "tag": "login",
+                  "relevance": 0.86,
+                  "candidateSources": [
+                    "retrieval"
+                  ],
+                  "alignment": 0.35,
+                  "specificity": 0.75,
+                  "verificationVerdict": "keep",
+                  "verificationReason": "grounded by source-text evidence",
+                  "evidence": [
+                    {
+                      "start": 0,
+                      "end": 35,
+                      "text": "OAuth login with Google returns 500",
+                      "source": "source_text",
+                      "kind": "direct_quote"
+                    }
+                  ]
+                },
+                {
+                  "tag": "auth",
+                  "relevance": 0.82,
+                  "candidateSources": [
+                    "retrieval"
+                  ],
+                  "alignment": 0.331,
+                  "specificity": 0.7,
+                  "verificationVerdict": "keep",
+                  "verificationReason": "grounded by source-text evidence",
+                  "evidence": [
+                    {
+                      "start": 0,
+                      "end": 23,
+                      "text": "OAuth login with Google",
+                      "source": "source_text",
+                      "kind": "direct_quote"
+                    }
+                  ]
+                },
+                {
+                  "tag": "email",
+                  "relevance": 0.62,
+                  "candidateSources": [
+                    "retrieval"
+                  ],
+                  "alignment": 0.302,
+                  "specificity": 0.75,
+                  "verificationVerdict": "keep",
+                  "verificationReason": "grounded by source-text evidence",
+                  "evidence": [
+                    {
+                      "start": 36,
+                      "end": 67,
+                      "text": "when email contains a plus sign",
+                      "source": "source_text",
+                      "kind": "direct_quote"
+                    }
+                  ]
+                },
+                {
+                  "tag": "backend",
+                  "relevance": 0.444,
+                  "candidateSources": [
+                    "anchor"
+                  ],
+                  "alignment": 0.147,
+                  "specificity": 0.25,
+                  "verificationVerdict": "down-rank",
+                  "verificationReason": "tag embedding is anti-aligned (-0.068, centered) with the issue",
+                  "evidence": [
+                    {
+                      "start": 24,
+                      "end": 35,
+                      "text": "returns 500",
+                      "source": "source_text",
+                      "kind": "direct_quote"
+                    }
+                  ],
+                  "negation": 0.5,
+                  "negationProvenance": "verifier-dominance",
+                  "negationReason": "tag embedding is anti-aligned (-0.068, centered) with the issue"
+                }
+              ],
+              "tokenUsage": {
+                "inputTokens": 1204,
+                "outputTokens": 170
+              }
+            },
+            {
+              "id": "auth-03",
+              "expectedTags": [
+                "auth",
+                "email",
+                "login"
+              ],
+              "predictedTags": [
+                "auth",
+                "backend",
+                "email"
+              ],
+              "precision": 0.6666666666666666,
+              "recall": 0.6666666666666666,
+              "f1": 0.6666666666666666,
+              "modelOutput": [
+                {
+                  "tag": "auth",
+                  "relevance": 0.86,
+                  "evidence": [
+                    "Password reset link valid for 24 hours",
+                    "Password reset link"
+                  ]
+                },
+                {
+                  "tag": "backend",
+                  "relevance": 0.22,
+                  "evidence": [
+                    "valid for 24 hours"
+                  ]
+                },
+                {
+                  "tag": "email",
+                  "relevance": 0.74,
+                  "evidence": [
+                    "but the email says it expires in one hour"
+                  ]
+                }
+              ],
+              "modelNegations": null,
+              "verifiedTagScores": [
+                {
+                  "tag": "auth",
+                  "relevance": 0.86,
+                  "candidateSources": [
+                    "retrieval"
+                  ],
+                  "alignment": 0.272,
+                  "specificity": 0.7,
+                  "verificationVerdict": "keep",
+                  "verificationReason": "grounded by source-text evidence",
+                  "evidence": [
+                    {
+                      "start": 0,
+                      "end": 38,
+                      "text": "Password reset link valid for 24 hours",
+                      "source": "source_text",
+                      "kind": "direct_quote"
+                    },
+                    {
+                      "start": 0,
+                      "end": 19,
+                      "text": "Password reset link",
+                      "source": "source_text",
+                      "kind": "direct_quote"
+                    }
+                  ]
+                },
+                {
+                  "tag": "email",
+                  "relevance": 0.74,
+                  "candidateSources": [
+                    "retrieval"
+                  ],
+                  "alignment": 0.286,
+                  "specificity": 0.75,
+                  "verificationVerdict": "keep",
+                  "verificationReason": "grounded by source-text evidence",
+                  "evidence": [
+                    {
+                      "start": 39,
+                      "end": 80,
+                      "text": "but the email says it expires in one hour",
+                      "source": "source_text",
+                      "kind": "direct_quote"
+                    }
+                  ]
+                },
+                {
+                  "tag": "backend",
+                  "relevance": 0.132,
+                  "candidateSources": [
+                    "anchor"
+                  ],
+                  "alignment": 0.068,
+                  "specificity": 0.25,
+                  "verificationVerdict": "down-rank",
+                  "verificationReason": "tag embedding is anti-aligned (-0.098, centered) with the issue",
+                  "evidence": [
+                    {
+                      "start": 20,
+                      "end": 38,
+                      "text": "valid for 24 hours",
+                      "source": "source_text",
+                      "kind": "direct_quote"
+                    }
+                  ],
+                  "negation": 0.5,
+                  "negationProvenance": "verifier-dominance",
+                  "negationReason": "tag embedding is anti-aligned (-0.098, centered) with the issue"
+                }
+              ],
+              "tokenUsage": {
+                "inputTokens": 1208,
+                "outputTokens": 146
+              }
+            },
+            {
+              "id": "auth-04",
+              "expectedTags": [
+                "auth",
+                "backend"
+              ],
+              "predictedTags": [
+                "auth",
+                "backend"
+              ],
+              "precision": 1,
+              "recall": 1,
+              "f1": 1,
+              "modelOutput": [
+                {
+                  "tag": "auth",
+                  "relevance": 0.95,
+                  "evidence": [
+                    "JWT refresh race",
+                    "signs the user out"
+                  ]
+                },
+                {
+                  "tag": "backend",
+                  "relevance": 0.62,
+                  "evidence": [
+                    "JWT refresh race",
+                    "multiple tabs renew in parallel"
+                  ]
+                }
+              ],
+              "modelNegations": null,
+              "verifiedTagScores": [
+                {
+                  "tag": "auth",
+                  "relevance": 0.95,
+                  "candidateSources": [
+                    "retrieval"
+                  ],
+                  "alignment": 0.377,
+                  "specificity": 0.7,
+                  "verificationVerdict": "keep",
+                  "verificationReason": "grounded by source-text evidence",
+                  "evidence": [
+                    {
+                      "start": 0,
+                      "end": 16,
+                      "text": "JWT refresh race",
+                      "source": "source_text",
+                      "kind": "direct_quote"
+                    },
+                    {
+                      "start": 17,
+                      "end": 35,
+                      "text": "signs the user out",
+                      "source": "source_text",
+                      "kind": "direct_quote"
+                    }
+                  ]
+                },
+                {
+                  "tag": "backend",
+                  "relevance": 0.372,
+                  "candidateSources": [
+                    "retrieval",
+                    "anchor"
+                  ],
+                  "alignment": 0.203,
+                  "specificity": 0.25,
+                  "verificationVerdict": "keep",
+                  "verificationReason": "grounded by source-text evidence",
+                  "evidence": [
+                    {
+                      "start": 0,
+                      "end": 16,
+                      "text": "JWT refresh race",
+                      "source": "source_text",
+                      "kind": "direct_quote"
+                    },
+                    {
+                      "start": 41,
+                      "end": 72,
+                      "text": "multiple tabs renew in parallel",
+                      "source": "source_text",
+                      "kind": "direct_quote"
+                    }
+                  ]
+                }
+              ],
+              "tokenUsage": {
+                "inputTokens": 1221,
+                "outputTokens": 108
+              }
+            },
+            {
+              "id": "bill-01",
+              "expectedTags": [
+                "backend",
+                "billing",
+                "payments"
+              ],
+              "predictedTags": [
+                "backend",
+                "billing",
+                "payments"
+              ],
+              "precision": 1,
+              "recall": 1,
+              "f1": 1,
+              "modelOutput": [
+                {
+                  "tag": "backend",
+                  "relevance": 0.18
+                },
+                {
+                  "tag": "billing",
+                  "relevance": 0.9,
+                  "evidence": [
+                    "same invoice",
+                    "charged twice"
+                  ]
+                },
+                {
+                  "tag": "payments",
+                  "relevance": 0.95,
+                  "evidence": [
+                    "failed card payment",
+                    "charged twice for the same invoice"
+                  ]
+                }
+              ],
+              "modelNegations": null,
+              "verifiedTagScores": [
+                {
+                  "tag": "payments",
+                  "relevance": 0.95,
+                  "candidateSources": [
+                    "retrieval"
+                  ],
+                  "alignment": 0.491,
+                  "specificity": 0.8,
+                  "verificationVerdict": "keep",
+                  "verificationReason": "grounded by source-text evidence",
+                  "evidence": [
+                    {
+                      "start": 61,
+                      "end": 80,
+                      "text": "failed card payment",
+                      "source": "source_text",
+                      "kind": "direct_quote"
+                    },
+                    {
+                      "start": 9,
+                      "end": 43,
+                      "text": "charged twice for the same invoice",
+                      "source": "source_text",
+                      "kind": "direct_quote"
+                    }
+                  ]
+                },
+                {
+                  "tag": "billing",
+                  "relevance": 0.9,
+                  "candidateSources": [
+                    "retrieval"
+                  ],
+                  "alignment": 0.379,
+                  "specificity": 0.75,
+                  "verificationVerdict": "keep",
+                  "verificationReason": "grounded by source-text evidence",
+                  "evidence": [
+                    {
+                      "start": 31,
+                      "end": 43,
+                      "text": "same invoice",
+                      "source": "source_text",
+                      "kind": "direct_quote"
+                    },
+                    {
+                      "start": 9,
+                      "end": 22,
+                      "text": "charged twice",
+                      "source": "source_text",
+                      "kind": "direct_quote"
+                    }
+                  ]
+                },
+                {
+                  "tag": "backend",
+                  "relevance": 0.108,
+                  "candidateSources": [
+                    "anchor"
+                  ],
+                  "alignment": 0.143,
+                  "specificity": 0.25,
+                  "verificationVerdict": "down-rank",
+                  "verificationReason": "tag embedding is anti-aligned (-0.063, centered) with the issue",
+                  "negation": 0.5,
+                  "negationProvenance": "verifier-dominance",
+                  "negationReason": "tag embedding is anti-aligned (-0.063, centered) with the issue"
+                }
+              ],
+              "tokenUsage": {
+                "inputTokens": 1210,
+                "outputTokens": 126
+              }
+            },
+            {
+              "id": "bill-02",
+              "expectedTags": [
+                "billing",
+                "payments",
+                "ui"
+              ],
+              "predictedTags": [
+                "billing",
+                "payments",
+                "ui: general user interface"
+              ],
+              "precision": 0.6666666666666666,
+              "recall": 0.6666666666666666,
+              "f1": 0.6666666666666666,
+              "modelOutput": [
+                {
+                  "tag": "billing",
+                  "relevance": 0.95,
+                  "evidence": [
+                    "Refund issued in Stripe",
+                    "invoice still shows as unpaid",
+                    "billing dashboard"
+                  ]
+                },
+                {
+                  "tag": "payments",
+                  "relevance": 0.72,
+                  "evidence": [
+                    "Refund issued in Stripe",
+                    "invoice still shows as unpaid"
+                  ]
+                },
+                {
+                  "tag": "ui: general user interface",
+                  "relevance": 0.18,
+                  "evidence": [
+                    "invoice still shows as unpaid in the billing dashboard"
+                  ]
+                }
+              ],
+              "modelNegations": null,
+              "verifiedTagScores": [
+                {
+                  "tag": "billing",
+                  "relevance": 0.95,
+                  "candidateSources": [
+                    "retrieval"
+                  ],
+                  "alignment": 0.469,
+                  "specificity": 0.75,
+                  "verificationVerdict": "keep",
+                  "verificationReason": "grounded by source-text evidence",
+                  "evidence": [
+                    {
+                      "start": 0,
+                      "end": 23,
+                      "text": "Refund issued in Stripe",
+                      "source": "source_text",
+                      "kind": "direct_quote"
+                    },
+                    {
+                      "start": 28,
+                      "end": 57,
+                      "text": "invoice still shows as unpaid",
+                      "source": "source_text",
+                      "kind": "direct_quote"
+                    },
+                    {
+                      "start": 65,
+                      "end": 82,
+                      "text": "billing dashboard",
+                      "source": "source_text",
+                      "kind": "direct_quote"
+                    }
+                  ]
+                },
+                {
+                  "tag": "payments",
+                  "relevance": 0.72,
+                  "candidateSources": [
+                    "retrieval"
+                  ],
+                  "alignment": 0.317,
+                  "specificity": 0.8,
+                  "verificationVerdict": "keep",
+                  "verificationReason": "grounded by source-text evidence",
+                  "evidence": [
+                    {
+                      "start": 0,
+                      "end": 23,
+                      "text": "Refund issued in Stripe",
+                      "source": "source_text",
+                      "kind": "direct_quote"
+                    },
+                    {
+                      "start": 28,
+                      "end": 57,
+                      "text": "invoice still shows as unpaid",
+                      "source": "source_text",
+                      "kind": "direct_quote"
+                    }
+                  ]
+                },
+                {
+                  "tag": "ui: general user interface",
+                  "relevance": 0.18,
+                  "verificationVerdict": "keep",
+                  "verificationReason": "grounded by source-text evidence",
+                  "evidence": [
+                    {
+                      "start": 28,
+                      "end": 82,
+                      "text": "invoice still shows as unpaid in the billing dashboard",
+                      "source": "source_text",
+                      "kind": "direct_quote"
+                    }
+                  ]
+                }
+              ],
+              "tokenUsage": {
+                "inputTokens": 1211,
+                "outputTokens": 160
+              }
+            },
+            {
+              "id": "bill-03",
+              "expectedTags": [
+                "backend",
+                "billing"
+              ],
+              "predictedTags": [
+                "backend",
+                "billing"
+              ],
+              "precision": 1,
+              "recall": 1,
+              "f1": 1,
+              "modelOutput": [
+                {
+                  "tag": "backend",
+                  "relevance": 0.22,
+                  "evidence": [
+                    "Proration math wrong",
+                    "invoice total off by one day"
+                  ]
+                },
+                {
+                  "tag": "billing",
+                  "relevance": 0.93,
+                  "evidence": [
+                    "Proration math wrong",
+                    "invoice total off"
+                  ]
+                }
+              ],
+              "modelNegations": null,
+              "verifiedTagScores": [
+                {
+                  "tag": "billing",
+                  "relevance": 0.93,
+                  "candidateSources": [
+                    "retrieval"
+                  ],
+                  "alignment": 0.332,
+                  "specificity": 0.75,
+                  "verificationVerdict": "keep",
+                  "verificationReason": "grounded by source-text evidence",
+                  "evidence": [
+                    {
+                      "start": 0,
+                      "end": 20,
+                      "text": "Proration math wrong",
+                      "source": "source_text",
+                      "kind": "direct_quote"
+                    },
+                    {
+                      "start": 47,
+                      "end": 64,
+                      "text": "invoice total off",
+                      "source": "source_text",
+                      "kind": "direct_quote"
+                    }
+                  ]
+                },
+                {
+                  "tag": "backend",
+                  "relevance": 0.132,
+                  "candidateSources": [
+                    "anchor"
+                  ],
+                  "alignment": 0.177,
+                  "specificity": 0.25,
+                  "verificationVerdict": "keep",
+                  "verificationReason": "grounded by source-text evidence",
+                  "evidence": [
+                    {
+                      "start": 0,
+                      "end": 20,
+                      "text": "Proration math wrong",
+                      "source": "source_text",
+                      "kind": "direct_quote"
+                    },
+                    {
+                      "start": 47,
+                      "end": 75,
+                      "text": "invoice total off by one day",
+                      "source": "source_text",
+                      "kind": "direct_quote"
+                    }
+                  ]
+                }
+              ],
+              "tokenUsage": {
+                "inputTokens": 1209,
+                "outputTokens": 109
+              }
+            },
+            {
+              "id": "bill-04",
+              "expectedTags": [
+                "billing"
+              ],
+              "predictedTags": [
+                "billing: billing, invoices, charges, and refunds"
+              ],
+              "precision": 0,
+              "recall": 0,
+              "f1": 0,
+              "modelOutput": [
+                {
+                  "tag": "billing: billing, invoices, charges, and refunds",
+                  "relevance": 0.9,
+                  "evidence": [
+                    "VAT not applied to invoices",
+                    "invoices for EU customers",
+                    "annual plans"
+                  ]
+                }
+              ],
+              "modelNegations": null,
+              "verifiedTagScores": [
+                {
+                  "tag": "billing: billing, invoices, charges, and refunds",
+                  "relevance": 0.9,
+                  "verificationVerdict": "keep",
+                  "verificationReason": "grounded by source-text evidence",
+                  "evidence": [
+                    {
+                      "start": 0,
+                      "end": 27,
+                      "text": "VAT not applied to invoices",
+                      "source": "source_text",
+                      "kind": "direct_quote"
+                    },
+                    {
+                      "start": 19,
+                      "end": 44,
+                      "text": "invoices for EU customers",
+                      "source": "source_text",
+                      "kind": "direct_quote"
+                    },
+                    {
+                      "start": 48,
+                      "end": 60,
+                      "text": "annual plans",
+                      "source": "source_text",
+                      "kind": "direct_quote"
+                    }
+                  ]
+                }
+              ],
+              "tokenUsage": {
+                "inputTokens": 1199,
+                "outputTokens": 81
+              }
+            },
+            {
+              "id": "db-01",
+              "expectedTags": [
+                "backend",
+                "database"
+              ],
+              "predictedTags": [
+                "backend",
+                "database"
+              ],
+              "precision": 1,
+              "recall": 1,
+              "f1": 1,
+              "modelOutput": [
+                {
+                  "tag": "backend",
+                  "relevance": 0.62,
+                  "evidence": [
+                    "Deadlock between the issue update and tag recount transactions"
+                  ]
+                },
+                {
+                  "tag": "database",
+                  "relevance": 0.86,
+                  "evidence": [
+                    "Deadlock between the issue update and tag recount transactions"
+                  ]
+                }
+              ],
+              "modelNegations": null,
+              "verifiedTagScores": [
+                {
+                  "tag": "database",
+                  "relevance": 0.86,
+                  "candidateSources": [
+                    "retrieval"
+                  ],
+                  "alignment": 0.218,
+                  "specificity": 0.6,
+                  "verificationVerdict": "keep",
+                  "verificationReason": "grounded by source-text evidence",
+                  "evidence": [
+                    {
+                      "start": 0,
+                      "end": 62,
+                      "text": "Deadlock between the issue update and tag recount transactions",
+                      "source": "source_text",
+                      "kind": "direct_quote"
+                    }
+                  ]
+                },
+                {
+                  "tag": "backend",
+                  "relevance": 0.372,
+                  "candidateSources": [
+                    "retrieval",
+                    "anchor"
+                  ],
+                  "alignment": 0.253,
+                  "specificity": 0.25,
+                  "verificationVerdict": "keep",
+                  "verificationReason": "grounded by source-text evidence",
+                  "evidence": [
+                    {
+                      "start": 0,
+                      "end": 62,
+                      "text": "Deadlock between the issue update and tag recount transactions",
+                      "source": "source_text",
+                      "kind": "direct_quote"
+                    }
+                  ]
+                }
+              ],
+              "tokenUsage": {
+                "inputTokens": 1217,
+                "outputTokens": 106
+              }
+            },
+            {
+              "id": "db-02",
+              "expectedTags": [
+                "database",
+                "migration"
+              ],
+              "predictedTags": [
+                "backend",
+                "database",
+                "migration"
+              ],
+              "precision": 0.6666666666666666,
+              "recall": 1,
+              "f1": 0.8,
+              "modelOutput": [
+                {
+                  "tag": "backend",
+                  "relevance": 0.28,
+                  "evidence": [
+                    "Migration 0042 fails"
+                  ]
+                },
+                {
+                  "tag": "database",
+                  "relevance": 0.72,
+                  "evidence": [
+                    "on Postgres 14",
+                    "concurrent index build"
+                  ]
+                },
+                {
+                  "tag": "migration",
+                  "relevance": 0.95,
+                  "evidence": [
+                    "Migration 0042 fails"
+                  ]
+                }
+              ],
+              "modelNegations": null,
+              "verifiedTagScores": [
+                {
+                  "tag": "migration",
+                  "relevance": 0.95,
+                  "candidateSources": [
+                    "retrieval"
+                  ],
+                  "alignment": 0.468,
+                  "specificity": 0.8,
+                  "verificationVerdict": "keep",
+                  "verificationReason": "grounded by source-text evidence",
+                  "evidence": [
+                    {
+                      "start": 0,
+                      "end": 20,
+                      "text": "Migration 0042 fails",
+                      "source": "source_text",
+                      "kind": "direct_quote"
+                    }
+                  ]
+                },
+                {
+                  "tag": "database",
+                  "relevance": 0.72,
+                  "candidateSources": [
+                    "retrieval"
+                  ],
+                  "alignment": 0.26,
+                  "specificity": 0.6,
+                  "verificationVerdict": "keep",
+                  "verificationReason": "grounded by source-text evidence",
+                  "evidence": [
+                    {
+                      "start": 21,
+                      "end": 35,
+                      "text": "on Postgres 14",
+                      "source": "source_text",
+                      "kind": "direct_quote"
+                    },
+                    {
+                      "start": 45,
+                      "end": 67,
+                      "text": "concurrent index build",
+                      "source": "source_text",
+                      "kind": "direct_quote"
+                    }
+                  ]
+                },
+                {
+                  "tag": "backend",
+                  "relevance": 0.168,
+                  "candidateSources": [
+                    "retrieval",
+                    "anchor"
+                  ],
+                  "alignment": 0.287,
+                  "specificity": 0.25,
+                  "verificationVerdict": "keep",
+                  "verificationReason": "grounded by source-text evidence",
+                  "evidence": [
+                    {
+                      "start": 0,
+                      "end": 20,
+                      "text": "Migration 0042 fails",
+                      "source": "source_text",
+                      "kind": "direct_quote"
+                    }
+                  ]
+                }
+              ],
+              "tokenUsage": {
+                "inputTokens": 1197,
+                "outputTokens": 140
+              }
+            },
+            {
+              "id": "db-03",
+              "expectedTags": [
+                "backend",
+                "database",
+                "performance"
+              ],
+              "predictedTags": [
+                "backend: general backend/server work",
+                "database",
+                "performance",
+                "ui: general user interface"
+              ],
+              "precision": 0.5,
+              "recall": 0.6666666666666666,
+              "f1": 0.5714285714285715,
+              "modelOutput": [
+                {
+                  "tag": "backend: general backend/server work",
+                  "relevance": 0.18
+                },
+                {
+                  "tag": "database",
+                  "relevance": 0.78,
+                  "evidence": [
+                    "Read replica lag"
+                  ]
+                },
+                {
+                  "tag": "performance",
+                  "relevance": 0.9,
+                  "evidence": [
+                    "Read replica lag causes stale issue counts"
+                  ]
+                },
+                {
+                  "tag": "ui: general user interface",
+                  "relevance": 0.35,
+                  "evidence": [
+                    "stale issue counts on the dashboard"
+                  ]
+                }
+              ],
+              "modelNegations": null,
+              "verifiedTagScores": [
+                {
+                  "tag": "performance",
+                  "relevance": 0.9,
+                  "candidateSources": [
+                    "retrieval",
+                    "anchor"
+                  ],
+                  "alignment": 0.315,
+                  "specificity": 0.5,
+                  "verificationVerdict": "keep",
+                  "verificationReason": "grounded by source-text evidence",
+                  "evidence": [
+                    {
+                      "start": 0,
+                      "end": 42,
+                      "text": "Read replica lag causes stale issue counts",
+                      "source": "source_text",
+                      "kind": "direct_quote"
+                    }
+                  ]
+                },
+                {
+                  "tag": "database",
+                  "relevance": 0.78,
+                  "candidateSources": [
+                    "retrieval"
+                  ],
+                  "alignment": 0.239,
+                  "specificity": 0.6,
+                  "verificationVerdict": "keep",
+                  "verificationReason": "grounded by source-text evidence",
+                  "evidence": [
+                    {
+                      "start": 0,
+                      "end": 16,
+                      "text": "Read replica lag",
+                      "source": "source_text",
+                      "kind": "direct_quote"
+                    }
+                  ]
+                },
+                {
+                  "tag": "ui: general user interface",
+                  "relevance": 0.35,
+                  "verificationVerdict": "keep",
+                  "verificationReason": "grounded by source-text evidence",
+                  "evidence": [
+                    {
+                      "start": 24,
+                      "end": 59,
+                      "text": "stale issue counts on the dashboard",
+                      "source": "source_text",
+                      "kind": "direct_quote"
+                    }
+                  ]
+                },
+                {
+                  "tag": "backend: general backend/server work",
+                  "relevance": 0.18,
+                  "verificationVerdict": "keep"
+                }
+              ],
+              "tokenUsage": {
+                "inputTokens": 1191,
+                "outputTokens": 165
+              }
+            },
+            {
+              "id": "db-04",
+              "expectedTags": [
+                "database",
+                "performance"
+              ],
+              "predictedTags": [
+                "backend",
+                "performance"
+              ],
+              "precision": 0.5,
+              "recall": 0.5,
+              "f1": 0.5,
+              "modelOutput": [
+                {
+                  "tag": "backend",
+                  "relevance": 0.62,
+                  "evidence": [
+                    "Nightly vacuum window overlaps with the backup job"
+                  ]
+                },
+                {
+                  "tag": "performance",
+                  "relevance": 0.86,
+                  "evidence": [
+                    "stalls writes"
+                  ]
+                }
+              ],
+              "modelNegations": null,
+              "verifiedTagScores": [
+                {
+                  "tag": "performance",
+                  "relevance": 0.86,
+                  "candidateSources": [
+                    "retrieval",
+                    "anchor"
+                  ],
+                  "alignment": 0.222,
+                  "specificity": 0.5,
+                  "verificationVerdict": "keep",
+                  "verificationReason": "grounded by source-text evidence",
+                  "evidence": [
+                    {
+                      "start": 55,
+                      "end": 68,
+                      "text": "stalls writes",
+                      "source": "source_text",
+                      "kind": "direct_quote"
+                    }
+                  ]
+                },
+                {
+                  "tag": "backend",
+                  "relevance": 0.372,
+                  "candidateSources": [
+                    "retrieval",
+                    "anchor"
+                  ],
+                  "alignment": 0.264,
+                  "specificity": 0.25,
+                  "verificationVerdict": "keep",
+                  "verificationReason": "grounded by source-text evidence",
+                  "evidence": [
+                    {
+                      "start": 0,
+                      "end": 50,
+                      "text": "Nightly vacuum window overlaps with the backup job",
+                      "source": "source_text",
+                      "kind": "direct_quote"
+                    }
+                  ]
+                }
+              ],
+              "tokenUsage": {
+                "inputTokens": 1179,
+                "outputTokens": 60
+              }
+            },
+            {
+              "id": "email-01",
+              "expectedTags": [
+                "email",
+                "ui"
+              ],
+              "predictedTags": [
+                "email",
+                "ui"
+              ],
+              "precision": 1,
+              "recall": 1,
+              "f1": 1,
+              "modelOutput": [
+                {
+                  "tag": "email",
+                  "relevance": 0.86,
+                  "evidence": [
+                    "Digest email renders broken in Outlook dark mode"
+                  ]
+                },
+                {
+                  "tag": "ui",
+                  "relevance": 0.62,
+                  "evidence": [
+                    "renders broken in Outlook dark mode"
+                  ]
+                }
+              ],
+              "modelNegations": null,
+              "verifiedTagScores": [
+                {
+                  "tag": "email",
+                  "relevance": 0.86,
+                  "candidateSources": [
+                    "retrieval"
+                  ],
+                  "alignment": 0.415,
+                  "specificity": 0.75,
+                  "verificationVerdict": "keep",
+                  "verificationReason": "grounded by source-text evidence",
+                  "evidence": [
+                    {
+                      "start": 0,
+                      "end": 48,
+                      "text": "Digest email renders broken in Outlook dark mode",
+                      "source": "source_text",
+                      "kind": "direct_quote"
+                    }
+                  ]
+                },
+                {
+                  "tag": "ui",
+                  "relevance": 0.62,
+                  "candidateSources": [
+                    "retrieval",
+                    "anchor"
+                  ],
+                  "alignment": 0.232,
+                  "specificity": 0.3,
+                  "verificationVerdict": "keep",
+                  "verificationReason": "grounded by source-text evidence",
+                  "evidence": [
+                    {
+                      "start": 13,
+                      "end": 48,
+                      "text": "renders broken in Outlook dark mode",
+                      "source": "source_text",
+                      "kind": "direct_quote"
+                    }
+                  ]
+                }
+              ],
+              "tokenUsage": {
+                "inputTokens": 1208,
+                "outputTokens": 100
+              }
+            },
+            {
+              "id": "email-02",
+              "expectedTags": [
+                "backend",
+                "email"
+              ],
+              "predictedTags": [
+                "backend",
+                "email",
+                "notifications"
+              ],
+              "precision": 0.6666666666666666,
+              "recall": 1,
+              "f1": 0.8,
+              "modelOutput": [
+                {
+                  "tag": "backend",
+                  "relevance": 0.28
+                },
+                {
+                  "tag": "email",
+                  "relevance": 0.86,
+                  "evidence": [
+                    "Bounced emails",
+                    "Bounced emails are never retried"
+                  ]
+                },
+                {
+                  "tag": "notifications",
+                  "relevance": 0.62,
+                  "evidence": [
+                    "no alert is raised"
+                  ]
+                }
+              ],
+              "modelNegations": null,
+              "verifiedTagScores": [
+                {
+                  "tag": "email",
+                  "relevance": 0.86,
+                  "candidateSources": [
+                    "retrieval"
+                  ],
+                  "alignment": 0.376,
+                  "specificity": 0.75,
+                  "verificationVerdict": "keep",
+                  "verificationReason": "grounded by source-text evidence",
+                  "evidence": [
+                    {
+                      "start": 0,
+                      "end": 14,
+                      "text": "Bounced emails",
+                      "source": "source_text",
+                      "kind": "direct_quote"
+                    },
+                    {
+                      "start": 0,
+                      "end": 32,
+                      "text": "Bounced emails are never retried",
+                      "source": "source_text",
+                      "kind": "direct_quote"
+                    }
+                  ]
+                },
+                {
+                  "tag": "notifications",
+                  "relevance": 0.62,
+                  "candidateSources": [
+                    "retrieval"
+                  ],
+                  "alignment": 0.295,
+                  "specificity": 0.7,
+                  "verificationVerdict": "keep",
+                  "verificationReason": "grounded by source-text evidence",
+                  "evidence": [
+                    {
+                      "start": 37,
+                      "end": 55,
+                      "text": "no alert is raised",
+                      "source": "source_text",
+                      "kind": "direct_quote"
+                    }
+                  ]
+                },
+                {
+                  "tag": "backend",
+                  "relevance": 0.168,
+                  "candidateSources": [
+                    "anchor"
+                  ],
+                  "alignment": 0.2,
+                  "specificity": 0.25,
+                  "verificationVerdict": "keep"
+                }
+              ],
+              "tokenUsage": {
+                "inputTokens": 1212,
+                "outputTokens": 124
+              }
+            },
+            {
+              "id": "email-03",
+              "expectedTags": [
+                "email"
+              ],
+              "predictedTags": [
+                "email: email delivery and templates"
+              ],
+              "precision": 0,
+              "recall": 0,
+              "f1": 0,
+              "modelOutput": [
+                {
+                  "tag": "email: email delivery and templates",
+                  "relevance": 0.86,
+                  "evidence": [
+                    "Invitation emails land in spam"
+                  ]
+                }
+              ],
+              "modelNegations": null,
+              "verifiedTagScores": [
+                {
+                  "tag": "email: email delivery and templates",
+                  "relevance": 0.86,
+                  "verificationVerdict": "keep",
+                  "verificationReason": "grounded by source-text evidence",
+                  "evidence": [
+                    {
+                      "start": 0,
+                      "end": 30,
+                      "text": "Invitation emails land in spam",
+                      "source": "source_text",
+                      "kind": "direct_quote"
+                    }
+                  ]
+                }
+              ],
+              "tokenUsage": {
+                "inputTokens": 1192,
+                "outputTokens": 64
+              }
+            },
+            {
+              "id": "exp-01",
+              "expectedTags": [
+                "export",
+                "pdf"
+              ],
+              "predictedTags": [
+                "backend",
+                "export",
+                "pdf"
+              ],
+              "precision": 0.6666666666666666,
+              "recall": 1,
+              "f1": 0.8,
+              "modelOutput": [
+                {
+                  "tag": "backend",
+                  "relevance": 0.22
+                },
+                {
+                  "tag": "export",
+                  "relevance": 0.86,
+                  "evidence": [
+                    "PDF export renders blank pages"
+                  ]
+                },
+                {
+                  "tag": "pdf",
+                  "relevance": 0.84,
+                  "evidence": [
+                    "PDF export renders blank pages"
+                  ]
+                }
+              ],
+              "modelNegations": null,
+              "verifiedTagScores": [
+                {
+                  "tag": "export",
+                  "relevance": 0.86,
+                  "candidateSources": [
+                    "retrieval",
+                    "anchor"
+                  ],
+                  "alignment": 0.514,
+                  "specificity": 0.7,
+                  "verificationVerdict": "keep",
+                  "verificationReason": "grounded by source-text evidence",
+                  "evidence": [
+                    {
+                      "start": 0,
+                      "end": 30,
+                      "text": "PDF export renders blank pages",
+                      "source": "source_text",
+                      "kind": "direct_quote"
+                    }
+                  ]
+                },
+                {
+                  "tag": "pdf",
+                  "relevance": 0.84,
+                  "candidateSources": [
+                    "retrieval"
+                  ],
+                  "alignment": 0.5,
+                  "specificity": 0.85,
+                  "verificationVerdict": "keep",
+                  "verificationReason": "grounded by source-text evidence",
+                  "evidence": [
+                    {
+                      "start": 0,
+                      "end": 30,
+                      "text": "PDF export renders blank pages",
+                      "source": "source_text",
+                      "kind": "direct_quote"
+                    }
+                  ]
+                },
+                {
+                  "tag": "backend",
+                  "relevance": 0.132,
+                  "candidateSources": [
+                    "anchor"
+                  ],
+                  "alignment": 0.128,
+                  "specificity": 0.25,
+                  "verificationVerdict": "down-rank",
+                  "verificationReason": "tag embedding is anti-aligned (-0.123, centered) with the issue",
+                  "negation": 0.5,
+                  "negationProvenance": "verifier-dominance",
+                  "negationReason": "tag embedding is anti-aligned (-0.123, centered) with the issue"
+                }
+              ],
+              "tokenUsage": {
+                "inputTokens": 1193,
+                "outputTokens": 117
+              }
+            },
+            {
+              "id": "exp-02",
+              "expectedTags": [
+                "backend",
+                "export"
+              ],
+              "predictedTags": [
+                "database",
+                "export"
+              ],
+              "precision": 0.5,
+              "recall": 0.5,
+              "f1": 0.5,
+              "modelOutput": [
+                {
+                  "tag": "database",
+                  "relevance": 0.12
+                },
+                {
+                  "tag": "export",
+                  "relevance": 0.9,
+                  "evidence": [
+                    "CSV export drops rows"
+                  ]
+                }
+              ],
+              "modelNegations": null,
+              "verifiedTagScores": [
+                {
+                  "tag": "export",
+                  "relevance": 0.9,
+                  "candidateSources": [
+                    "retrieval",
+                    "anchor"
+                  ],
+                  "alignment": 0.432,
+                  "specificity": 0.7,
+                  "verificationVerdict": "keep",
+                  "verificationReason": "grounded by source-text evidence",
+                  "evidence": [
+                    {
+                      "start": 0,
+                      "end": 21,
+                      "text": "CSV export drops rows",
+                      "source": "source_text",
+                      "kind": "direct_quote"
+                    }
+                  ]
+                },
+                {
+                  "tag": "database",
+                  "relevance": 0.12,
+                  "candidateSources": [
+                    "retrieval"
+                  ],
+                  "alignment": 0.234,
+                  "specificity": 0.6,
+                  "verificationVerdict": "keep"
+                }
+              ],
+              "tokenUsage": {
+                "inputTokens": 1207,
+                "outputTokens": 79
+              }
+            },
+            {
+              "id": "exp-03",
+              "expectedTags": [
+                "export",
+                "pdf",
+                "performance"
+              ],
+              "predictedTags": [
+                "backend",
+                "export",
+                "pdf",
+                "performance"
+              ],
+              "precision": 0.75,
+              "recall": 1,
+              "f1": 0.8571428571428571,
+              "modelOutput": [
+                {
+                  "tag": "backend",
+                  "relevance": 0.18
+                },
+                {
+                  "tag": "export",
+                  "relevance": 0.86,
+                  "evidence": [
+                    "Export as PDF"
+                  ]
+                },
+                {
+                  "tag": "pdf",
+                  "relevance": 0.84,
+                  "evidence": [
+                    "Export as PDF"
+                  ]
+                },
+                {
+                  "tag": "performance",
+                  "relevance": 0.62,
+                  "evidence": [
+                    "times out"
+                  ]
+                }
+              ],
+              "modelNegations": null,
+              "verifiedTagScores": [
+                {
+                  "tag": "export",
+                  "relevance": 0.86,
+                  "candidateSources": [
+                    "retrieval",
+                    "anchor"
+                  ],
+                  "alignment": 0.482,
+                  "specificity": 0.7,
+                  "verificationVerdict": "keep",
+                  "verificationReason": "grounded by source-text evidence",
+                  "evidence": [
+                    {
+                      "start": 0,
+                      "end": 13,
+                      "text": "Export as PDF",
+                      "source": "source_text",
+                      "kind": "direct_quote"
+                    }
+                  ]
+                },
+                {
+                  "tag": "pdf",
+                  "relevance": 0.84,
+                  "candidateSources": [
+                    "retrieval"
+                  ],
+                  "alignment": 0.417,
+                  "specificity": 0.85,
+                  "verificationVerdict": "keep",
+                  "verificationReason": "grounded by source-text evidence",
+                  "evidence": [
+                    {
+                      "start": 0,
+                      "end": 13,
+                      "text": "Export as PDF",
+                      "source": "source_text",
+                      "kind": "direct_quote"
+                    }
+                  ]
+                },
+                {
+                  "tag": "performance",
+                  "relevance": 0.62,
+                  "candidateSources": [
+                    "retrieval",
+                    "anchor"
+                  ],
+                  "alignment": 0.202,
+                  "specificity": 0.5,
+                  "verificationVerdict": "keep",
+                  "verificationReason": "grounded by source-text evidence",
+                  "evidence": [
+                    {
+                      "start": 14,
+                      "end": 23,
+                      "text": "times out",
+                      "source": "source_text",
+                      "kind": "direct_quote"
+                    }
+                  ]
+                },
+                {
+                  "tag": "backend",
+                  "relevance": 0.108,
+                  "candidateSources": [
+                    "anchor"
+                  ],
+                  "alignment": 0.194,
+                  "specificity": 0.25,
+                  "verificationVerdict": "keep"
+                }
+              ],
+              "tokenUsage": {
+                "inputTokens": 1202,
+                "outputTokens": 147
+              }
+            },
+            {
+              "id": "exp-04",
+              "expectedTags": [
+                "email",
+                "export"
+              ],
+              "predictedTags": [
+                "email",
+                "export"
+              ],
+              "precision": 1,
+              "recall": 1,
+              "f1": 1,
+              "modelOutput": [
+                {
+                  "tag": "email",
+                  "relevance": 0.62,
+                  "evidence": [
+                    "Scheduled export email arrives with a corrupted attachment"
+                  ]
+                },
+                {
+                  "tag": "export",
+                  "relevance": 0.86,
+                  "evidence": [
+                    "Scheduled export email arrives with a corrupted attachment"
+                  ]
+                }
+              ],
+              "modelNegations": null,
+              "verifiedTagScores": [
+                {
+                  "tag": "export",
+                  "relevance": 0.86,
+                  "candidateSources": [
+                    "retrieval",
+                    "anchor"
+                  ],
+                  "alignment": 0.408,
+                  "specificity": 0.7,
+                  "verificationVerdict": "keep",
+                  "verificationReason": "grounded by source-text evidence",
+                  "evidence": [
+                    {
+                      "start": 0,
+                      "end": 58,
+                      "text": "Scheduled export email arrives with a corrupted attachment",
+                      "source": "source_text",
+                      "kind": "direct_quote"
+                    }
+                  ]
+                },
+                {
+                  "tag": "email",
+                  "relevance": 0.62,
+                  "candidateSources": [
+                    "retrieval"
+                  ],
+                  "alignment": 0.396,
+                  "specificity": 0.75,
+                  "verificationVerdict": "keep",
+                  "verificationReason": "grounded by source-text evidence",
+                  "evidence": [
+                    {
+                      "start": 0,
+                      "end": 58,
+                      "text": "Scheduled export email arrives with a corrupted attachment",
+                      "source": "source_text",
+                      "kind": "direct_quote"
+                    }
+                  ]
+                }
+              ],
+              "tokenUsage": {
+                "inputTokens": 1189,
+                "outputTokens": 102
+              }
+            },
+            {
+              "id": "gen-01",
+              "expectedTags": [
+                "ui"
+              ],
+              "predictedTags": [
+                "ui"
+              ],
+              "precision": 1,
+              "recall": 1,
+              "f1": 1,
+              "modelOutput": [
+                {
+                  "tag": "ui",
+                  "relevance": 0.62,
+                  "evidence": [
+                    "Improve the onboarding flow copy and empty states"
+                  ]
+                }
+              ],
+              "modelNegations": null,
+              "verifiedTagScores": [
+                {
+                  "tag": "ui",
+                  "relevance": 0.62,
+                  "candidateSources": [
+                    "retrieval",
+                    "anchor"
+                  ],
+                  "alignment": 0.28,
+                  "specificity": 0.3,
+                  "verificationVerdict": "keep",
+                  "verificationReason": "grounded by source-text evidence",
+                  "evidence": [
+                    {
+                      "start": 0,
+                      "end": 49,
+                      "text": "Improve the onboarding flow copy and empty states",
+                      "source": "source_text",
+                      "kind": "direct_quote"
+                    }
+                  ]
+                }
+              ],
+              "tokenUsage": {
+                "inputTokens": 1239,
+                "outputTokens": 40
+              }
+            },
+            {
+              "id": "gen-02",
+              "expectedTags": [
+                "backend"
+              ],
+              "predictedTags": [
+                "backend"
+              ],
+              "precision": 1,
+              "recall": 1,
+              "f1": 1,
+              "modelOutput": [
+                {
+                  "tag": "backend",
+                  "relevance": 0.62,
+                  "evidence": [
+                    "Refactor service layer error handling",
+                    "into a shared helper"
+                  ]
+                }
+              ],
+              "modelNegations": null,
+              "verifiedTagScores": [
+                {
+                  "tag": "backend",
+                  "relevance": 0.62,
+                  "candidateSources": [
+                    "retrieval",
+                    "anchor"
+                  ],
+                  "alignment": 0.315,
+                  "specificity": 0.25,
+                  "verificationVerdict": "keep",
+                  "verificationReason": "grounded by source-text evidence",
+                  "evidence": [
+                    {
+                      "start": 0,
+                      "end": 37,
+                      "text": "Refactor service layer error handling",
+                      "source": "source_text",
+                      "kind": "direct_quote"
+                    },
+                    {
+                      "start": 38,
+                      "end": 58,
+                      "text": "into a shared helper",
+                      "source": "source_text",
+                      "kind": "direct_quote"
+                    }
+                  ]
+                }
+              ],
+              "tokenUsage": {
+                "inputTokens": 1215,
+                "outputTokens": 43
+              }
+            },
+            {
+              "id": "gen-03",
+              "expectedTags": [
+                "ui"
+              ],
+              "predictedTags": [
+                "auth",
+                "ui"
+              ],
+              "precision": 0.5,
+              "recall": 1,
+              "f1": 0.6666666666666666,
+              "modelOutput": [
+                {
+                  "tag": "auth",
+                  "relevance": 0.18,
+                  "evidence": [
+                    "across sessions"
+                  ]
+                },
+                {
+                  "tag": "ui",
+                  "relevance": 0.62,
+                  "evidence": [
+                    "Dark mode toggle"
+                  ]
+                }
+              ],
+              "modelNegations": null,
+              "verifiedTagScores": [
+                {
+                  "tag": "ui",
+                  "relevance": 0.62,
+                  "candidateSources": [
+                    "retrieval",
+                    "anchor"
+                  ],
+                  "alignment": 0.217,
+                  "specificity": 0.3,
+                  "verificationVerdict": "keep",
+                  "verificationReason": "grounded by source-text evidence",
+                  "evidence": [
+                    {
+                      "start": 0,
+                      "end": 16,
+                      "text": "Dark mode toggle",
+                      "source": "source_text",
+                      "kind": "direct_quote"
+                    }
+                  ]
+                },
+                {
+                  "tag": "auth",
+                  "relevance": 0.18,
+                  "candidateSources": [
+                    "retrieval"
+                  ],
+                  "alignment": 0.297,
+                  "specificity": 0.7,
+                  "verificationVerdict": "keep",
+                  "verificationReason": "grounded by source-text evidence",
+                  "evidence": [
+                    {
+                      "start": 34,
+                      "end": 49,
+                      "text": "across sessions",
+                      "source": "source_text",
+                      "kind": "direct_quote"
+                    }
+                  ]
+                }
+              ],
+              "tokenUsage": {
+                "inputTokens": 1208,
+                "outputTokens": 92
+              }
+            },
+            {
+              "id": "ios-01",
+              "expectedTags": [
+                "ios",
+                "mobile",
+                "notifications"
+              ],
+              "predictedTags": [
+                "ios: ios-specific behavior",
+                "notifications: push and in-app notifications",
+                "ui: general user interface"
+              ],
+              "precision": 0,
+              "recall": 0,
+              "f1": 0,
+              "modelOutput": [
+                {
+                  "tag": "ios: ios-specific behavior",
+                  "relevance": 0.86,
+                  "evidence": [
+                    "on iOS"
+                  ]
+                },
+                {
+                  "tag": "notifications: push and in-app notifications",
+                  "relevance": 0.9,
+                  "evidence": [
+                    "Tapping a push notification"
+                  ]
+                },
+                {
+                  "tag": "ui: general user interface",
+                  "relevance": 0.22,
+                  "evidence": [
+                    "opens the wrong issue"
+                  ]
+                }
+              ],
+              "modelNegations": null,
+              "verifiedTagScores": [
+                {
+                  "tag": "notifications: push and in-app notifications",
+                  "relevance": 0.9,
+                  "verificationVerdict": "keep",
+                  "verificationReason": "grounded by source-text evidence",
+                  "evidence": [
+                    {
+                      "start": 0,
+                      "end": 27,
+                      "text": "Tapping a push notification",
+                      "source": "source_text",
+                      "kind": "direct_quote"
+                    }
+                  ]
+                },
+                {
+                  "tag": "ios: ios-specific behavior",
+                  "relevance": 0.86,
+                  "verificationVerdict": "keep",
+                  "verificationReason": "grounded by source-text evidence",
+                  "evidence": [
+                    {
+                      "start": 50,
+                      "end": 56,
+                      "text": "on iOS",
+                      "source": "source_text",
+                      "kind": "direct_quote"
+                    }
+                  ]
+                },
+                {
+                  "tag": "ui: general user interface",
+                  "relevance": 0.22,
+                  "verificationVerdict": "keep",
+                  "verificationReason": "grounded by source-text evidence",
+                  "evidence": [
+                    {
+                      "start": 28,
+                      "end": 49,
+                      "text": "opens the wrong issue",
+                      "source": "source_text",
+                      "kind": "direct_quote"
+                    }
+                  ]
+                }
+              ],
+              "tokenUsage": {
+                "inputTokens": 1204,
+                "outputTokens": 145
+              }
+            },
+            {
+              "id": "ios-02",
+              "expectedTags": [
+                "ios",
+                "mobile",
+                "ui"
+              ],
+              "predictedTags": [
+                "ios",
+                "mobile",
+                "ui"
+              ],
+              "precision": 1,
+              "recall": 1,
+              "f1": 1,
+              "modelOutput": [
+                {
+                  "tag": "ios",
+                  "relevance": 0.86,
+                  "evidence": [
+                    "on iPhone SE"
+                  ]
+                },
+                {
+                  "tag": "mobile",
+                  "relevance": 0.28,
+                  "evidence": [
+                    "on iPhone SE"
+                  ]
+                },
+                {
+                  "tag": "ui",
+                  "relevance": 0.62,
+                  "evidence": [
+                    "Keyboard covers the comment box"
+                  ]
+                }
+              ],
+              "modelNegations": null,
+              "verifiedTagScores": [
+                {
+                  "tag": "ios",
+                  "relevance": 0.86,
+                  "candidateSources": [
+                    "retrieval"
+                  ],
+                  "alignment": 0.472,
+                  "specificity": 0.8,
+                  "verificationVerdict": "keep",
+                  "verificationReason": "grounded by source-text evidence",
+                  "evidence": [
+                    {
+                      "start": 32,
+                      "end": 44,
+                      "text": "on iPhone SE",
+                      "source": "source_text",
+                      "kind": "direct_quote"
+                    }
+                  ]
+                },
+                {
+                  "tag": "ui",
+                  "relevance": 0.62,
+                  "candidateSources": [
+                    "retrieval",
+                    "anchor"
+                  ],
+                  "alignment": 0.334,
+                  "specificity": 0.3,
+                  "verificationVerdict": "keep",
+                  "verificationReason": "grounded by source-text evidence",
+                  "evidence": [
+                    {
+                      "start": 0,
+                      "end": 31,
+                      "text": "Keyboard covers the comment box",
+                      "source": "source_text",
+                      "kind": "direct_quote"
+                    }
+                  ]
+                },
+                {
+                  "tag": "mobile",
+                  "relevance": 0.28,
+                  "candidateSources": [
+                    "retrieval"
+                  ],
+                  "alignment": 0.244,
+                  "specificity": 0.55,
+                  "verificationVerdict": "keep",
+                  "verificationReason": "grounded by source-text evidence",
+                  "evidence": [
+                    {
+                      "start": 32,
+                      "end": 44,
+                      "text": "on iPhone SE",
+                      "source": "source_text",
+                      "kind": "direct_quote"
+                    }
+                  ]
+                }
+              ],
+              "tokenUsage": {
+                "inputTokens": 1201,
+                "outputTokens": 131
+              }
+            },
+            {
+              "id": "login-01",
+              "expectedTags": [
+                "auth",
+                "login",
+                "ui"
+              ],
+              "predictedTags": [
+                "auth",
+                "ios",
+                "login",
+                "ui"
+              ],
+              "precision": 0.75,
+              "recall": 1,
+              "f1": 0.8571428571428571,
+              "modelOutput": [
+                {
+                  "tag": "auth",
+                  "relevance": 0.74,
+                  "evidence": [
+                    "Login page keeps spinning forever"
+                  ]
+                },
+                {
+                  "tag": "ios",
+                  "relevance": 0.62,
+                  "evidence": [
+                    "in Safari private browsing mode"
+                  ]
+                },
+                {
+                  "tag": "login",
+                  "relevance": 0.86,
+                  "evidence": [
+                    "Login page keeps spinning forever"
+                  ]
+                },
+                {
+                  "tag": "ui",
+                  "relevance": 0.41,
+                  "evidence": [
+                    "Login page keeps spinning forever"
+                  ]
+                }
+              ],
+              "modelNegations": null,
+              "verifiedTagScores": [
+                {
+                  "tag": "login",
+                  "relevance": 0.86,
+                  "candidateSources": [
+                    "retrieval"
+                  ],
+                  "alignment": 0.351,
+                  "specificity": 0.75,
+                  "verificationVerdict": "keep",
+                  "verificationReason": "grounded by source-text evidence",
+                  "evidence": [
+                    {
+                      "start": 0,
+                      "end": 33,
+                      "text": "Login page keeps spinning forever",
+                      "source": "source_text",
+                      "kind": "direct_quote"
+                    }
+                  ]
+                },
+                {
+                  "tag": "auth",
+                  "relevance": 0.74,
+                  "candidateSources": [
+                    "retrieval"
+                  ],
+                  "alignment": 0.32,
+                  "specificity": 0.7,
+                  "verificationVerdict": "keep",
+                  "verificationReason": "grounded by source-text evidence",
+                  "evidence": [
+                    {
+                      "start": 0,
+                      "end": 33,
+                      "text": "Login page keeps spinning forever",
+                      "source": "source_text",
+                      "kind": "direct_quote"
+                    }
+                  ]
+                },
+                {
+                  "tag": "ios",
+                  "relevance": 0.62,
+                  "candidateSources": [
+                    "retrieval"
+                  ],
+                  "alignment": 0.346,
+                  "specificity": 0.8,
+                  "verificationVerdict": "keep",
+                  "verificationReason": "grounded by source-text evidence",
+                  "evidence": [
+                    {
+                      "start": 34,
+                      "end": 65,
+                      "text": "in Safari private browsing mode",
+                      "source": "source_text",
+                      "kind": "direct_quote"
+                    }
+                  ]
+                },
+                {
+                  "tag": "ui",
+                  "relevance": 0.41,
+                  "candidateSources": [
+                    "retrieval",
+                    "anchor"
+                  ],
+                  "alignment": 0.207,
+                  "specificity": 0.3,
+                  "verificationVerdict": "keep",
+                  "verificationReason": "grounded by source-text evidence",
+                  "evidence": [
+                    {
+                      "start": 0,
+                      "end": 33,
+                      "text": "Login page keeps spinning forever",
+                      "source": "source_text",
+                      "kind": "direct_quote"
+                    }
+                  ]
+                }
+              ],
+              "tokenUsage": {
+                "inputTokens": 1201,
+                "outputTokens": 170
+              }
+            },
+            {
+              "id": "login-02",
+              "expectedTags": [
+                "auth",
+                "login"
+              ],
+              "predictedTags": [
+                "auth: authentication and session handling",
+                "login: login flows and credentials",
+                "ui: general user interface"
+              ],
+              "precision": 0,
+              "recall": 0,
+              "f1": 0,
+              "modelOutput": [
+                {
+                  "tag": "auth: authentication and session handling",
+                  "relevance": 0.84,
+                  "evidence": [
+                    "Two-factor code rejected"
+                  ]
+                },
+                {
+                  "tag": "login: login flows and credentials",
+                  "relevance": 0.86,
+                  "evidence": [
+                    "Two-factor code rejected"
+                  ]
+                },
+                {
+                  "tag": "ui: general user interface",
+                  "relevance": 0.22,
+                  "evidence": [
+                    "entered with a trailing space"
+                  ]
+                }
+              ],
+              "modelNegations": null,
+              "verifiedTagScores": [
+                {
+                  "tag": "login: login flows and credentials",
+                  "relevance": 0.86,
+                  "verificationVerdict": "keep",
+                  "verificationReason": "grounded by source-text evidence",
+                  "evidence": [
+                    {
+                      "start": 0,
+                      "end": 24,
+                      "text": "Two-factor code rejected",
+                      "source": "source_text",
+                      "kind": "direct_quote"
+                    }
+                  ]
+                },
+                {
+                  "tag": "auth: authentication and session handling",
+                  "relevance": 0.84,
+                  "verificationVerdict": "keep",
+                  "verificationReason": "grounded by source-text evidence",
+                  "evidence": [
+                    {
+                      "start": 0,
+                      "end": 24,
+                      "text": "Two-factor code rejected",
+                      "source": "source_text",
+                      "kind": "direct_quote"
+                    }
+                  ]
+                },
+                {
+                  "tag": "ui: general user interface",
+                  "relevance": 0.22,
+                  "verificationVerdict": "keep",
+                  "verificationReason": "grounded by source-text evidence",
+                  "evidence": [
+                    {
+                      "start": 30,
+                      "end": 59,
+                      "text": "entered with a trailing space",
+                      "source": "source_text",
+                      "kind": "direct_quote"
+                    }
+                  ]
+                }
+              ],
+              "tokenUsage": {
+                "inputTokens": 1201,
+                "outputTokens": 145
+              }
+            },
+            {
+              "id": "mig-01",
+              "expectedTags": [
+                "database",
+                "migration"
+              ],
+              "predictedTags": [
+                "database",
+                "migration"
+              ],
+              "precision": 1,
+              "recall": 1,
+              "f1": 1,
+              "modelOutput": [
+                {
+                  "tag": "database",
+                  "relevance": 0.78,
+                  "evidence": [
+                    "leaves orphaned columns behind"
+                  ]
+                },
+                {
+                  "tag": "migration",
+                  "relevance": 0.92,
+                  "evidence": [
+                    "Rolling back a failed migration"
+                  ]
+                }
+              ],
+              "modelNegations": null,
+              "verifiedTagScores": [
+                {
+                  "tag": "migration",
+                  "relevance": 0.92,
+                  "candidateSources": [
+                    "retrieval"
+                  ],
+                  "alignment": 0.542,
+                  "specificity": 0.8,
+                  "verificationVerdict": "keep",
+                  "verificationReason": "grounded by source-text evidence",
+                  "evidence": [
+                    {
+                      "start": 0,
+                      "end": 31,
+                      "text": "Rolling back a failed migration",
+                      "source": "source_text",
+                      "kind": "direct_quote"
+                    }
+                  ]
+                },
+                {
+                  "tag": "database",
+                  "relevance": 0.78,
+                  "candidateSources": [
+                    "retrieval"
+                  ],
+                  "alignment": 0.224,
+                  "specificity": 0.6,
+                  "verificationVerdict": "keep",
+                  "verificationReason": "grounded by source-text evidence",
+                  "evidence": [
+                    {
+                      "start": 32,
+                      "end": 62,
+                      "text": "leaves orphaned columns behind",
+                      "source": "source_text",
+                      "kind": "direct_quote"
+                    }
+                  ]
+                }
+              ],
+              "tokenUsage": {
+                "inputTokens": 1191,
+                "outputTokens": 97
+              }
+            },
+            {
+              "id": "misc-01",
+              "expectedTags": [],
+              "predictedTags": [],
+              "precision": 0,
+              "recall": 0,
+              "f1": 0,
+              "modelOutput": null,
+              "modelNegations": null,
+              "verifiedTagScores": null,
+              "tokenUsage": {
+                "inputTokens": 1239,
+                "outputTokens": 15
+              }
+            },
+            {
+              "id": "misc-02",
+              "expectedTags": [],
+              "predictedTags": [
+                "ui"
+              ],
+              "precision": 0,
+              "recall": 0,
+              "f1": 0,
+              "modelOutput": [
+                {
+                  "tag": "ui",
+                  "relevance": 0.12
+                }
+              ],
+              "modelNegations": null,
+              "verifiedTagScores": [
+                {
+                  "tag": "ui",
+                  "relevance": 0.12,
+                  "candidateSources": [
+                    "anchor"
+                  ],
+                  "alignment": 0.15,
+                  "specificity": 0.3,
+                  "verificationVerdict": "keep"
+                }
+              ],
+              "tokenUsage": {
+                "inputTokens": 1200,
+                "outputTokens": 27
+              }
+            },
+            {
+              "id": "misc-03",
+              "expectedTags": [],
+              "predictedTags": [
+                "backend"
+              ],
+              "precision": 0,
+              "recall": 0,
+              "f1": 0,
+              "modelOutput": [
+                {
+                  "tag": "backend",
+                  "relevance": 0.35,
+                  "evidence": [
+                    "flaky CI job on main"
+                  ]
+                }
+              ],
+              "modelNegations": null,
+              "verifiedTagScores": [
+                {
+                  "tag": "backend",
+                  "relevance": 0.35,
+                  "candidateSources": [
+                    "retrieval",
+                    "anchor"
+                  ],
+                  "alignment": 0.4,
+                  "specificity": 0.25,
+                  "verificationVerdict": "keep",
+                  "verificationReason": "grounded by source-text evidence",
+                  "evidence": [
+                    {
+                      "start": 12,
+                      "end": 32,
+                      "text": "flaky CI job on main",
+                      "source": "source_text",
+                      "kind": "direct_quote"
+                    }
+                  ]
+                }
+              ],
+              "tokenUsage": {
+                "inputTokens": 1212,
+                "outputTokens": 38
+              }
+            },
+            {
+              "id": "mob-01",
+              "expectedTags": [
+                "ios",
+                "mobile"
+              ],
+              "predictedTags": [
+                "ios",
+                "mobile"
+              ],
+              "precision": 1,
+              "recall": 1,
+              "f1": 1,
+              "modelOutput": [
+                {
+                  "tag": "ios",
+                  "relevance": 0.9,
+                  "evidence": [
+                    "App crashes on launch after upgrading to the iOS 18 beta"
+                  ]
+                },
+                {
+                  "tag": "mobile",
+                  "relevance": 0.35,
+                  "evidence": [
+                    "App crashes on launch"
+                  ]
+                }
+              ],
+              "modelNegations": null,
+              "verifiedTagScores": [
+                {
+                  "tag": "ios",
+                  "relevance": 0.9,
+                  "candidateSources": [
+                    "retrieval"
+                  ],
+                  "alignment": 0.468,
+                  "specificity": 0.8,
+                  "verificationVerdict": "keep",
+                  "verificationReason": "grounded by source-text evidence",
+                  "evidence": [
+                    {
+                      "start": 0,
+                      "end": 56,
+                      "text": "App crashes on launch after upgrading to the iOS 18 beta",
+                      "source": "source_text",
+                      "kind": "direct_quote"
+                    }
+                  ]
+                },
+                {
+                  "tag": "mobile",
+                  "relevance": 0.35,
+                  "candidateSources": [
+                    "retrieval"
+                  ],
+                  "alignment": 0.295,
+                  "specificity": 0.55,
+                  "verificationVerdict": "keep",
+                  "verificationReason": "grounded by source-text evidence",
+                  "evidence": [
+                    {
+                      "start": 0,
+                      "end": 21,
+                      "text": "App crashes on launch",
+                      "source": "source_text",
+                      "kind": "direct_quote"
+                    }
+                  ]
+                }
+              ],
+              "tokenUsage": {
+                "inputTokens": 1211,
+                "outputTokens": 103
+              }
+            },
+            {
+              "id": "mob-02",
+              "expectedTags": [
+                "mobile",
+                "ui"
+              ],
+              "predictedTags": [
+                "mobile",
+                "ui"
+              ],
+              "precision": 1,
+              "recall": 1,
+              "f1": 1,
+              "modelOutput": [
+                {
+                  "tag": "mobile",
+                  "relevance": 0.35,
+                  "evidence": [
+                    "Pull-to-refresh duplicates list items",
+                    "on the issues screen"
+                  ]
+                },
+                {
+                  "tag": "ui",
+                  "relevance": 0.62,
+                  "evidence": [
+                    "Pull-to-refresh duplicates list items",
+                    "on the issues screen"
+                  ]
+                }
+              ],
+              "modelNegations": null,
+              "verifiedTagScores": [
+                {
+                  "tag": "ui",
+                  "relevance": 0.62,
+                  "candidateSources": [
+                    "retrieval",
+                    "anchor"
+                  ],
+                  "alignment": 0.251,
+                  "specificity": 0.3,
+                  "verificationVerdict": "keep",
+                  "verificationReason": "grounded by source-text evidence",
+                  "evidence": [
+                    {
+                      "start": 0,
+                      "end": 37,
+                      "text": "Pull-to-refresh duplicates list items",
+                      "source": "source_text",
+                      "kind": "direct_quote"
+                    },
+                    {
+                      "start": 38,
+                      "end": 58,
+                      "text": "on the issues screen",
+                      "source": "source_text",
+                      "kind": "direct_quote"
+                    }
+                  ]
+                },
+                {
+                  "tag": "mobile",
+                  "relevance": 0.35,
+                  "candidateSources": [
+                    "retrieval"
+                  ],
+                  "alignment": 0.203,
+                  "specificity": 0.55,
+                  "verificationVerdict": "keep",
+                  "verificationReason": "grounded by source-text evidence",
+                  "evidence": [
+                    {
+                      "start": 0,
+                      "end": 37,
+                      "text": "Pull-to-refresh duplicates list items",
+                      "source": "source_text",
+                      "kind": "direct_quote"
+                    },
+                    {
+                      "start": 38,
+                      "end": 58,
+                      "text": "on the issues screen",
+                      "source": "source_text",
+                      "kind": "direct_quote"
+                    }
+                  ]
+                }
+              ],
+              "tokenUsage": {
+                "inputTokens": 1202,
+                "outputTokens": 112
+              }
+            },
+            {
+              "id": "mob-03",
+              "expectedTags": [
+                "backend",
+                "mobile"
+              ],
+              "predictedTags": [
+                "ios",
+                "mobile"
+              ],
+              "precision": 0.5,
+              "recall": 0.5,
+              "f1": 0.5,
+              "modelOutput": [
+                {
+                  "tag": "ios",
+                  "relevance": 0.62,
+                  "evidence": [
+                    "Offline edits lost when the app is backgrounded for an hour"
+                  ]
+                },
+                {
+                  "tag": "mobile",
+                  "relevance": 0.35,
+                  "evidence": [
+                    "Offline edits lost when the app is backgrounded for an hour"
+                  ]
+                }
+              ],
+              "modelNegations": null,
+              "verifiedTagScores": [
+                {
+                  "tag": "ios",
+                  "relevance": 0.62,
+                  "candidateSources": [
+                    "retrieval"
+                  ],
+                  "alignment": 0.38,
+                  "specificity": 0.8,
+                  "verificationVerdict": "keep",
+                  "verificationReason": "grounded by source-text evidence",
+                  "evidence": [
+                    {
+                      "start": 0,
+                      "end": 59,
+                      "text": "Offline edits lost when the app is backgrounded for an hour",
+                      "source": "source_text",
+                      "kind": "direct_quote"
+                    }
+                  ]
+                },
+                {
+                  "tag": "mobile",
+                  "relevance": 0.35,
+                  "candidateSources": [
+                    "retrieval"
+                  ],
+                  "alignment": 0.24,
+                  "specificity": 0.55,
+                  "verificationVerdict": "keep",
+                  "verificationReason": "grounded by source-text evidence",
+                  "evidence": [
+                    {
+                      "start": 0,
+                      "end": 59,
+                      "text": "Offline edits lost when the app is backgrounded for an hour",
+                      "source": "source_text",
+                      "kind": "direct_quote"
+                    }
+                  ]
+                }
+              ],
+              "tokenUsage": {
+                "inputTokens": 1204,
+                "outputTokens": 72
+              }
+            },
+            {
+              "id": "mob-04",
+              "expectedTags": [
+                "mobile",
+                "ui"
+              ],
+              "predictedTags": [
+                "mobile",
+                "ui"
+              ],
+              "precision": 1,
+              "recall": 1,
+              "f1": 1,
+              "modelOutput": [
+                {
+                  "tag": "mobile",
+                  "relevance": 0.86,
+                  "evidence": [
+                    "Android back gesture closes the app"
+                  ]
+                },
+                {
+                  "tag": "ui",
+                  "relevance": 0.62,
+                  "evidence": [
+                    "closes the app instead of dismissing the modal"
+                  ]
+                }
+              ],
+              "modelNegations": null,
+              "verifiedTagScores": [
+                {
+                  "tag": "mobile",
+                  "relevance": 0.86,
+                  "candidateSources": [
+                    "retrieval"
+                  ],
+                  "alignment": 0.349,
+                  "specificity": 0.55,
+                  "verificationVerdict": "keep",
+                  "verificationReason": "grounded by source-text evidence",
+                  "evidence": [
+                    {
+                      "start": 0,
+                      "end": 35,
+                      "text": "Android back gesture closes the app",
+                      "source": "source_text",
+                      "kind": "direct_quote"
+                    }
+                  ]
+                },
+                {
+                  "tag": "ui",
+                  "relevance": 0.62,
+                  "candidateSources": [
+                    "retrieval",
+                    "anchor"
+                  ],
+                  "alignment": 0.243,
+                  "specificity": 0.3,
+                  "verificationVerdict": "keep",
+                  "verificationReason": "grounded by source-text evidence",
+                  "evidence": [
+                    {
+                      "start": 21,
+                      "end": 67,
+                      "text": "closes the app instead of dismissing the modal",
+                      "source": "source_text",
+                      "kind": "direct_quote"
+                    }
+                  ]
+                }
+              ],
+              "tokenUsage": {
+                "inputTokens": 1204,
+                "outputTokens": 102
+              }
+            },
+            {
+              "id": "notif-01",
+              "expectedTags": [
+                "backend",
+                "notifications"
+              ],
+              "predictedTags": [
+                "notifications"
+              ],
+              "precision": 1,
+              "recall": 0.5,
+              "f1": 0.6666666666666666,
+              "modelOutput": [
+                {
+                  "tag": "notifications",
+                  "relevance": 0.92,
+                  "evidence": [
+                    "Duplicate push notifications sent"
+                  ]
+                }
+              ],
+              "modelNegations": null,
+              "verifiedTagScores": [
+                {
+                  "tag": "notifications",
+                  "relevance": 0.92,
+                  "candidateSources": [
+                    "retrieval"
+                  ],
+                  "alignment": 0.532,
+                  "specificity": 0.7,
+                  "verificationVerdict": "keep",
+                  "verificationReason": "grounded by source-text evidence",
+                  "evidence": [
+                    {
+                      "start": 0,
+                      "end": 33,
+                      "text": "Duplicate push notifications sent",
+                      "source": "source_text",
+                      "kind": "direct_quote"
+                    }
+                  ]
+                }
+              ],
+              "tokenUsage": {
+                "inputTokens": 1200,
+                "outputTokens": 58
+              }
+            },
+            {
+              "id": "notif-02",
+              "expectedTags": [
+                "auth",
+                "notifications"
+              ],
+              "predictedTags": [
+                "backend",
+                "notifications"
+              ],
+              "precision": 0.5,
+              "recall": 0.5,
+              "f1": 0.5,
+              "modelOutput": [
+                {
+                  "tag": "backend",
+                  "relevance": 0.22,
+                  "evidence": [
+                    "after two accounts are merged"
+                  ]
+                },
+                {
+                  "tag": "notifications",
+                  "relevance": 0.86,
+                  "evidence": [
+                    "Notification preferences ignored"
+                  ]
+                }
+              ],
+              "modelNegations": null,
+              "verifiedTagScores": [
+                {
+                  "tag": "notifications",
+                  "relevance": 0.86,
+                  "candidateSources": [
+                    "retrieval"
+                  ],
+                  "alignment": 0.433,
+                  "specificity": 0.7,
+                  "verificationVerdict": "keep",
+                  "verificationReason": "grounded by source-text evidence",
+                  "evidence": [
+                    {
+                      "start": 0,
+                      "end": 32,
+                      "text": "Notification preferences ignored",
+                      "source": "source_text",
+                      "kind": "direct_quote"
+                    }
+                  ]
+                },
+                {
+                  "tag": "backend",
+                  "relevance": 0.132,
+                  "candidateSources": [
+                    "anchor"
+                  ],
+                  "alignment": 0.125,
+                  "specificity": 0.25,
+                  "verificationVerdict": "down-rank",
+                  "verificationReason": "tag embedding is anti-aligned (-0.111, centered) with the issue",
+                  "evidence": [
+                    {
+                      "start": 33,
+                      "end": 62,
+                      "text": "after two accounts are merged",
+                      "source": "source_text",
+                      "kind": "direct_quote"
+                    }
+                  ],
+                  "negation": 0.5,
+                  "negationProvenance": "verifier-dominance",
+                  "negationReason": "tag embedding is anti-aligned (-0.111, centered) with the issue"
+                }
+              ],
+              "tokenUsage": {
+                "inputTokens": 1216,
+                "outputTokens": 94
+              }
+            },
+            {
+              "id": "notif-03",
+              "expectedTags": [
+                "notifications",
+                "ui"
+              ],
+              "predictedTags": [
+                "mobile",
+                "notifications",
+                "ui"
+              ],
+              "precision": 0.6666666666666666,
+              "recall": 1,
+              "f1": 0.8,
+              "modelOutput": [
+                {
+                  "tag": "mobile",
+                  "relevance": 0.18,
+                  "evidence": [
+                    "In-app notification"
+                  ]
+                },
+                {
+                  "tag": "notifications",
+                  "relevance": 0.86,
+                  "evidence": [
+                    "In-app notification badge count never clears"
+                  ]
+                },
+                {
+                  "tag": "ui",
+                  "relevance": 0.22,
+                  "evidence": [
+                    "badge count"
+                  ]
+                }
+              ],
+              "modelNegations": null,
+              "verifiedTagScores": [
+                {
+                  "tag": "notifications",
+                  "relevance": 0.86,
+                  "candidateSources": [
+                    "retrieval"
+                  ],
+                  "alignment": 0.52,
+                  "specificity": 0.7,
+                  "verificationVerdict": "keep",
+                  "verificationReason": "grounded by source-text evidence",
+                  "evidence": [
+                    {
+                      "start": 0,
+                      "end": 44,
+                      "text": "In-app notification badge count never clears",
+                      "source": "source_text",
+                      "kind": "direct_quote"
+                    }
+                  ]
+                },
+                {
+                  "tag": "ui",
+                  "relevance": 0.22,
+                  "candidateSources": [
+                    "retrieval",
+                    "anchor"
+                  ],
+                  "alignment": 0.225,
+                  "specificity": 0.3,
+                  "verificationVerdict": "keep",
+                  "verificationReason": "grounded by source-text evidence",
+                  "evidence": [
+                    {
+                      "start": 20,
+                      "end": 31,
+                      "text": "badge count",
+                      "source": "source_text",
+                      "kind": "direct_quote"
+                    }
+                  ]
+                },
+                {
+                  "tag": "mobile",
+                  "relevance": 0.18,
+                  "candidateSources": [
+                    "retrieval"
+                  ],
+                  "alignment": 0.252,
+                  "specificity": 0.55,
+                  "verificationVerdict": "keep",
+                  "verificationReason": "grounded by source-text evidence",
+                  "evidence": [
+                    {
+                      "start": 0,
+                      "end": 19,
+                      "text": "In-app notification",
+                      "source": "source_text",
+                      "kind": "direct_quote"
+                    }
+                  ]
+                }
+              ],
+              "tokenUsage": {
+                "inputTokens": 1211,
+                "outputTokens": 130
+              }
+            },
+            {
+              "id": "pay-01",
+              "expectedTags": [
+                "billing",
+                "payments"
+              ],
+              "predictedTags": [
+                "payments"
+              ],
+              "precision": 1,
+              "recall": 0.5,
+              "f1": 0.6666666666666666,
+              "modelOutput": [
+                {
+                  "tag": "payments",
+                  "relevance": 0.93,
+                  "evidence": [
+                    "3DS challenge loop: card payment never completes"
+                  ]
+                }
+              ],
+              "modelNegations": null,
+              "verifiedTagScores": [
+                {
+                  "tag": "payments",
+                  "relevance": 0.93,
+                  "candidateSources": [
+                    "retrieval"
+                  ],
+                  "alignment": 0.468,
+                  "specificity": 0.8,
+                  "verificationVerdict": "keep",
+                  "verificationReason": "grounded by source-text evidence",
+                  "evidence": [
+                    {
+                      "start": 0,
+                      "end": 48,
+                      "text": "3DS challenge loop: card payment never completes",
+                      "source": "source_text",
+                      "kind": "direct_quote"
+                    }
+                  ]
+                }
+              ],
+              "tokenUsage": {
+                "inputTokens": 1215,
+                "outputTokens": 63
+              }
+            },
+            {
+              "id": "pay-02",
+              "expectedTags": [
+                "backend",
+                "billing",
+                "payments"
+              ],
+              "predictedTags": [
+                "backend",
+                "billing",
+                "payments"
+              ],
+              "precision": 1,
+              "recall": 1,
+              "f1": 1,
+              "modelOutput": [
+                {
+                  "tag": "backend",
+                  "relevance": 0.41,
+                  "evidence": [
+                    "Webhook from payment provider dropped"
+                  ]
+                },
+                {
+                  "tag": "billing",
+                  "relevance": 0.74,
+                  "evidence": [
+                    "subscription stuck in past_due"
+                  ]
+                },
+                {
+                  "tag": "payments",
+                  "relevance": 0.86,
+                  "evidence": [
+                    "Webhook from payment provider dropped",
+                    "subscription stuck in past_due"
+                  ]
+                }
+              ],
+              "modelNegations": null,
+              "verifiedTagScores": [
+                {
+                  "tag": "payments",
+                  "relevance": 0.86,
+                  "candidateSources": [
+                    "retrieval"
+                  ],
+                  "alignment": 0.374,
+                  "specificity": 0.8,
+                  "verificationVerdict": "keep",
+                  "verificationReason": "grounded by source-text evidence",
+                  "evidence": [
+                    {
+                      "start": 0,
+                      "end": 37,
+                      "text": "Webhook from payment provider dropped",
+                      "source": "source_text",
+                      "kind": "direct_quote"
+                    },
+                    {
+                      "start": 39,
+                      "end": 69,
+                      "text": "subscription stuck in past_due",
+                      "source": "source_text",
+                      "kind": "direct_quote"
+                    }
+                  ]
+                },
+                {
+                  "tag": "billing",
+                  "relevance": 0.74,
+                  "candidateSources": [
+                    "retrieval"
+                  ],
+                  "alignment": 0.321,
+                  "specificity": 0.75,
+                  "verificationVerdict": "keep",
+                  "verificationReason": "grounded by source-text evidence",
+                  "evidence": [
+                    {
+                      "start": 39,
+                      "end": 69,
+                      "text": "subscription stuck in past_due",
+                      "source": "source_text",
+                      "kind": "direct_quote"
+                    }
+                  ]
+                },
+                {
+                  "tag": "backend",
+                  "relevance": 0.24599999999999997,
+                  "candidateSources": [
+                    "retrieval",
+                    "anchor"
+                  ],
+                  "alignment": 0.22,
+                  "specificity": 0.25,
+                  "verificationVerdict": "keep",
+                  "verificationReason": "grounded by source-text evidence",
+                  "evidence": [
+                    {
+                      "start": 0,
+                      "end": 37,
+                      "text": "Webhook from payment provider dropped",
+                      "source": "source_text",
+                      "kind": "direct_quote"
+                    }
+                  ]
+                }
+              ],
+              "tokenUsage": {
+                "inputTokens": 1224,
+                "outputTokens": 141
+              }
+            },
+            {
+              "id": "pay-03",
+              "expectedTags": [
+                "mobile",
+                "payments",
+                "ui"
+              ],
+              "predictedTags": [
+                "ios",
+                "mobile",
+                "payments",
+                "ui"
+              ],
+              "precision": 0.75,
+              "recall": 1,
+              "f1": 0.8571428571428571,
+              "modelOutput": [
+                {
+                  "tag": "ios",
+                  "relevance": 0.68,
+                  "evidence": [
+                    "Apple Pay button missing"
+                  ]
+                },
+                {
+                  "tag": "mobile",
+                  "relevance": 0.74,
+                  "evidence": [
+                    "missing on mobile checkout"
+                  ]
+                },
+                {
+                  "tag": "payments",
+                  "relevance": 0.86,
+                  "evidence": [
+                    "Apple Pay button missing on mobile checkout"
+                  ]
+                },
+                {
+                  "tag": "ui",
+                  "relevance": 0.22,
+                  "evidence": [
+                    "button missing"
+                  ]
+                }
+              ],
+              "modelNegations": null,
+              "verifiedTagScores": [
+                {
+                  "tag": "payments",
+                  "relevance": 0.86,
+                  "candidateSources": [
+                    "retrieval"
+                  ],
+                  "alignment": 0.393,
+                  "specificity": 0.8,
+                  "verificationVerdict": "keep",
+                  "verificationReason": "grounded by source-text evidence",
+                  "evidence": [
+                    {
+                      "start": 0,
+                      "end": 43,
+                      "text": "Apple Pay button missing on mobile checkout",
+                      "source": "source_text",
+                      "kind": "direct_quote"
+                    }
+                  ]
+                },
+                {
+                  "tag": "mobile",
+                  "relevance": 0.74,
+                  "candidateSources": [
+                    "retrieval"
+                  ],
+                  "alignment": 0.35,
+                  "specificity": 0.55,
+                  "verificationVerdict": "keep",
+                  "verificationReason": "grounded by source-text evidence",
+                  "evidence": [
+                    {
+                      "start": 17,
+                      "end": 43,
+                      "text": "missing on mobile checkout",
+                      "source": "source_text",
+                      "kind": "direct_quote"
+                    }
+                  ]
+                },
+                {
+                  "tag": "ios",
+                  "relevance": 0.68,
+                  "candidateSources": [
+                    "retrieval"
+                  ],
+                  "alignment": 0.392,
+                  "specificity": 0.8,
+                  "verificationVerdict": "keep",
+                  "verificationReason": "grounded by source-text evidence",
+                  "evidence": [
+                    {
+                      "start": 0,
+                      "end": 24,
+                      "text": "Apple Pay button missing",
+                      "source": "source_text",
+                      "kind": "direct_quote"
+                    }
+                  ]
+                },
+                {
+                  "tag": "ui",
+                  "relevance": 0.22,
+                  "candidateSources": [
+                    "retrieval",
+                    "anchor"
+                  ],
+                  "alignment": 0.201,
+                  "specificity": 0.3,
+                  "verificationVerdict": "keep",
+                  "verificationReason": "grounded by source-text evidence",
+                  "evidence": [
+                    {
+                      "start": 10,
+                      "end": 24,
+                      "text": "button missing",
+                      "source": "source_text",
+                      "kind": "direct_quote"
+                    }
+                  ]
+                }
+              ],
+              "tokenUsage": {
+                "inputTokens": 1228,
+                "outputTokens": 167
+              }
+            },
+            {
+              "id": "pdf-01",
+              "expectedTags": [
+                "export",
+                "pdf",
+                "ui"
+              ],
+              "predictedTags": [
+                "export",
+                "pdf",
+                "ui"
+              ],
+              "precision": 1,
+              "recall": 1,
+              "f1": 1,
+              "modelOutput": [
+                {
+                  "tag": "export",
+                  "relevance": 0.62,
+                  "evidence": [
+                    "PDF generation uses the wrong font",
+                    "clips long issue titles"
+                  ]
+                },
+                {
+                  "tag": "pdf",
+                  "relevance": 0.95,
+                  "evidence": [
+                    "PDF generation uses the wrong font",
+                    "clips long issue titles"
+                  ]
+                },
+                {
+                  "tag": "ui",
+                  "relevance": 0.18,
+                  "evidence": [
+                    "clips long issue titles"
+                  ]
+                }
+              ],
+              "modelNegations": null,
+              "verifiedTagScores": [
+                {
+                  "tag": "pdf",
+                  "relevance": 0.95,
+                  "candidateSources": [
+                    "retrieval"
+                  ],
+                  "alignment": 0.498,
+                  "specificity": 0.85,
+                  "verificationVerdict": "keep",
+                  "verificationReason": "grounded by source-text evidence",
+                  "evidence": [
+                    {
+                      "start": 0,
+                      "end": 34,
+                      "text": "PDF generation uses the wrong font",
+                      "source": "source_text",
+                      "kind": "direct_quote"
+                    },
+                    {
+                      "start": 39,
+                      "end": 62,
+                      "text": "clips long issue titles",
+                      "source": "source_text",
+                      "kind": "direct_quote"
+                    }
+                  ]
+                },
+                {
+                  "tag": "export",
+                  "relevance": 0.62,
+                  "candidateSources": [
+                    "retrieval",
+                    "anchor"
+                  ],
+                  "alignment": 0.251,
+                  "specificity": 0.7,
+                  "verificationVerdict": "keep",
+                  "verificationReason": "grounded by source-text evidence",
+                  "evidence": [
+                    {
+                      "start": 0,
+                      "end": 34,
+                      "text": "PDF generation uses the wrong font",
+                      "source": "source_text",
+                      "kind": "direct_quote"
+                    },
+                    {
+                      "start": 39,
+                      "end": 62,
+                      "text": "clips long issue titles",
+                      "source": "source_text",
+                      "kind": "direct_quote"
+                    }
+                  ]
+                },
+                {
+                  "tag": "ui",
+                  "relevance": 0.18,
+                  "candidateSources": [
+                    "retrieval",
+                    "anchor"
+                  ],
+                  "alignment": 0.267,
+                  "specificity": 0.3,
+                  "verificationVerdict": "keep",
+                  "verificationReason": "grounded by source-text evidence",
+                  "evidence": [
+                    {
+                      "start": 39,
+                      "end": 62,
+                      "text": "clips long issue titles",
+                      "source": "source_text",
+                      "kind": "direct_quote"
+                    }
+                  ]
+                }
+              ],
+              "tokenUsage": {
+                "inputTokens": 1214,
+                "outputTokens": 148
+              }
+            },
+            {
+              "id": "pdf-02",
+              "expectedTags": [
+                "export",
+                "pdf"
+              ],
+              "predictedTags": [
+                "export",
+                "pdf"
+              ],
+              "precision": 1,
+              "recall": 1,
+              "f1": 1,
+              "modelOutput": [
+                {
+                  "tag": "export",
+                  "relevance": 0.62,
+                  "evidence": [
+                    "generated PDFs"
+                  ]
+                },
+                {
+                  "tag": "pdf",
+                  "relevance": 0.93,
+                  "evidence": [
+                    "generated PDFs"
+                  ]
+                }
+              ],
+              "modelNegations": null,
+              "verifiedTagScores": [
+                {
+                  "tag": "pdf",
+                  "relevance": 0.93,
+                  "candidateSources": [
+                    "retrieval"
+                  ],
+                  "alignment": 0.494,
+                  "specificity": 0.85,
+                  "verificationVerdict": "keep",
+                  "verificationReason": "grounded by source-text evidence",
+                  "evidence": [
+                    {
+                      "start": 41,
+                      "end": 55,
+                      "text": "generated PDFs",
+                      "source": "source_text",
+                      "kind": "direct_quote"
+                    }
+                  ]
+                },
+                {
+                  "tag": "export",
+                  "relevance": 0.62,
+                  "candidateSources": [
+                    "retrieval",
+                    "anchor"
+                  ],
+                  "alignment": 0.293,
+                  "specificity": 0.7,
+                  "verificationVerdict": "keep",
+                  "verificationReason": "grounded by source-text evidence",
+                  "evidence": [
+                    {
+                      "start": 41,
+                      "end": 55,
+                      "text": "generated PDFs",
+                      "source": "source_text",
+                      "kind": "direct_quote"
+                    }
+                  ]
+                }
+              ],
+              "tokenUsage": {
+                "inputTokens": 1201,
+                "outputTokens": 90
+              }
+            },
+            {
+              "id": "perf-01",
+              "expectedTags": [
+                "backend",
+                "database",
+                "performance"
+              ],
+              "predictedTags": [
+                "performance",
+                "ui"
+              ],
+              "precision": 0.5,
+              "recall": 0.3333333333333333,
+              "f1": 0.4,
+              "modelOutput": [
+                {
+                  "tag": "performance",
+                  "relevance": 0.9,
+                  "evidence": [
+                    "takes twelve seconds to load",
+                    "Dashboard takes twelve seconds"
+                  ]
+                },
+                {
+                  "tag": "ui",
+                  "relevance": 0.12,
+                  "evidence": [
+                    "Dashboard takes twelve seconds to load"
+                  ]
+                }
+              ],
+              "modelNegations": null,
+              "verifiedTagScores": [
+                {
+                  "tag": "performance",
+                  "relevance": 0.9,
+                  "candidateSources": [
+                    "retrieval",
+                    "anchor"
+                  ],
+                  "alignment": 0.246,
+                  "specificity": 0.5,
+                  "verificationVerdict": "keep",
+                  "verificationReason": "grounded by source-text evidence",
+                  "evidence": [
+                    {
+                      "start": 10,
+                      "end": 38,
+                      "text": "takes twelve seconds to load",
+                      "source": "source_text",
+                      "kind": "direct_quote"
+                    },
+                    {
+                      "start": 0,
+                      "end": 30,
+                      "text": "Dashboard takes twelve seconds",
+                      "source": "source_text",
+                      "kind": "direct_quote"
+                    }
+                  ]
+                },
+                {
+                  "tag": "ui",
+                  "relevance": 0.12,
+                  "candidateSources": [
+                    "retrieval",
+                    "anchor"
+                  ],
+                  "alignment": 0.227,
+                  "specificity": 0.3,
+                  "verificationVerdict": "keep",
+                  "verificationReason": "grounded by source-text evidence",
+                  "evidence": [
+                    {
+                      "start": 0,
+                      "end": 38,
+                      "text": "Dashboard takes twelve seconds to load",
+                      "source": "source_text",
+                      "kind": "direct_quote"
+                    }
+                  ]
+                }
+              ],
+              "tokenUsage": {
+                "inputTokens": 1187,
+                "outputTokens": 104
+              }
+            },
+            {
+              "id": "perf-02",
+              "expectedTags": [
+                "backend",
+                "performance",
+                "search"
+              ],
+              "predictedTags": [
+                "backend",
+                "performance",
+                "search"
+              ],
+              "precision": 1,
+              "recall": 1,
+              "f1": 1,
+              "modelOutput": [
+                {
+                  "tag": "backend",
+                  "relevance": 0.41,
+                  "evidence": [
+                    "background indexer"
+                  ]
+                },
+                {
+                  "tag": "performance",
+                  "relevance": 0.86,
+                  "evidence": [
+                    "Memory leak",
+                    "after a week of uptime"
+                  ]
+                },
+                {
+                  "tag": "search",
+                  "relevance": 0.74,
+                  "evidence": [
+                    "background indexer"
+                  ]
+                }
+              ],
+              "modelNegations": null,
+              "verifiedTagScores": [
+                {
+                  "tag": "performance",
+                  "relevance": 0.86,
+                  "candidateSources": [
+                    "retrieval",
+                    "anchor"
+                  ],
+                  "alignment": 0.279,
+                  "specificity": 0.5,
+                  "verificationVerdict": "keep",
+                  "verificationReason": "grounded by source-text evidence",
+                  "evidence": [
+                    {
+                      "start": 0,
+                      "end": 11,
+                      "text": "Memory leak",
+                      "source": "source_text",
+                      "kind": "direct_quote"
+                    },
+                    {
+                      "start": 38,
+                      "end": 60,
+                      "text": "after a week of uptime",
+                      "source": "source_text",
+                      "kind": "direct_quote"
+                    }
+                  ]
+                },
+                {
+                  "tag": "search",
+                  "relevance": 0.74,
+                  "candidateSources": [
+                    "retrieval",
+                    "anchor"
+                  ],
+                  "alignment": 0.336,
+                  "specificity": 0.65,
+                  "verificationVerdict": "keep",
+                  "verificationReason": "grounded by source-text evidence",
+                  "evidence": [
+                    {
+                      "start": 19,
+                      "end": 37,
+                      "text": "background indexer",
+                      "source": "source_text",
+                      "kind": "direct_quote"
+                    }
+                  ]
+                },
+                {
+                  "tag": "backend",
+                  "relevance": 0.24599999999999997,
+                  "candidateSources": [
+                    "retrieval",
+                    "anchor"
+                  ],
+                  "alignment": 0.325,
+                  "specificity": 0.25,
+                  "verificationVerdict": "keep",
+                  "verificationReason": "grounded by source-text evidence",
+                  "evidence": [
+                    {
+                      "start": 19,
+                      "end": 37,
+                      "text": "background indexer",
+                      "source": "source_text",
+                      "kind": "direct_quote"
+                    }
+                  ]
+                }
+              ],
+              "tokenUsage": {
+                "inputTokens": 1201,
+                "outputTokens": 134
+              }
+            },
+            {
+              "id": "perf-03",
+              "expectedTags": [
+                "backend",
+                "database",
+                "performance"
+              ],
+              "predictedTags": [
+                "backend: general backend/server work",
+                "database: database queries and storage",
+                "performance: latency, throughput, and resource usage"
+              ],
+              "precision": 0,
+              "recall": 0,
+              "f1": 0,
+              "modelOutput": [
+                {
+                  "tag": "backend: general backend/server work",
+                  "relevance": 0.34,
+                  "evidence": [
+                    "when listing issues together"
+                  ]
+                },
+                {
+                  "tag": "database: database queries and storage",
+                  "relevance": 0.82,
+                  "evidence": [
+                    "N+1 queries"
+                  ]
+                },
+                {
+                  "tag": "performance: latency, throughput, and resource usage",
+                  "relevance": 0.86,
+                  "evidence": [
+                    "N+1 queries"
+                  ]
+                }
+              ],
+              "modelNegations": null,
+              "verifiedTagScores": [
+                {
+                  "tag": "performance: latency, throughput, and resource usage",
+                  "relevance": 0.86,
+                  "verificationVerdict": "keep",
+                  "verificationReason": "grounded by source-text evidence",
+                  "evidence": [
+                    {
+                      "start": 0,
+                      "end": 11,
+                      "text": "N+1 queries",
+                      "source": "source_text",
+                      "kind": "direct_quote"
+                    }
+                  ]
+                },
+                {
+                  "tag": "database: database queries and storage",
+                  "relevance": 0.82,
+                  "verificationVerdict": "keep",
+                  "verificationReason": "grounded by source-text evidence",
+                  "evidence": [
+                    {
+                      "start": 0,
+                      "end": 11,
+                      "text": "N+1 queries",
+                      "source": "source_text",
+                      "kind": "direct_quote"
+                    }
+                  ]
+                },
+                {
+                  "tag": "backend: general backend/server work",
+                  "relevance": 0.34,
+                  "verificationVerdict": "keep",
+                  "verificationReason": "grounded by source-text evidence",
+                  "evidence": [
+                    {
+                      "start": 12,
+                      "end": 40,
+                      "text": "when listing issues together",
+                      "source": "source_text",
+                      "kind": "direct_quote"
+                    }
+                  ]
+                }
+              ],
+              "tokenUsage": {
+                "inputTokens": 1201,
+                "outputTokens": 149
+              }
+            },
+            {
+              "id": "srch-01",
+              "expectedTags": [
+                "backend",
+                "search"
+              ],
+              "predictedTags": [
+                "backend",
+                "database",
+                "search"
+              ],
+              "precision": 0.6666666666666666,
+              "recall": 1,
+              "f1": 0.8,
+              "modelOutput": [
+                {
+                  "tag": "backend",
+                  "relevance": 0.41,
+                  "evidence": [
+                    "after an issue is renamed"
+                  ]
+                },
+                {
+                  "tag": "database",
+                  "relevance": 0.62,
+                  "evidence": [
+                    "stale results"
+                  ]
+                },
+                {
+                  "tag": "search",
+                  "relevance": 0.93,
+                  "evidence": [
+                    "Search returns stale results"
+                  ]
+                }
+              ],
+              "modelNegations": null,
+              "verifiedTagScores": [
+                {
+                  "tag": "search",
+                  "relevance": 0.93,
+                  "candidateSources": [
+                    "retrieval",
+                    "anchor"
+                  ],
+                  "alignment": 0.445,
+                  "specificity": 0.65,
+                  "verificationVerdict": "keep",
+                  "verificationReason": "grounded by source-text evidence",
+                  "evidence": [
+                    {
+                      "start": 0,
+                      "end": 28,
+                      "text": "Search returns stale results",
+                      "source": "source_text",
+                      "kind": "direct_quote"
+                    }
+                  ]
+                },
+                {
+                  "tag": "database",
+                  "relevance": 0.62,
+                  "candidateSources": [
+                    "retrieval"
+                  ],
+                  "alignment": 0.253,
+                  "specificity": 0.6,
+                  "verificationVerdict": "keep",
+                  "verificationReason": "grounded by source-text evidence",
+                  "evidence": [
+                    {
+                      "start": 15,
+                      "end": 28,
+                      "text": "stale results",
+                      "source": "source_text",
+                      "kind": "direct_quote"
+                    }
+                  ]
+                },
+                {
+                  "tag": "backend",
+                  "relevance": 0.24599999999999997,
+                  "candidateSources": [
+                    "retrieval",
+                    "anchor"
+                  ],
+                  "alignment": 0.213,
+                  "specificity": 0.25,
+                  "verificationVerdict": "keep",
+                  "verificationReason": "grounded by source-text evidence",
+                  "evidence": [
+                    {
+                      "start": 45,
+                      "end": 70,
+                      "text": "after an issue is renamed",
+                      "source": "source_text",
+                      "kind": "direct_quote"
+                    }
+                  ]
+                }
+              ],
+              "tokenUsage": {
+                "inputTokens": 1193,
+                "outputTokens": 130
+              }
+            },
+            {
+              "id": "srch-02",
+              "expectedTags": [
+                "search"
+              ],
+              "predictedTags": [
+                "search"
+              ],
+              "precision": 1,
+              "recall": 1,
+              "f1": 1,
+              "modelOutput": [
+                {
+                  "tag": "search",
+                  "relevance": 0.93,
+                  "evidence": [
+                    "Search ranking puts exact title matches below fuzzy matches"
+                  ]
+                }
+              ],
+              "modelNegations": null,
+              "verifiedTagScores": [
+                {
+                  "tag": "search",
+                  "relevance": 0.93,
+                  "candidateSources": [
+                    "retrieval",
+                    "anchor"
+                  ],
+                  "alignment": 0.659,
+                  "specificity": 0.65,
+                  "verificationVerdict": "keep",
+                  "verificationReason": "grounded by source-text evidence",
+                  "evidence": [
+                    {
+                      "start": 0,
+                      "end": 59,
+                      "text": "Search ranking puts exact title matches below fuzzy matches",
+                      "source": "source_text",
+                      "kind": "direct_quote"
+                    }
+                  ]
+                }
+              ],
+              "tokenUsage": {
+                "inputTokens": 1184,
+                "outputTokens": 63
+              }
+            },
+            {
+              "id": "srch-03",
+              "expectedTags": [
+                "performance",
+                "search",
+                "ui"
+              ],
+              "predictedTags": [
+                "performance",
+                "search: search indexing and ranking",
+                "ui"
+              ],
+              "precision": 0.6666666666666666,
+              "recall": 0.6666666666666666,
+              "f1": 0.6666666666666666,
+              "modelOutput": [
+                {
+                  "tag": "performance",
+                  "relevance": 0.86,
+                  "evidence": [
+                    "Typing in the search box freezes the page"
+                  ]
+                },
+                {
+                  "tag": "search: search indexing and ranking",
+                  "relevance": 0.41,
+                  "evidence": [
+                    "Typing in the search box"
+                  ]
+                },
+                {
+                  "tag": "ui",
+                  "relevance": 0.62,
+                  "evidence": [
+                    "Typing in the search box freezes the page"
+                  ]
+                }
+              ],
+              "modelNegations": null,
+              "verifiedTagScores": [
+                {
+                  "tag": "performance",
+                  "relevance": 0.86,
+                  "candidateSources": [
+                    "anchor"
+                  ],
+                  "alignment": 0.184,
+                  "specificity": 0.5,
+                  "verificationVerdict": "keep",
+                  "verificationReason": "grounded by source-text evidence",
+                  "evidence": [
+                    {
+                      "start": 0,
+                      "end": 41,
+                      "text": "Typing in the search box freezes the page",
+                      "source": "source_text",
+                      "kind": "direct_quote"
+                    }
+                  ]
+                },
+                {
+                  "tag": "ui",
+                  "relevance": 0.62,
+                  "candidateSources": [
+                    "retrieval",
+                    "anchor"
+                  ],
+                  "alignment": 0.234,
+                  "specificity": 0.3,
+                  "verificationVerdict": "keep",
+                  "verificationReason": "grounded by source-text evidence",
+                  "evidence": [
+                    {
+                      "start": 0,
+                      "end": 41,
+                      "text": "Typing in the search box freezes the page",
+                      "source": "source_text",
+                      "kind": "direct_quote"
+                    }
+                  ]
+                },
+                {
+                  "tag": "search: search indexing and ranking",
+                  "relevance": 0.41,
+                  "verificationVerdict": "keep",
+                  "verificationReason": "grounded by source-text evidence",
+                  "evidence": [
+                    {
+                      "start": 0,
+                      "end": 24,
+                      "text": "Typing in the search box",
+                      "source": "source_text",
+                      "kind": "direct_quote"
+                    }
+                  ]
+                }
+              ],
+              "tokenUsage": {
+                "inputTokens": 1179,
+                "outputTokens": 144
+              }
+            }
+          ],
+          "ranking": {
+            "ndcgAt8": 0.813779,
+            "recallAt8": 0.716071,
+            "deltaNDCGAt8": -0.126112,
+            "deltaRecallAt8": -0.20342300000000002
+          }
+        }
+      ]
+    }
+  ]
+}

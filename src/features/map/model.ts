@@ -355,22 +355,6 @@ export function computeBlobPath(screenPoints: { x: number; y: number }[], paddin
   return parts.join(" ");
 }
 
-const BLOB_COLORS = [
-  "#a78bfa",
-  "#60a5fa",
-  "#34d399",
-  "#fbbf24",
-  "#f87171",
-];
-
-export function hashTagColor(tag: string): string {
-  let sum = 0;
-  for (let i = 0; i < tag.length; i++) {
-    sum += tag.charCodeAt(i);
-  }
-  return BLOB_COLORS[sum % BLOB_COLORS.length];
-}
-
 export function uniqueBlobColors(keys: readonly string[]): Record<string, string> {
   const colors: Record<string, string> = {};
   const usedHues = new Set<number>();
