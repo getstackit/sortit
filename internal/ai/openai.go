@@ -15,7 +15,7 @@ import (
 
 const (
 	defaultOpenAIBaseURL        = "https://api.openai.com/v1"
-	defaultOpenAITagModel       = "gpt-5.6-luna"
+	defaultOpenAITagModel       = "gpt-5.6-terra"
 	defaultOpenAICanonicalModel = "gpt-5.4-mini"
 	defaultOpenAIEmbeddingModel = "text-embedding-3-small"
 
@@ -69,7 +69,7 @@ type OpenAIEmbedder struct {
 
 type openAIChatCompletionRequest struct {
 	Model          string                     `json:"model"`
-	Temperature    float64                    `json:"temperature"`
+	Temperature    *float64                   `json:"temperature,omitempty"`
 	ResponseFormat *openAIResponseFormat      `json:"response_format,omitempty"`
 	Messages       []openAIChatMessageRequest `json:"messages"`
 }
@@ -121,6 +121,14 @@ type openAIErrorResponse struct {
 	Error struct {
 		Message string `json:"message"`
 	} `json:"error"`
+}
+
+func openAITemperature(model string) *float64 {
+	if strings.HasPrefix(strings.TrimSpace(model), "gpt-5.6") {
+		return nil
+	}
+	temperature := 0.0
+	return &temperature
 }
 
 func NewOpenAITagger(cfg OpenAIConfig) (*OpenAITagger, error) {
@@ -183,7 +191,7 @@ func NewOpenAIEmbedder(cfg OpenAIConfig) (*OpenAIEmbedder, error) {
 func (t *OpenAITagger) Score(ctx context.Context, text string, tags []Tag, examples []FewShotExample, priorDecisions []PriorDecision, frame ConceptFrame) (ScoreResult, error) {
 	request := openAIChatCompletionRequest{
 		Model:       t.model,
-		Temperature: 0,
+		Temperature: openAITemperature(t.model),
 		ResponseFormat: &openAIResponseFormat{
 			Type: "json_object",
 		},
@@ -240,7 +248,7 @@ func (t *OpenAITagger) Model() string {
 func (c *OpenAICanonicalizer) CanonicalizeDiscussion(ctx context.Context, posts []string) (string, error) {
 	request := openAIChatCompletionRequest{
 		Model:       c.model,
-		Temperature: 0,
+		Temperature: openAITemperature(c.model),
 		Messages: []openAIChatMessageRequest{
 			{
 				Role:    chatRoleSystem,
@@ -536,7 +544,7 @@ func buildOpenAITaggingSystemPrompt(frame ConceptFrame) string {
 func (t *OpenAITagger) ScoreSpecificity(ctx context.Context, tag Tag, catalog []Tag) (float64, error) {
 	request := openAIChatCompletionRequest{
 		Model:       t.model,
-		Temperature: 0,
+		Temperature: openAITemperature(t.model),
 		ResponseFormat: &openAIResponseFormat{
 			Type: "json_object",
 		},
@@ -629,7 +637,7 @@ func buildOpenAICanonicalizationSystemPrompt() string {
 func (p *OpenAIConceptProfiler) GenerateConceptProfile(ctx context.Context, tag string, issueSummaries []string) (string, error) {
 	request := openAIChatCompletionRequest{
 		Model:       p.model,
-		Temperature: 0,
+		Temperature: openAITemperature(p.model),
 		Messages: []openAIChatMessageRequest{
 			{
 				Role:    chatRoleSystem,
@@ -665,7 +673,7 @@ type openAIClusterConceptResponse struct {
 func (p *OpenAIConceptProfiler) ProposeConceptFromCluster(ctx context.Context, issueSummaries []string, frame ConceptFrame) (string, string, error) {
 	request := openAIChatCompletionRequest{
 		Model:       p.model,
-		Temperature: 0,
+		Temperature: openAITemperature(p.model),
 		ResponseFormat: &openAIResponseFormat{
 			Type: "json_object",
 		},
@@ -718,7 +726,7 @@ type openAIThemeLabelResponse struct {
 func (l *OpenAIThemeLabeler) ProposeThemeLabel(ctx context.Context, topTags []ThemeLabelTag, issueTitles []string, frame ConceptFrame) (string, string, error) {
 	request := openAIChatCompletionRequest{
 		Model:       l.model,
-		Temperature: 0,
+		Temperature: openAITemperature(l.model),
 		ResponseFormat: &openAIResponseFormat{
 			Type: "json_object",
 		},

@@ -77,7 +77,7 @@ identical results).
 `internal/matheval` measures *ranking* (NDCG@8/Recall@8 over judged queries).
 Nothing measures **tagging fidelity** — how well an analyzer model assigns the
 fixture's tags — yet the analyzer's `r` anchors the entire math layer.
-Model constants: `defaultOpenAITagModel = "gpt-5.4-nano"`,
+Model constants: `defaultOpenAITagModel = "gpt-5.6-terra"`,
 `defaultOpenAICanonicalModel = "gpt-5.4-mini"` (`internal/ai/openai.go:18-19`),
 overridable via env (`internal/ai/config.go`). The fixture corpus (48 issues,
 16 tags) carries per-issue tag-domain ground truth from its generator — the

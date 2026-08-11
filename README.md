@@ -169,7 +169,7 @@ Optional AI configuration:
 ```dotenv
 AI_PROVIDER=openai
 OPENAI_API_KEY=your_openai_api_key
-OPENAI_TAG_MODEL=gpt-5.6-luna
+OPENAI_TAG_MODEL=gpt-5.6-terra
 OPENAI_CANONICAL_MODEL=gpt-4.1-mini
 OPENAI_EMBED_MODEL=text-embedding-3-small
 ```
