@@ -29,6 +29,7 @@ func main() {
 		outDir     = flag.String("out-dir", "internal/matheval/testdata", "directory for committed result tables")
 		fixtureDir = flag.String("fixture-dir", "", "fixture input directory (defaults to -out-dir)")
 		combine    = flag.String("combine", "", "comma-separated one-run table JSON files to combine without live calls")
+		rerank     = flag.String("rerank", "", "comma-separated table JSON files whose rankings are recomputed from stored verified scores, without live calls")
 	)
 	flag.Parse()
 	if strings.TrimSpace(*fixtureDir) == "" {
@@ -36,6 +37,10 @@ func main() {
 	}
 	if *combine != "" {
 		combineArtifacts(*combine, *date, *outDir)
+		return
+	}
+	if *rerank != "" {
+		rerankArtifacts(*rerank, *fixtureDir, *outDir)
 		return
 	}
 	if !*live {
@@ -163,11 +168,67 @@ func combineArtifacts(raw, date, outDir string) {
 	fmt.Printf("wrote %d combined per-model tables and %s\n", len(artifact.Reports), comparison)
 }
 
+func rerankArtifacts(raw, fixtureDir, outDir string) {
+	corpus, err := matheval.LoadCorpus(filepath.Join(fixtureDir, "corpus.json"))
+	if err != nil {
+		fatalf("load corpus: %v", err)
+	}
+	embeddings, err := matheval.LoadRealEmbeddings(filepath.Join(fixtureDir, "real_embeddings.json"))
+	if err != nil {
+		fatalf("load real embeddings: %v", err)
+	}
+	realCorpus, err := corpus.RealCorpus(embeddings)
+	if err != nil {
+		fatalf("build real corpus: %v", err)
+	}
+	judgments, err := matheval.LoadJudgments(filepath.Join(fixtureDir, "judgments.json"), realCorpus)
+	if err != nil {
+		fatalf("load judgments: %v", err)
+	}
+
+	combined := matheval.TagEvalArtifact{}
+	for _, path := range strings.Split(raw, ",") {
+		path = strings.TrimSpace(path)
+		data, err := os.ReadFile(path)
+		if err != nil {
+			fatalf("read %s: %v", path, err)
+		}
+		var artifact matheval.TagEvalArtifact
+		if err := json.Unmarshal(data, &artifact); err != nil {
+			fatalf("parse %s: %v", path, err)
+		}
+		if len(artifact.Reports) != 1 {
+			fatalf("%s must contain exactly one report", path)
+		}
+		report, err := matheval.RerankTagEvalReport(realCorpus, judgments, artifact.Reports[0])
+		if err != nil {
+			fatalf("rerank %s: %v", path, err)
+		}
+		artifact.Reports[0] = report
+		if err := writeJSON(path, artifact); err != nil {
+			fatalf("write %s: %v", path, err)
+		}
+		combined.GeneratedAt = artifact.GeneratedAt
+		combined.Command = artifact.Command
+		combined.Fixture = artifact.Fixture
+		combined.Reports = append(combined.Reports, report)
+	}
+	comparison := filepath.Join(outDir, "tagging_fidelity_comparison.md")
+	if err := os.WriteFile(comparison, []byte(renderComparison(combined)), 0o600); err != nil {
+		fatalf("write %s: %v", comparison, err)
+	}
+	fmt.Printf("reranked %d tables and rewrote %s\n", len(combined.Reports), comparison)
+}
+
 func modelPrice(model string) (matheval.TagEvalPrice, bool) {
 	// Standard API prices checked 2026-08-08. See openai.com/api/pricing.
 	switch model {
 	case "gpt-5.4-nano":
 		return matheval.TagEvalPrice{InputPerMillion: 0.20, OutputPerMillion: 1.25}, true
+	case "gpt-5.6", "gpt-5.6-sol":
+		return matheval.TagEvalPrice{InputPerMillion: 5.00, OutputPerMillion: 30.00}, true
+	case "gpt-5.6-terra":
+		return matheval.TagEvalPrice{InputPerMillion: 2.00, OutputPerMillion: 12.00}, true
 	case "gpt-5.6-luna":
 		return matheval.TagEvalPrice{InputPerMillion: 1.00, OutputPerMillion: 6.00}, true
 	case "gpt-5.4-mini":
