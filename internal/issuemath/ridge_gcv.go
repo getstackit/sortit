@@ -58,7 +58,7 @@ func SelectRidgeLambdaGCV(
 	if len(items) < scoring.MinDecompositionIssues || len(tagNames) == 0 {
 		return 0, false
 	}
-	embDim := embeddingDim(tagEmbeddings)
+	embDim := ridgeEmbeddingDim(issueEmbeddings, tagEmbeddings)
 	if embDim == 0 {
 		return 0, false
 	}

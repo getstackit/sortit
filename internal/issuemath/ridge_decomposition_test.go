@@ -231,3 +231,36 @@ func TestRidgeCholeskyFallbackObservable(t *testing.T) {
 		t.Errorf("RidgeCholeskyFallbackCount did not observe the fallback: want %d, got %d", before+1, got)
 	}
 }
+
+func TestEmbeddingDimPicksDominantDimensionDeterministically(t *testing.T) {
+	embeddings := map[string][]float64{
+		"a": make([]float64, 1536), "b": make([]float64, 1536), "c": make([]float64, 1536),
+		"hash-fallback": make([]float64, 64),
+	}
+	for range 100 {
+		if got := embeddingDim(embeddings); got != 1536 {
+			t.Fatalf("embeddingDim = %d, want dominant 1536", got)
+		}
+	}
+	if got := embeddingDim(map[string][]float64{"a": make([]float64, 64), "b": make([]float64, 1536)}); got != 1536 {
+		t.Fatalf("tie should break toward larger dimension, got %d", got)
+	}
+	if got := embeddingDim(map[string][]float64{"a": {}}); got != 0 {
+		t.Fatalf("empty embeddings should give 0, got %d", got)
+	}
+}
+
+func TestRidgeEmbeddingDimIssuesAreAuthoritative(t *testing.T) {
+	issues := map[string][]float64{"i1": make([]float64, 1536), "i2": make([]float64, 1536)}
+	// Hash-fallback tag rows outnumbering real tags must not flip the dimension.
+	tags := map[string][]float64{
+		"real": make([]float64, 1536),
+		"h1":   make([]float64, 64), "h2": make([]float64, 64), "h3": make([]float64, 64),
+	}
+	if got := ridgeEmbeddingDim(issues, tags); got != 1536 {
+		t.Fatalf("ridgeEmbeddingDim = %d, want issue-embedding 1536", got)
+	}
+	if got := ridgeEmbeddingDim(nil, tags); got != 64 {
+		t.Fatalf("tag fallback = %d, want dominant tag dim 64", got)
+	}
+}
