@@ -333,7 +333,7 @@ func IssueTagScoresFromAnalysis(scores []ai.TagScore) []domain.TagRelevance {
 		if score.Tag == "" {
 			continue
 		}
-		if score.Relevance < issueTagRelevanceFloor {
+		if score.Relevance < IssueTagRelevanceFloor {
 			continue
 		}
 		tagScores = append(tagScores, domain.TagRelevance{
