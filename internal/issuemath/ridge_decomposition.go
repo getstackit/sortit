@@ -208,7 +208,7 @@ func ComputeRidgeDecomposition(
 		return fallback
 	}
 
-	embDim := embeddingDim(tagEmbeddings)
+	embDim := ridgeEmbeddingDim(issueEmbeddings, tagEmbeddings)
 	if embDim == 0 {
 		return fallback
 	}
@@ -270,7 +270,7 @@ func DecomposeRidgeEmbedding(
 	if embDim == 0 || len(tagNames) == 0 || vectors.IsZero(embedding) {
 		return residualOnlyRidgeVectors(embedding, math.Sqrt(dotProduct(embedding, embedding)))
 	}
-	if embeddingDim(tagEmbeddings) != embDim {
+	if !hasEmbeddingWithDim(tagEmbeddings, embDim) {
 		return residualOnlyRidgeVectors(embedding, math.Sqrt(dotProduct(embedding, embedding)))
 	}
 
@@ -587,13 +587,46 @@ func ridgeTagMatrix(tagNames []string, tagEmbeddings map[string][]float64, embDi
 	return matrix
 }
 
-func embeddingDim(tagEmbeddings map[string][]float64) int {
-	for _, emb := range tagEmbeddings {
+// embeddingDim returns the dominant embedding dimension, ties broken toward
+// the larger dimension. Mixed dimensions occur when hash-fallback vectors
+// stand in for missing persisted embeddings; picking by map order made the
+// whole decomposition nondeterministically fall back in that case.
+func embeddingDim(embeddings map[string][]float64) int {
+	counts := make(map[int]int, 2)
+	for _, emb := range embeddings {
 		if len(emb) > 0 {
-			return len(emb)
+			counts[len(emb)]++
 		}
 	}
-	return 0
+	best := 0
+	for dim, count := range counts {
+		if count > counts[best] || (count == counts[best] && dim > best) {
+			best = dim
+		}
+	}
+	return best
+}
+
+// ridgeEmbeddingDim picks the dimension the solve runs in: the issue
+// embeddings are the data, so their dominant dimension is authoritative and
+// mismatched tag rows zero-fill. Tag embeddings decide only when no issue
+// carries an embedding (the hash-fallback-only corpus).
+func ridgeEmbeddingDim(issueEmbeddings, tagEmbeddings map[string][]float64) int {
+	if dim := embeddingDim(issueEmbeddings); dim > 0 {
+		return dim
+	}
+	return embeddingDim(tagEmbeddings)
+}
+
+// hasEmbeddingWithDim reports whether any embedding matches dim, so a single
+// mismatched hash-fallback row can't disqualify an otherwise usable basis.
+func hasEmbeddingWithDim(embeddings map[string][]float64, dim int) bool {
+	for _, emb := range embeddings {
+		if len(emb) == dim {
+			return true
+		}
+	}
+	return false
 }
 
 func (d *RidgeDecomposition) put(id string, v RidgeVectors) {

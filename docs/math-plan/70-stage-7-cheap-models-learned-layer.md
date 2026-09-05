@@ -77,7 +77,7 @@ identical results).
 `internal/matheval` measures *ranking* (NDCG@8/Recall@8 over judged queries).
 Nothing measures **tagging fidelity** — how well an analyzer model assigns the
 fixture's tags — yet the analyzer's `r` anchors the entire math layer.
-Model constants: `defaultOpenAITagModel = "gpt-5.4-nano"`,
+Model constants: `defaultOpenAITagModel = "gpt-5.6-terra"`,
 `defaultOpenAICanonicalModel = "gpt-5.4-mini"` (`internal/ai/openai.go:18-19`),
 overridable via env (`internal/ai/config.go`). The fixture corpus (48 issues,
 16 tags) carries per-issue tag-domain ground truth from its generator — the
@@ -286,7 +286,42 @@ recorded here, code stays dark — that outcome is acceptable and cheap.
 - **R² self-inflation** — retired by cross-fitting + NDCG as the gate.
 - **K ≥ D exposure unchanged** (K doesn't grow), but note the interaction
   for WP-606: a learned basis makes small-D embedding models *more* viable,
-  which is exactly when the GCV cliff needs its answer.
+which is exactly when the GCV cliff needs its answer.
+
+### Study record (2026-08-08)
+
+The pre-committed qualification rule is: **learned `T_L` qualifies only if it
+beats the shipped default on the REAL fixture by more than +0.01 NDCG@8 and
+loses no more than 0.02 NDCG@8 on synthetic.** The synthetic fixture builds
+embeddings from descriptor-tag sums and structurally flatters the descriptor
+basis; its result is a floor, while the real-fixture result is load-bearing.
+
+`go test ./internal/matheval -run TestLearnedTagBasisStudy -learnedbasis -v`
+evaluates all rows through the full search-ranking seam, with GCV λ selected
+again for each basis. Cross-fitted R² pools out-of-fold residuals over five
+deterministic folds; it is reported beside in-sample R² because the latter is
+self-fulfilling for a learned basis.
+
+| Fixture | Arm | γ₀ | GCV λ | NDCG@8 | Recall@8 | R² in-sample | R² cross-fitted |
+|---|---|---:|---:|---:|---:|---:|---:|
+| synthetic | descriptor `T` | — | 1.000 | 0.9366 | 0.9560 | 0.9005 | 0.9005 |
+| synthetic | relevance-weighted centroids | — | 1.000 | 0.9471 | 0.9560 | 0.9045 | 0.8825 |
+| synthetic | learned `T_L` | 0.1 | 1.000 | 0.9332 | 0.9638 | 0.9380 | 0.9030 |
+| synthetic | learned `T_L` | 1 | 1.000 | 0.9369 | 0.9622 | 0.9314 | 0.9038 |
+| synthetic | learned `T_L` | 5 | 1.000 | 0.9388 | 0.9622 | 0.9199 | 0.9099 |
+| synthetic | learned `T_L` | 20 | 1.000 | 0.9373 | 0.9560 | 0.9093 | 0.9052 |
+| real | descriptor `T` (shipped default) | — | 0.300 | 0.9399 | 0.9195 | 0.1729 | 0.1729 |
+| real | relevance-weighted centroids | — | 0.010 | 0.8449 | 0.6371 | 0.5786 | 0.2897 |
+| real | learned `T_L` | 0.1 | 0.100 | 0.9563 | 0.9536 | 0.6032 | 0.3010 |
+| real | learned `T_L` | 1 | 0.300 | 0.9619 | 0.9544 | 0.5393 | 0.3083 |
+| real | learned `T_L` | 5 | 0.300 | 0.9592 | 0.9466 | 0.3611 | 0.2577 |
+| real | learned `T_L` | 20 | 0.300 | 0.9594 | 0.9320 | 0.2333 | 0.2006 |
+
+**Verdict: qualified for a separate, dark wiring WP.** `γ₀=1` is the finalist:
+its real-fixture NDCG@8 gain is +0.0220 and its synthetic delta is +0.0003.
+No runtime consumer changes here: ranking, drift, verifier alignment,
+specificity, map, and themes continue using descriptor `T` until that separate
+WP has its own cache, seam, and rollout review.
 
 ---
 

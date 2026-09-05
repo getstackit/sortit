@@ -21,7 +21,9 @@ const (
 	genericSpecificityThreshold = 0.3
 	genericMultiplier           = 0.6
 	defaultSpecificity          = 0.5
-	issueTagRelevanceFloor      = 0.08
+	// IssueTagRelevanceFloor is the minimum model-assigned relevance retained
+	// by the production enrichment pipeline.
+	IssueTagRelevanceFloor      = 0.08
 	verifierWeakAlignment       = 0.16
 	verifierFlaggedAlignment    = 0.08
 	verifierDominatingAlignment = 0.35
