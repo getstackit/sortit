@@ -14,6 +14,7 @@ import (
 	"unicode"
 
 	"sortit/internal/ai"
+	issueenrichment "sortit/internal/issueenrichment"
 	"sortit/internal/matheval"
 )
 
@@ -28,6 +29,7 @@ func main() {
 		outDir     = flag.String("out-dir", "internal/matheval/testdata", "directory for committed result tables")
 		fixtureDir = flag.String("fixture-dir", "", "fixture input directory (defaults to -out-dir)")
 		combine    = flag.String("combine", "", "comma-separated one-run table JSON files to combine without live calls")
+		rerank     = flag.String("rerank", "", "comma-separated table JSON files whose rankings are recomputed from stored verified scores, without live calls")
 	)
 	flag.Parse()
 	if strings.TrimSpace(*fixtureDir) == "" {
@@ -35,6 +37,10 @@ func main() {
 	}
 	if *combine != "" {
 		combineArtifacts(*combine, *date, *outDir)
+		return
+	}
+	if *rerank != "" {
+		rerankArtifacts(*rerank, *fixtureDir, *outDir)
 		return
 	}
 	if !*live {
@@ -162,11 +168,67 @@ func combineArtifacts(raw, date, outDir string) {
 	fmt.Printf("wrote %d combined per-model tables and %s\n", len(artifact.Reports), comparison)
 }
 
+func rerankArtifacts(raw, fixtureDir, outDir string) {
+	corpus, err := matheval.LoadCorpus(filepath.Join(fixtureDir, "corpus.json"))
+	if err != nil {
+		fatalf("load corpus: %v", err)
+	}
+	embeddings, err := matheval.LoadRealEmbeddings(filepath.Join(fixtureDir, "real_embeddings.json"))
+	if err != nil {
+		fatalf("load real embeddings: %v", err)
+	}
+	realCorpus, err := corpus.RealCorpus(embeddings)
+	if err != nil {
+		fatalf("build real corpus: %v", err)
+	}
+	judgments, err := matheval.LoadJudgments(filepath.Join(fixtureDir, "judgments.json"), realCorpus)
+	if err != nil {
+		fatalf("load judgments: %v", err)
+	}
+
+	combined := matheval.TagEvalArtifact{}
+	for _, path := range strings.Split(raw, ",") {
+		path = strings.TrimSpace(path)
+		data, err := os.ReadFile(path)
+		if err != nil {
+			fatalf("read %s: %v", path, err)
+		}
+		var artifact matheval.TagEvalArtifact
+		if err := json.Unmarshal(data, &artifact); err != nil {
+			fatalf("parse %s: %v", path, err)
+		}
+		if len(artifact.Reports) != 1 {
+			fatalf("%s must contain exactly one report", path)
+		}
+		report, err := matheval.RerankTagEvalReport(realCorpus, judgments, artifact.Reports[0])
+		if err != nil {
+			fatalf("rerank %s: %v", path, err)
+		}
+		artifact.Reports[0] = report
+		if err := writeJSON(path, artifact); err != nil {
+			fatalf("write %s: %v", path, err)
+		}
+		combined.GeneratedAt = artifact.GeneratedAt
+		combined.Command = artifact.Command
+		combined.Fixture = artifact.Fixture
+		combined.Reports = append(combined.Reports, report)
+	}
+	comparison := filepath.Join(outDir, "tagging_fidelity_comparison.md")
+	if err := os.WriteFile(comparison, []byte(renderComparison(combined)), 0o600); err != nil {
+		fatalf("write %s: %v", comparison, err)
+	}
+	fmt.Printf("reranked %d tables and rewrote %s\n", len(combined.Reports), comparison)
+}
+
 func modelPrice(model string) (matheval.TagEvalPrice, bool) {
 	// Standard API prices checked 2026-08-08. See openai.com/api/pricing.
 	switch model {
 	case "gpt-5.4-nano":
 		return matheval.TagEvalPrice{InputPerMillion: 0.20, OutputPerMillion: 1.25}, true
+	case "gpt-5.6", "gpt-5.6-sol":
+		return matheval.TagEvalPrice{InputPerMillion: 5.00, OutputPerMillion: 30.00}, true
+	case "gpt-5.6-terra":
+		return matheval.TagEvalPrice{InputPerMillion: 2.00, OutputPerMillion: 12.00}, true
 	case "gpt-5.6-luna":
 		return matheval.TagEvalPrice{InputPerMillion: 1.00, OutputPerMillion: 6.00}, true
 	case "gpt-5.4-mini":
@@ -184,11 +246,14 @@ func renderComparison(artifact matheval.TagEvalArtifact) string {
 	var out strings.Builder
 	fmt.Fprintln(&out, "# WP-702 tagging-fidelity comparison")
 	fmt.Fprintln(&out)
-	fmt.Fprintf(&out, "Generated: %s  \n", artifact.GeneratedAt)
-	fmt.Fprintf(&out, "Fixture: %s  \n", artifact.Fixture)
-	fmt.Fprintf(&out, "Command: `%s`\n", artifact.Command)
-	fmt.Fprintln(&out)
-	fmt.Fprintln(&out, "Fidelity uses `AnalysisTrace.ModelOutput` after the production relevance floor (0.08), before verifier/post-processing. Ranking substitutes the verifier's final tag scores into the full uncentered ridge path. Ranges are min–max across three serial model runs.")
+	fmt.Fprintf(&out, "Generated: %s\n\n", artifact.GeneratedAt)
+	fmt.Fprintf(&out, "Fixture: %s\n\n", artifact.Fixture)
+	fmt.Fprintf(&out, "Command: `%s`\n\n", artifact.Command)
+	runs := 0
+	if len(artifact.Reports) > 0 {
+		runs = artifact.Reports[0].Runs
+	}
+	fmt.Fprintf(&out, "Fidelity uses `AnalysisTrace.ModelOutput` after the production relevance floor (%.2f), before verifier/post-processing. Ranking substitutes the verifier's final tag scores into the full uncentered ridge path. The ranking baseline uses the fixture's ground-truth tag scores, so live models show a negative Δ; use the between-model comparison rather than treating that sign as a disqualification. Ranges are min–max across %d serial model runs.\n", issueenrichment.IssueTagRelevanceFloor, runs)
 	fmt.Fprintln(&out)
 	fmt.Fprintln(&out, "| Model | Micro F1 | Macro F1 | Correct / incorrect relevance | Negation FP | NDCG@8 Δ | Recall@8 Δ | Tokens in / out per issue | $ / 1k enrichments |")
 	fmt.Fprintln(&out, "|---|---:|---:|---:|---:|---:|---:|---:|---:|")

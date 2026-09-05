@@ -43,3 +43,13 @@ func TestCanonicalModelList(t *testing.T) {
 		t.Fatalf("models = %v, want %v", got, want)
 	}
 }
+
+func TestSummarizeTagEvalRunsUsesPooledNegationRate(t *testing.T) {
+	got := summarizeTagEvalRuns([]TagEvalRun{
+		{Stats: TagEvalStats{Issues: 1, NegationFalsePositives: 1, NegationCount: 1, NegationFalsePositiveRate: 1}},
+		{Stats: TagEvalStats{Issues: 1, NegationFalsePositives: 1, NegationCount: 3, NegationFalsePositiveRate: 1.0 / 3}},
+	})
+	if got.NegationFalsePositiveRate != 0.5 {
+		t.Fatalf("negation false-positive rate = %v, want pooled rate 0.5", got.NegationFalsePositiveRate)
+	}
+}

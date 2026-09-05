@@ -32,6 +32,28 @@ func TestOpenAITaggerReportsProviderTokenUsage(t *testing.T) {
 	}
 }
 
+func TestOpenAITaggerOmitsTemperatureForGPT56(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var request map[string]any
+		if err := json.NewDecoder(r.Body).Decode(&request); err != nil {
+			t.Fatalf("decode request: %v", err)
+		}
+		if _, ok := request["temperature"]; ok {
+			t.Fatal("gpt-5.6 request must omit temperature")
+		}
+		_, _ = w.Write([]byte(`{"choices":[{"message":{"content":"{\"tags\":[]}"}}]}`))
+	}))
+	defer server.Close()
+
+	tagger, err := NewOpenAITagger(OpenAIConfig{APIKey: "test-key", BaseURL: server.URL, HTTPClient: server.Client(), TagModel: "gpt-5.6"})
+	if err != nil {
+		t.Fatalf("new tagger: %v", err)
+	}
+	if _, err := tagger.Score(context.Background(), "text", nil, nil, nil, ConceptFrame{}); err != nil {
+		t.Fatalf("score: %v", err)
+	}
+}
+
 func TestBuildOpenAITaggingPromptIncludesGuidanceAndDescriptions(t *testing.T) {
 	prompt := buildOpenAITaggingPrompt("Safari export hangs on iPad", []Tag{
 		{Name: "export", Description: "download, file generation, sharing, or data extraction workflows. Excludes general browsing unless data leaves the product."},
@@ -284,8 +306,8 @@ func TestOpenAIModelDefaults(t *testing.T) {
 	if err != nil {
 		t.Fatalf("NewOpenAITagger returned error: %v", err)
 	}
-	if tagger.Model() != "gpt-5.6-luna" {
-		t.Fatalf("expected default tag model %q, got %q", "gpt-5.6-luna", tagger.Model())
+	if tagger.Model() != "gpt-5.6-terra" {
+		t.Fatalf("expected default tag model %q, got %q", "gpt-5.6-terra", tagger.Model())
 	}
 
 	canonicalizer, err := NewOpenAICanonicalizer(cfg)
