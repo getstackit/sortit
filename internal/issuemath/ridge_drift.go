@@ -78,7 +78,7 @@ func ComputeCorpusDrift(
 	if len(items) == 0 || len(tagNames) == 0 {
 		return nil
 	}
-	embDim := embeddingDim(tagEmbeddings)
+	embDim := ridgeEmbeddingDim(issueEmbeddings, tagEmbeddings)
 	if embDim == 0 {
 		return nil
 	}

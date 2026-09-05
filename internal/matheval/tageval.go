@@ -21,8 +21,7 @@ import (
 )
 
 const (
-	tagEvalRelevanceFloor = 0.08
-	tagEvalK              = scoring.DefaultResultLimit
+	tagEvalK = scoring.DefaultResultLimit
 )
 
 var tagEvalNow = time.Date(2026, time.August, 8, 0, 0, 0, 0, time.UTC)
@@ -118,10 +117,11 @@ type TagEvalSpread struct {
 }
 
 type TagEvalRank struct {
-	NDCG        float64 `json:"ndcgAt8"`
-	Recall      float64 `json:"recallAt8"`
-	DeltaNDCG   float64 `json:"deltaNDCGAt8,omitempty"`
-	DeltaRecall float64 `json:"deltaRecallAt8,omitempty"`
+	NDCG          float64 `json:"ndcgAt8"`
+	Recall        float64 `json:"recallAt8"`
+	DeltaNDCG     float64 `json:"deltaNDCGAt8,omitempty"`
+	DeltaRecall   float64 `json:"deltaRecallAt8,omitempty"`
+	RidgeFallback bool    `json:"ridgeFallback,omitempty"`
 }
 
 // RunTaggingFidelity runs a tagger serially over a deterministic fixture. It
@@ -179,6 +179,32 @@ func RunTaggingFidelity(ctx context.Context, cfg TagEvalConfig) (TagEvalReport, 
 			Stats:   summarizeTagEvalIssues(issues, cfg.Price),
 			Ranking: ranking,
 		})
+	}
+	report.Summary = summarizeTagEvalRuns(report.RunData)
+	return report, nil
+}
+
+// RerankTagEvalReport recomputes every run's ranking from the artifact's
+// stored verified tag scores, without model calls. It exists to re-score
+// committed artifacts after a ranking-path fix so runs stay comparable.
+func RerankTagEvalReport(corpus Corpus, judgments []Judgment, report TagEvalReport) (TagEvalReport, error) {
+	baseline, err := tagEvalRanking(corpus, judgments, nil)
+	if err != nil {
+		return TagEvalReport{}, fmt.Errorf("baseline ranking: %w", err)
+	}
+	report.Baseline = baseline
+	for i, run := range report.RunData {
+		variantScores := make(map[string][]domain.TagRelevance, len(run.Issues))
+		for _, issue := range run.Issues {
+			variantScores[issue.ID] = issue.VerifiedTagScores
+		}
+		ranking, err := tagEvalRanking(corpus, judgments, variantScores)
+		if err != nil {
+			return TagEvalReport{}, fmt.Errorf("model %s run %d ranking: %w", report.Model, run.Run, err)
+		}
+		ranking.DeltaNDCG = ranking.NDCG - baseline.NDCG
+		ranking.DeltaRecall = ranking.Recall - baseline.Recall
+		report.RunData[i].Ranking = ranking
 	}
 	report.Summary = summarizeTagEvalRuns(report.RunData)
 	return report, nil
@@ -277,7 +303,7 @@ func tagEvalPredictedTags(scores []ai.TagScore) ([]string, []ai.TagScore) {
 	kept := make([]ai.TagScore, 0, len(scores))
 	for _, score := range scores {
 		name := domain.NormalizeTagName(score.Tag)
-		if name == "" || score.Relevance < tagEvalRelevanceFloor {
+		if name == "" || score.Relevance < issueenrichment.IssueTagRelevanceFloor {
 			continue
 		}
 		predicted = append(predicted, name)
@@ -385,7 +411,6 @@ func summarizeTagEvalRuns(runs []TagEvalRun) TagEvalStats {
 		combined.MacroF1 += stats.MacroF1
 		combined.CorrectRelevanceMean += stats.CorrectRelevanceMean
 		combined.IncorrectRelevanceMean += stats.IncorrectRelevanceMean
-		combined.NegationFalsePositiveRate += stats.NegationFalsePositiveRate
 		combined.InputTokensPerIssue += stats.InputTokensPerIssue
 		combined.OutputTokensPerIssue += stats.OutputTokensPerIssue
 		combined.CostPer1KEnrichments += stats.CostPer1KEnrichments
@@ -407,7 +432,7 @@ func summarizeTagEvalRuns(runs []TagEvalRun) TagEvalStats {
 	combined.MacroF1 /= denominator
 	combined.CorrectRelevanceMean /= denominator
 	combined.IncorrectRelevanceMean /= denominator
-	combined.NegationFalsePositiveRate /= denominator
+	combined.NegationFalsePositiveRate = tagEvalRatio(combined.NegationFalsePositives, combined.NegationCount)
 	combined.InputTokensPerIssue /= denominator
 	combined.OutputTokensPerIssue /= denominator
 	combined.CostPer1KEnrichments /= denominator
@@ -434,13 +459,17 @@ func tagEvalRanking(corpus Corpus, judgments []Judgment, replacement map[string]
 		}
 	}
 	uncIssueEmbeddings, uncTagEmbeddings := issuemath.CenterEmbeddingsWith(issuemath.CorpusMeans{}, corpus.IssueEmbeddings(), corpus.TagEmbeddings())
-	lambda, ok := issuemath.SelectRidgeLambdaGCV(storeIssues, corpus.TagNames(), uncIssueEmbeddings, uncTagEmbeddings, scoring.RidgeAnchorLambdaScored, nil)
-	if !ok {
-		return TagEvalRank{}, fmt.Errorf("ridge GCV selection fell back")
-	}
-	bundle := issuemap.ComputeCorpusRidgeDecomposition(storeIssues, corpus.StoreTags(), issuemath.CorpusMeans{}, scoring.RidgeAnchorLambdaScored, lambda)
-	if !bundle.Decomposed() {
-		return TagEvalRank{}, fmt.Errorf("ridge decomposition fell back")
+	rank := TagEvalRank{}
+	options := make([]issuemap.SearchOption, 0, 1)
+	if lambda, ok := issuemath.SelectRidgeLambdaGCV(storeIssues, corpus.TagNames(), uncIssueEmbeddings, uncTagEmbeddings, scoring.RidgeAnchorLambdaScored, nil); ok {
+		bundle := issuemap.ComputeCorpusRidgeDecomposition(storeIssues, corpus.StoreTags(), issuemath.CorpusMeans{}, scoring.RidgeAnchorLambdaScored, lambda)
+		if bundle.Decomposed() {
+			options = append(options, issuemap.WithRidgeDecomposition(bundle))
+		} else {
+			rank.RidgeFallback = true
+		}
+	} else {
+		rank.RidgeFallback = true
 	}
 	var ndcg, recall float64
 	for _, judgment := range judgments {
@@ -448,7 +477,7 @@ func tagEvalRanking(corpus Corpus, judgments []Judgment, replacement map[string]
 		if !ok {
 			return TagEvalRank{}, fmt.Errorf("unknown judgment query %q", judgment.Query)
 		}
-		response := issuemap.SearchFromQueryWithTags(storeIssues, corpus.StoreTags(), query.Raw, toTagRelevances(query.Tags), query.Embedding, tagEvalK, issuemap.WithRidgeDecomposition(bundle))
+		response := issuemap.SearchFromQueryWithTags(storeIssues, corpus.StoreTags(), query.Raw, toTagRelevances(query.Tags), query.Embedding, tagEvalK, options...)
 		ranked := make([]string, len(response.RelatedIssues))
 		for i, issue := range response.RelatedIssues {
 			ranked[i] = issue.ID
@@ -457,7 +486,9 @@ func tagEvalRanking(corpus Corpus, judgments []Judgment, replacement map[string]
 		recall += RecallAtK(ranked, judgment.Expected, tagEvalK)
 	}
 	count := float64(len(judgments))
-	return TagEvalRank{NDCG: roundTagEval(ndcg / count), Recall: roundTagEval(recall / count)}, nil
+	rank.NDCG = roundTagEval(ndcg / count)
+	rank.Recall = roundTagEval(recall / count)
+	return rank, nil
 }
 
 type tagEvalEmbedder struct{ vectors map[string][]float32 }
