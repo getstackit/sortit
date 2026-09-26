@@ -65,3 +65,22 @@ func TestCanonicalModelPrefersExplicitCanonicalModel(t *testing.T) {
 		t.Fatalf("expected canonical model override %q, got %q", "gpt-test-canonical", canonicalModel)
 	}
 }
+
+func TestTaggerFromEnvSelectsOptionalJevWeights(t *testing.T) {
+	base := NewStubTagger()
+	t.Setenv("AI_TAG_WEIGHT_PROVIDER", "")
+	selected, err := taggerFromEnv(base)
+	if err != nil || selected != base {
+		t.Fatalf("default tagger = %T, %v", selected, err)
+	}
+	t.Setenv("AI_TAG_WEIGHT_PROVIDER", "jev")
+	t.Setenv("TYPESAFE_API_KEY", "test-key")
+	selected, err = taggerFromEnv(base)
+	if err != nil || selected.Provider() != "stub+typesafe" {
+		t.Fatalf("Jev tagger = %T, %v", selected, err)
+	}
+	t.Setenv("AI_TAG_WEIGHT_PROVIDER", "unknown")
+	if _, err := taggerFromEnv(base); err == nil {
+		t.Fatal("expected error for unsupported weight provider")
+	}
+}

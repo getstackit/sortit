@@ -23,6 +23,7 @@ const defaultModels = "gpt-5.4-nano,gpt-5.6-luna,gpt-5.4-mini"
 func main() {
 	var (
 		live       = flag.Bool("live", false, "allow live OpenAI tagging calls")
+		jev        = flag.Bool("jev", false, "also evaluate LLM tagging with Jev weight assessment")
 		models     = flag.String("models", defaultModels, "comma-separated analyzer models")
 		runs       = flag.Int("runs", 3, "serial runs per model")
 		date       = flag.String("date", time.Now().UTC().Format("2006-01-02"), "artifact date (YYYY-MM-DD)")
@@ -56,6 +57,9 @@ func main() {
 	if apiKey == "" {
 		fatalf("OPENAI_API_KEY is required with -live")
 	}
+	if *jev && strings.TrimSpace(os.Getenv("TYPESAFE_API_KEY")) == "" {
+		fatalf("TYPESAFE_API_KEY is required with -jev")
+	}
 
 	corpus, err := matheval.LoadCorpus(filepath.Join(*fixtureDir, "corpus.json"))
 	if err != nil {
@@ -79,6 +83,9 @@ func main() {
 		fatalf("-models must include at least one model")
 	}
 	command := generatingCommand(modelList, *runs, *date, *outDir)
+	if *jev {
+		command += " -jev"
+	}
 	artifact := matheval.TagEvalArtifact{
 		GeneratedAt: *date,
 		Command:     command,
@@ -91,21 +98,46 @@ func main() {
 		if !ok {
 			fatalf("no standard API price configured for %q", model)
 		}
-		counter := &ai.TokenUsageCounter{}
-		tagger, err := ai.NewOpenAITagger(ai.OpenAIConfig{APIKey: apiKey, TagModel: model})
-		if err != nil {
-			fatalf("configure %s: %v", model, err)
+		modes := []bool{false}
+		if *jev {
+			modes = append(modes, true)
 		}
-		tagger.SetTokenUsageObserver(counter.Add)
-		fmt.Fprintf(os.Stderr, "tageval: %s (%d runs × 48 issues)\n", model, *runs)
-		report, err := matheval.RunTaggingFidelity(context.Background(), matheval.TagEvalConfig{
-			Model: model, Runs: *runs, Corpus: realCorpus, Judgments: judgments,
-			Tagger: tagger, Usage: counter.Snapshot, Price: price,
-		})
-		if err != nil {
-			fatalf("evaluate %s: %v", model, err)
+		for _, withJev := range modes {
+			counter := &ai.TokenUsageCounter{}
+			llm, err := ai.NewOpenAITagger(ai.OpenAIConfig{APIKey: apiKey, TagModel: model})
+			if err != nil {
+				fatalf("configure %s: %v", model, err)
+			}
+			llm.SetTokenUsageObserver(counter.Add)
+			var tagger ai.Tagger = llm
+			config := matheval.TagEvalConfig{
+				Model: model, Runs: *runs, Corpus: realCorpus, Judgments: judgments,
+				Usage: counter.Snapshot, Price: price,
+			}
+			if withJev {
+				weighted, err := ai.NewJevReweightedTagger(llm, ai.JevConfig{
+					APIKey: os.Getenv("TYPESAFE_API_KEY"),
+					URL:    os.Getenv("TYPESAFE_SYSTEMONE_URL"),
+					Model:  os.Getenv("TYPESAFE_MODEL"),
+				})
+				if err != nil {
+					fatalf("configure Jev for %s: %v", model, err)
+				}
+				jevCounter := &ai.TokenUsageCounter{}
+				weighted.SetTokenUsageObserver(jevCounter.Add)
+				tagger = weighted
+				config.Model = weighted.Model()
+				config.ExtraUsage = jevCounter.Snapshot
+				config.ExtraPrice = matheval.TagEvalPrice{InputPerMillion: 0.042}
+			}
+			config.Tagger = tagger
+			fmt.Fprintf(os.Stderr, "tageval: %s (%d runs × %d issues)\n", config.Model, *runs, len(realCorpus.Issues))
+			report, err := matheval.RunTaggingFidelity(context.Background(), config)
+			if err != nil {
+				fatalf("evaluate %s: %v", config.Model, err)
+			}
+			artifact.Reports = append(artifact.Reports, report)
 		}
-		artifact.Reports = append(artifact.Reports, report)
 	}
 
 	if err := os.MkdirAll(*outDir, 0o750); err != nil {
@@ -269,6 +301,9 @@ func renderComparison(artifact matheval.TagEvalArtifact) string {
 	}
 	fmt.Fprintln(&out)
 	fmt.Fprintln(&out, "The JSON table for each model includes all 48 per-issue precision/recall/F1 rows, pre-verifier assignments and negations, final verified scores, and per-issue provider token usage.")
+	if strings.Contains(artifact.Command, " -jev") {
+		fmt.Fprintln(&out, "Jev variants keep LLM tag discovery and evidence, then replace positive and evidenced negative weights. Each variant makes a separate LLM call; compare aggregate outcomes across runs. Hybrid cost includes both providers, with Jev priced at $0.042 per million input tokens.")
+	}
 	return out.String()
 }
 

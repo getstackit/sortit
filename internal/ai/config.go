@@ -36,6 +36,10 @@ func NewAnalyzerFromEnv() (*Analyzer, error) {
 		if err != nil {
 			return nil, err
 		}
+		selectedTagger, err := taggerFromEnv(tagger)
+		if err != nil {
+			return nil, err
+		}
 		canonicalizer, err := NewOpenAICanonicalizer(cfg)
 		if err != nil {
 			return nil, err
@@ -52,12 +56,27 @@ func NewAnalyzerFromEnv() (*Analyzer, error) {
 		if err != nil {
 			return nil, err
 		}
-		analyzer := NewAnalyzerWithCanonicalizer(tagger, embedder, canonicalizer)
+		analyzer := NewAnalyzerWithCanonicalizer(selectedTagger, embedder, canonicalizer)
 		analyzer.SetConceptProfiler(profiler)
 		analyzer.SetThemeLabeler(labeler)
 		return analyzer, nil
 	default:
 		return nil, fmt.Errorf("unsupported AI_PROVIDER %q", provider)
+	}
+}
+
+func taggerFromEnv(base Tagger) (Tagger, error) {
+	switch strings.ToLower(strings.TrimSpace(os.Getenv("AI_TAG_WEIGHT_PROVIDER"))) {
+	case "", providerOpenAI:
+		return base, nil
+	case "jev":
+		return NewJevReweightedTagger(base, JevConfig{
+			APIKey: os.Getenv("TYPESAFE_API_KEY"),
+			URL:    os.Getenv("TYPESAFE_SYSTEMONE_URL"),
+			Model:  os.Getenv("TYPESAFE_MODEL"),
+		})
+	default:
+		return nil, fmt.Errorf("unsupported AI_TAG_WEIGHT_PROVIDER %q", os.Getenv("AI_TAG_WEIGHT_PROVIDER"))
 	}
 }
 

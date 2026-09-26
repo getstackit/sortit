@@ -176,6 +176,18 @@ OPENAI_EMBED_MODEL=text-embedding-3-small
 
 `OPENAI_TAG_MODEL` scores tags for create/search flows. `OPENAI_CANONICAL_MODEL` rewrites refine/combine discussions into a canonical issue description before re-tagging. If you explicitly set `OPENAI_TAG_MODEL` but leave `OPENAI_CANONICAL_MODEL` blank, the backend preserves the old behavior and reuses the tag model for canonicalization.
 
+To compare LLM-only tagging with Jev-assisted weights, keep `AI_PROVIDER=openai` and optionally set:
+
+```dotenv
+AI_TAG_WEIGHT_PROVIDER=jev
+TYPESAFE_API_KEY=your_typesafe_api_key
+TYPESAFE_MODEL=jev-1.13.0
+```
+
+With `AI_TAG_WEIGHT_PROVIDER` unset (or `openai`), tagging uses the existing LLM results. With `jev`, the same LLM discovers existing and new tags, proposes explicit negations, and supplies evidence quotes. Jev then scores those proposed positive and negative weights before the existing normalization and evidence verifier run. It does not discover additional tags or quotes. `TYPESAFE_SYSTEMONE_URL` can override the Jev endpoint for a compatible test service.
+
+For a fixture comparison, run `go run ./internal/matheval/cmd/tageval -live -jev -models gpt-5.6-terra -runs 3 -fixture-dir internal/matheval/testdata -out-dir /tmp/sortit-jev-eval`. This makes live calls to both providers and writes separate LLM-only and LLM+Jev reports plus a comparison table. Set both `OPENAI_API_KEY` and `TYPESAFE_API_KEY`. Each variant makes a separate LLM call, so repeated runs help distinguish model variation from a real improvement. The Jev score-to-relevance mapping is experimental and should be calibrated against the fixture before production use.
+
 ### Start the app
 
 ```bash

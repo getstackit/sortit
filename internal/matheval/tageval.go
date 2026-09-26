@@ -37,13 +37,15 @@ type TagEvalPrice struct {
 // tagging-fidelity run. Tagger is live in the command, but tests can supply a
 // stub; the embedder is always reconstructed from committed fixture vectors.
 type TagEvalConfig struct {
-	Model     string
-	Runs      int
-	Corpus    Corpus
-	Judgments []Judgment
-	Tagger    ai.Tagger
-	Usage     func() ai.TokenUsage
-	Price     TagEvalPrice
+	Model      string
+	Runs       int
+	Corpus     Corpus
+	Judgments  []Judgment
+	Tagger     ai.Tagger
+	Usage      func() ai.TokenUsage
+	Price      TagEvalPrice
+	ExtraUsage func() ai.TokenUsage
+	ExtraPrice TagEvalPrice
 }
 
 type TagEvalArtifact struct {
@@ -54,12 +56,13 @@ type TagEvalArtifact struct {
 }
 
 type TagEvalReport struct {
-	Model    string       `json:"model"`
-	Runs     int          `json:"runs"`
-	Price    TagEvalPrice `json:"price"`
-	Baseline TagEvalRank  `json:"baselineRanking"`
-	Summary  TagEvalStats `json:"summary"`
-	RunData  []TagEvalRun `json:"runData"`
+	Model      string       `json:"model"`
+	Runs       int          `json:"runs"`
+	Price      TagEvalPrice `json:"price"`
+	ExtraPrice TagEvalPrice `json:"extraPrice,omitempty"`
+	Baseline   TagEvalRank  `json:"baselineRanking"`
+	Summary    TagEvalStats `json:"summary"`
+	RunData    []TagEvalRun `json:"runData"`
 }
 
 // TagEvalRun preserves every per-issue judgment. The summary aggregates this
@@ -82,6 +85,7 @@ type TagEvalIssue struct {
 	ModelNegations    []ai.NegatedTag       `json:"modelNegations"`
 	VerifiedTagScores []domain.TagRelevance `json:"verifiedTagScores"`
 	TokenUsage        ai.TokenUsage         `json:"tokenUsage"`
+	ExtraTokenUsage   ai.TokenUsage         `json:"extraTokenUsage,omitempty"`
 }
 
 type TagEvalStats struct {
@@ -101,6 +105,8 @@ type TagEvalStats struct {
 	NegationFalsePositiveRate float64       `json:"negationFalsePositiveRate"`
 	InputTokensPerIssue       float64       `json:"inputTokensPerIssue"`
 	OutputTokensPerIssue      float64       `json:"outputTokensPerIssue"`
+	ExtraInputTokensPerIssue  float64       `json:"extraInputTokensPerIssue,omitempty"`
+	ExtraOutputTokensPerIssue float64       `json:"extraOutputTokensPerIssue,omitempty"`
 	CostPer1KEnrichments      float64       `json:"costPer1KEnrichmentsUsd"`
 	Spread                    TagEvalSpread `json:"spread,omitempty"`
 }
@@ -147,11 +153,12 @@ func RunTaggingFidelity(ctx context.Context, cfg TagEvalConfig) (TagEvalReport, 
 		return TagEvalReport{}, fmt.Errorf("baseline ranking: %w", err)
 	}
 	report := TagEvalReport{
-		Model:    cfg.Model,
-		Runs:     cfg.Runs,
-		Price:    cfg.Price,
-		Baseline: baseline,
-		RunData:  make([]TagEvalRun, 0, cfg.Runs),
+		Model:      cfg.Model,
+		Runs:       cfg.Runs,
+		Price:      cfg.Price,
+		ExtraPrice: cfg.ExtraPrice,
+		Baseline:   baseline,
+		RunData:    make([]TagEvalRun, 0, cfg.Runs),
 	}
 
 	for run := 1; run <= cfg.Runs; run++ {
@@ -159,7 +166,7 @@ func RunTaggingFidelity(ctx context.Context, cfg TagEvalConfig) (TagEvalReport, 
 		if err != nil {
 			return TagEvalReport{}, err
 		}
-		issues, err := tagEvalOneRun(ctx, enricher, cfg.Corpus, cfg.Usage)
+		issues, err := tagEvalOneRun(ctx, enricher, cfg.Corpus, cfg.Usage, cfg.ExtraUsage)
 		if err != nil {
 			return TagEvalReport{}, fmt.Errorf("model %s run %d: %w", cfg.Model, run, err)
 		}
@@ -176,7 +183,7 @@ func RunTaggingFidelity(ctx context.Context, cfg TagEvalConfig) (TagEvalReport, 
 		report.RunData = append(report.RunData, TagEvalRun{
 			Run:     run,
 			Issues:  issues,
-			Stats:   summarizeTagEvalIssues(issues, cfg.Price),
+			Stats:   summarizeTagEvalIssuesWithExtra(issues, cfg.Price, cfg.ExtraPrice),
 			Ranking: ranking,
 		})
 	}
@@ -250,12 +257,13 @@ func newTagEvalEnricher(corpus Corpus, tagger ai.Tagger) (*issueenrichment.Issue
 	return enricher, nil
 }
 
-func tagEvalOneRun(ctx context.Context, enricher *issueenrichment.IssueEnricher, corpus Corpus, usage func() ai.TokenUsage) ([]TagEvalIssue, error) {
+func tagEvalOneRun(ctx context.Context, enricher *issueenrichment.IssueEnricher, corpus Corpus, usage func() ai.TokenUsage, extraUsage func() ai.TokenUsage) ([]TagEvalIssue, error) {
 	fixtures := append([]CorpusIssue(nil), corpus.Issues...)
 	slices.SortFunc(fixtures, func(a, b CorpusIssue) int { return cmp.Compare(a.ID, b.ID) })
 	result := make([]TagEvalIssue, 0, len(fixtures))
 	for _, fixture := range fixtures {
 		before := tokenUsageSnapshot(usage)
+		extraBefore := tokenUsageSnapshot(extraUsage)
 		analysis, err := enricher.AnalyzeText(ctx, fixture.Raw, issueenrichment.AnalyzeTextOptions{
 			CandidateMode:      tags.CandidateModeRetrievalShortlist,
 			Verify:             true,
@@ -265,6 +273,7 @@ func tagEvalOneRun(ctx context.Context, enricher *issueenrichment.IssueEnricher,
 			return nil, fmt.Errorf("analyze fixture issue %s: %w", fixture.ID, err)
 		}
 		after := tokenUsageSnapshot(usage)
+		extraAfter := tokenUsageSnapshot(extraUsage)
 		expected := tagEvalExpectedTags(fixture.TagScores)
 		predicted, scored := tagEvalPredictedTags(analysis.Trace.ModelOutput.Tags)
 		precision, recall, f1 := tagEvalSetMetrics(expected, predicted)
@@ -281,6 +290,10 @@ func tagEvalOneRun(ctx context.Context, enricher *issueenrichment.IssueEnricher,
 			TokenUsage: ai.TokenUsage{
 				InputTokens:  after.InputTokens - before.InputTokens,
 				OutputTokens: after.OutputTokens - before.OutputTokens,
+			},
+			ExtraTokenUsage: ai.TokenUsage{
+				InputTokens:  extraAfter.InputTokens - extraBefore.InputTokens,
+				OutputTokens: extraAfter.OutputTokens - extraBefore.OutputTokens,
 			},
 		})
 	}
@@ -337,6 +350,10 @@ func tagEvalSetMetrics(expected, predicted []string) (precision, recall, f1 floa
 }
 
 func summarizeTagEvalIssues(items []TagEvalIssue, price TagEvalPrice) TagEvalStats {
+	return summarizeTagEvalIssuesWithExtra(items, price, TagEvalPrice{})
+}
+
+func summarizeTagEvalIssuesWithExtra(items []TagEvalIssue, price, extraPrice TagEvalPrice) TagEvalStats {
 	stats := TagEvalStats{Issues: len(items)}
 	var tp, predicted, expected int
 	var correctSum, incorrectSum float64
@@ -370,6 +387,8 @@ func summarizeTagEvalIssues(items []TagEvalIssue, price TagEvalPrice) TagEvalSta
 		}
 		stats.InputTokensPerIssue += float64(item.TokenUsage.InputTokens)
 		stats.OutputTokensPerIssue += float64(item.TokenUsage.OutputTokens)
+		stats.ExtraInputTokensPerIssue += float64(item.ExtraTokenUsage.InputTokens)
+		stats.ExtraOutputTokensPerIssue += float64(item.ExtraTokenUsage.OutputTokens)
 	}
 	stats.MicroPrecision = tagEvalRatio(tp, predicted)
 	stats.MicroRecall = tagEvalRatio(tp, expected)
@@ -383,11 +402,13 @@ func summarizeTagEvalIssues(items []TagEvalIssue, price TagEvalPrice) TagEvalSta
 		stats.MacroF1 /= denominator
 		stats.InputTokensPerIssue /= denominator
 		stats.OutputTokensPerIssue /= denominator
+		stats.ExtraInputTokensPerIssue /= denominator
+		stats.ExtraOutputTokensPerIssue /= denominator
 	}
 	stats.CorrectRelevanceMean = tagEvalRatioFloat(correctSum, stats.CorrectAssignmentCount)
 	stats.IncorrectRelevanceMean = tagEvalRatioFloat(incorrectSum, stats.IncorrectAssignmentCount)
 	stats.NegationFalsePositiveRate = tagEvalRatio(stats.NegationFalsePositives, stats.NegationCount)
-	stats.CostPer1KEnrichments = 1000 * ((stats.InputTokensPerIssue*price.InputPerMillion + stats.OutputTokensPerIssue*price.OutputPerMillion) / 1_000_000)
+	stats.CostPer1KEnrichments = 1000 * ((stats.InputTokensPerIssue*price.InputPerMillion + stats.OutputTokensPerIssue*price.OutputPerMillion + stats.ExtraInputTokensPerIssue*extraPrice.InputPerMillion + stats.ExtraOutputTokensPerIssue*extraPrice.OutputPerMillion) / 1_000_000)
 	return roundTagEvalStats(stats)
 }
 
@@ -413,6 +434,8 @@ func summarizeTagEvalRuns(runs []TagEvalRun) TagEvalStats {
 		combined.IncorrectRelevanceMean += stats.IncorrectRelevanceMean
 		combined.InputTokensPerIssue += stats.InputTokensPerIssue
 		combined.OutputTokensPerIssue += stats.OutputTokensPerIssue
+		combined.ExtraInputTokensPerIssue += stats.ExtraInputTokensPerIssue
+		combined.ExtraOutputTokensPerIssue += stats.ExtraOutputTokensPerIssue
 		combined.CostPer1KEnrichments += stats.CostPer1KEnrichments
 		combined.CorrectAssignmentCount += stats.CorrectAssignmentCount
 		combined.IncorrectAssignmentCount += stats.IncorrectAssignmentCount
@@ -435,6 +458,8 @@ func summarizeTagEvalRuns(runs []TagEvalRun) TagEvalStats {
 	combined.NegationFalsePositiveRate = tagEvalRatio(combined.NegationFalsePositives, combined.NegationCount)
 	combined.InputTokensPerIssue /= denominator
 	combined.OutputTokensPerIssue /= denominator
+	combined.ExtraInputTokensPerIssue /= denominator
+	combined.ExtraOutputTokensPerIssue /= denominator
 	combined.CostPer1KEnrichments /= denominator
 	slices.Sort(microF1)
 	slices.Sort(macroF1)
@@ -594,6 +619,8 @@ func roundTagEvalStats(stats TagEvalStats) TagEvalStats {
 	stats.NegationFalsePositiveRate = roundTagEval(stats.NegationFalsePositiveRate)
 	stats.InputTokensPerIssue = roundTagEval(stats.InputTokensPerIssue)
 	stats.OutputTokensPerIssue = roundTagEval(stats.OutputTokensPerIssue)
+	stats.ExtraInputTokensPerIssue = roundTagEval(stats.ExtraInputTokensPerIssue)
+	stats.ExtraOutputTokensPerIssue = roundTagEval(stats.ExtraOutputTokensPerIssue)
 	stats.CostPer1KEnrichments = roundTagEval(stats.CostPer1KEnrichments)
 	stats.Spread.MicroF1Min = roundTagEval(stats.Spread.MicroF1Min)
 	stats.Spread.MicroF1Max = roundTagEval(stats.Spread.MicroF1Max)

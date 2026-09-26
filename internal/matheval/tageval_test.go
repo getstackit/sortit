@@ -44,6 +44,16 @@ func TestCanonicalModelList(t *testing.T) {
 	}
 }
 
+func TestTagEvalCostIncludesSecondProvider(t *testing.T) {
+	got := summarizeTagEvalIssuesWithExtra([]TagEvalIssue{{
+		TokenUsage:      ai.TokenUsage{InputTokens: 100, OutputTokens: 20},
+		ExtraTokenUsage: ai.TokenUsage{InputTokens: 1000, OutputTokens: 10},
+	}}, TagEvalPrice{InputPerMillion: 1, OutputPerMillion: 10}, TagEvalPrice{InputPerMillion: 0.042})
+	if got.ExtraInputTokensPerIssue != 1000 || got.CostPer1KEnrichments != 0.342 {
+		t.Fatalf("composed cost = %+v", got)
+	}
+}
+
 func TestSummarizeTagEvalRunsUsesPooledNegationRate(t *testing.T) {
 	got := summarizeTagEvalRuns([]TagEvalRun{
 		{Stats: TagEvalStats{Issues: 1, NegationFalsePositives: 1, NegationCount: 1, NegationFalsePositiveRate: 1}},
